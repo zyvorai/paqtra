@@ -1,0 +1,58 @@
+[package]
+name = "cilium-tui"
+version = "0.1.0"
+edition = "2021"
+authors = ["Cilium TUI Contributors"]
+description = "Zero-touch Cilium observability TUI with automatic bootstrapping"
+license = "Apache-2.0"
+
+[features]
+default = []
+grpc = ["tonic", "prost", "tonic-build"]
+
+[dependencies]
+# Kubernetes client
+kube = { version = "0.97", features = ["client", "runtime", "derive"] }
+k8s-openapi = { version = "0.23", features = ["v1_28"] }
+
+# Async runtime
+tokio = { version = "1.42", features = ["full"] }
+futures = "0.3"
+
+# TUI framework
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# gRPC for Hubble (optional)
+tonic = { version = "0.12", optional = true }
+prost = { version = "0.13", optional = true }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Utils
+chrono = "0.4"
+uuid = { version = "1.11", features = ["v4"] }
+flate2 = "1.0"
+tempfile = "3.8"
+
+# BPF map access
+libbpf-rs = { version = "0.24", optional = true }
+nix = { version = "0.29", features = ["fs"] }
+byteorder = "1.5"
+
+[build-dependencies]
+tonic-build = { version = "0.12", optional = true }
