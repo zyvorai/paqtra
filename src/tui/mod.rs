@@ -122,6 +122,10 @@ pub struct TuiApp {
     policy_batch_rollback_confirmation: bool,
     applied_policies: std::collections::HashSet<String>,
 
+    // RootCause view state
+    selected_fix_index: usize,
+    fix_apply_confirmation: bool,
+
     // UX enhancements
     show_help: bool,
     operation_in_progress: bool,
@@ -254,6 +258,8 @@ impl TuiApp {
             policy_batch_apply_confirmation: false,
             policy_batch_rollback_confirmation: false,
             applied_policies: std::collections::HashSet::new(),
+            selected_fix_index: 0,
+            fix_apply_confirmation: false,
             show_help: false,
             operation_in_progress: false,
             operation_message: String::new(),
@@ -713,6 +719,60 @@ impl TuiApp {
                             self.policy_rollback_confirmation = false;
                             self.set_status_message("Policy rollback cancelled");
                         }
+                        KeyCode::Up if !self.show_help && self.selected_tab == 7 => {
+                            // Navigate fixes up
+                            if self.selected_fix_index > 0 {
+                                self.selected_fix_index -= 1;
+                            }
+                        }
+                        KeyCode::Down if !self.show_help && self.selected_tab == 7 => {
+                            // Navigate fixes down
+                            // Note: Max 4 fixes (hardcoded for now)
+                            if self.selected_fix_index < 3 {
+                                self.selected_fix_index += 1;
+                            }
+                        }
+                        KeyCode::Char('a') if !self.show_help && self.selected_tab == 7 && !self.fix_apply_confirmation => {
+                            // Trigger fix application confirmation
+                            self.fix_apply_confirmation = true;
+                            let fix_names = vec![
+                                "allow-8080 policy",
+                                "DNS egress policy",
+                                "MTU adjustment",
+                                "DB access policy"
+                            ];
+                            self.set_status_message(&format!(
+                                "Apply fix '{}'? Press 'y' to confirm, 'n' to cancel",
+                                fix_names[self.selected_fix_index]
+                            ));
+                        }
+                        KeyCode::Char('y') if !self.show_help && self.selected_tab == 7 && self.fix_apply_confirmation => {
+                            // Confirm and apply fix
+                            self.fix_apply_confirmation = false;
+
+                            let (fix_name, policy_yaml) = self.get_fix_policy(self.selected_fix_index);
+
+                            match self.apply_policy_kubectl(&fix_name, &policy_yaml) {
+                                Ok(_) => {
+                                    self.set_status_message(&format!("✅ Applied fix: {}", fix_name));
+                                    tracing::info!("Applied RootCause fix policy: {}", fix_name);
+                                }
+                                Err(e) => {
+                                    self.set_status_message(&format!("❌ Failed to apply fix: {}", e));
+                                    tracing::error!("Failed to apply RootCause fix '{}': {}", fix_name, e);
+                                }
+                            }
+                        }
+                        KeyCode::Char('n') if !self.show_help && self.selected_tab == 7 && self.fix_apply_confirmation => {
+                            // Cancel fix application
+                            self.fix_apply_confirmation = false;
+                            self.set_status_message("Fix application cancelled");
+                        }
+                        KeyCode::Esc if !self.show_help && self.selected_tab == 7 && self.fix_apply_confirmation => {
+                            // Cancel fix application with Esc
+                            self.fix_apply_confirmation = false;
+                            self.set_status_message("Fix application cancelled");
+                        }
                         _ => {}
                     }
                 }
@@ -790,10 +850,10 @@ impl TuiApp {
                 // RootCause view
                 match &self.modules {
                     ModuleContainer::Enriched { rootcause, .. } => {
-                        self.rootcause_view.render(f, chunks[2], Some(rootcause))
+                        self.rootcause_view.render(f, chunks[2], Some(rootcause), self.selected_fix_index, self.fix_apply_confirmation)
                     }
                     ModuleContainer::Mock { rootcause, .. } => {
-                        self.rootcause_view.render(f, chunks[2], Some(rootcause))
+                        self.rootcause_view.render(f, chunks[2], Some(rootcause), self.selected_fix_index, self.fix_apply_confirmation)
                     }
                 }
             }
@@ -853,6 +913,11 @@ impl TuiApp {
                     } else {
                         "?: Help | q: Quit | u: Update | g: Generate | v: View | A: Apply All | R: Rollback All".to_string()
                     },
+                    7 => if self.fix_apply_confirmation {
+                        "⚠️ CONFIRM: y: Apply Fix | n: Cancel | Esc: Cancel".to_string()
+                    } else {
+                        "?: Help | q: Quit | ↑/↓: Select Fix | a: Apply Fix".to_string()
+                    },
                     8 => "?: Help | q: Quit | Tab: Next | s: Run Simulation".to_string(),
                     9 => "?: Help | q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
                     _ => "?: Help | q: Quit | Tab: Next | Shift+Tab: Previous".to_string(),
@@ -883,13 +948,18 @@ impl TuiApp {
                 } else {
                     "?: Help | q: Quit | u: Update | g: Generate | v: View | A: Apply All | R: Rollback All".to_string()
                 },
+                7 => if self.fix_apply_confirmation {
+                    "⚠️ CONFIRM: y: Apply Fix | n: Cancel | Esc: Cancel".to_string()
+                } else {
+                    "?: Help | q: Quit | ↑/↓: Select Fix | a: Apply Fix".to_string()
+                },
                 8 => "?: Help | q: Quit | Tab: Next | s: Run Simulation".to_string(),
                 9 => "?: Help | q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
                 _ => "?: Help | q: Quit | Tab: Next | Shift+Tab: Previous".to_string(),
             }
         };
 
-        let footer_style = if self.policy_apply_confirmation || self.policy_rollback_confirmation || self.policy_batch_apply_confirmation || self.policy_batch_rollback_confirmation {
+        let footer_style = if self.policy_apply_confirmation || self.policy_rollback_confirmation || self.policy_batch_apply_confirmation || self.policy_batch_rollback_confirmation || self.fix_apply_confirmation {
             // Confirmation prompt - use red for warning
             Style::default().fg(ERROR_COLOR).add_modifier(Modifier::BOLD)
         } else if self.status_message.is_some() && self.status_message_time.elapsed().as_secs() < 5 {
@@ -1318,6 +1388,111 @@ impl TuiApp {
                 Ok(())
             } else {
                 Err(anyhow::anyhow!("kubectl delete failed: {}", stderr))
+            }
+        }
+    }
+
+    fn get_fix_policy(&self, fix_index: usize) -> (String, String) {
+        match fix_index {
+            0 => {
+                // Allow port 8080 policy
+                let policy_name = "rootcause-fix-allow-8080".to_string();
+                let policy_yaml = r#"apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: rootcause-fix-allow-8080
+  namespace: default
+spec:
+  endpointSelector:
+    matchLabels:
+      app: frontend
+  egress:
+  - toEndpoints:
+    - matchLabels:
+        app: backend
+    toPorts:
+    - ports:
+      - port: "8080"
+        protocol: TCP"#.to_string();
+                (policy_name, policy_yaml)
+            }
+            1 => {
+                // DNS egress policy
+                let policy_name = "rootcause-fix-dns-egress".to_string();
+                let policy_yaml = r#"apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: rootcause-fix-dns-egress
+  namespace: default
+spec:
+  endpointSelector: {}
+  egress:
+  - toEndpoints:
+    - matchLabels:
+        k8s:io.kubernetes.pod.namespace: kube-system
+        k8s-app: kube-dns
+    toPorts:
+    - ports:
+      - port: "53"
+        protocol: UDP
+      rules:
+        dns:
+        - matchPattern: "*"
+  - toFQDNs:
+    - matchPattern: "*"
+    toPorts:
+    - ports:
+      - port: "53"
+        protocol: UDP"#.to_string();
+                (policy_name, policy_yaml)
+            }
+            2 => {
+                // MTU adjustment (ConfigMap update - simulated as policy for demo)
+                let policy_name = "rootcause-fix-mtu-note".to_string();
+                let policy_yaml = r#"# MTU Adjustment
+#
+# This would normally update the ConfigMap:
+# kubectl -n kube-system patch configmap/cilium-config \
+#   --type merge -p '{"data":{"tunnel-protocol":"disabled"}}'
+#
+# For demonstration, this creates a note policy:
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: rootcause-fix-mtu-note
+  namespace: default
+  annotations:
+    description: "MTU issue detected - consider adjusting CNI MTU settings"
+spec:
+  endpointSelector: {}
+  egress:
+  - {}  # Allow all (this is just a placeholder)"#.to_string();
+                (policy_name, policy_yaml)
+            }
+            3 => {
+                // DB access policy
+                let policy_name = "rootcause-fix-db-access".to_string();
+                let policy_yaml = r#"apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: rootcause-fix-db-access
+  namespace: default
+spec:
+  endpointSelector:
+    matchLabels:
+      app: api
+  egress:
+  - toEndpoints:
+    - matchLabels:
+        app: db
+    toPorts:
+    - ports:
+      - port: "5432"
+        protocol: TCP"#.to_string();
+                (policy_name, policy_yaml)
+            }
+            _ => {
+                ("unknown-fix".to_string(), "# Unknown fix".to_string())
             }
         }
     }

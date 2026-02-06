@@ -101,6 +101,26 @@ pub fn render_help_overlay(f: &mut Frame) {
         ]),
         Line::from(""),
         Line::from(vec![
+            Span::styled("═══ ROOTCAUSE TAB ═══", Style::default().fg(HEADER_COLOR).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from(vec![
+            Span::styled("  ↑/↓", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("        Navigate recommended fixes"),
+        ]),
+        Line::from(vec![
+            Span::styled("  a", Style::default().fg(SUCCESS_COLOR).add_modifier(Modifier::BOLD)),
+            Span::raw("          Apply selected fix (requires confirmation)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  y", Style::default().fg(SUCCESS_COLOR).add_modifier(Modifier::BOLD)),
+            Span::raw("          Confirm fix application"),
+        ]),
+        Line::from(vec![
+            Span::styled("  n", Style::default().fg(ERROR_COLOR).add_modifier(Modifier::BOLD)),
+            Span::raw("          Cancel fix application"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
             Span::styled("═══ SIMULATOR TAB ═══", Style::default().fg(HEADER_COLOR).add_modifier(Modifier::BOLD))
         ]),
         Line::from(vec![

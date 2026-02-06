@@ -23,13 +23,15 @@ impl RootCauseView {
         f: &mut Frame,
         area: ratatui::layout::Rect,
         rootcause: Option<&RootCauseEngine<M>>,
+        selected_fix_index: usize,
+        fix_apply_confirmation: bool,
     ) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(8),  // Header
                 Constraint::Min(10),    // Drop Analysis
-                Constraint::Length(8),  // Fixes
+                Constraint::Length(12),  // Fixes
             ])
             .split(area);
 
@@ -40,7 +42,7 @@ impl RootCauseView {
         self.render_drops(f, chunks[1]);
 
         // Recommended Fixes
-        self.render_fixes(f, chunks[2]);
+        self.render_fixes(f, chunks[2], selected_fix_index, fix_apply_confirmation);
     }
 
     fn render_header<M: MapReader>(
@@ -124,37 +126,95 @@ impl RootCauseView {
         f.render_widget(list, area);
     }
 
-    fn render_fixes(&self, f: &mut Frame, area: ratatui::layout::Rect) {
+    fn render_fixes(&self, f: &mut Frame, area: ratatui::layout::Rect, selected_fix_index: usize, fix_apply_confirmation: bool) {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
             .split(area);
 
-        // Recommended Fixes
-        let fixes_text =
-            "🔧 Recommended Fixes:\n\n\
-            1. Add allow-8080 policy\n\
-            2. Enable DNS egress\n\
-            3. Adjust MTU to 1450\n\
-            4. Add DB access policy";
+        // Recommended Fixes (selectable list)
+        let fix_names = vec![
+            "Add allow-8080 policy",
+            "Enable DNS egress",
+            "Adjust MTU to 1450",
+            "Add DB access policy",
+        ];
 
-        let fixes = Paragraph::new(fixes_text)
-            .style(Style::default().fg(SUCCESS_COLOR))
-            .block(Block::default().borders(Borders::ALL).title("Fixes").border_style(Style::default().fg(BORDER_COLOR)));
+        let items: Vec<ListItem> = fix_names
+            .iter()
+            .enumerate()
+            .map(|(idx, name)| {
+                let style = if idx == selected_fix_index {
+                    Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(SUCCESS_COLOR)
+                };
+
+                let prefix = if idx == selected_fix_index { "▶ " } else { "  " };
+                let content = format!("{}{}. {}", prefix, idx + 1, name);
+
+                ListItem::new(Line::from(Span::styled(content, style)))
+            })
+            .collect();
+
+        let fixes_title = if fix_apply_confirmation {
+            "Fixes [CONFIRM: y/n]"
+        } else {
+            "Fixes [↑/↓: Select | a: Apply]"
+        };
+
+        let fixes = List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(fixes_title)
+                .border_style(Style::default().fg(BORDER_COLOR)),
+        );
 
         f.render_widget(fixes, chunks[0]);
 
-        // Fix Details
-        let details_text =
-            "📝 Policy YAML:\n\n\
-            apiVersion: cilium.io/v2\n\
-            kind: CiliumNetworkPolicy\n\
-            metadata:\n\
-              name: allow-backend";
+        // Fix Details - Show YAML preview for selected fix
+        let details_text = match selected_fix_index {
+            0 => {
+                "📝 Policy: rootcause-fix-allow-8080\n\
+                Namespace: default\n\n\
+                Allows frontend → backend:8080 TCP\n\n\
+                This policy permits traffic from frontend\n\
+                pods to backend pods on port 8080,\n\
+                resolving the detected policy deny."
+            }
+            1 => {
+                "📝 Policy: rootcause-fix-dns-egress\n\
+                Namespace: default\n\n\
+                Enables DNS resolution for all pods\n\n\
+                This policy allows egress to kube-dns\n\
+                on port 53 UDP, resolving DNS blocks."
+            }
+            2 => {
+                "📝 Note: MTU Adjustment\n\
+                Namespace: default\n\n\
+                MTU exceeds detected on path\n\n\
+                Consider adjusting CNI MTU settings\n\
+                in cilium-config ConfigMap or\n\
+                disabling tunneling protocol."
+            }
+            3 => {
+                "📝 Policy: rootcause-fix-db-access\n\
+                Namespace: default\n\n\
+                Allows api → db:5432 TCP\n\n\
+                This policy permits API pods to\n\
+                access database pods on port 5432."
+            }
+            _ => "Select a fix to see details",
+        };
 
         let details = Paragraph::new(details_text)
             .style(Style::default().fg(INFO_COLOR))
-            .block(Block::default().borders(Borders::ALL).title("Details").border_style(Style::default().fg(BORDER_COLOR)));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Policy Details")
+                    .border_style(Style::default().fg(BORDER_COLOR)),
+            );
 
         f.render_widget(details, chunks[1]);
     }
