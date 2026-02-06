@@ -1758,14 +1758,23 @@ spec:
             "Status:     📋 Not Applied"
         };
 
+        // Get ML-based confidence information
+        use crate::modules::autopolicy::confidence::ConfidenceScorer;
+        let confidence_level = ConfidenceScorer::confidence_level(selected_policy.confidence);
+        let recommendation = ConfidenceScorer::get_recommendation(selected_policy.confidence);
+
         let detail_text = format!(
-            "📄 Policy {} of {}\n\n\
-            Name:       {}\n\
-            Namespace:  {}\n\
-            Confidence: {:.1}%\n\
-            Patterns:   {}\n\
+            "📄 Policy {} of {} (ML-Enhanced Zero-Trust)\n\n\
+            Name:          {}\n\
+            Namespace:     {}\n\
+            \n\
+            🤖 ML Confidence Analysis:\n\
+            Score:         {:.1}% ({})\n\
+            Assessment:    {}\n\
+            Patterns:      {} observed traffic patterns\n\
+            \n\
             {}\n\
-            File:       ./policies/{}.yaml\n\
+            File:          ./policies/{}.yaml\n\
             \n\
             ─────────────────────────────────────────────────────────\n\
             YAML Content:\n\
@@ -1778,6 +1787,8 @@ spec:
             selected_policy.name,
             selected_policy.namespace,
             selected_policy.confidence * 100.0,
+            confidence_level,
+            recommendation,
             selected_policy.patterns.len(),
             status_indicator,
             selected_policy.name,

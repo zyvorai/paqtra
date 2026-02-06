@@ -21,6 +21,7 @@ use crate::policies::PolicyManager;
 pub mod learner;
 pub mod generator;
 pub mod analyzer;
+pub mod confidence;
 
 /// LabelSet - A hashable, ordered set of labels
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]

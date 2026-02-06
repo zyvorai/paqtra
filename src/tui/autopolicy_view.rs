@@ -173,19 +173,28 @@ impl AutoPolicyView {
                 Waiting for sufficient observations...\n\n\
                 Press 'g' to generate policies from learned patterns.".to_string()
             } else {
-                let mut text = "📋 Generated Policies:\n\n".to_string();
+                let mut text = "📋 Generated Policies (ML-Enhanced):\n\n".to_string();
                 for (idx, policy) in policies.iter().take(5).enumerate() {
+                    // Use ML-based confidence scoring
+                    use crate::modules::autopolicy::confidence::ConfidenceScorer;
+
+                    let confidence_pct = policy.confidence * 100.0;
+                    let confidence_level = ConfidenceScorer::confidence_level(policy.confidence);
+                    let recommendation = ConfidenceScorer::get_recommendation(policy.confidence);
+
                     text.push_str(&format!(
-                        "{}. {} (namespace: {})\n   Confidence: {:.0}%  Patterns: {}\n",
+                        "{}. {} (namespace: {})\n   Confidence: {:.0}% ({})\n   Patterns: {}  |  {}\n",
                         idx + 1,
                         policy.name,
                         policy.namespace,
-                        policy.confidence * 100.0,
-                        policy.patterns.len()
+                        confidence_pct,
+                        confidence_level,
+                        policy.patterns.len(),
+                        recommendation
                     ));
                 }
                 if policies.len() > 5 {
-                    text.push_str(&format!("\n... and {} more", policies.len() - 5));
+                    text.push_str(&format!("\n... and {} more policies", policies.len() - 5));
                 }
                 text
             }
