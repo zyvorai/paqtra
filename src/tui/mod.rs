@@ -848,6 +848,10 @@ impl TuiApp {
                     "⚠️ CONFIRM: y: Apply Policy | n: Cancel | Esc: Cancel".to_string()
                 } else if self.policy_rollback_confirmation {
                     "⚠️ CONFIRM: y: Rollback Policy | n: Cancel | Esc: Cancel".to_string()
+                } else if self.policy_batch_apply_confirmation {
+                    "⚠️ CONFIRM: y: Apply All | n: Cancel | Esc: Cancel".to_string()
+                } else if self.policy_batch_rollback_confirmation {
+                    "⚠️ CONFIRM: y: Rollback All | n: Cancel | Esc: Cancel".to_string()
                 } else if self.policy_detail_mode {
                     // Show different options based on policy applied status
                     let policies = match &self.modules {
@@ -860,7 +864,7 @@ impl TuiApp {
                         "q: Quit | Esc: Exit | ↑/↓: Navigate | a: Apply Policy".to_string()
                     }
                 } else {
-                    "q: Quit | Tab: Next | u: Update Learning | g: Generate | v: View Details".to_string()
+                    "q: Quit | Tab: Next | u: Update | g: Generate | v: View | A: Apply All | R: Rollback All".to_string()
                 },
                 8 => "q: Quit | Tab: Next | s: Run Simulation".to_string(),
                 9 => "q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
