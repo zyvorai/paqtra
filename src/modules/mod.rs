@@ -17,6 +17,7 @@ pub mod simulator;
 pub mod replay;
 pub mod packet_explainer;
 pub mod chaos;
+pub mod canary;
 
 // Future modules (stubs for now)
 // pub mod profiler;
