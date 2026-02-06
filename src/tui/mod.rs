@@ -115,6 +115,8 @@ pub struct TuiApp {
     policy_detail_mode: bool,
     policy_apply_confirmation: bool,
     policy_rollback_confirmation: bool,
+    policy_batch_apply_confirmation: bool,
+    policy_batch_rollback_confirmation: bool,
     applied_policies: std::collections::HashSet<String>,
 }
 
@@ -241,6 +243,8 @@ impl TuiApp {
             policy_detail_mode: false,
             policy_apply_confirmation: false,
             policy_rollback_confirmation: false,
+            policy_batch_apply_confirmation: false,
+            policy_batch_rollback_confirmation: false,
             applied_policies: std::collections::HashSet::new(),
         })
     }
@@ -437,6 +441,116 @@ impl TuiApp {
                                 }
                             }
                         }
+                        KeyCode::Char('A') if self.selected_tab == 6 && !self.policy_detail_mode => {
+                            // Batch apply all unapplied policies
+                            let policies = match &self.modules {
+                                ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
+                                ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
+                            };
+
+                            let unapplied_count = policies.iter().filter(|p| !self.applied_policies.contains(&p.name)).count();
+
+                            if unapplied_count == 0 {
+                                self.set_status_message("⚠️ All policies already applied");
+                            } else {
+                                self.policy_batch_apply_confirmation = true;
+                                self.set_status_message(&format!("Apply {} policies? Press 'y' to confirm, 'n' to cancel", unapplied_count));
+                            }
+                        }
+                        KeyCode::Char('R') if self.selected_tab == 6 && !self.policy_detail_mode => {
+                            // Batch rollback all applied policies
+                            let applied_count = self.applied_policies.len();
+
+                            if applied_count == 0 {
+                                self.set_status_message("⚠️ No policies applied to rollback");
+                            } else {
+                                self.policy_batch_rollback_confirmation = true;
+                                self.set_status_message(&format!("Rollback {} policies? Press 'y' to confirm, 'n' to cancel", applied_count));
+                            }
+                        }
+                        KeyCode::Char('y') if self.selected_tab == 6 && self.policy_batch_apply_confirmation => {
+                            // Confirm batch apply
+                            self.policy_batch_apply_confirmation = false;
+
+                            let policies = match &self.modules {
+                                ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
+                                ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
+                            };
+
+                            let mut applied = 0;
+                            let mut failed = 0;
+
+                            for policy in policies.iter() {
+                                if !self.applied_policies.contains(&policy.name) {
+                                    let policy_name = policy.name.clone();
+                                    let policy_yaml = policy.yaml.clone();
+
+                                    match self.apply_policy_kubectl(&policy_name, &policy_yaml) {
+                                        Ok(_) => {
+                                            self.applied_policies.insert(policy_name.clone());
+                                            applied += 1;
+                                            tracing::info!("Applied policy: {}", policy_name);
+                                        }
+                                        Err(e) => {
+                                            failed += 1;
+                                            tracing::error!("Failed to apply policy '{}': {}", policy_name, e);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if failed == 0 {
+                                self.set_status_message(&format!("✅ Applied {} policies successfully", applied));
+                            } else {
+                                self.set_status_message(&format!("⚠️ Applied: {}, Failed: {}", applied, failed));
+                            }
+                        }
+                        KeyCode::Char('y') if self.selected_tab == 6 && self.policy_batch_rollback_confirmation => {
+                            // Confirm batch rollback
+                            self.policy_batch_rollback_confirmation = false;
+
+                            let policies = match &self.modules {
+                                ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
+                                ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
+                            };
+
+                            let mut rolled_back = 0;
+                            let mut failed = 0;
+                            let applied_names: Vec<String> = self.applied_policies.iter().cloned().collect();
+
+                            for policy_name in applied_names {
+                                // Find the policy to get its namespace
+                                if let Some(policy) = policies.iter().find(|p| p.name == policy_name) {
+                                    match self.rollback_policy_kubectl(&policy.name, &policy.namespace) {
+                                        Ok(_) => {
+                                            self.applied_policies.remove(&policy.name);
+                                            rolled_back += 1;
+                                            tracing::info!("Rolled back policy: {}", policy.name);
+                                        }
+                                        Err(e) => {
+                                            failed += 1;
+                                            tracing::error!("Failed to rollback policy '{}': {}", policy.name, e);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if failed == 0 {
+                                self.set_status_message(&format!("✅ Rolled back {} policies successfully", rolled_back));
+                            } else {
+                                self.set_status_message(&format!("⚠️ Rolled back: {}, Failed: {}", rolled_back, failed));
+                            }
+                        }
+                        KeyCode::Char('n') if self.selected_tab == 6 && (self.policy_batch_apply_confirmation || self.policy_batch_rollback_confirmation) => {
+                            // Cancel batch operation
+                            if self.policy_batch_apply_confirmation {
+                                self.policy_batch_apply_confirmation = false;
+                                self.set_status_message("Batch apply cancelled");
+                            } else if self.policy_batch_rollback_confirmation {
+                                self.policy_batch_rollback_confirmation = false;
+                                self.set_status_message("Batch rollback cancelled");
+                            }
+                        }
                         KeyCode::Char('v') if self.selected_tab == 6 => {
                             // Toggle policy detail view (AutoPolicy tab)
                             self.policy_detail_mode = !self.policy_detail_mode;
@@ -462,15 +576,21 @@ impl TuiApp {
                                 self.selected_policy_index += 1;
                             }
                         }
-                        KeyCode::Esc if self.selected_tab == 6 && self.policy_detail_mode => {
-                            // Exit policy detail view (or cancel confirmation)
+                        KeyCode::Esc if self.selected_tab == 6 => {
+                            // Exit or cancel confirmations
                             if self.policy_apply_confirmation {
                                 self.policy_apply_confirmation = false;
                                 self.set_status_message("Policy application cancelled");
                             } else if self.policy_rollback_confirmation {
                                 self.policy_rollback_confirmation = false;
                                 self.set_status_message("Policy rollback cancelled");
-                            } else {
+                            } else if self.policy_batch_apply_confirmation {
+                                self.policy_batch_apply_confirmation = false;
+                                self.set_status_message("Batch apply cancelled");
+                            } else if self.policy_batch_rollback_confirmation {
+                                self.policy_batch_rollback_confirmation = false;
+                                self.set_status_message("Batch rollback cancelled");
+                            } else if self.policy_detail_mode {
                                 self.policy_detail_mode = false;
                                 self.selected_policy_index = 0;
                             }
@@ -696,6 +816,10 @@ impl TuiApp {
                         "⚠️ CONFIRM: y: Apply Policy | n: Cancel | Esc: Cancel".to_string()
                     } else if self.policy_rollback_confirmation {
                         "⚠️ CONFIRM: y: Rollback Policy | n: Cancel | Esc: Cancel".to_string()
+                    } else if self.policy_batch_apply_confirmation {
+                        "⚠️ CONFIRM: y: Apply All | n: Cancel | Esc: Cancel".to_string()
+                    } else if self.policy_batch_rollback_confirmation {
+                        "⚠️ CONFIRM: y: Rollback All | n: Cancel | Esc: Cancel".to_string()
                     } else if self.policy_detail_mode {
                         // Show different options based on policy applied status
                         let policies = match &self.modules {
@@ -708,7 +832,7 @@ impl TuiApp {
                             "q: Quit | Esc: Exit | ↑/↓: Navigate | a: Apply Policy".to_string()
                         }
                     } else {
-                        "q: Quit | Tab: Next | u: Update Learning | g: Generate | v: View Details".to_string()
+                        "q: Quit | Tab: Next | u: Update | g: Generate | v: View | A: Apply All | R: Rollback All".to_string()
                     },
                     8 => "q: Quit | Tab: Next | s: Run Simulation".to_string(),
                     9 => "q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
@@ -742,7 +866,7 @@ impl TuiApp {
             }
         };
 
-        let footer_style = if self.policy_apply_confirmation || self.policy_rollback_confirmation {
+        let footer_style = if self.policy_apply_confirmation || self.policy_rollback_confirmation || self.policy_batch_apply_confirmation || self.policy_batch_rollback_confirmation {
             // Confirmation prompt - use red for warning
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
         } else if self.status_message.is_some() && self.status_message_time.elapsed().as_secs() < 5 {
