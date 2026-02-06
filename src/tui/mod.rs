@@ -34,12 +34,16 @@ mod replay_view;
 mod autopolicy_view;
 mod rootcause_view;
 mod chaos_view;
+mod canary_view;
+mod multicluster_view;
 mod theme;
 mod help_overlay;
 
 use simulator_view::SimulatorView;
 use replay_view::ReplayView;
 use chaos_view::ChaosView;
+use canary_view::CanaryView;
+use multicluster_view::MultiClusterView;
 use autopolicy_view::AutoPolicyView;
 use rootcause_view::RootCauseView;
 use theme::*;
@@ -113,6 +117,8 @@ pub struct TuiApp {
     simulator_view: SimulatorView,
     replay_view: ReplayView,
     chaos_view: ChaosView,
+    canary_view: CanaryView,
+    multicluster_view: MultiClusterView,
     autopolicy_view: AutoPolicyView,
     rootcause_view: RootCauseView,
 
@@ -258,6 +264,8 @@ impl TuiApp {
             simulator_view: SimulatorView::new(),
             replay_view: ReplayView::new(),
             chaos_view: ChaosView::new(),
+            canary_view: CanaryView::new(),
+            multicluster_view: MultiClusterView::new(),
             autopolicy_view: AutoPolicyView::new(),
             rootcause_view: RootCauseView::new(),
             selected_policy_index: 0,
@@ -485,6 +493,43 @@ impl TuiApp {
                         KeyCode::Char('b') if !self.show_help && self.selected_tab == 10 && !self.chaos_view.circuit_breaker_confirm => {
                             // Trigger circuit breaker
                             self.chaos_view.circuit_breaker_confirm = true;
+                        }
+                        // Canary tab (11) keyboard handlers
+                        KeyCode::Up if !self.show_help && self.selected_tab == 11 => {
+                            self.canary_view.move_selection_up();
+                        }
+                        KeyCode::Down if !self.show_help && self.selected_tab == 11 => {
+                            self.canary_view.move_selection_down(2); // 2 active canaries
+                        }
+                        KeyCode::Char('p') if !self.show_help && self.selected_tab == 11 => {
+                            self.canary_view.trigger_confirmation(canary_view::ConfirmationType::Promote);
+                        }
+                        KeyCode::Char('r') if !self.show_help && self.selected_tab == 11 => {
+                            self.canary_view.trigger_confirmation(canary_view::ConfirmationType::Rollback);
+                        }
+                        KeyCode::Char('+') if !self.show_help && self.selected_tab == 11 => {
+                            self.set_status_message("Canary traffic increased by 10%");
+                        }
+                        KeyCode::Char('d') if !self.show_help && self.selected_tab == 11 => {
+                            self.canary_view.toggle_details();
+                        }
+                        KeyCode::Char('y') if !self.show_help && self.selected_tab == 11 && self.canary_view.confirmation_mode != canary_view::ConfirmationType::None => {
+                            self.canary_view.cancel_confirmation();
+                            self.set_status_message("Canary action confirmed");
+                        }
+                        KeyCode::Char('n') if !self.show_help && self.selected_tab == 11 && self.canary_view.confirmation_mode != canary_view::ConfirmationType::None => {
+                            self.canary_view.cancel_confirmation();
+                            self.set_status_message("Canary action cancelled");
+                        }
+                        // MultiCluster tab (12) keyboard handlers
+                        KeyCode::Up if !self.show_help && self.selected_tab == 12 => {
+                            self.multicluster_view.move_selection_up();
+                        }
+                        KeyCode::Down if !self.show_help && self.selected_tab == 12 => {
+                            self.multicluster_view.move_selection_down(4); // 4 clusters
+                        }
+                        KeyCode::Char('v') if !self.show_help && self.selected_tab == 12 => {
+                            self.multicluster_view.cycle_view();
                         }
                         KeyCode::Char('s') if !self.show_help && self.selected_tab == 8 => {
                             // Run simulation
@@ -939,7 +984,9 @@ impl TuiApp {
             "RootCause",
             "Simulator",
             "Replay",
-            "Chaos"
+            "Chaos",
+            "Canary",
+            "MultiCluster"
         ];
         let tabs = Tabs::new(titles)
             .block(Block::default().borders(Borders::ALL).title("Intelligence Modules").border_style(Style::default().fg(BORDER_COLOR)))
@@ -1014,6 +1061,14 @@ impl TuiApp {
                 // Chaos view
                 self.chaos_view.render(f, chunks[2], None)
             }
+            11 => {
+                // Canary view
+                self.canary_view.render(f, chunks[2], None)
+            }
+            12 => {
+                // MultiCluster view
+                self.multicluster_view.render(f, chunks[2], None)
+            }
             _ => {}
         }
 
@@ -1079,6 +1134,12 @@ impl TuiApp {
                     } else {
                         "?: Help | q: Quit | ↑/↓: Select Flow | e: Explain Packet".to_string()
                     },
+                    11 => if self.canary_view.confirmation_mode != canary_view::ConfirmationType::None {
+                        "⚠️ CONFIRM: y: Execute | n: Cancel".to_string()
+                    } else {
+                        "?: Help | ↑/↓: Select | p: Promote | r: Rollback | +: Progress | d: Details".to_string()
+                    },
+                    12 => "?: Help | ↑/↓: Select | v: Cycle View (Clusters/Topology/Syncs/Placements)".to_string(),
                     _ => "?: Help | q: Quit | Tab: Next | Shift+Tab: Previous".to_string(),
                 }
             }
@@ -1130,6 +1191,12 @@ impl TuiApp {
                 } else {
                     "?: Help | ↑/↓: Select | s: Stop | S: Stop All | v: View Presets".to_string()
                 },
+                11 => if self.canary_view.confirmation_mode != canary_view::ConfirmationType::None {
+                    "⚠️ CONFIRM: y: Execute | n: Cancel".to_string()
+                } else {
+                    "?: Help | ↑/↓: Select | p: Promote | r: Rollback | +: Progress | d: Details".to_string()
+                },
+                12 => "?: Help | ↑/↓: Select | v: Cycle View (Clusters/Topology/Syncs/Placements)".to_string(),
                 0 => if self.show_packet_explanation {
                     "?: Help | q: Quit | Esc: Exit Explanation".to_string()
                 } else {

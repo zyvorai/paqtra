@@ -221,6 +221,42 @@ pub fn render_help_overlay(f: &mut Frame) {
         ]),
         Line::from(""),
         Line::from(vec![
+            Span::styled("═══ CANARY TAB ═══", Style::default().fg(HEADER_COLOR).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from(vec![
+            Span::styled("  ↑/↓", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("        Navigate canary deployments"),
+        ]),
+        Line::from(vec![
+            Span::styled("  p", Style::default().fg(SUCCESS_COLOR).add_modifier(Modifier::BOLD)),
+            Span::raw("          Promote canary (confirm with y/n)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  r", Style::default().fg(ERROR_COLOR).add_modifier(Modifier::BOLD)),
+            Span::raw("          Rollback canary (confirm with y/n)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  +", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("          Progress traffic (+10%)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  d", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("          Toggle detailed metrics view"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("═══ MULTICLUSTER TAB ═══", Style::default().fg(HEADER_COLOR).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from(vec![
+            Span::styled("  ↑/↓", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("        Navigate clusters/items"),
+        ]),
+        Line::from(vec![
+            Span::styled("  v", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("          Cycle views: Clusters → Topology → Syncs → Placements"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
             Span::styled("═══════════════════════════════════════════════", Style::default().fg(BORDER_COLOR))
         ]),
         Line::from(""),
