@@ -1,0 +1,30 @@
+# Example CiliumNetworkPolicy: Database access control
+# Allow only API pods to access PostgreSQL database
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: api-db-access
+  namespace: production
+  annotations:
+    cilium-vision.io/generated: "true"
+    cilium-vision.io/confidence: "92.3"
+    cilium-vision.io/learning-duration: "14d"
+spec:
+  endpointSelector:
+    matchLabels:
+      app: postgresql
+      tier: database
+  ingress:
+  - fromEndpoints:
+    - matchLabels:
+        app: api
+        tier: backend
+        env: production
+    toPorts:
+    - ports:
+      - port: "5432"
+        protocol: TCP
+  # Deny all other ingress by default
+  ingressDeny:
+  - fromEndpoints:
+    - {}
