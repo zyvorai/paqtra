@@ -18,6 +18,7 @@ pub mod replay;
 pub mod packet_explainer;
 pub mod chaos;
 pub mod canary;
+pub mod multicluster;
 
 // Future modules (stubs for now)
 // pub mod profiler;
