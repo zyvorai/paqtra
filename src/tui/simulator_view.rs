@@ -9,6 +9,7 @@ use ratatui::{
 
 use crate::ebpf::MapReader;
 use crate::modules::simulator::Simulator;
+use super::theme::*;
 
 pub struct SimulatorView {
     pub should_simulate: bool,
@@ -60,8 +61,8 @@ impl SimulatorView {
             • Block External IP          • Default Deny Mode\n\n\
             Press 's' to run a demo simulation",
         )
-        .style(Style::default().fg(Color::Cyan))
-        .block(Block::default().borders(Borders::ALL).title("Simulator Overview"));
+        .style(Style::default().fg(INFO_COLOR))
+        .block(Block::default().borders(Borders::ALL).title("Simulator Overview").border_style(Style::default().fg(BORDER_COLOR)));
 
         f.render_widget(content, area);
     }
@@ -73,23 +74,24 @@ impl SimulatorView {
         _simulator: Option<&Simulator<M>>,
     ) {
         let scenarios = vec![
-            ("✓ Block External IP 1.2.3.4", "3", "Medium", Color::Yellow),
-            ("✓ Add DNS Policy", "1", "Low", Color::Green),
-            ("✓ Default Deny in prod", "9", "Critical", Color::Red),
-            ("✓ Modify ingress rules", "5", "Medium", Color::Yellow),
-            ("✓ Allow port 8080", "2", "Low", Color::Green),
+            ("✓ Block External IP 1.2.3.4", "3", "Medium"),
+            ("✓ Add DNS Policy", "1", "Low"),
+            ("✓ Default Deny in prod", "9", "Critical"),
+            ("✓ Modify ingress rules", "5", "Medium"),
+            ("✓ Allow port 8080", "2", "Low"),
         ];
 
         let items: Vec<ListItem> = scenarios
             .iter()
-            .map(|(name, risk_score, risk_level, color)| {
+            .map(|(name, risk_score, risk_level)| {
+                let color = severity_color(risk_level);
                 let content = format!(
                     "{:<35} Risk: {}/10  Level: {}",
                     name, risk_score, risk_level
                 );
                 ListItem::new(Line::from(Span::styled(
                     content,
-                    Style::default().fg(*color),
+                    Style::default().fg(color),
                 )))
             })
             .collect();
@@ -97,7 +99,8 @@ impl SimulatorView {
         let list = List::new(items).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Recent Simulations"),
+                .title("Recent Simulations")
+                .border_style(Style::default().fg(BORDER_COLOR)),
         );
 
         f.render_widget(list, area);
@@ -118,8 +121,8 @@ impl SimulatorView {
             Critical Svcs:     0";
 
         let impact = Paragraph::new(impact_text)
-            .style(Style::default().fg(Color::White))
-            .block(Block::default().borders(Borders::ALL).title("Impact"));
+            .style(Style::default().fg(TEXT_COLOR))
+            .block(Block::default().borders(Borders::ALL).title("Impact").border_style(Style::default().fg(BORDER_COLOR)));
 
         f.render_widget(impact, risk_chunks[0]);
 
@@ -129,9 +132,10 @@ impl SimulatorView {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Risk Level"),
+                    .title("Risk Level")
+                    .border_style(Style::default().fg(BORDER_COLOR)),
             )
-            .gauge_style(Style::default().fg(Color::Yellow))
+            .gauge_style(Style::default().fg(WARNING_COLOR))
             .percent((risk_level * 100.0) as u16)
             .label(format!("{}% - MEDIUM", (risk_level * 100.0) as u16));
 

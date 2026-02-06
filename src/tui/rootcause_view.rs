@@ -9,6 +9,7 @@ use ratatui::{
 
 use crate::ebpf::MapReader;
 use crate::modules::rootcause::RootCauseEngine;
+use super::theme::*;
 
 pub struct RootCauseView;
 
@@ -58,8 +59,8 @@ impl RootCauseView {
             Last Analysis:     Just now";
 
         let content = Paragraph::new(stats)
-            .style(Style::default().fg(Color::Red))
-            .block(Block::default().borders(Borders::ALL).title("Analysis Status"));
+            .style(Style::default().fg(ERROR_COLOR))
+            .block(Block::default().borders(Borders::ALL).title("Analysis Status").border_style(Style::default().fg(BORDER_COLOR)));
 
         f.render_widget(content, area);
     }
@@ -71,48 +72,44 @@ impl RootCauseView {
                 "frontend → backend:8080",
                 "Critical",
                 "12 drops",
-                Color::Red,
             ),
             (
                 "DNS Blocked",
                 "app → 8.8.8.8:53",
-                "High",
+                "Critical",
                 "45 drops",
-                Color::LightRed,
             ),
             (
                 "MTU Exceeded",
                 "service-a → service-b",
                 "Medium",
                 "8 drops",
-                Color::Yellow,
             ),
             (
                 "Port Not Allowed",
                 "api → db:5432",
                 "Medium",
                 "23 drops",
-                Color::Yellow,
             ),
             (
                 "Invalid Packet",
                 "10.0.1.5 → 10.0.2.10",
                 "Low",
                 "3 drops",
-                Color::Gray,
             ),
         ];
 
         let items: Vec<ListItem> = drops
             .iter()
-            .map(|(reason, flow, severity, count, color)| {
+            .map(|(reason, flow, severity, count)| {
+                let color = severity_color(severity);
                 let content = format!(
                     "{:<18} {:<30} [{:<8}] {}",
                     reason, flow, severity, count
                 );
                 ListItem::new(Line::from(Span::styled(
                     content,
-                    Style::default().fg(*color).add_modifier(Modifier::BOLD),
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
                 )))
             })
             .collect();
@@ -120,7 +117,8 @@ impl RootCauseView {
         let list = List::new(items).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Recent Packet Drops (Top 5)"),
+                .title("Recent Packet Drops (Top 5)")
+                .border_style(Style::default().fg(BORDER_COLOR)),
         );
 
         f.render_widget(list, area);
@@ -141,8 +139,8 @@ impl RootCauseView {
             4. Add DB access policy";
 
         let fixes = Paragraph::new(fixes_text)
-            .style(Style::default().fg(Color::Green))
-            .block(Block::default().borders(Borders::ALL).title("Fixes"));
+            .style(Style::default().fg(SUCCESS_COLOR))
+            .block(Block::default().borders(Borders::ALL).title("Fixes").border_style(Style::default().fg(BORDER_COLOR)));
 
         f.render_widget(fixes, chunks[0]);
 
@@ -155,8 +153,8 @@ impl RootCauseView {
               name: allow-backend";
 
         let details = Paragraph::new(details_text)
-            .style(Style::default().fg(Color::Cyan))
-            .block(Block::default().borders(Borders::ALL).title("Details"));
+            .style(Style::default().fg(INFO_COLOR))
+            .block(Block::default().borders(Borders::ALL).title("Details").border_style(Style::default().fg(BORDER_COLOR)));
 
         f.render_widget(details, chunks[1]);
     }

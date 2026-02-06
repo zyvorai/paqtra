@@ -33,11 +33,13 @@ mod simulator_view;
 mod replay_view;
 mod autopolicy_view;
 mod rootcause_view;
+mod theme;
 
 use simulator_view::SimulatorView;
 use replay_view::ReplayView;
 use autopolicy_view::AutoPolicyView;
 use rootcause_view::RootCauseView;
+use theme::*;
 
 /// Module container that can use either enriched or mock data
 enum ModuleContainer {
@@ -714,8 +716,8 @@ impl TuiApp {
 
         // Title
         let title = Paragraph::new(format!("🚀 Cilium Vision - Intelligence Platform - {}", self.context))
-            .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-            .block(Block::default().borders(Borders::ALL));
+            .style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
+            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(BORDER_COLOR)));
         f.render_widget(title, chunks[0]);
 
         // Tabs
@@ -732,12 +734,12 @@ impl TuiApp {
             "Replay"
         ];
         let tabs = Tabs::new(titles)
-            .block(Block::default().borders(Borders::ALL).title("Intelligence Modules"))
+            .block(Block::default().borders(Borders::ALL).title("Intelligence Modules").border_style(Style::default().fg(BORDER_COLOR)))
             .select(self.selected_tab)
-            .style(Style::default().fg(Color::White))
+            .style(Style::default().fg(TAB_NORMAL_COLOR))
             .highlight_style(
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(TAB_SELECTED_COLOR)
                     .add_modifier(Modifier::BOLD),
             );
         f.render_widget(tabs, chunks[1]);
@@ -868,16 +870,16 @@ impl TuiApp {
 
         let footer_style = if self.policy_apply_confirmation || self.policy_rollback_confirmation || self.policy_batch_apply_confirmation || self.policy_batch_rollback_confirmation {
             // Confirmation prompt - use red for warning
-            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+            Style::default().fg(ERROR_COLOR).add_modifier(Modifier::BOLD)
         } else if self.status_message.is_some() && self.status_message_time.elapsed().as_secs() < 5 {
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(WARNING_COLOR)
         } else {
-            Style::default().fg(Color::Gray)
+            Style::default().fg(TEXT_COLOR)
         };
 
         let footer = Paragraph::new(footer_text)
             .style(footer_style)
-            .block(Block::default().borders(Borders::ALL));
+            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(BORDER_COLOR)));
         f.render_widget(footer, chunks[3]);
     }
 
@@ -888,9 +890,9 @@ impl TuiApp {
             .take(50)
             .map(|flow| {
                 let verdict_color = match flow.verdict.as_str() {
-                    "FORWARDED" => Color::Green,
-                    "DROPPED" => Color::Red,
-                    _ => Color::Yellow,
+                    "FORWARDED" => FORWARDED_COLOR,
+                    "DROPPED" => DROPPED_COLOR,
+                    _ => UNKNOWN_TRAFFIC_COLOR,
                 };
 
                 let content = format!(
@@ -912,7 +914,7 @@ impl TuiApp {
             .collect();
 
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("Live Flows"));
+            .block(Block::default().borders(Borders::ALL).title("Live Flows").border_style(Style::default().fg(BORDER_COLOR)));
         f.render_widget(list, area);
     }
 
@@ -927,8 +929,8 @@ impl TuiApp {
                 • Kubernetes API is accessible\n\n\
                 Showing mock data mode.",
             )
-            .style(Style::default().fg(Color::Yellow))
-            .block(Block::default().borders(Borders::ALL).title("⚡ Enriched Connections"));
+            .style(Style::default().fg(WARNING_COLOR))
+            .block(Block::default().borders(Borders::ALL).title("⚡ Enriched Connections").border_style(Style::default().fg(BORDER_COLOR)));
             f.render_widget(content, area);
             return;
         }
@@ -940,10 +942,10 @@ impl TuiApp {
             .map(|enriched| {
                 // Determine connection state color
                 let state_color = match enriched.conn.state {
-                    crate::ebpf::ConntrackState::Established => Color::Green,
-                    crate::ebpf::ConntrackState::New => Color::Cyan,
-                    crate::ebpf::ConntrackState::Related => Color::Blue,
-                    crate::ebpf::ConntrackState::Invalid => Color::Red,
+                    crate::ebpf::ConntrackState::Established => ESTABLISHED_COLOR,
+                    crate::ebpf::ConntrackState::New => NEW_CONNECTION_COLOR,
+                    crate::ebpf::ConntrackState::Related => RELATED_COLOR,
+                    crate::ebpf::ConntrackState::Invalid => INVALID_COLOR,
                 };
 
                 // Format source and destination with pod names
@@ -1007,10 +1009,10 @@ impl TuiApp {
             .iter()
             .map(|ep| {
                 let status_color = match ep.status {
-                    crate::endpoints::EndpointStatus::Running => Color::Green,
-                    crate::endpoints::EndpointStatus::Pending => Color::Yellow,
-                    crate::endpoints::EndpointStatus::Failed => Color::Red,
-                    crate::endpoints::EndpointStatus::Unknown => Color::Gray,
+                    crate::endpoints::EndpointStatus::Running => RUNNING_COLOR,
+                    crate::endpoints::EndpointStatus::Pending => PENDING_COLOR,
+                    crate::endpoints::EndpointStatus::Failed => FAILED_COLOR,
+                    crate::endpoints::EndpointStatus::Unknown => UNKNOWN_STATUS_COLOR,
                 };
 
                 let app_label = ep
@@ -1041,7 +1043,8 @@ impl TuiApp {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(format!("Endpoints ({}) - {}", self.endpoints.len(), header)),
+                    .title(format!("Endpoints ({}) - {}", self.endpoints.len(), header))
+                    .border_style(Style::default().fg(BORDER_COLOR)),
             );
         f.render_widget(list, area);
     }
@@ -1053,7 +1056,8 @@ impl TuiApp {
             ✓ allow-dns (default)\n\
             ✓ allow-hubble (kube-system)",
         )
-        .block(Block::default().borders(Borders::ALL).title("Network Policies"));
+        .style(Style::default().fg(TEXT_COLOR))
+        .block(Block::default().borders(Borders::ALL).title("Network Policies").border_style(Style::default().fg(BORDER_COLOR)));
         f.render_widget(content, area);
     }
 
@@ -1101,8 +1105,8 @@ impl TuiApp {
             ✅ K8s Identity:    Active",
             identity_stats
         ))
-        .style(Style::default().fg(Color::White))
-        .block(Block::default().borders(Borders::ALL).title("Platform Metrics"));
+        .style(Style::default().fg(TEXT_COLOR))
+        .block(Block::default().borders(Borders::ALL).title("Platform Metrics").border_style(Style::default().fg(BORDER_COLOR)));
         f.render_widget(content, area);
     }
 
@@ -1171,8 +1175,8 @@ impl TuiApp {
         );
 
         let content = Paragraph::new(healer_status)
-            .style(Style::default().fg(Color::Green))
-            .block(Block::default().borders(Borders::ALL).title("🏥 Self-Healer (Auto-Scan: 30s | Press 'd' for manual)"));
+            .style(Style::default().fg(SUCCESS_COLOR))
+            .block(Block::default().borders(Borders::ALL).title("🏥 Self-Healer (Auto-Scan: 30s | Press 'd' for manual)").border_style(Style::default().fg(BORDER_COLOR)));
         f.render_widget(content, area);
     }
 

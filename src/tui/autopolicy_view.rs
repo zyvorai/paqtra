@@ -9,6 +9,7 @@ use ratatui::{
 
 use crate::ebpf::MapReader;
 use crate::modules::autopolicy::AutoPolicy;
+use super::theme::*;
 
 pub struct AutoPolicyView;
 
@@ -69,8 +70,8 @@ impl AutoPolicyView {
         };
 
         let content = Paragraph::new(stats)
-            .style(Style::default().fg(Color::Blue))
-            .block(Block::default().borders(Borders::ALL).title("Learning Status"));
+            .style(Style::default().fg(INFO_COLOR))
+            .block(Block::default().borders(Borders::ALL).title("Learning Status").border_style(Style::default().fg(BORDER_COLOR)));
 
         f.render_widget(content, area);
     }
@@ -115,13 +116,7 @@ impl AutoPolicyView {
                     let confidence = ((obs.count as f32).min(100.0) / 100.0 * 100.0) as u32;
 
                     // Color based on confidence
-                    let color = if confidence >= 90 {
-                        Color::Green
-                    } else if confidence >= 70 {
-                        Color::Yellow
-                    } else {
-                        Color::Red
-                    };
+                    let color = confidence_color(confidence as f64 / 100.0);
 
                     let content = format!(
                         "{:<50} {:>6}:{:<3} {:>4} obs  Conf: {:>3}%",
@@ -151,7 +146,8 @@ impl AutoPolicyView {
         let list = List::new(items).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(title),
+                .title(title)
+                .border_style(Style::default().fg(BORDER_COLOR)),
         );
 
         f.render_widget(list, area);
@@ -198,8 +194,8 @@ impl AutoPolicyView {
         };
 
         let policies = Paragraph::new(policy_text)
-            .style(Style::default().fg(Color::White))
-            .block(Block::default().borders(Borders::ALL).title("Generated Policies"));
+            .style(Style::default().fg(TEXT_COLOR))
+            .block(Block::default().borders(Borders::ALL).title("Generated Policies").border_style(Style::default().fg(BORDER_COLOR)));
 
         f.render_widget(policies, chunks[0]);
 
@@ -207,23 +203,18 @@ impl AutoPolicyView {
         let (readiness, gauge_color) = if let Some(engine) = autopolicy {
             let stats = engine.stats();
             let readiness = stats.avg_confidence;
-            let color = if readiness >= 0.85 {
-                Color::Green
-            } else if readiness >= 0.70 {
-                Color::Yellow
-            } else {
-                Color::Red
-            };
+            let color = confidence_color(readiness as f64);
             (readiness, color)
         } else {
-            (0.0, Color::Gray)
+            (0.0, UNKNOWN_STATUS_COLOR)
         };
 
         let gauge = Gauge::default()
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Confidence"),
+                    .title("Confidence")
+                    .border_style(Style::default().fg(BORDER_COLOR)),
             )
             .gauge_style(Style::default().fg(gauge_color))
             .percent((readiness * 100.0) as u16)

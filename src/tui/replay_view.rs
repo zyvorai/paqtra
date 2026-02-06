@@ -9,6 +9,7 @@ use ratatui::{
 
 use crate::ebpf::MapReader;
 use crate::modules::replay::ReplayEngine;
+use super::theme::*;
 
 pub struct ReplayView;
 
@@ -65,18 +66,18 @@ impl ReplayView {
         };
 
         let content = Paragraph::new(stats)
-            .style(Style::default().fg(Color::Magenta))
-            .block(Block::default().borders(Borders::ALL).title("Replay Status"));
+            .style(Style::default().fg(ORANGE))
+            .block(Block::default().borders(Borders::ALL).title("Replay Status").border_style(Style::default().fg(BORDER_COLOR)));
 
         f.render_widget(content, area);
     }
 
     fn render_recordings(&self, f: &mut Frame, area: ratatui::layout::Rect) {
         let recordings = vec![
-            ("rec-prod-baseline", "1000", "5.2 MB", "2h ago", Color::Green),
-            ("rec-policy-test", "450", "2.1 MB", "30m ago", Color::Cyan),
-            ("rec-migration", "2500", "12 MB", "1d ago", Color::White),
-            ("rec-incident-123", "180", "890 KB", "3d ago", Color::Yellow),
+            ("rec-prod-baseline", "1000", "5.2 MB", "2h ago", RECORDING_ACTIVE_COLOR),
+            ("rec-policy-test", "450", "2.1 MB", "30m ago", RECORDING_RECENT_COLOR),
+            ("rec-migration", "2500", "12 MB", "1d ago", RECORDING_OLD_COLOR),
+            ("rec-incident-123", "180", "890 KB", "3d ago", RECORDING_WARNING_COLOR),
         ];
 
         let items: Vec<ListItem> = recordings
@@ -96,7 +97,8 @@ impl ReplayView {
         let list = List::new(items).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Available Recordings (4)"),
+                .title("Available Recordings (4)")
+                .border_style(Style::default().fg(BORDER_COLOR)),
         );
 
         f.render_widget(list, area);
@@ -118,8 +120,8 @@ impl ReplayView {
             Fixed Drops:       20";
 
         let stats = Paragraph::new(stats_text)
-            .style(Style::default().fg(Color::White))
-            .block(Block::default().borders(Borders::ALL).title("Comparison"));
+            .style(Style::default().fg(TEXT_COLOR))
+            .block(Block::default().borders(Borders::ALL).title("Comparison").border_style(Style::default().fg(BORDER_COLOR)));
 
         f.render_widget(stats, chunks[0]);
 
@@ -129,9 +131,10 @@ impl ReplayView {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Similarity"),
+                    .title("Similarity")
+                    .border_style(Style::default().fg(BORDER_COLOR)),
             )
-            .gauge_style(Style::default().fg(Color::Green))
+            .gauge_style(Style::default().fg(PROGRESS_NORMAL_COLOR))
             .percent((similarity * 100.0) as u16)
             .label(format!("{}%", (similarity * 100.0) as u16));
 
