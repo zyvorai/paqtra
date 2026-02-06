@@ -84,14 +84,21 @@ impl CiliumManager {
 
         // Check if cilium CLI is available
         if !self.is_cilium_cli_available() {
-            anyhow::bail!(
-                "❌ Cilium CLI not found. Please install it first:\n\
-                 \n\
-                 Linux:   curl -L --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz\n\
-                 macOS:   brew install cilium-cli\n\
-                 \n\
-                 Or visit: https://docs.cilium.io/en/stable/gettingstarted/k8s-install-default/"
-            );
+            println!("📥 Cilium CLI not found. Installing automatically...");
+
+            if !auto_approve {
+                println!("\n❓ Would you like to install Cilium CLI? (Y/n)");
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+
+                let response = input.trim();
+                if !response.is_empty() && !response.eq_ignore_ascii_case("y") {
+                    anyhow::bail!("Cilium CLI installation cancelled.");
+                }
+            }
+
+            self.install_cilium_cli().await?;
+            println!("✅ Cilium CLI installed successfully!");
         }
 
         if !auto_approve {
@@ -152,6 +159,101 @@ impl CiliumManager {
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
+    }
+
+    async fn install_cilium_cli(&self) -> Result<()> {
+        // Detect OS and architecture
+        let os = std::env::consts::OS;
+        let arch = std::env::consts::ARCH;
+
+        let (download_url, binary_name) = match (os, arch) {
+            ("linux", "x86_64") => (
+                "https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz",
+                "cilium-linux-amd64.tar.gz"
+            ),
+            ("linux", "aarch64") => (
+                "https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-arm64.tar.gz",
+                "cilium-linux-arm64.tar.gz"
+            ),
+            ("macos", _) | ("darwin", _) => {
+                // For macOS, suggest using brew
+                println!("ℹ️  For macOS, please install using Homebrew:");
+                println!("   brew install cilium-cli");
+                anyhow::bail!("Please install cilium-cli using Homebrew on macOS");
+            },
+            _ => {
+                anyhow::bail!("Unsupported OS/architecture: {}/{}", os, arch);
+            }
+        };
+
+        println!("📥 Downloading Cilium CLI from GitHub...");
+
+        // Download to /tmp
+        let output = Command::new("curl")
+            .args(["-L", "--remote-name-all", download_url])
+            .current_dir("/tmp")
+            .status()
+            .context("Failed to download Cilium CLI")?;
+
+        if !output.success() {
+            anyhow::bail!("Failed to download Cilium CLI");
+        }
+
+        println!("📦 Extracting Cilium CLI...");
+
+        // Extract
+        let extract_output = Command::new("tar")
+            .args(["-xzf", binary_name])
+            .current_dir("/tmp")
+            .status()
+            .context("Failed to extract Cilium CLI")?;
+
+        if !extract_output.success() {
+            anyhow::bail!("Failed to extract Cilium CLI");
+        }
+
+        println!("📁 Installing Cilium CLI to /usr/local/bin...");
+
+        // Try to move to /usr/local/bin with sudo
+        let install_output = Command::new("sudo")
+            .args(["mv", "/tmp/cilium", "/usr/local/bin/"])
+            .status()
+            .context("Failed to install Cilium CLI to /usr/local/bin")?;
+
+        if !install_output.success() {
+            // Fallback: try to install to ~/.local/bin
+            println!("⚠️  Failed to install to /usr/local/bin, trying ~/.local/bin...");
+
+            let home = std::env::var("HOME")?;
+            let local_bin = format!("{}/.local/bin", home);
+
+            // Create ~/.local/bin if it doesn't exist
+            std::fs::create_dir_all(&local_bin)?;
+
+            let fallback_output = Command::new("mv")
+                .args(["/tmp/cilium", &format!("{}/cilium", local_bin)])
+                .status()
+                .context("Failed to install Cilium CLI to ~/.local/bin")?;
+
+            if !fallback_output.success() {
+                anyhow::bail!("Failed to install Cilium CLI");
+            }
+
+            println!("ℹ️  Cilium CLI installed to {}", local_bin);
+            println!("ℹ️  Make sure {} is in your PATH", local_bin);
+        }
+
+        // Clean up
+        let _ = Command::new("rm")
+            .args(["-f", &format!("/tmp/{}", binary_name)])
+            .status();
+
+        // Verify installation
+        if !self.is_cilium_cli_available() {
+            anyhow::bail!("Cilium CLI installed but not found in PATH. You may need to restart your shell.");
+        }
+
+        Ok(())
     }
 
     pub async fn enable_features(&self) -> Result<()> {
