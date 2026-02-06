@@ -1,244 +1,117 @@
-# Contributing to Cilium TUI
+# Contributing to Cilium Vision
 
-Thank you for your interest in contributing to Cilium TUI!
+Thank you for your interest in contributing to Cilium Vision! This document provides guidelines and information for contributors.
 
-## Development Setup
+## Table of Contents
+
+- [Code of Conduct](#code-of-conduct)
+- [Getting Started](#getting-started)
+- [Development Setup](#development-setup)
+- [Project Structure](#project-structure)
+- [Coding Guidelines](#coding-guidelines)
+- [Testing](#testing)
+- [Submitting Changes](#submitting-changes)
+- [Areas for Contribution](#areas-for-contribution)
+
+## Code of Conduct
+
+This project follows the Rust Code of Conduct. Please be respectful and constructive in all interactions.
+
+## Getting Started
 
 ### Prerequisites
 
-1. Rust toolchain (1.70+)
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.up | sh
-   ```
+- Rust 1.70 or higher
+- Kubernetes cluster (local or remote)
+- Cilium 1.14+ installed on the cluster
+- Basic understanding of:
+  - Rust programming
+  - Kubernetes networking
+  - eBPF concepts (helpful but not required)
 
-2. Kubernetes cluster for testing
-   - minikube
-   - kind
-   - k3s
-   - or any other K8s cluster
-
-3. Cilium installed
-   ```bash
-   cilium install
-   ```
-
-### Building
+### Fork and Clone
 
 ```bash
-git clone <repo>
-cd cilium-tui
+# Fork the repository on GitHub first, then:
+git clone https://github.com/YOUR_USERNAME/cilium-flow.git
+cd cilium-flow
+
+# Add upstream remote
+git remote add upstream https://github.com/ssahani/cilium-flow.git
+```
+
+## Development Setup
+
+### Build from Source
+
+```bash
+# Development build (fast compilation, with debug symbols)
 cargo build
-```
 
-### Running
+# Run with logging
+RUST_LOG=debug cargo run
 
-```bash
-cargo run
-```
+# Run tests
+cargo test
 
-Or with make:
+# Check for issues
+cargo clippy
 
-```bash
-make run
+# Format code
+cargo fmt
 ```
 
 ## Project Structure
 
 ```
-cilium-tui/
+cilium-flow/
 ├── src/
-│   ├── main.rs          # Entry point & CLI args
-│   ├── bootstrap/       # Auto-detection & setup
-│   ├── kubernetes/      # K8s API client wrapper
-│   ├── cilium/          # Cilium-specific operations
-│   ├── hubble/          # Hubble integration
-│   ├── policies/        # Network policy generation
-│   └── tui/             # Terminal UI
-├── examples/            # Example policies
-├── Cargo.toml
-├── README.md
-└── QUICKSTART.md
+│   ├── main.rs              # Application entry point
+│   ├── tui/                 # Terminal UI components
+│   ├── modules/             # Intelligence modules
+│   ├── hubble/              # Hubble gRPC client
+│   ├── kubernetes/          # Kubernetes API client
+│   └── ebpf/                # eBPF data structures
+├── examples/                # Example configs and scenarios
+├── docs/                    # Architecture documentation
+└── README.md               # Main README
 ```
 
-## Making Changes
+## Coding Guidelines
 
-### Code Style
+- Follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)
+- Use `rustfmt` for formatting
+- Use `clippy` for linting
+- Write meaningful error messages
+- Document public APIs
 
-We use `rustfmt` for formatting:
+## Submitting Changes
 
-```bash
-cargo fmt
-```
+### Commit Messages
 
-### Linting
-
-We use `clippy` for linting:
-
-```bash
-cargo clippy
-```
-
-### Testing
-
-Run tests with:
-
-```bash
-cargo test
-```
-
-### Development Workflow
-
-1. Create a branch for your feature
-   ```bash
-   git checkout -b feature/my-feature
-   ```
-
-2. Make your changes
-
-3. Format and lint
-   ```bash
-   make dev
-   ```
-
-4. Test locally with a real cluster
-   ```bash
-   cargo run
-   ```
-
-5. Commit with meaningful messages
-   ```bash
-   git commit -m "Add feature: X"
-   ```
-
-6. Push and create a PR
-   ```bash
-   git push origin feature/my-feature
-   ```
-
-## Areas to Contribute
-
-### High Priority
-
-- [ ] Direct gRPC connection to Hubble (replace CLI calls)
-- [ ] Endpoint health monitoring
-- [ ] Flow filtering and search
-- [ ] Metrics visualization
-
-### Medium Priority
-
-- [ ] Policy recommendation engine
-- [ ] Export flows to JSON/CSV
-- [ ] Custom policy templates
-- [ ] Better error handling
-
-### Low Priority
-
-- [ ] Multi-cluster support
-- [ ] Theme customization
-- [ ] Configuration file support
-
-## Adding a New Feature
-
-### Example: Adding a New TUI Tab
-
-1. Define the tab in `src/tui/mod.rs`:
-
-   ```rust
-   fn render_my_tab(&self, f: &mut Frame, area: Rect) {
-       // Your rendering logic
-   }
-   ```
-
-2. Add it to the tabs array:
-
-   ```rust
-   let titles = vec!["Flows", "Endpoints", "Policies", "Metrics", "MyTab"];
-   ```
-
-3. Handle it in the match statement:
-
-   ```rust
-   match self.selected_tab {
-       // ...
-       4 => self.render_my_tab(f, chunks[2]),
-       _ => {}
-   }
-   ```
-
-### Example: Adding a New Policy
-
-1. Add method to `src/policies/mod.rs`:
-
-   ```rust
-   pub async fn apply_my_policy(&self, namespace: &str) -> Result<()> {
-       let policy = format!(r#"
-   apiVersion: cilium.io/v2
-   kind: CiliumNetworkPolicy
-   metadata:
-     name: my-policy
-     namespace: {namespace}
-   spec:
-     # ... your spec
-   "#);
-
-       self.k8s_client.apply_custom_resource(Some(namespace), &policy).await
-   }
-   ```
-
-2. Call it from bootstrap:
-
-   ```rust
-   policy_mgr.apply_my_policy(ns).await?;
-   ```
-
-## Testing with a Real Cluster
-
-### Setup Test Environment
-
-```bash
-# Create a test cluster
-minikube start
-cilium install
-
-# Deploy test workloads
-kubectl create deployment nginx --image=nginx
-kubectl create deployment curl --image=curlimages/curl -- sleep 3600
-```
-
-### Test the TUI
-
-```bash
-cargo run
-```
-
-### Generate test traffic
-
-```bash
-kubectl exec -it deployment/curl -- curl nginx
-```
-
-Watch the flows appear in the TUI!
-
-## Documentation
-
-When adding features:
-
-1. Update README.md
-2. Add examples to examples/
-3. Update QUICKSTART.md if user-facing
-
-## Commit Messages
-
-Use conventional commits:
+Follow conventional commits format:
 
 ```
-feat: Add flow filtering
-fix: Correct port-forward detection
-docs: Update README with new feature
-refactor: Simplify bootstrap logic
-test: Add tests for policy generation
+<type>(<scope>): <subject>
+
+Co-Authored-By: Your Name <your.email@example.com>
 ```
 
-## Questions?
+**Types**: feat, fix, docs, style, refactor, test, chore
 
-Open an issue or discussion on GitHub!
+## Areas for Contribution
+
+1. Prometheus Integration
+2. Web UI
+3. Additional Chaos Experiments
+4. Policy Templates
+5. Documentation
+
+## Getting Help
+
+- Questions: [GitHub Discussions](https://github.com/ssahani/cilium-flow/discussions)
+- Bugs: [GitHub Issues](https://github.com/ssahani/cilium-flow/issues)
+
+---
+
+Built with ❤️ by the community
