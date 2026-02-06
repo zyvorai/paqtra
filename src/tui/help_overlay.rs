@@ -41,6 +41,22 @@ pub fn render_help_overlay(f: &mut Frame) {
         ]),
         Line::from(""),
         Line::from(vec![
+            Span::styled("═══ FLOWS TAB ═══", Style::default().fg(HEADER_COLOR).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from(vec![
+            Span::styled("  ↑/↓", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("        Navigate flows"),
+        ]),
+        Line::from(vec![
+            Span::styled("  e", Style::default().fg(INFO_COLOR).add_modifier(Modifier::BOLD)),
+            Span::raw("          Explain selected packet (what/why/how)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Esc", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("        Exit packet explanation"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
             Span::styled("═══ HEALER TAB ═══", Style::default().fg(HEADER_COLOR).add_modifier(Modifier::BOLD))
         ]),
         Line::from(vec![

@@ -126,6 +126,11 @@ pub struct TuiApp {
     selected_fix_index: usize,
     fix_apply_confirmation: bool,
 
+    // Packet Explainer state
+    selected_flow_index: usize,
+    show_packet_explanation: bool,
+    packet_explainer: std::cell::RefCell<crate::modules::packet_explainer::PacketExplainer>,
+
     // UX enhancements
     show_help: bool,
     operation_in_progress: bool,
@@ -260,6 +265,9 @@ impl TuiApp {
             applied_policies: std::collections::HashSet::new(),
             selected_fix_index: 0,
             fix_apply_confirmation: false,
+            selected_flow_index: 0,
+            show_packet_explanation: false,
+            packet_explainer: std::cell::RefCell::new(crate::modules::packet_explainer::PacketExplainer::new()),
             show_help: false,
             operation_in_progress: false,
             operation_message: String::new(),
@@ -773,6 +781,29 @@ impl TuiApp {
                             self.fix_apply_confirmation = false;
                             self.set_status_message("Fix application cancelled");
                         }
+                        KeyCode::Up if !self.show_help && self.selected_tab == 0 && !self.show_packet_explanation => {
+                            // Navigate flows up
+                            if self.selected_flow_index > 0 {
+                                self.selected_flow_index -= 1;
+                            }
+                        }
+                        KeyCode::Down if !self.show_help && self.selected_tab == 0 && !self.show_packet_explanation => {
+                            // Navigate flows down
+                            if self.selected_flow_index < self.flows.len().saturating_sub(1).min(49) {
+                                self.selected_flow_index += 1;
+                            }
+                        }
+                        KeyCode::Char('e') if !self.show_help && self.selected_tab == 0 => {
+                            // Toggle packet explanation
+                            self.show_packet_explanation = !self.show_packet_explanation;
+                            if self.show_packet_explanation && !self.flows.is_empty() {
+                                self.set_status_message("📝 Explaining packet...");
+                            }
+                        }
+                        KeyCode::Esc if !self.show_help && self.selected_tab == 0 && self.show_packet_explanation => {
+                            // Exit packet explanation
+                            self.show_packet_explanation = false;
+                        }
                         _ => {}
                     }
                 }
@@ -920,11 +951,21 @@ impl TuiApp {
                     },
                     8 => "?: Help | q: Quit | Tab: Next | s: Run Simulation".to_string(),
                     9 => "?: Help | q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
+                    0 => if self.show_packet_explanation {
+                        "?: Help | q: Quit | Esc: Exit Explanation".to_string()
+                    } else {
+                        "?: Help | q: Quit | ↑/↓: Select Flow | e: Explain Packet".to_string()
+                    },
                     _ => "?: Help | q: Quit | Tab: Next | Shift+Tab: Previous".to_string(),
                 }
             }
         } else {
             match self.selected_tab {
+                0 => if self.show_packet_explanation {
+                    "?: Help | q: Quit | Esc: Exit Explanation".to_string()
+                } else {
+                    "?: Help | q: Quit | ↑/↓: Select Flow | e: Explain Packet".to_string()
+                },
                 5 => "?: Help | q: Quit | Tab: Next | d: Detect Problems".to_string(),
                 6 => if self.policy_apply_confirmation {
                     "⚠️ CONFIRM: y: Apply Policy | n: Cancel | Esc: Cancel".to_string()
@@ -955,6 +996,11 @@ impl TuiApp {
                 },
                 8 => "?: Help | q: Quit | Tab: Next | s: Run Simulation".to_string(),
                 9 => "?: Help | q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
+                0 => if self.show_packet_explanation {
+                    "?: Help | q: Quit | Esc: Exit Explanation".to_string()
+                } else {
+                    "?: Help | q: Quit | ↑/↓: Select Flow | e: Explain Packet".to_string()
+                },
                 _ => "?: Help | q: Quit | Tab: Next | Shift+Tab: Previous".to_string(),
             }
         };
@@ -984,19 +1030,27 @@ impl TuiApp {
     }
 
     fn render_flows(&self, f: &mut Frame, area: ratatui::layout::Rect) {
+        if self.show_packet_explanation {
+            self.render_packet_explanation(f, area);
+            return;
+        }
+
         let items: Vec<ListItem> = self
             .flows
             .iter()
+            .enumerate()
             .take(50)
-            .map(|flow| {
+            .map(|(idx, flow)| {
                 let verdict_color = match flow.verdict.as_str() {
                     "FORWARDED" => FORWARDED_COLOR,
                     "DROPPED" => DROPPED_COLOR,
                     _ => UNKNOWN_TRAFFIC_COLOR,
                 };
 
+                let prefix = if idx == self.selected_flow_index { "▶ " } else { "  " };
                 let content = format!(
-                    "{} {} {}/{} -> {}/{} {}",
+                    "{}{} {} {}/{} -> {}/{} {}",
+                    prefix,
                     flow.time,
                     flow.verdict,
                     flow.source.namespace,
@@ -1006,16 +1060,123 @@ impl TuiApp {
                     flow.r#type,
                 );
 
-                ListItem::new(Line::from(Span::styled(
-                    content,
-                    Style::default().fg(verdict_color),
-                )))
+                let style = if idx == self.selected_flow_index {
+                    Style::default().fg(verdict_color).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(verdict_color)
+                };
+
+                ListItem::new(Line::from(Span::styled(content, style)))
             })
             .collect();
 
+        let title = format!("Live Flows ({}) [↑/↓: Select | e: Explain]", self.flows.len());
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title("Live Flows").border_style(Style::default().fg(BORDER_COLOR)));
+            .block(Block::default().borders(Borders::ALL).title(title).border_style(Style::default().fg(BORDER_COLOR)));
         f.render_widget(list, area);
+    }
+
+    fn render_packet_explanation(&self, f: &mut Frame, area: ratatui::layout::Rect) {
+        if self.flows.is_empty() || self.selected_flow_index >= self.flows.len() {
+            let no_flows = Paragraph::new("No flow selected for explanation.\n\nPress Esc to return.")
+                .style(Style::default().fg(WARNING_COLOR))
+                .block(Block::default().borders(Borders::ALL).title("Packet Explanation"));
+            f.render_widget(no_flows, area);
+            return;
+        }
+
+        let flow = &self.flows[self.selected_flow_index];
+
+        // Parse port from type or use 0
+        let port = flow.r#type.split(':').nth(1)
+            .and_then(|s| s.parse::<u16>().ok())
+            .unwrap_or(0);
+
+        // Generate explanation
+        let explanation = match self.packet_explainer.borrow_mut().explain_packet(
+            &flow.source.namespace,
+            &flow.source.pod_name,
+            &flow.destination.namespace,
+            &flow.destination.pod_name,
+            port,
+            "TCP", // Default to TCP for now
+            &flow.verdict,
+        ) {
+            Ok(exp) => exp,
+            Err(_) => {
+                let error = Paragraph::new("Failed to generate explanation.\n\nPress Esc to return.")
+                    .style(Style::default().fg(ERROR_COLOR))
+                    .block(Block::default().borders(Borders::ALL).title("Error"));
+                f.render_widget(error, area);
+                return;
+            }
+        };
+
+        // Create layout
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(8),  // Header
+                Constraint::Min(10),    // Analysis
+                Constraint::Length(8),  // Troubleshooting
+            ])
+            .split(area);
+
+        // Header
+        let header_text = format!(
+            "📦 Packet Explanation\n\n\
+            Source:      {}\n\
+            Destination: {}\n\
+            Protocol:    {}     Port: {}\n\
+            Verdict:     {}     Time: {}",
+            explanation.source,
+            explanation.destination,
+            explanation.protocol,
+            port,
+            explanation.verdict,
+            explanation.timestamp,
+        );
+
+        let header = Paragraph::new(header_text)
+            .style(Style::default().fg(INFO_COLOR))
+            .block(Block::default().borders(Borders::ALL).title("Packet Info").border_style(Style::default().fg(BORDER_COLOR)));
+        f.render_widget(header, chunks[0]);
+
+        // Analysis
+        let analysis_text = format!(
+            "🔍 What Happened:\n{}\n\n\
+            💡 Why:\n{}\n\n\
+            📋 Policy Context:\n{}\n\n\
+            🔒 Security Analysis:\n{}",
+            explanation.what_happened,
+            explanation.why_happened,
+            explanation.policy_context,
+            explanation.security_analysis,
+        );
+
+        let analysis_color = if explanation.verdict == "DROPPED" {
+            ERROR_COLOR
+        } else {
+            SUCCESS_COLOR
+        };
+
+        let analysis = Paragraph::new(analysis_text)
+            .style(Style::default().fg(analysis_color))
+            .block(Block::default().borders(Borders::ALL).title("Analysis").border_style(Style::default().fg(BORDER_COLOR)))
+            .wrap(ratatui::widgets::Wrap { trim: false });
+        f.render_widget(analysis, chunks[1]);
+
+        // Troubleshooting
+        let tips_text = format!(
+            "🔧 Troubleshooting:\n{}",
+            explanation.troubleshooting_tips.join("\n")
+        );
+
+        let tips = Paragraph::new(tips_text)
+            .style(Style::default().fg(TEXT_COLOR))
+            .block(Block::default().borders(Borders::ALL).title("Tips [Esc: Exit]").border_style(Style::default().fg(BORDER_COLOR)))
+            .wrap(ratatui::widgets::Wrap { trim: false });
+        f.render_widget(tips, chunks[2]);
     }
 
     fn render_connections(&self, f: &mut Frame, area: ratatui::layout::Rect) {

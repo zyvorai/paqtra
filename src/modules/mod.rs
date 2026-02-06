@@ -6,6 +6,7 @@
 /// - rootcause: Drop analysis and explanation
 /// - replay: Traffic recording and replay
 /// - simulator: What-if policy simulation
+/// - packet_explainer: Interactive packet analysis and explanation
 /// - profiler: Performance analysis
 /// - optimizer: Cost and placement optimization
 
@@ -14,6 +15,7 @@ pub mod autopolicy;
 pub mod rootcause;
 pub mod simulator;
 pub mod replay;
+pub mod packet_explainer;
 
 // Future modules (stubs for now)
 // pub mod profiler;
