@@ -193,6 +193,34 @@ pub fn render_help_overlay(f: &mut Frame) {
         ]),
         Line::from(""),
         Line::from(vec![
+            Span::styled("═══ CHAOS TAB ═══", Style::default().fg(HEADER_COLOR).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from(vec![
+            Span::styled("  ↑/↓", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("        Navigate experiments/presets"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Enter", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("      Run selected chaos experiment"),
+        ]),
+        Line::from(vec![
+            Span::styled("  v", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("          Toggle between presets and active experiments"),
+        ]),
+        Line::from(vec![
+            Span::styled("  s", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("          Stop selected experiment"),
+        ]),
+        Line::from(vec![
+            Span::styled("  S", Style::default().fg(ERROR_COLOR).add_modifier(Modifier::BOLD)),
+            Span::raw("          Stop all experiments (emergency)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  b", Style::default().fg(ERROR_COLOR).add_modifier(Modifier::BOLD)),
+            Span::raw("          Trigger circuit breaker (disable all chaos)"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
             Span::styled("═══════════════════════════════════════════════", Style::default().fg(BORDER_COLOR))
         ]),
         Line::from(""),

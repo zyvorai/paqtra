@@ -33,11 +33,13 @@ mod simulator_view;
 mod replay_view;
 mod autopolicy_view;
 mod rootcause_view;
+mod chaos_view;
 mod theme;
 mod help_overlay;
 
 use simulator_view::SimulatorView;
 use replay_view::ReplayView;
+use chaos_view::ChaosView;
 use autopolicy_view::AutoPolicyView;
 use rootcause_view::RootCauseView;
 use theme::*;
@@ -110,6 +112,7 @@ pub struct TuiApp {
     // View state
     simulator_view: SimulatorView,
     replay_view: ReplayView,
+    chaos_view: ChaosView,
     autopolicy_view: AutoPolicyView,
     rootcause_view: RootCauseView,
 
@@ -254,6 +257,7 @@ impl TuiApp {
             status_message_time: std::time::Instant::now(),
             simulator_view: SimulatorView::new(),
             replay_view: ReplayView::new(),
+            chaos_view: ChaosView::new(),
             autopolicy_view: AutoPolicyView::new(),
             rootcause_view: RootCauseView::new(),
             selected_policy_index: 0,
@@ -442,6 +446,45 @@ impl TuiApp {
                         KeyCode::Down if !self.show_help && self.selected_tab == 9 && !self.replay_view.time_travel_mode => {
                             // Navigate recordings down (max 4 recordings in demo)
                             self.replay_view.move_selection_down(4);
+                        }
+                        KeyCode::Char('v') if !self.show_help && self.selected_tab == 10 => {
+                            // Toggle between presets and active experiments
+                            self.chaos_view.toggle_view();
+                        }
+                        KeyCode::Up if !self.show_help && self.selected_tab == 10 => {
+                            // Navigate chaos experiments/presets up
+                            self.chaos_view.move_selection_up();
+                        }
+                        KeyCode::Down if !self.show_help && self.selected_tab == 10 => {
+                            // Navigate chaos experiments/presets down
+                            let max = if self.chaos_view.show_presets { 7 } else { 2 };
+                            self.chaos_view.move_selection_down(max);
+                        }
+                        KeyCode::Enter if !self.show_help && self.selected_tab == 10 && self.chaos_view.show_presets && !self.chaos_view.confirmation_mode => {
+                            // Run chaos experiment
+                            self.chaos_view.trigger_confirmation();
+                        }
+                        KeyCode::Char('y') if !self.show_help && self.selected_tab == 10 && self.chaos_view.confirmation_mode => {
+                            // Confirm chaos experiment
+                            self.chaos_view.cancel_confirmation();
+                            self.set_status_message("Chaos experiment started!");
+                        }
+                        KeyCode::Char('n') if !self.show_help && self.selected_tab == 10 && self.chaos_view.confirmation_mode => {
+                            // Cancel chaos experiment
+                            self.chaos_view.cancel_confirmation();
+                            self.set_status_message("Chaos experiment cancelled");
+                        }
+                        KeyCode::Char('s') if !self.show_help && self.selected_tab == 10 && !self.chaos_view.show_presets => {
+                            // Stop selected experiment
+                            self.set_status_message("Chaos experiment stopped");
+                        }
+                        KeyCode::Char('S') if !self.show_help && self.selected_tab == 10 && !self.chaos_view.show_presets => {
+                            // Stop all experiments
+                            self.set_status_message("All chaos experiments stopped");
+                        }
+                        KeyCode::Char('b') if !self.show_help && self.selected_tab == 10 && !self.chaos_view.circuit_breaker_confirm => {
+                            // Trigger circuit breaker
+                            self.chaos_view.circuit_breaker_confirm = true;
                         }
                         KeyCode::Char('s') if !self.show_help && self.selected_tab == 8 => {
                             // Run simulation
@@ -895,7 +938,8 @@ impl TuiApp {
             "AutoPolicy",
             "RootCause",
             "Simulator",
-            "Replay"
+            "Replay",
+            "Chaos"
         ];
         let tabs = Tabs::new(titles)
             .block(Block::default().borders(Borders::ALL).title("Intelligence Modules").border_style(Style::default().fg(BORDER_COLOR)))
@@ -966,6 +1010,10 @@ impl TuiApp {
                     }
                 }
             }
+            10 => {
+                // Chaos view
+                self.chaos_view.render(f, chunks[2], None)
+            }
             _ => {}
         }
 
@@ -1019,6 +1067,13 @@ impl TuiApp {
                     } else {
                         "?: Help | q: Quit | ↑/↓: Select | t: Time-Travel | r: Refresh".to_string()
                     },
+                    10 => if self.chaos_view.confirmation_mode {
+                        "⚠️ CONFIRM: y: Run Experiment | n: Cancel".to_string()
+                    } else if self.chaos_view.show_presets {
+                        "?: Help | ↑/↓: Select | Enter: Run | v: View Active | b: Circuit Breaker".to_string()
+                    } else {
+                        "?: Help | ↑/↓: Select | s: Stop | S: Stop All | v: View Presets".to_string()
+                    },
                     0 => if self.show_packet_explanation {
                         "?: Help | q: Quit | Esc: Exit Explanation".to_string()
                     } else {
@@ -1068,6 +1123,13 @@ impl TuiApp {
                     "?: Help | q: Quit | ↑/↓: Select | s: Simulate | c: Clear".to_string()
                 },
                 9 => "?: Help | q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
+                10 => if self.chaos_view.confirmation_mode {
+                    "⚠️ CONFIRM: y: Run Experiment | n: Cancel".to_string()
+                } else if self.chaos_view.show_presets {
+                    "?: Help | ↑/↓: Select | Enter: Run | v: View Active | b: Circuit Breaker".to_string()
+                } else {
+                    "?: Help | ↑/↓: Select | s: Stop | S: Stop All | v: View Presets".to_string()
+                },
                 0 => if self.show_packet_explanation {
                     "?: Help | q: Quit | Esc: Exit Explanation".to_string()
                 } else {

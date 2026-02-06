@@ -16,6 +16,7 @@ pub mod rootcause;
 pub mod simulator;
 pub mod replay;
 pub mod packet_explainer;
+pub mod chaos;
 
 // Future modules (stubs for now)
 // pub mod profiler;
