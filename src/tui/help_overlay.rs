@@ -156,8 +156,40 @@ pub fn render_help_overlay(f: &mut Frame) {
             Span::styled("═══ REPLAY TAB ═══", Style::default().fg(HEADER_COLOR).add_modifier(Modifier::BOLD))
         ]),
         Line::from(vec![
+            Span::styled("  ↑/↓", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("        Navigate recordings"),
+        ]),
+        Line::from(vec![
+            Span::styled("  t", Style::default().fg(INFO_COLOR).add_modifier(Modifier::BOLD)),
+            Span::raw("          Enter time-travel debugging mode"),
+        ]),
+        Line::from(vec![
             Span::styled("  r", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
             Span::raw("          Refresh recordings list"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  ══ Time-Travel Mode ══", Style::default().fg(INFO_COLOR).add_modifier(Modifier::BOLD))
+        ]),
+        Line::from(vec![
+            Span::styled("  ←/→", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("        Step backward/forward in timeline"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Space", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("      Play/Pause timeline playback"),
+        ]),
+        Line::from(vec![
+            Span::styled("  [/]", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("        Jump to previous/next event marker"),
+        ]),
+        Line::from(vec![
+            Span::styled("  +/-", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("        Increase/decrease playback speed"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Esc", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("        Exit time-travel mode"),
         ]),
         Line::from(""),
         Line::from(vec![

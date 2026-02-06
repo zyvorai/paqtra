@@ -399,6 +399,50 @@ impl TuiApp {
                         KeyCode::Char('r') if !self.show_help && self.selected_tab == 9 => {
                             // Refresh recordings list (placeholder)
                         }
+                        KeyCode::Char('t') if !self.show_help && self.selected_tab == 9 && !self.replay_view.time_travel_mode => {
+                            // Enter time-travel mode
+                            self.replay_view.enter_time_travel();
+                        }
+                        KeyCode::Esc if !self.show_help && self.selected_tab == 9 && self.replay_view.time_travel_mode => {
+                            // Exit time-travel mode
+                            self.replay_view.exit_time_travel();
+                        }
+                        KeyCode::Left if !self.show_help && self.selected_tab == 9 && self.replay_view.time_travel_mode => {
+                            // Step backward in timeline
+                            self.replay_view.step_backward();
+                        }
+                        KeyCode::Right if !self.show_help && self.selected_tab == 9 && self.replay_view.time_travel_mode => {
+                            // Step forward in timeline
+                            self.replay_view.step_forward();
+                        }
+                        KeyCode::Char(' ') if !self.show_help && self.selected_tab == 9 && self.replay_view.time_travel_mode => {
+                            // Toggle playback
+                            self.replay_view.toggle_playback();
+                        }
+                        KeyCode::Char('[') if !self.show_help && self.selected_tab == 9 && self.replay_view.time_travel_mode => {
+                            // Jump to previous event
+                            self.replay_view.jump_to_prev_event();
+                        }
+                        KeyCode::Char(']') if !self.show_help && self.selected_tab == 9 && self.replay_view.time_travel_mode => {
+                            // Jump to next event
+                            self.replay_view.jump_to_next_event();
+                        }
+                        KeyCode::Char('+') if !self.show_help && self.selected_tab == 9 && self.replay_view.time_travel_mode => {
+                            // Increase playback speed
+                            self.replay_view.adjust_speed(true);
+                        }
+                        KeyCode::Char('-') if !self.show_help && self.selected_tab == 9 && self.replay_view.time_travel_mode => {
+                            // Decrease playback speed
+                            self.replay_view.adjust_speed(false);
+                        }
+                        KeyCode::Up if !self.show_help && self.selected_tab == 9 && !self.replay_view.time_travel_mode => {
+                            // Navigate recordings up
+                            self.replay_view.move_selection_up();
+                        }
+                        KeyCode::Down if !self.show_help && self.selected_tab == 9 && !self.replay_view.time_travel_mode => {
+                            // Navigate recordings down (max 4 recordings in demo)
+                            self.replay_view.move_selection_down(4);
+                        }
                         KeyCode::Char('s') if !self.show_help && self.selected_tab == 8 => {
                             // Run simulation
                             self.simulator_view.trigger_simulation();
@@ -966,7 +1010,15 @@ impl TuiApp {
                     } else {
                         "?: Help | q: Quit | ↑/↓: Select | s: Simulate | c: Clear".to_string()
                     },
-                    9 => "?: Help | q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
+                    9 => if self.replay_view.time_travel_mode {
+                        if self.replay_view.is_playing {
+                            "?: Help | Space: Pause | ←/→: Step | [/]: Jump Events | +/-: Speed | Esc: Exit".to_string()
+                        } else {
+                            "?: Help | Space: Play | ←/→: Step | [/]: Jump Events | +/-: Speed | Esc: Exit".to_string()
+                        }
+                    } else {
+                        "?: Help | q: Quit | ↑/↓: Select | t: Time-Travel | r: Refresh".to_string()
+                    },
                     0 => if self.show_packet_explanation {
                         "?: Help | q: Quit | Esc: Exit Explanation".to_string()
                     } else {
