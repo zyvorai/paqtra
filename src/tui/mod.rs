@@ -114,6 +114,7 @@ pub struct TuiApp {
     selected_policy_index: usize,
     policy_detail_mode: bool,
     policy_apply_confirmation: bool,
+    policy_rollback_confirmation: bool,
     applied_policies: std::collections::HashSet<String>,
 }
 
@@ -239,6 +240,7 @@ impl TuiApp {
             selected_policy_index: 0,
             policy_detail_mode: false,
             policy_apply_confirmation: false,
+            policy_rollback_confirmation: false,
             applied_policies: std::collections::HashSet::new(),
         })
     }
@@ -465,6 +467,9 @@ impl TuiApp {
                             if self.policy_apply_confirmation {
                                 self.policy_apply_confirmation = false;
                                 self.set_status_message("Policy application cancelled");
+                            } else if self.policy_rollback_confirmation {
+                                self.policy_rollback_confirmation = false;
+                                self.set_status_message("Policy rollback cancelled");
                             } else {
                                 self.policy_detail_mode = false;
                                 self.selected_policy_index = 0;
@@ -519,6 +524,55 @@ impl TuiApp {
                             // Cancel policy application
                             self.policy_apply_confirmation = false;
                             self.set_status_message("Policy application cancelled");
+                        }
+                        KeyCode::Char('r') if self.selected_tab == 6 && self.policy_detail_mode && !self.policy_apply_confirmation && !self.policy_rollback_confirmation => {
+                            // Trigger policy rollback confirmation
+                            let policies = match &self.modules {
+                                ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
+                                ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
+                            };
+
+                            if !policies.is_empty() {
+                                let policy_name = &policies[self.selected_policy_index].name;
+                                if !self.applied_policies.contains(policy_name) {
+                                    self.set_status_message(&format!("⚠️ Policy '{}' not applied, cannot rollback", policy_name));
+                                } else {
+                                    self.policy_rollback_confirmation = true;
+                                    self.set_status_message(&format!("Rollback policy '{}'? Press 'y' to confirm, 'n' to cancel", policy_name));
+                                }
+                            }
+                        }
+                        KeyCode::Char('y') if self.selected_tab == 6 && self.policy_rollback_confirmation => {
+                            // Confirm and rollback policy
+                            self.policy_rollback_confirmation = false;
+
+                            let policies = match &self.modules {
+                                ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
+                                ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
+                            };
+
+                            if !policies.is_empty() {
+                                let policy = &policies[self.selected_policy_index];
+                                let policy_name = policy.name.clone();
+                                let policy_namespace = policy.namespace.clone();
+
+                                match self.rollback_policy_kubectl(&policy_name, &policy_namespace) {
+                                    Ok(_) => {
+                                        self.applied_policies.remove(&policy_name);
+                                        self.set_status_message(&format!("✅ Policy '{}' rolled back successfully", policy_name));
+                                        tracing::info!("Rolled back policy: {}", policy_name);
+                                    }
+                                    Err(e) => {
+                                        self.set_status_message(&format!("❌ Failed to rollback policy: {}", e));
+                                        tracing::error!("Failed to rollback policy '{}': {}", policy_name, e);
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Char('n') if self.selected_tab == 6 && self.policy_rollback_confirmation => {
+                            // Cancel policy rollback
+                            self.policy_rollback_confirmation = false;
+                            self.set_status_message("Policy rollback cancelled");
                         }
                         _ => {}
                     }
@@ -640,8 +694,19 @@ impl TuiApp {
                     5 => "q: Quit | Tab: Next | d: Detect Problems (manual)".to_string(),
                     6 => if self.policy_apply_confirmation {
                         "⚠️ CONFIRM: y: Apply Policy | n: Cancel | Esc: Cancel".to_string()
+                    } else if self.policy_rollback_confirmation {
+                        "⚠️ CONFIRM: y: Rollback Policy | n: Cancel | Esc: Cancel".to_string()
                     } else if self.policy_detail_mode {
-                        "q: Quit | Esc: Exit | ↑/↓: Navigate | a: Apply Policy".to_string()
+                        // Show different options based on policy applied status
+                        let policies = match &self.modules {
+                            ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
+                            ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
+                        };
+                        if !policies.is_empty() && self.applied_policies.contains(&policies[self.selected_policy_index].name) {
+                            "q: Quit | Esc: Exit | ↑/↓: Navigate | r: Rollback Policy".to_string()
+                        } else {
+                            "q: Quit | Esc: Exit | ↑/↓: Navigate | a: Apply Policy".to_string()
+                        }
                     } else {
                         "q: Quit | Tab: Next | u: Update Learning | g: Generate | v: View Details".to_string()
                     },
@@ -655,8 +720,19 @@ impl TuiApp {
                 5 => "q: Quit | Tab: Next | d: Detect Problems (manual)".to_string(),
                 6 => if self.policy_apply_confirmation {
                     "⚠️ CONFIRM: y: Apply Policy | n: Cancel | Esc: Cancel".to_string()
+                } else if self.policy_rollback_confirmation {
+                    "⚠️ CONFIRM: y: Rollback Policy | n: Cancel | Esc: Cancel".to_string()
                 } else if self.policy_detail_mode {
-                    "q: Quit | Esc: Exit | ↑/↓: Navigate | a: Apply Policy".to_string()
+                    // Show different options based on policy applied status
+                    let policies = match &self.modules {
+                        ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
+                        ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
+                    };
+                    if !policies.is_empty() && self.applied_policies.contains(&policies[self.selected_policy_index].name) {
+                        "q: Quit | Esc: Exit | ↑/↓: Navigate | r: Rollback Policy".to_string()
+                    } else {
+                        "q: Quit | Esc: Exit | ↑/↓: Navigate | a: Apply Policy".to_string()
+                    }
                 } else {
                     "q: Quit | Tab: Next | u: Update Learning | g: Generate | v: View Details".to_string()
                 },
@@ -666,7 +742,7 @@ impl TuiApp {
             }
         };
 
-        let footer_style = if self.policy_apply_confirmation {
+        let footer_style = if self.policy_apply_confirmation || self.policy_rollback_confirmation {
             // Confirmation prompt - use red for warning
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
         } else if self.status_message.is_some() && self.status_message_time.elapsed().as_secs() < 5 {
@@ -1067,6 +1143,27 @@ impl TuiApp {
         }
     }
 
+    fn rollback_policy_kubectl(&self, policy_name: &str, namespace: &str) -> Result<()> {
+        use std::process::Command;
+
+        // Delete the CiliumNetworkPolicy using kubectl
+        let output = Command::new("kubectl")
+            .args(["delete", "ciliumnetworkpolicy", policy_name, "-n", namespace])
+            .output()?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Check if error is "not found" - treat as success (already deleted)
+            if stderr.contains("NotFound") || stderr.contains("not found") {
+                Ok(())
+            } else {
+                Err(anyhow::anyhow!("kubectl delete failed: {}", stderr))
+            }
+        }
+    }
+
     fn render_policy_detail(&self, f: &mut Frame, area: ratatui::layout::Rect) {
         let policies = match &self.modules {
             ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
@@ -1120,7 +1217,7 @@ impl TuiApp {
             selected_policy.name,
             selected_policy.yaml,
             if is_applied {
-                "Press ↑/↓ to navigate | Esc to exit | Policy already applied"
+                "Press ↑/↓ to navigate | r: Rollback Policy | Esc to exit"
             } else {
                 "Press ↑/↓ to navigate | a: Apply Policy | Esc to exit"
             }
