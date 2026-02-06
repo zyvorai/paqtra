@@ -34,6 +34,7 @@ mod replay_view;
 mod autopolicy_view;
 mod rootcause_view;
 mod theme;
+mod help_overlay;
 
 use simulator_view::SimulatorView;
 use replay_view::ReplayView;
@@ -120,6 +121,11 @@ pub struct TuiApp {
     policy_batch_apply_confirmation: bool,
     policy_batch_rollback_confirmation: bool,
     applied_policies: std::collections::HashSet<String>,
+
+    // UX enhancements
+    show_help: bool,
+    operation_in_progress: bool,
+    operation_message: String,
 }
 
 impl TuiApp {
@@ -248,6 +254,9 @@ impl TuiApp {
             policy_batch_apply_confirmation: false,
             policy_batch_rollback_confirmation: false,
             applied_policies: std::collections::HashSet::new(),
+            show_help: false,
+            operation_in_progress: false,
+            operation_message: String::new(),
         })
     }
 
@@ -354,25 +363,33 @@ impl TuiApp {
             if event::poll(Duration::from_millis(250))? {
                 if let Event::Key(key) = event::read()? {
                     match key.code {
-                        KeyCode::Char('q') => return Ok(()),
-                        KeyCode::Tab => {
+                        KeyCode::Char('?') => {
+                            // Toggle help overlay
+                            self.show_help = !self.show_help;
+                        }
+                        KeyCode::Esc if self.show_help => {
+                            // Close help overlay
+                            self.show_help = false;
+                        }
+                        KeyCode::Char('q') if !self.show_help => return Ok(()),
+                        KeyCode::Tab if !self.show_help => {
                             self.selected_tab = (self.selected_tab + 1) % 10;
                         }
-                        KeyCode::BackTab => {
+                        KeyCode::BackTab if !self.show_help => {
                             self.selected_tab = if self.selected_tab == 0 {
                                 9
                             } else {
                                 self.selected_tab - 1
                             };
                         }
-                        KeyCode::Char('r') if self.selected_tab == 9 => {
+                        KeyCode::Char('r') if !self.show_help && self.selected_tab == 9 => {
                             // Refresh recordings list (placeholder)
                         }
-                        KeyCode::Char('s') if self.selected_tab == 8 => {
+                        KeyCode::Char('s') if !self.show_help && self.selected_tab == 8 => {
                             // Run simulation
                             self.simulator_view.trigger_simulation();
                         }
-                        KeyCode::Char('d') if self.selected_tab == 5 => {
+                        KeyCode::Char('d') if !self.show_help && self.selected_tab == 5 => {
                             // Detect problems manually (Healer tab)
                             match &mut self.modules {
                                 ModuleContainer::Enriched { healer, .. } => {
@@ -390,7 +407,7 @@ impl TuiApp {
                             }
                             self.last_healer_run = std::time::Instant::now();
                         }
-                        KeyCode::Char('u') if self.selected_tab == 6 => {
+                        KeyCode::Char('u') if !self.show_help && self.selected_tab == 6 => {
                             // Update learning manually (AutoPolicy tab)
                             match &mut self.modules {
                                 ModuleContainer::Enriched { autopolicy, .. } => {
@@ -408,7 +425,7 @@ impl TuiApp {
                             }
                             self.last_autopolicy_update = std::time::Instant::now();
                         }
-                        KeyCode::Char('g') if self.selected_tab == 6 => {
+                        KeyCode::Char('g') if !self.show_help && self.selected_tab == 6 => {
                             // Generate policies (AutoPolicy tab)
                             let result = match &mut self.modules {
                                 ModuleContainer::Enriched { autopolicy, .. } => autopolicy.generate_policies(),
@@ -443,7 +460,7 @@ impl TuiApp {
                                 }
                             }
                         }
-                        KeyCode::Char('A') if self.selected_tab == 6 && !self.policy_detail_mode => {
+                        KeyCode::Char('A') if !self.show_help && self.selected_tab == 6 && !self.policy_detail_mode => {
                             // Batch apply all unapplied policies
                             let policies = match &self.modules {
                                 ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
@@ -459,7 +476,7 @@ impl TuiApp {
                                 self.set_status_message(&format!("Apply {} policies? Press 'y' to confirm, 'n' to cancel", unapplied_count));
                             }
                         }
-                        KeyCode::Char('R') if self.selected_tab == 6 && !self.policy_detail_mode => {
+                        KeyCode::Char('R') if !self.show_help && self.selected_tab == 6 && !self.policy_detail_mode => {
                             // Batch rollback all applied policies
                             let applied_count = self.applied_policies.len();
 
@@ -470,7 +487,7 @@ impl TuiApp {
                                 self.set_status_message(&format!("Rollback {} policies? Press 'y' to confirm, 'n' to cancel", applied_count));
                             }
                         }
-                        KeyCode::Char('y') if self.selected_tab == 6 && self.policy_batch_apply_confirmation => {
+                        KeyCode::Char('y') if !self.show_help && self.selected_tab == 6 && self.policy_batch_apply_confirmation => {
                             // Confirm batch apply
                             self.policy_batch_apply_confirmation = false;
 
@@ -507,7 +524,7 @@ impl TuiApp {
                                 self.set_status_message(&format!("⚠️ Applied: {}, Failed: {}", applied, failed));
                             }
                         }
-                        KeyCode::Char('y') if self.selected_tab == 6 && self.policy_batch_rollback_confirmation => {
+                        KeyCode::Char('y') if !self.show_help && self.selected_tab == 6 && self.policy_batch_rollback_confirmation => {
                             // Confirm batch rollback
                             self.policy_batch_rollback_confirmation = false;
 
@@ -543,7 +560,7 @@ impl TuiApp {
                                 self.set_status_message(&format!("⚠️ Rolled back: {}, Failed: {}", rolled_back, failed));
                             }
                         }
-                        KeyCode::Char('n') if self.selected_tab == 6 && (self.policy_batch_apply_confirmation || self.policy_batch_rollback_confirmation) => {
+                        KeyCode::Char('n') if !self.show_help && self.selected_tab == 6 && (self.policy_batch_apply_confirmation || self.policy_batch_rollback_confirmation) => {
                             // Cancel batch operation
                             if self.policy_batch_apply_confirmation {
                                 self.policy_batch_apply_confirmation = false;
@@ -553,7 +570,7 @@ impl TuiApp {
                                 self.set_status_message("Batch rollback cancelled");
                             }
                         }
-                        KeyCode::Char('v') if self.selected_tab == 6 => {
+                        KeyCode::Char('v') if !self.show_help && self.selected_tab == 6 => {
                             // Toggle policy detail view (AutoPolicy tab)
                             self.policy_detail_mode = !self.policy_detail_mode;
                             if self.policy_detail_mode {
@@ -562,13 +579,13 @@ impl TuiApp {
                                 self.selected_policy_index = 0;
                             }
                         }
-                        KeyCode::Up if self.selected_tab == 6 && self.policy_detail_mode => {
+                        KeyCode::Up if !self.show_help && self.selected_tab == 6 && self.policy_detail_mode => {
                             // Navigate policies up
                             if self.selected_policy_index > 0 {
                                 self.selected_policy_index -= 1;
                             }
                         }
-                        KeyCode::Down if self.selected_tab == 6 && self.policy_detail_mode => {
+                        KeyCode::Down if !self.show_help && self.selected_tab == 6 && self.policy_detail_mode => {
                             // Navigate policies down
                             let policy_count = match &self.modules {
                                 ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies().len(),
@@ -578,7 +595,7 @@ impl TuiApp {
                                 self.selected_policy_index += 1;
                             }
                         }
-                        KeyCode::Esc if self.selected_tab == 6 => {
+                        KeyCode::Esc if !self.show_help && self.selected_tab == 6 => {
                             // Exit or cancel confirmations
                             if self.policy_apply_confirmation {
                                 self.policy_apply_confirmation = false;
@@ -597,7 +614,7 @@ impl TuiApp {
                                 self.selected_policy_index = 0;
                             }
                         }
-                        KeyCode::Char('a') if self.selected_tab == 6 && self.policy_detail_mode && !self.policy_apply_confirmation => {
+                        KeyCode::Char('a') if !self.show_help && self.selected_tab == 6 && self.policy_detail_mode && !self.policy_apply_confirmation => {
                             // Trigger policy application confirmation
                             let policies = match &self.modules {
                                 ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
@@ -614,7 +631,7 @@ impl TuiApp {
                                 }
                             }
                         }
-                        KeyCode::Char('y') if self.selected_tab == 6 && self.policy_apply_confirmation => {
+                        KeyCode::Char('y') if !self.show_help && self.selected_tab == 6 && self.policy_apply_confirmation => {
                             // Confirm and apply policy
                             self.policy_apply_confirmation = false;
 
@@ -642,12 +659,12 @@ impl TuiApp {
                                 }
                             }
                         }
-                        KeyCode::Char('n') if self.selected_tab == 6 && self.policy_apply_confirmation => {
+                        KeyCode::Char('n') if !self.show_help && self.selected_tab == 6 && self.policy_apply_confirmation => {
                             // Cancel policy application
                             self.policy_apply_confirmation = false;
                             self.set_status_message("Policy application cancelled");
                         }
-                        KeyCode::Char('r') if self.selected_tab == 6 && self.policy_detail_mode && !self.policy_apply_confirmation && !self.policy_rollback_confirmation => {
+                        KeyCode::Char('r') if !self.show_help && self.selected_tab == 6 && self.policy_detail_mode && !self.policy_apply_confirmation && !self.policy_rollback_confirmation => {
                             // Trigger policy rollback confirmation
                             let policies = match &self.modules {
                                 ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
@@ -664,7 +681,7 @@ impl TuiApp {
                                 }
                             }
                         }
-                        KeyCode::Char('y') if self.selected_tab == 6 && self.policy_rollback_confirmation => {
+                        KeyCode::Char('y') if !self.show_help && self.selected_tab == 6 && self.policy_rollback_confirmation => {
                             // Confirm and rollback policy
                             self.policy_rollback_confirmation = false;
 
@@ -691,7 +708,7 @@ impl TuiApp {
                                 }
                             }
                         }
-                        KeyCode::Char('n') if self.selected_tab == 6 && self.policy_rollback_confirmation => {
+                        KeyCode::Char('n') if !self.show_help && self.selected_tab == 6 && self.policy_rollback_confirmation => {
                             // Cancel policy rollback
                             self.policy_rollback_confirmation = false;
                             self.set_status_message("Policy rollback cancelled");
@@ -813,7 +830,7 @@ impl TuiApp {
             } else {
                 // Clear expired message
                 match self.selected_tab {
-                    5 => "q: Quit | Tab: Next | d: Detect Problems (manual)".to_string(),
+                    5 => "?: Help | q: Quit | Tab: Next | d: Detect Problems".to_string(),
                     6 => if self.policy_apply_confirmation {
                         "⚠️ CONFIRM: y: Apply Policy | n: Cancel | Esc: Cancel".to_string()
                     } else if self.policy_rollback_confirmation {
@@ -829,21 +846,21 @@ impl TuiApp {
                             ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
                         };
                         if !policies.is_empty() && self.applied_policies.contains(&policies[self.selected_policy_index].name) {
-                            "q: Quit | Esc: Exit | ↑/↓: Navigate | r: Rollback Policy".to_string()
+                            "?: Help | q: Quit | Esc: Exit | ↑/↓: Navigate | r: Rollback".to_string()
                         } else {
-                            "q: Quit | Esc: Exit | ↑/↓: Navigate | a: Apply Policy".to_string()
+                            "?: Help | q: Quit | Esc: Exit | ↑/↓: Navigate | a: Apply".to_string()
                         }
                     } else {
-                        "q: Quit | Tab: Next | u: Update | g: Generate | v: View | A: Apply All | R: Rollback All".to_string()
+                        "?: Help | q: Quit | u: Update | g: Generate | v: View | A: Apply All | R: Rollback All".to_string()
                     },
-                    8 => "q: Quit | Tab: Next | s: Run Simulation".to_string(),
-                    9 => "q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
-                    _ => "q: Quit | Tab: Next View | Shift+Tab: Previous View".to_string(),
+                    8 => "?: Help | q: Quit | Tab: Next | s: Run Simulation".to_string(),
+                    9 => "?: Help | q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
+                    _ => "?: Help | q: Quit | Tab: Next | Shift+Tab: Previous".to_string(),
                 }
             }
         } else {
             match self.selected_tab {
-                5 => "q: Quit | Tab: Next | d: Detect Problems (manual)".to_string(),
+                5 => "?: Help | q: Quit | Tab: Next | d: Detect Problems".to_string(),
                 6 => if self.policy_apply_confirmation {
                     "⚠️ CONFIRM: y: Apply Policy | n: Cancel | Esc: Cancel".to_string()
                 } else if self.policy_rollback_confirmation {
@@ -859,16 +876,16 @@ impl TuiApp {
                         ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
                     };
                     if !policies.is_empty() && self.applied_policies.contains(&policies[self.selected_policy_index].name) {
-                        "q: Quit | Esc: Exit | ↑/↓: Navigate | r: Rollback Policy".to_string()
+                        "?: Help | q: Quit | Esc: Exit | ↑/↓: Navigate | r: Rollback".to_string()
                     } else {
-                        "q: Quit | Esc: Exit | ↑/↓: Navigate | a: Apply Policy".to_string()
+                        "?: Help | q: Quit | Esc: Exit | ↑/↓: Navigate | a: Apply".to_string()
                     }
                 } else {
-                    "q: Quit | Tab: Next | u: Update | g: Generate | v: View | A: Apply All | R: Rollback All".to_string()
+                    "?: Help | q: Quit | u: Update | g: Generate | v: View | A: Apply All | R: Rollback All".to_string()
                 },
-                8 => "q: Quit | Tab: Next | s: Run Simulation".to_string(),
-                9 => "q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
-                _ => "q: Quit | Tab: Next View | Shift+Tab: Previous View".to_string(),
+                8 => "?: Help | q: Quit | Tab: Next | s: Run Simulation".to_string(),
+                9 => "?: Help | q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
+                _ => "?: Help | q: Quit | Tab: Next | Shift+Tab: Previous".to_string(),
             }
         };
 
@@ -885,6 +902,15 @@ impl TuiApp {
             .style(footer_style)
             .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(BORDER_COLOR)));
         f.render_widget(footer, chunks[3]);
+
+        // Render help overlay on top if active
+        if self.show_help {
+            self.render_help_overlay(f);
+        }
+    }
+
+    fn render_help_overlay(&self, f: &mut Frame) {
+        help_overlay::render_help_overlay(f);
     }
 
     fn render_flows(&self, f: &mut Frame, area: ratatui::layout::Rect) {
