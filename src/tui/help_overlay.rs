@@ -140,8 +140,16 @@ pub fn render_help_overlay(f: &mut Frame) {
             Span::styled("═══ SIMULATOR TAB ═══", Style::default().fg(HEADER_COLOR).add_modifier(Modifier::BOLD))
         ]),
         Line::from(vec![
+            Span::styled("  ↑/↓", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("        Navigate scenarios"),
+        ]),
+        Line::from(vec![
             Span::styled("  s", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
-            Span::raw("          Run simulation (what-if analysis)"),
+            Span::raw("          Run simulation (dry-run what-if analysis)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  c", Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)),
+            Span::raw("          Clear simulation results"),
         ]),
         Line::from(""),
         Line::from(vec![

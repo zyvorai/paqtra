@@ -403,6 +403,18 @@ impl TuiApp {
                             // Run simulation
                             self.simulator_view.trigger_simulation();
                         }
+                        KeyCode::Char('c') if !self.show_help && self.selected_tab == 8 => {
+                            // Clear simulation results
+                            self.simulator_view.clear_simulation();
+                        }
+                        KeyCode::Up if !self.show_help && self.selected_tab == 8 && self.simulator_view.last_simulation.is_none() => {
+                            // Navigate scenarios up
+                            self.simulator_view.move_selection_up();
+                        }
+                        KeyCode::Down if !self.show_help && self.selected_tab == 8 && self.simulator_view.last_simulation.is_none() => {
+                            // Navigate scenarios down (max 7 scenarios)
+                            self.simulator_view.move_selection_down(7);
+                        }
                         KeyCode::Char('d') if !self.show_help && self.selected_tab == 5 => {
                             // Detect problems manually (Healer tab)
                             match &mut self.modules {
@@ -949,7 +961,11 @@ impl TuiApp {
                     } else {
                         "?: Help | q: Quit | ↑/↓: Select Fix | a: Apply Fix".to_string()
                     },
-                    8 => "?: Help | q: Quit | Tab: Next | s: Run Simulation".to_string(),
+                    8 => if self.simulator_view.last_simulation.is_some() {
+                        "?: Help | q: Quit | c: Clear Results | Esc: Back".to_string()
+                    } else {
+                        "?: Help | q: Quit | ↑/↓: Select | s: Simulate | c: Clear".to_string()
+                    },
                     9 => "?: Help | q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
                     0 => if self.show_packet_explanation {
                         "?: Help | q: Quit | Esc: Exit Explanation".to_string()
@@ -994,7 +1010,11 @@ impl TuiApp {
                 } else {
                     "?: Help | q: Quit | ↑/↓: Select Fix | a: Apply Fix".to_string()
                 },
-                8 => "?: Help | q: Quit | Tab: Next | s: Run Simulation".to_string(),
+                8 => if self.simulator_view.last_simulation.is_some() {
+                    "?: Help | q: Quit | c: Clear Results | Esc: Back".to_string()
+                } else {
+                    "?: Help | q: Quit | ↑/↓: Select | s: Simulate | c: Clear".to_string()
+                },
                 9 => "?: Help | q: Quit | Tab: Next | r: Refresh Recordings".to_string(),
                 0 => if self.show_packet_explanation {
                     "?: Help | q: Quit | Esc: Exit Explanation".to_string()

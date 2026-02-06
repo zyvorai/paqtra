@@ -3,27 +3,55 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
 use crate::ebpf::MapReader;
-use crate::modules::simulator::Simulator;
+use crate::modules::simulator::{Simulator, SimulationResult};
 use super::theme::*;
 
 pub struct SimulatorView {
     pub should_simulate: bool,
+    pub selected_scenario_index: usize,
+    pub last_simulation: Option<SimulationResult>,
+    pub simulation_running: bool,
 }
 
 impl SimulatorView {
     pub fn new() -> Self {
         Self {
             should_simulate: false,
+            selected_scenario_index: 0,
+            last_simulation: None,
+            simulation_running: false,
         }
     }
 
     pub fn trigger_simulation(&mut self) {
         self.should_simulate = true;
+        self.simulation_running = true;
+    }
+
+    pub fn move_selection_up(&mut self) {
+        if self.selected_scenario_index > 0 {
+            self.selected_scenario_index -= 1;
+        }
+    }
+
+    pub fn move_selection_down(&mut self, max_scenarios: usize) {
+        if self.selected_scenario_index < max_scenarios - 1 {
+            self.selected_scenario_index += 1;
+        }
+    }
+
+    pub fn set_simulation_result(&mut self, result: SimulationResult) {
+        self.last_simulation = Some(result);
+        self.simulation_running = false;
+    }
+
+    pub fn clear_simulation(&mut self) {
+        self.last_simulation = None;
     }
 
     pub fn render<M: MapReader>(
@@ -32,113 +60,329 @@ impl SimulatorView {
         area: ratatui::layout::Rect,
         simulator: Option<&Simulator<M>>,
     ) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(10), // Header & Stats
-                Constraint::Min(8),     // Simulation Results
-                Constraint::Length(8),  // Risk Assessment
-            ])
-            .split(area);
+        if self.last_simulation.is_some() {
+            // Show detailed simulation results
+            self.render_detailed_results(f, area);
+        } else {
+            // Show scenario selection
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(8),  // Header & Stats
+                    Constraint::Min(10),    // Scenario Selection
+                    Constraint::Length(10), // Scenario Details
+                ])
+                .split(area);
 
-        // Header
-        self.render_header(f, chunks[0]);
+            // Header
+            self.render_header(f, chunks[0], simulator);
 
-        // Simulation Results
-        self.render_results(f, chunks[1], simulator);
+            // Scenario Selection
+            self.render_scenario_list(f, chunks[1]);
 
-        // Risk Assessment
-        self.render_risk(f, chunks[2]);
+            // Selected Scenario Details
+            self.render_scenario_details(f, chunks[2]);
+        }
     }
 
-    fn render_header(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let content = Paragraph::new(
-            "🔮 What-If Simulator\n\n\
-            Test policy changes safely before applying to production.\n\
-            Predict impact, assess risk, identify affected services.\n\n\
-            Available Scenarios:\n\
-            • Add/Remove/Modify Policy  • Block/Allow Traffic\n\
-            • Block External IP          • Default Deny Mode\n\n\
-            Press 's' to run a demo simulation",
-        )
-        .style(Style::default().fg(INFO_COLOR))
-        .block(Block::default().borders(Borders::ALL).title("Simulator Overview").border_style(Style::default().fg(BORDER_COLOR)));
+    fn render_header<M: MapReader>(
+        &self,
+        f: &mut Frame,
+        area: ratatui::layout::Rect,
+        simulator: Option<&Simulator<M>>,
+    ) {
+        let stats = if let Some(sim) = simulator {
+            let stats = sim.stats();
+            format!(
+                "🔮 Dry-Run Networking Simulator\n\n\
+                Status:            {}\n\
+                Flow History:      {}\n\
+                Current Policies:  {}\n\
+                History Window:    {}s",
+                if self.simulation_running { "Running..." } else { "Ready" },
+                stats.flow_history_size,
+                stats.current_policies,
+                stats.history_window_secs
+            )
+        } else {
+            "🔮 Dry-Run Networking Simulator\n\n\
+            Status:            Initializing...\n\
+            Flow History:      0\n\
+            Current Policies:  0\n\
+            History Window:    3600s".to_string()
+        };
+
+        let content = Paragraph::new(stats)
+            .style(Style::default().fg(INFO_COLOR))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Simulator Status")
+                    .border_style(Style::default().fg(BORDER_COLOR))
+            );
 
         f.render_widget(content, area);
     }
 
-    fn render_results<M: MapReader>(
-        &self,
-        f: &mut Frame,
-        area: ratatui::layout::Rect,
-        _simulator: Option<&Simulator<M>>,
-    ) {
+    fn render_scenario_list(&self, f: &mut Frame, area: ratatui::layout::Rect) {
         let scenarios = vec![
-            ("✓ Block External IP 1.2.3.4", "3", "Medium"),
-            ("✓ Add DNS Policy", "1", "Low"),
-            ("✓ Default Deny in prod", "9", "Critical"),
-            ("✓ Modify ingress rules", "5", "Medium"),
-            ("✓ Allow port 8080", "2", "Low"),
+            "Add DNS Egress Policy (allow DNS to 8.8.8.8)",
+            "Block External IP 1.2.3.4",
+            "Default Deny for 'production' namespace",
+            "Allow frontend → backend:8080",
+            "Modify ingress to allow port 443",
+            "Block all traffic on port 22 (SSH)",
+            "Allow DB access: api → postgres:5432",
         ];
 
         let items: Vec<ListItem> = scenarios
             .iter()
-            .map(|(name, risk_score, risk_level)| {
-                let color = severity_color(risk_level);
-                let content = format!(
-                    "{:<35} Risk: {}/10  Level: {}",
-                    name, risk_score, risk_level
-                );
-                ListItem::new(Line::from(Span::styled(
-                    content,
-                    Style::default().fg(color),
-                )))
+            .enumerate()
+            .map(|(idx, name)| {
+                let style = if idx == self.selected_scenario_index {
+                    Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(TEXT_COLOR)
+                };
+
+                let prefix = if idx == self.selected_scenario_index { "▶ " } else { "  " };
+                let content = format!("{}{}. {}", prefix, idx + 1, name);
+
+                ListItem::new(Line::from(Span::styled(content, style)))
             })
             .collect();
+
+        let title = if self.simulation_running {
+            "Scenarios [Simulating...]"
+        } else {
+            "Scenarios [↑/↓: Select | s: Simulate | c: Clear]"
+        };
 
         let list = List::new(items).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Recent Simulations")
+                .title(title)
                 .border_style(Style::default().fg(BORDER_COLOR)),
         );
 
         f.render_widget(list, area);
     }
 
-    fn render_risk(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let risk_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+    fn render_scenario_details(&self, f: &mut Frame, area: ratatui::layout::Rect) {
+        let details = match self.selected_scenario_index {
+            0 => {
+                "📝 Scenario: Add DNS Egress Policy\n\n\
+                Type:        Add Policy\n\
+                Target:      default namespace\n\
+                Effect:      Allow egress to 8.8.8.8:53 (DNS)\n\n\
+                What It Does:\n\
+                Adds a CiliumNetworkPolicy allowing all pods in the\n\
+                default namespace to make DNS queries to Google DNS.\n\n\
+                Expected Impact: Low\n\
+                Estimated Affected Flows: 50-100"
+            }
+            1 => {
+                "📝 Scenario: Block External IP\n\n\
+                Type:        Block Traffic\n\
+                Target:      IP 1.2.3.4\n\
+                Effect:      Block all egress to this IP\n\n\
+                What It Does:\n\
+                Prevents any pod from communicating with the\n\
+                external IP address 1.2.3.4.\n\n\
+                Expected Impact: Medium\n\
+                Estimated Affected Flows: 10-20"
+            }
+            2 => {
+                "📝 Scenario: Default Deny\n\n\
+                Type:        Add Policy\n\
+                Target:      production namespace\n\
+                Effect:      Default deny all ingress and egress\n\n\
+                What It Does:\n\
+                Implements zero-trust by denying all traffic by\n\
+                default. Requires explicit allow policies.\n\n\
+                Expected Impact: CRITICAL ⚠️\n\
+                Estimated Affected Flows: 500+"
+            }
+            3 => {
+                "📝 Scenario: Allow Frontend → Backend\n\n\
+                Type:        Add Policy\n\
+                Target:      default namespace\n\
+                Effect:      Allow frontend pods to backend:8080\n\n\
+                What It Does:\n\
+                Adds an egress policy for frontend pods and ingress\n\
+                policy for backend pods on port 8080.\n\n\
+                Expected Impact: Low\n\
+                Estimated Affected Flows: 30-50"
+            }
+            4 => {
+                "📝 Scenario: Modify Ingress Policy\n\n\
+                Type:        Modify Policy\n\
+                Target:      ingress-nginx namespace\n\
+                Effect:      Add port 443 to allowed ports\n\n\
+                What It Does:\n\
+                Updates existing ingress policy to also allow\n\
+                HTTPS traffic on port 443.\n\n\
+                Expected Impact: Low\n\
+                Estimated Affected Flows: 100-200"
+            }
+            5 => {
+                "📝 Scenario: Block SSH\n\n\
+                Type:        Block Traffic\n\
+                Target:      All namespaces\n\
+                Effect:      Block port 22 (SSH)\n\n\
+                What It Does:\n\
+                Adds network policy to deny all SSH traffic\n\
+                cluster-wide for security hardening.\n\n\
+                Expected Impact: Medium\n\
+                Estimated Affected Flows: 5-10"
+            }
+            6 => {
+                "📝 Scenario: Allow Database Access\n\n\
+                Type:        Add Policy\n\
+                Target:      default namespace\n\
+                Effect:      Allow api → postgres:5432\n\n\
+                What It Does:\n\
+                Adds policy allowing API pods to connect to\n\
+                PostgreSQL database on port 5432.\n\n\
+                Expected Impact: Low\n\
+                Estimated Affected Flows: 20-40"
+            }
+            _ => "Select a scenario to see details",
+        };
+
+        let paragraph = Paragraph::new(details)
+            .style(Style::default().fg(INFO_COLOR))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Scenario Details")
+                    .border_style(Style::default().fg(BORDER_COLOR))
+            )
+            .wrap(Wrap { trim: false });
+
+        f.render_widget(paragraph, area);
+    }
+
+    fn render_detailed_results(&self, f: &mut Frame, area: ratatui::layout::Rect) {
+        let result = match &self.last_simulation {
+            Some(r) => r,
+            None => return,
+        };
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(8),  // Impact Summary
+                Constraint::Length(10), // Risk Assessment
+                Constraint::Min(8),     // Recommendations
+            ])
             .split(area);
 
-        // Impact Analysis
-        let impact_text =
-            "📊 Impact:\n\
-            Flows Affected:    120\n\
-            Services:          5\n\
-            Namespaces:        2\n\
-            Critical Svcs:     0";
+        // Impact Summary
+        let impact_text = format!(
+            "📊 Impact Analysis\n\n\
+            Total Flows:       {}\n\
+            Blocked Flows:     {} ({}%)\n\
+            Allowed Flows:     {}\n\
+            Changed Flows:     {}\n\
+            Impacted Services: {}",
+            result.impact.total_flows,
+            result.impact.blocked_flows,
+            if result.impact.total_flows > 0 {
+                (result.impact.blocked_flows * 100) / result.impact.total_flows
+            } else {
+                0
+            },
+            result.impact.allowed_flows,
+            result.impact.changed_flows,
+            result.impact.impacted_services.len(),
+        );
 
         let impact = Paragraph::new(impact_text)
-            .style(Style::default().fg(TEXT_COLOR))
-            .block(Block::default().borders(Borders::ALL).title("Impact").border_style(Style::default().fg(BORDER_COLOR)));
+            .style(Style::default().fg(INFO_COLOR))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Impact Summary")
+                    .border_style(Style::default().fg(BORDER_COLOR))
+            );
 
-        f.render_widget(impact, risk_chunks[0]);
+        f.render_widget(impact, chunks[0]);
 
-        // Risk Meter
-        let risk_level = 0.3; // 30%
+        // Risk Assessment
+        let risk_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .split(chunks[1]);
+
+        let risk_color = match result.risk.level {
+            crate::modules::simulator::RiskLevel::Low => SUCCESS_COLOR,
+            crate::modules::simulator::RiskLevel::Medium => WARNING_COLOR,
+            crate::modules::simulator::RiskLevel::High => ERROR_COLOR,
+            crate::modules::simulator::RiskLevel::Critical => ERROR_COLOR,
+        };
+
+        let risk_text = format!(
+            "🎯 Risk Assessment\n\n\
+            Level:         {}\n\
+            Score:         {}/10\n\
+            Safe to Apply: {}\n\
+            Confidence:    {:.0}%\n\
+            Factors:       {}",
+            result.risk.level.to_string(),
+            result.risk.score,
+            if result.risk.safe_to_apply { "✅ YES" } else { "❌ NO" },
+            result.confidence * 100.0,
+            result.risk.factors.len(),
+        );
+
+        let risk_info = Paragraph::new(risk_text)
+            .style(Style::default().fg(risk_color))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Risk Analysis")
+                    .border_style(Style::default().fg(BORDER_COLOR))
+            );
+
+        f.render_widget(risk_info, risk_chunks[0]);
+
+        // Risk Gauge
+        let risk_percent = ((result.risk.score as f32 / 10.0) * 100.0) as u16;
         let gauge = Gauge::default()
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("Risk Level")
+                    .title("Risk Meter")
                     .border_style(Style::default().fg(BORDER_COLOR)),
             )
-            .gauge_style(Style::default().fg(WARNING_COLOR))
-            .percent((risk_level * 100.0) as u16)
-            .label(format!("{}% - MEDIUM", (risk_level * 100.0) as u16));
+            .gauge_style(Style::default().fg(risk_color))
+            .percent(risk_percent)
+            .label(format!("{}%", risk_percent));
 
         f.render_widget(gauge, risk_chunks[1]);
+
+        // Recommendations
+        let rec_text = format!(
+            "💡 Recommendations\n\n{}",
+            result.recommendations
+                .iter()
+                .enumerate()
+                .map(|(i, r)| format!("{}. {}", i + 1, r))
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        );
+
+        let recommendations = Paragraph::new(rec_text)
+            .style(Style::default().fg(TEXT_COLOR))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Recommendations [c: Clear Results | Esc: Back]")
+                    .border_style(Style::default().fg(BORDER_COLOR))
+            )
+            .wrap(Wrap { trim: false });
+
+        f.render_widget(recommendations, chunks[2]);
     }
 }
