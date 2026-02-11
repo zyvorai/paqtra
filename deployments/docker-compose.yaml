@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: cilium-vision-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  api:
+    build:
+      context: ../web-api
+      dockerfile: Dockerfile
+    container_name: cilium-vision-api
+    ports:
+      - "8080:8080"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=dev-secret-change-in-production
+      - HUBBLE_ADDRESS=host.docker.internal:4245
+      - RUST_LOG=info,cilium_vision_api=debug
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: ../web-ui
+      dockerfile: Dockerfile
+    container_name: cilium-vision-ui
+    ports:
+      - "3000:80"
+    environment:
+      - API_URL=http://api:8080
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+
+networks:
+  default:
+    name: cilium-vision-network

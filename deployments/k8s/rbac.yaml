@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cilium-vision-api
+  namespace: cilium-system
+  labels:
+    app: cilium-vision
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cilium-vision-api
+  labels:
+    app: cilium-vision
+rules:
+# Read access to pods, services, namespaces
+- apiGroups: [""]
+  resources:
+  - pods
+  - services
+  - namespaces
+  - endpoints
+  verbs:
+  - get
+  - list
+  - watch
+
+# Read and write access to Cilium network policies
+- apiGroups: ["cilium.io"]
+  resources:
+  - ciliumnetworkpolicies
+  - ciliumclusterwidenetworkpolicies
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+
+# Read access to Kubernetes network policies
+- apiGroups: ["networking.k8s.io"]
+  resources:
+  - networkpolicies
+  verbs:
+  - get
+  - list
+  - watch
+
+# Access to Cilium identities and endpoints
+- apiGroups: ["cilium.io"]
+  resources:
+  - ciliumidentities
+  - ciliumendpoints
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cilium-vision-api
+  labels:
+    app: cilium-vision
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cilium-vision-api
+subjects:
+- kind: ServiceAccount
+  name: cilium-vision-api
+  namespace: cilium-system

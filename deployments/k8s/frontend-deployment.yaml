@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cilium-vision-ui
+  namespace: cilium-system
+  labels:
+    app: cilium-vision
+    component: ui
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cilium-vision
+      component: ui
+  template:
+    metadata:
+      labels:
+        app: cilium-vision
+        component: ui
+    spec:
+      containers:
+      - name: ui
+        image: cilium-vision-ui:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+        env:
+        - name: API_URL
+          value: "http://cilium-vision-api:8080"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 101
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cilium-vision-ui
+  namespace: cilium-system
+  labels:
+    app: cilium-vision
+    component: ui
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+    protocol: TCP
+  selector:
+    app: cilium-vision
+    component: ui

@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cilium-vision-api
+  namespace: cilium-system
+  labels:
+    app: cilium-vision
+    component: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cilium-vision
+      component: api
+  template:
+    metadata:
+      labels:
+        app: cilium-vision
+        component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: cilium-vision-api
+      containers:
+      - name: api
+        image: cilium-vision-api:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        env:
+        - name: HOST
+          value: "0.0.0.0"
+        - name: PORT
+          value: "8080"
+        - name: REDIS_URL
+          value: "redis://cilium-vision-redis:6379"
+        - name: HUBBLE_ADDRESS
+          value: "hubble-relay.kube-system.svc.cluster.local:4245"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: cilium-vision-secrets
+              key: jwt-secret
+        - name: RUST_LOG
+          value: "info,cilium_vision_api=debug"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cilium-vision-api
+  namespace: cilium-system
+  labels:
+    app: cilium-vision
+    component: api
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+    protocol: TCP
+  selector:
+    app: cilium-vision
+    component: api
