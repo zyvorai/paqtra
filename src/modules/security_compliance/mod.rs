@@ -1,0 +1,237 @@
+// Security & Compliance Module - Zero-trust, compliance frameworks, threat intelligence
+// Experimental: Enterprise-grade security and compliance features
+
+pub mod zero_trust;
+pub mod compliance;
+pub mod threat_intel;
+pub mod posture;
+
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// Comprehensive security and compliance manager
+pub struct SecurityComplianceManager {
+    zero_trust: zero_trust::ZeroTrustEngine,
+    compliance: compliance::ComplianceEngine,
+    threat_intel: threat_intel::ThreatIntelligence,
+    posture: posture::SecurityPosture,
+}
+
+impl SecurityComplianceManager {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            zero_trust: zero_trust::ZeroTrustEngine::new()?,
+            compliance: compliance::ComplianceEngine::new()?,
+            threat_intel: threat_intel::ThreatIntelligence::new()?,
+            posture: posture::SecurityPosture::new()?,
+        })
+    }
+
+    /// Generate zero-trust policies for a namespace
+    pub async fn generate_zero_trust_policies(&mut self, namespace: &str) -> Result<Vec<String>> {
+        self.zero_trust.generate_policies(namespace).await
+    }
+
+    /// Run compliance audit for a framework
+    pub async fn run_compliance_audit(
+        &mut self,
+        framework: ComplianceFramework,
+    ) -> Result<ComplianceReport> {
+        self.compliance.audit(framework).await
+    }
+
+    /// Check threat intelligence for an IP or domain
+    pub async fn check_threat_intel(&mut self, indicator: &str) -> Result<ThreatAssessment> {
+        self.threat_intel.assess(indicator).await
+    }
+
+    /// Calculate security posture score
+    pub async fn calculate_security_posture(&mut self) -> Result<SecurityScore> {
+        self.posture.calculate_score().await
+    }
+
+    /// Get security recommendations
+    pub async fn get_recommendations(&mut self) -> Result<Vec<SecurityRecommendation>> {
+        let mut recommendations = Vec::new();
+
+        // Collect from all engines
+        recommendations.extend(self.zero_trust.get_recommendations().await?);
+        recommendations.extend(self.compliance.get_recommendations().await?);
+        recommendations.extend(self.threat_intel.get_recommendations().await?);
+        recommendations.extend(self.posture.get_recommendations().await?);
+
+        // Sort by priority
+        recommendations.sort_by(|a, b| b.priority.cmp(&a.priority));
+
+        Ok(recommendations)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ComplianceFramework {
+    /// PCI DSS (Payment Card Industry Data Security Standard)
+    PCIDSS,
+    /// SOC 2 (Service Organization Control 2)
+    SOC2,
+    /// HIPAA (Health Insurance Portability and Accountability Act)
+    HIPAA,
+    /// GDPR (General Data Protection Regulation)
+    GDPR,
+    /// ISO 27001
+    ISO27001,
+    /// NIST Cybersecurity Framework
+    NIST,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComplianceReport {
+    pub framework: ComplianceFramework,
+    pub timestamp: DateTime<Utc>,
+    pub overall_score: f64,
+    pub controls: Vec<ControlStatus>,
+    pub violations: Vec<Violation>,
+    pub recommendations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ControlStatus {
+    pub control_id: String,
+    pub name: String,
+    pub status: ControlState,
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ControlState {
+    Compliant,
+    PartiallyCompliant,
+    NonCompliant,
+    NotApplicable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Violation {
+    pub severity: ViolationSeverity,
+    pub control_id: String,
+    pub description: String,
+    pub affected_resources: Vec<String>,
+    pub remediation: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ViolationSeverity {
+    Info,
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreatAssessment {
+    pub indicator: String,
+    pub threat_level: ThreatLevel,
+    pub categories: Vec<ThreatCategory>,
+    pub sources: Vec<String>,
+    pub first_seen: Option<DateTime<Utc>>,
+    pub last_seen: Option<DateTime<Utc>>,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ThreatLevel {
+    Clean,
+    Suspicious,
+    Malicious,
+    Critical,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ThreatCategory {
+    Malware,
+    Phishing,
+    C2Server,
+    BotNet,
+    Tor,
+    Scanner,
+    Spam,
+    MiningPool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityScore {
+    pub overall_score: f64, // 0-100
+    pub dimensions: HashMap<String, DimensionScore>,
+    pub timestamp: DateTime<Utc>,
+    pub trend: ScoreTrend,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DimensionScore {
+    pub score: f64,
+    pub weight: f64,
+    pub findings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ScoreTrend {
+    Improving,
+    Stable,
+    Declining,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityRecommendation {
+    pub priority: Priority,
+    pub category: RecommendationCategory,
+    pub title: String,
+    pub description: String,
+    pub impact: String,
+    pub effort: Effort,
+    pub auto_applicable: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Priority {
+    P4Low,
+    P3Medium,
+    P2High,
+    P1Critical,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum RecommendationCategory {
+    ZeroTrust,
+    Compliance,
+    ThreatMitigation,
+    BestPractice,
+    Performance,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum Effort {
+    Low,      // < 1 hour
+    Medium,   // 1-4 hours
+    High,     // 1-2 days
+    VeryHigh, // > 2 days
+}
+
+impl Default for SecurityComplianceManager {
+    fn default() -> Self {
+        Self::new().expect("Failed to create SecurityComplianceManager")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_security_posture_calculation() {
+        let mut manager = SecurityComplianceManager::new().unwrap();
+        let score = manager.calculate_security_posture().await.unwrap();
+        assert!(score.overall_score >= 0.0 && score.overall_score <= 100.0);
+    }
+}

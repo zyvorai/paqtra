@@ -7,8 +7,13 @@
 /// - replay: Traffic recording and replay
 /// - simulator: What-if policy simulation
 /// - packet_explainer: Interactive packet analysis and explanation
-/// - profiler: Performance analysis
-/// - optimizer: Cost and placement optimization
+/// - chaos: Chaos engineering and fault injection
+/// - canary: Progressive traffic shifting and canary deployments
+/// - multicluster: Multi-cluster orchestration
+/// - anomaly_detection: AI/ML-powered anomaly detection (experimental)
+/// - ebpf_advanced: Advanced eBPF capabilities (experimental)
+/// - security_compliance: Zero-trust and compliance frameworks (experimental)
+/// - dev_tools: Developer experience tools (experimental)
 
 pub mod healer;
 pub mod autopolicy;
@@ -20,6 +25,8 @@ pub mod chaos;
 pub mod canary;
 pub mod multicluster;
 
-// Future modules (stubs for now)
-// pub mod profiler;
-// pub mod optimizer;
+// Experimental cutting-edge features
+pub mod anomaly_detection;
+pub mod ebpf_advanced;
+pub mod security_compliance;
+pub mod dev_tools;
