@@ -1,11 +1,12 @@
+#![allow(dead_code)]
 /// Recording Storage
 ///
 /// Handles persistence of recorded traffic to disk
 
 use super::*;
 use anyhow::Result;
-use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::fs::File;
+use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 
 pub struct RecordingStorage {

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Drop Explainer
 ///
 /// Generates human-readable explanations for packet drops

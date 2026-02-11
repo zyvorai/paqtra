@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Replay Comparator
 ///
 /// Compares original recordings with replay outcomes
@@ -95,7 +96,7 @@ impl ReplayComparator {
     }
 
     /// Count flows with significant latency changes
-    fn count_latency_changes(&self, replay: &[ReplayOutcome]) -> usize {
+    fn count_latency_changes(&self, _replay: &[ReplayOutcome]) -> usize {
         // For now, we don't have original latency data
         // In a real implementation, we'd track this during recording
         0

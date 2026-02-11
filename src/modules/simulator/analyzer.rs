@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Impact Analyzer
 ///
 /// Analyzes the impact of policy changes on services and dependencies

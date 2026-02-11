@@ -2,7 +2,7 @@
 use anyhow::Result;
 use chrono::Utc;
 
-use super::{Priority, RecommendationCategory, SecurityRecommendation, ThreatAssessment, ThreatCategory, ThreatLevel, Effort};
+use super::{Priority, RecommendationCategory, SecurityRecommendation, ThreatAssessment, ThreatLevel, Effort};
 
 /// Integrates with threat intelligence feeds
 pub struct ThreatIntelligence {

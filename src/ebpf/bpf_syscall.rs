@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// BPF Map Access via syscalls and bpftool
 ///
 /// Provides BPF map reading through multiple methods:
@@ -268,6 +269,7 @@ impl BpfToolReader {
 pub struct BpfMapInfo {
     pub id: u32,
     pub name: String,
+    #[allow(dead_code)]
     pub map_type: String,
 }
 
@@ -281,10 +283,12 @@ pub struct IdentityInfo {
 }
 
 /// Identity resolver - maps Cilium identities to K8s labels
+#[allow(dead_code)]
 pub struct IdentityResolver {
     identity_cache: HashMap<u32, IdentityInfo>,
 }
 
+#[allow(dead_code)]
 impl IdentityResolver {
     pub fn new() -> Self {
         Self {

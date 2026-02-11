@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Sidecarless Canary Deployment Module
 ///
 /// Progressive traffic shifting for canary deployments without sidecars.

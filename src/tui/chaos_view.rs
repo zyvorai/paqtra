@@ -1,13 +1,13 @@
 /// Chaos Engineering View - eBPF-based Fault Injection
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
-use crate::modules::chaos::{ChaosEngine, ChaosExperiment, ChaosTarget, ChaosDirection};
+use crate::modules::chaos::ChaosEngine;
 use super::theme::*;
 
 pub struct ChaosView {

@@ -1,14 +1,15 @@
+#![allow(dead_code)]
 /// Replay View - Traffic Recording & Playback with Time-Travel Debugging
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
 use crate::ebpf::MapReader;
-use crate::modules::replay::{ReplayEngine, RecordedFlow, Recording};
+use crate::modules::replay::ReplayEngine;
 use super::theme::*;
 
 pub struct ReplayView {

@@ -1,7 +1,7 @@
 /// AutoPolicy View - Zero-Trust Policy Learning
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Style},
     text::{Line, Span},
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
     Frame,

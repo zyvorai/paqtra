@@ -1,8 +1,9 @@
+#![allow(dead_code)]
 /// Real Cilium BPF Map Reader
 ///
 /// Reads data directly from Cilium's pinned BPF maps in /sys/fs/bpf/
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -15,16 +16,9 @@ use super::bpf_syscall::BpfToolReader;
 const BPF_FS_PATH: &str = "/sys/fs/bpf";
 const CILIUM_PATH: &str = "tc/globals";
 
-/// Map names
-const POLICY_MAP: &str = "cilium_policy";
-const CT4_MAP: &str = "cilium_ct4_global";
-const CT6_MAP: &str = "cilium_ct6_global";
-const LB4_SERVICES: &str = "cilium_lb4_services_v2";
-const IPCACHE: &str = "cilium_ipcache";
-const METRICS: &str = "cilium_metrics";
-
 /// Cilium BPF Map Reader
 pub struct CiliumMapReader {
+    #[allow(dead_code)]
     bpf_path: PathBuf,
     available_maps: Vec<String>,
     bpftool: Option<BpfToolReader>,

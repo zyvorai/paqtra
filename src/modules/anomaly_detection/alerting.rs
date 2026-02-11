@@ -55,7 +55,7 @@ impl AlertManager {
             // Check if alert should be suppressed
             if self.should_suppress(anomaly, &history) {
                 tracing::debug!(
-                    "Suppressing alert for {} (deduplication)",
+                    "Suppressing alert for {:?} (deduplication)",
                     anomaly.anomaly_type
                 );
                 continue;
@@ -139,8 +139,8 @@ impl AlertManager {
     /// Get anomalies in a time range
     pub fn get_anomalies_in_range(
         &self,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
+        _start: DateTime<Utc>,
+        _end: DateTime<Utc>,
     ) -> Result<Vec<Anomaly>> {
         // In real implementation, this would query a persistent store
         Ok(Vec::new())

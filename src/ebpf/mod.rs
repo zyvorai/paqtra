@@ -9,7 +9,6 @@
 /// - Drop reasons
 
 use anyhow::Result;
-use std::collections::HashMap;
 
 pub mod reader;
 pub mod parser;
@@ -20,17 +19,11 @@ pub mod enriched_reader;
 
 // Re-export for convenience
 pub use bpf_reader::CiliumMapReader;
-pub use bpf_syscall::{BpfToolReader, IdentityResolver, IdentityInfo};
-pub use bpf_parser::{
-    parse_ct_entry, parse_ipcache_entry, parse_lb_entry,
-    parse_policy_entry, protocol_to_name, port_to_service,
-};
+pub use bpf_syscall::IdentityInfo;
 pub use enriched_reader::{EnrichedMapReader, EnrichedConnectionInfo, EnrichedDropInfo};
 
-#[cfg(feature = "ebpf")]
-pub mod simulator;
-
 /// Cilium eBPF Map Types
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum CiliumMap {
     Policy,
@@ -70,6 +63,7 @@ pub struct ConntrackEntry {
     pub state: ConntrackState,
     pub packets: u64,
     pub bytes: u64,
+    #[allow(dead_code)]
     pub last_seen: u64,
 }
 
@@ -77,11 +71,14 @@ pub struct ConntrackEntry {
 pub enum ConntrackState {
     New,
     Established,
+    #[allow(dead_code)]
     Related,
+    #[allow(dead_code)]
     Invalid,
 }
 
 /// Load balancer entry
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct LoadBalancerEntry {
     pub service_ip: String,
@@ -93,6 +90,7 @@ pub struct LoadBalancerEntry {
 }
 
 /// IP cache entry (identity to IP mapping)
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct IPCacheEntry {
     pub ip: String,
@@ -109,6 +107,7 @@ pub struct DropReason {
     pub port: u16,
     pub protocol: u8,
     pub reason: DropReasonType,
+    #[allow(dead_code)]
     pub timestamp: u64,
 }
 
@@ -149,8 +148,9 @@ pub trait MapReader {
 }
 
 /// Metrics from eBPF
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
-pub struct eBPFMetrics {
+pub struct EbpfMetrics {
     pub total_packets: u64,
     pub dropped_packets: u64,
     pub forwarded_packets: u64,
@@ -190,5 +190,73 @@ impl MapReader for MockMapReader {
 
     fn read_drop_map(&self) -> Result<Vec<DropReason>> {
         Ok(vec![])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_drop_reason_type_from_code() {
+        assert_eq!(DropReasonType::from_code(1), DropReasonType::PolicyDenied);
+        assert_eq!(DropReasonType::from_code(2), DropReasonType::InvalidPacket);
+        assert_eq!(DropReasonType::from_code(3), DropReasonType::NoRoute);
+        assert_eq!(DropReasonType::from_code(4), DropReasonType::UnknownL4Protocol);
+        assert_eq!(DropReasonType::from_code(5), DropReasonType::FragmentationNeeded);
+        assert_eq!(DropReasonType::from_code(6), DropReasonType::CTMapFull);
+        assert_eq!(DropReasonType::from_code(7), DropReasonType::NATMapFull);
+    }
+
+    #[test]
+    fn test_drop_reason_type_unknown_code() {
+        assert_eq!(DropReasonType::from_code(0), DropReasonType::Other(0));
+        assert_eq!(DropReasonType::from_code(99), DropReasonType::Other(99));
+        assert_eq!(DropReasonType::from_code(255), DropReasonType::Other(255));
+    }
+
+    #[test]
+    fn test_mock_reader_policy_map() {
+        let reader = MockMapReader;
+        let policies = reader.read_policy_map().unwrap();
+        assert_eq!(policies.len(), 1);
+        assert_eq!(policies[0].src_identity, 100);
+        assert_eq!(policies[0].dst_identity, 200);
+        assert_eq!(policies[0].port, 80);
+        assert_eq!(policies[0].protocol, 6);
+        assert_eq!(policies[0].verdict, PolicyVerdict::Allow);
+    }
+
+    #[test]
+    fn test_mock_reader_empty_maps() {
+        let reader = MockMapReader;
+        assert!(reader.read_conntrack_map().unwrap().is_empty());
+        assert!(reader.read_lb_map().unwrap().is_empty());
+        assert!(reader.read_ipcache_map().unwrap().is_empty());
+        assert!(reader.read_drop_map().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_policy_verdict_equality() {
+        assert_eq!(PolicyVerdict::Allow, PolicyVerdict::Allow);
+        assert_eq!(PolicyVerdict::Deny, PolicyVerdict::Deny);
+        assert_ne!(PolicyVerdict::Allow, PolicyVerdict::Deny);
+        assert_ne!(PolicyVerdict::Allow, PolicyVerdict::Redirect);
+    }
+
+    #[test]
+    fn test_conntrack_state_equality() {
+        assert_eq!(ConntrackState::New, ConntrackState::New);
+        assert_eq!(ConntrackState::Established, ConntrackState::Established);
+        assert_ne!(ConntrackState::New, ConntrackState::Established);
+    }
+
+    #[test]
+    fn test_ebpf_metrics_default() {
+        let metrics = EbpfMetrics::default();
+        assert_eq!(metrics.total_packets, 0);
+        assert_eq!(metrics.dropped_packets, 0);
+        assert_eq!(metrics.forwarded_packets, 0);
+        assert_eq!(metrics.policy_drops, 0);
     }
 }

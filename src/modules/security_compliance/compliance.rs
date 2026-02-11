@@ -71,7 +71,7 @@ impl ComplianceEngine {
     }
 
     async fn audit_soc2(&self) -> Result<Vec<ControlStatus>> {
-        vec![
+        Ok(vec![
             ControlStatus {
                 control_id: "CC6.1".to_string(),
                 name: "Logical and physical access controls".to_string(),
@@ -84,12 +84,11 @@ impl ComplianceEngine {
                 status: ControlState::Compliant,
                 evidence: vec!["Cilium Hubble observability enabled".to_string()],
             },
-        ]
-        .into()
+        ])
     }
 
     async fn audit_hipaa(&self) -> Result<Vec<ControlStatus>> {
-        vec![
+        Ok(vec![
             ControlStatus {
                 control_id: "164.312(a)(1)".to_string(),
                 name: "Access control".to_string(),
@@ -102,38 +101,34 @@ impl ComplianceEngine {
                 status: ControlState::Compliant,
                 evidence: vec!["TLS encryption enforced".to_string()],
             },
-        ]
-        .into()
+        ])
     }
 
     async fn audit_gdpr(&self) -> Result<Vec<ControlStatus>> {
-        vec![ControlStatus {
+        Ok(vec![ControlStatus {
             control_id: "Art.32".to_string(),
             name: "Security of processing".to_string(),
             status: ControlState::Compliant,
             evidence: vec!["Encryption and access controls in place".to_string()],
-        }]
-        .into()
+        }])
     }
 
     async fn audit_iso27001(&self) -> Result<Vec<ControlStatus>> {
-        vec![ControlStatus {
+        Ok(vec![ControlStatus {
             control_id: "A.13.1.1".to_string(),
             name: "Network controls".to_string(),
             status: ControlState::Compliant,
             evidence: vec!["Network segmentation implemented".to_string()],
-        }]
-        .into()
+        }])
     }
 
     async fn audit_nist(&self) -> Result<Vec<ControlStatus>> {
-        vec![ControlStatus {
+        Ok(vec![ControlStatus {
             control_id: "PR.AC-5".to_string(),
             name: "Network integrity protection".to_string(),
             status: ControlState::Compliant,
             evidence: vec!["Network policies enforced".to_string()],
-        }]
-        .into()
+        }])
     }
 
     fn find_violations(&self, controls: &[ControlStatus]) -> Vec<Violation> {

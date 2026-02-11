@@ -25,6 +25,17 @@ impl K8sClient {
         &self.client
     }
 
+    /// Create a mock K8sClient for testing (uses default kube config or fails gracefully)
+    #[cfg(test)]
+    pub fn mock() -> Self {
+        // Create a minimal client for testing that doesn't require a real cluster
+        let config = Config::new(
+            "https://localhost:6443".parse().expect("valid URL"),
+        );
+        let client = Client::try_from(config.clone()).expect("mock client");
+        Self { client, config }
+    }
+
     pub async fn get_current_context(&self) -> Result<String> {
         let context = self.config.cluster_url.to_string();
         Ok(context)

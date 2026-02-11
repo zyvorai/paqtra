@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Traffic Pattern Analyzer
 ///
 /// Analyzes learned traffic patterns to provide insights

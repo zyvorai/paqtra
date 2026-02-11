@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// What-If Simulator Module
 ///
 /// Simulates policy changes and predicts their impact before applying.
@@ -378,6 +379,16 @@ impl<M: MapReader> Simulator<M> {
         Ok(self.flow_history.len())
     }
 
+    /// Resolve an IP to its identity via IPCache
+    fn resolve_identity(&self, ip: &str) -> u32 {
+        if let Ok(ipcache) = self.ebpf_reader.read_ipcache_map() {
+            if let Some(entry) = ipcache.iter().find(|e| e.ip == ip) {
+                return entry.identity;
+            }
+        }
+        0
+    }
+
     /// Convert conntrack entry to historical flow
     fn conntrack_to_flow(&self, ct: &ConntrackEntry) -> Result<HistoricalFlow> {
         let src_ip: IpAddr = ct.src_ip.parse()
@@ -386,8 +397,8 @@ impl<M: MapReader> Simulator<M> {
             .unwrap_or_else(|_| IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)));
 
         Ok(HistoricalFlow {
-            src_identity: 0, // TODO: Resolve from IPCache
-            dst_identity: 0, // TODO: Resolve from IPCache
+            src_identity: self.resolve_identity(&ct.src_ip),
+            dst_identity: self.resolve_identity(&ct.dst_ip),
             src_ip,
             dst_ip,
             port: ct.dst_port,

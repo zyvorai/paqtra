@@ -1,7 +1,7 @@
 // Request Replay - Replay recorded traffic for debugging
 use anyhow::Result;
 
-use super::{Difference, ReplayConfig, ReplayResults, TimingComparison};
+use super::{ReplayConfig, ReplayResults, TimingComparison};
 
 /// Replays recorded HTTP requests
 pub struct RequestReplay {}

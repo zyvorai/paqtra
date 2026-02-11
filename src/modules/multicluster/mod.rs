@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Multi-Cluster Autopilot Module
 ///
 /// Intelligent cross-cluster orchestration and policy synchronization.

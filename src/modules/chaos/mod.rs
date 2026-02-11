@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// eBPF Chaos Engineering Module
 ///
 /// Controlled fault injection for resilience testing using eBPF.

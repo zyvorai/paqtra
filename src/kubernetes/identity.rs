@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Kubernetes Identity Resolution
 ///
 /// Maps Cilium security identities to Kubernetes pod information
@@ -5,7 +6,7 @@
 use anyhow::Result;
 use k8s_openapi::api::core::v1::Pod;
 use kube::{api::ListParams, Api, Client};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tokio::time::{Duration, interval};
 
@@ -254,6 +255,7 @@ pub fn derive_service_name(pod: &Pod) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_cache_stats() {

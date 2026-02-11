@@ -1,7 +1,8 @@
+#![allow(dead_code)]
 /// Simulator View - What-If Scenario Testing
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap},
     Frame,

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Packet Explainer - Interactive Packet Analysis
 ///
 /// Provides detailed explanations of network packets including:
@@ -155,7 +156,7 @@ impl PacketExplainer {
         }
     }
 
-    fn analyze_reason(&self, port: u16, protocol: &str, verdict: &str, source_ns: &str, dest_ns: &str) -> String {
+    fn analyze_reason(&self, port: u16, _protocol: &str, verdict: &str, _source_ns: &str, _dest_ns: &str) -> String {
         if verdict == "DROPPED" {
             match port {
                 53 => "DNS traffic was blocked. This usually indicates a missing DNS egress policy or restrictive network policy preventing DNS resolution.".to_string(),
@@ -174,7 +175,7 @@ impl PacketExplainer {
         }
     }
 
-    fn get_policy_context(&self, source_ns: &str, dest_ns: &str, port: u16, verdict: &str) -> String {
+    fn get_policy_context(&self, source_ns: &str, dest_ns: &str, _port: u16, verdict: &str) -> String {
         if source_ns == dest_ns {
             format!(
                 "Traffic within the same namespace ({}). {}",
@@ -199,7 +200,7 @@ impl PacketExplainer {
         }
     }
 
-    fn analyze_security(&self, port: u16, protocol: &str, verdict: &str, dest_ns: &str) -> String {
+    fn analyze_security(&self, port: u16, _protocol: &str, verdict: &str, dest_ns: &str) -> String {
         let mut analysis = Vec::new();
 
         // Check for sensitive ports
@@ -249,7 +250,7 @@ impl PacketExplainer {
         }
     }
 
-    fn get_troubleshooting_tips(&self, verdict: &str, port: u16, protocol: &str) -> Vec<String> {
+    fn get_troubleshooting_tips(&self, verdict: &str, port: u16, _protocol: &str) -> Vec<String> {
         let mut tips = Vec::new();
 
         if verdict == "DROPPED" {
@@ -279,4 +280,127 @@ impl PacketExplainer {
 pub struct PacketExplainerStats {
     pub total_explanations: usize,
     pub cache_size_kb: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_explainer_creation() {
+        let explainer = PacketExplainer::new();
+        assert_eq!(explainer.stats().total_explanations, 0);
+    }
+
+    #[test]
+    fn test_explain_dropped_packet() {
+        let mut explainer = PacketExplainer::new();
+        let explanation = explainer.explain_packet(
+            "frontend", "web-pod",
+            "backend", "api-pod",
+            80, "TCP", "DROPPED",
+        ).unwrap();
+
+        assert_eq!(explanation.verdict, "DROPPED");
+        assert!(explanation.what_happened.contains("BLOCKED"));
+        assert_eq!(explanation.severity, "Critical"); // port 80 = critical
+        assert!(!explanation.troubleshooting_tips.is_empty());
+    }
+
+    #[test]
+    fn test_explain_forwarded_packet() {
+        let mut explainer = PacketExplainer::new();
+        let explanation = explainer.explain_packet(
+            "frontend", "web-pod",
+            "backend", "api-pod",
+            443, "TCP", "FORWARDED",
+        ).unwrap();
+
+        assert_eq!(explanation.verdict, "FORWARDED");
+        assert!(explanation.what_happened.contains("ALLOWED"));
+        assert_eq!(explanation.severity, "Low");
+    }
+
+    #[test]
+    fn test_explain_dns_dropped() {
+        let mut explainer = PacketExplainer::new();
+        let explanation = explainer.explain_packet(
+            "app", "client",
+            "kube-system", "coredns",
+            53, "UDP", "DROPPED",
+        ).unwrap();
+
+        assert!(explanation.why_happened.contains("DNS"));
+    }
+
+    #[test]
+    fn test_explain_database_dropped() {
+        let mut explainer = PacketExplainer::new();
+        let explanation = explainer.explain_packet(
+            "app", "api",
+            "db", "postgres",
+            5432, "TCP", "DROPPED",
+        ).unwrap();
+
+        assert!(explanation.why_happened.contains("PostgreSQL"));
+    }
+
+    #[test]
+    fn test_cross_namespace_policy_context() {
+        let mut explainer = PacketExplainer::new();
+        let explanation = explainer.explain_packet(
+            "frontend", "web",
+            "backend", "api",
+            8080, "TCP", "DROPPED",
+        ).unwrap();
+
+        assert!(explanation.policy_context.contains("Cross-namespace"));
+    }
+
+    #[test]
+    fn test_same_namespace_policy_context() {
+        let mut explainer = PacketExplainer::new();
+        let explanation = explainer.explain_packet(
+            "app", "client",
+            "app", "server",
+            8080, "TCP", "FORWARDED",
+        ).unwrap();
+
+        assert!(explanation.policy_context.contains("same namespace"));
+    }
+
+    #[test]
+    fn test_security_analysis_sensitive_port() {
+        let mut explainer = PacketExplainer::new();
+        let explanation = explainer.explain_packet(
+            "app", "pod",
+            "infra", "server",
+            22, "TCP", "FORWARDED",
+        ).unwrap();
+
+        assert!(explanation.security_analysis.contains("SSH"));
+    }
+
+    #[test]
+    fn test_caching() {
+        let mut explainer = PacketExplainer::new();
+
+        // First call generates explanation
+        let _ = explainer.explain_packet(
+            "ns", "pod", "ns2", "pod2", 80, "TCP", "FORWARDED",
+        ).unwrap();
+        assert_eq!(explainer.stats().total_explanations, 1);
+
+        // Second call with same params uses cache
+        let _ = explainer.explain_packet(
+            "ns", "pod", "ns2", "pod2", 80, "TCP", "FORWARDED",
+        ).unwrap();
+        assert_eq!(explainer.stats().total_explanations, 1);
+
+        // Different params creates new entry
+        let _ = explainer.explain_packet(
+            "ns", "pod", "ns3", "pod3", 443, "TCP", "DROPPED",
+        ).unwrap();
+        assert_eq!(explainer.stats().total_explanations, 2);
+    }
 }

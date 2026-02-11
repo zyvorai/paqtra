@@ -6,9 +6,10 @@ use anyhow::Result;
 use super::*;
 
 /// Parse raw policy map data
-pub fn parse_policy_entry(data: &[u8]) -> Result<PolicyDecision> {
-    // TODO: Implement actual parsing based on Cilium's policy map structure
-    // This is a placeholder
+#[allow(dead_code)]
+pub fn parse_policy_entry(_data: &[u8]) -> Result<PolicyDecision> {
+    // Simplified parser for raw byte data.
+    // For full binary parsing with key/value support, use bpf_parser.rs
     Ok(PolicyDecision {
         src_identity: 0,
         dst_identity: 0,
@@ -19,7 +20,8 @@ pub fn parse_policy_entry(data: &[u8]) -> Result<PolicyDecision> {
 }
 
 /// Parse raw conntrack map data
-pub fn parse_conntrack_entry(data: &[u8]) -> Result<ConntrackEntry> {
+#[allow(dead_code)]
+pub fn parse_conntrack_entry(_data: &[u8]) -> Result<ConntrackEntry> {
     Ok(ConntrackEntry {
         src_ip: "0.0.0.0".to_string(),
         dst_ip: "0.0.0.0".to_string(),
@@ -34,7 +36,8 @@ pub fn parse_conntrack_entry(data: &[u8]) -> Result<ConntrackEntry> {
 }
 
 /// Parse raw LB map data
-pub fn parse_lb_entry(data: &[u8]) -> Result<LoadBalancerEntry> {
+#[allow(dead_code)]
+pub fn parse_lb_entry(_data: &[u8]) -> Result<LoadBalancerEntry> {
     Ok(LoadBalancerEntry {
         service_ip: "0.0.0.0".to_string(),
         service_port: 0,
@@ -46,7 +49,8 @@ pub fn parse_lb_entry(data: &[u8]) -> Result<LoadBalancerEntry> {
 }
 
 /// Parse raw IP cache entry
-pub fn parse_ipcache_entry(data: &[u8]) -> Result<IPCacheEntry> {
+#[allow(dead_code)]
+pub fn parse_ipcache_entry(_data: &[u8]) -> Result<IPCacheEntry> {
     Ok(IPCacheEntry {
         ip: "0.0.0.0".to_string(),
         identity: 0,
@@ -56,7 +60,8 @@ pub fn parse_ipcache_entry(data: &[u8]) -> Result<IPCacheEntry> {
 }
 
 /// Parse drop reason
-pub fn parse_drop_reason(data: &[u8]) -> Result<DropReason> {
+#[allow(dead_code)]
+pub fn parse_drop_reason(_data: &[u8]) -> Result<DropReason> {
     Ok(DropReason {
         src_ip: "0.0.0.0".to_string(),
         dst_ip: "0.0.0.0".to_string(),

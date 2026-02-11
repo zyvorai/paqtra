@@ -1,13 +1,13 @@
 /// Multi-Cluster Autopilot View - Global Orchestration
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
-use crate::modules::multicluster::{MultiClusterAutopilot, ClusterState};
+use crate::modules::multicluster::MultiClusterAutopilot;
 use super::theme::*;
 
 pub struct MultiClusterView {

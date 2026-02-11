@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// ML-Based Confidence Scoring for Policy Recommendations
 ///
 /// Uses machine learning-inspired features to score policy confidence:

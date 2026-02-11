@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Replay Player
 ///
 /// Replays recorded flows in a target environment

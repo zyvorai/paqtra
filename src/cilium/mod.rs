@@ -15,6 +15,7 @@ pub struct CiliumManager {
 pub struct CiliumStatus {
     pub installed: bool,
     pub version: Option<String>,
+    #[allow(dead_code)]
     pub hubble_enabled: bool,
 }
 

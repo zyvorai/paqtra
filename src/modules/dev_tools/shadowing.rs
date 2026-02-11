@@ -3,7 +3,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 
-use super::{Discrepancy, DiscrepancyType, Impact, ShadowConfig, ShadowStats};
+use super::{ShadowConfig, ShadowStats};
 
 /// Shadows production traffic to test environments
 pub struct TrafficShadowing {

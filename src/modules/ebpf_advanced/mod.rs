@@ -8,7 +8,6 @@ pub mod packet_filter;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Advanced eBPF manager with hot-loading and profiling
 pub struct AdvancedEBPFManager {
@@ -128,7 +127,7 @@ impl AdvancedEBPFManager {
         Ok(())
     }
 
-    async fn compile_program(&self, program: &EBPFProgram) -> Result<Vec<u8>> {
+    async fn compile_program(&self, _program: &EBPFProgram) -> Result<Vec<u8>> {
         // In real implementation: use clang/llvm to compile
         tracing::warn!("Using stub compiler - in production would compile with clang");
         Ok(vec![]) // Stub

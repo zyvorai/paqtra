@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Drop Pattern Analyzer
 ///
 /// Analyzes drop patterns and trends over time

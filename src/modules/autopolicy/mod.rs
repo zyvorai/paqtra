@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// AutoPolicy Module - Zero-Trust Policy Learning
 ///
 /// Automatically learns traffic patterns from eBPF and generates
@@ -262,16 +263,41 @@ impl<M: MapReader> AutoPolicy<M> {
         Ok(stats)
     }
 
+    /// Resolve an IP address to namespace and labels via IPCache
+    fn resolve_ip(&self, ip: &str) -> (String, HashMap<String, String>) {
+        if let Ok(ipcache) = self.ebpf_reader.read_ipcache_map() {
+            if let Some(entry) = ipcache.iter().find(|e| e.ip == ip) {
+                let namespace = if entry.namespace.is_empty() {
+                    "default".to_string()
+                } else {
+                    entry.namespace.clone()
+                };
+                let labels: HashMap<String, String> = entry.labels.iter()
+                    .filter_map(|l| {
+                        let parts: Vec<&str> = l.splitn(2, '=').collect();
+                        if parts.len() == 2 {
+                            Some((parts[0].to_string(), parts[1].to_string()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                return (namespace, labels);
+            }
+        }
+        ("unknown".to_string(), HashMap::new())
+    }
+
     /// Convert connection to traffic pattern
     async fn connection_to_pattern(&self, conn: &ConntrackEntry) -> Result<Option<TrafficPattern>> {
-        // TODO: Resolve IPs to pod labels via IPCache
-        // For now, create a basic pattern
+        let (src_namespace, src_labels) = self.resolve_ip(&conn.src_ip);
+        let (dst_namespace, dst_labels) = self.resolve_ip(&conn.dst_ip);
 
         let pattern = TrafficPattern {
-            src_namespace: "unknown".to_string(),
-            src_labels: LabelSet::new(HashMap::new()),
-            dst_namespace: "unknown".to_string(),
-            dst_labels: LabelSet::new(HashMap::new()),
+            src_namespace,
+            src_labels: LabelSet::new(src_labels),
+            dst_namespace,
+            dst_labels: LabelSet::new(dst_labels),
             port: conn.dst_port,
             protocol: Protocol::from_number(conn.protocol),
         };

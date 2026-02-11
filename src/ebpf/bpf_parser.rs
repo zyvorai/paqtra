@@ -1,13 +1,14 @@
+#![allow(dead_code)]
 /// BPF Data Structure Parsers
 ///
 /// Parses raw binary data from Cilium BPF maps into Rust structures
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian, NetworkEndian};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 use super::{
-    ConntrackEntry, ConntrackState, DropReason, DropReasonType, IPCacheEntry,
+    ConntrackEntry, ConntrackState, DropReasonType, IPCacheEntry,
     LoadBalancerEntry, PolicyDecision, PolicyVerdict,
 };
 
@@ -36,7 +37,7 @@ pub fn parse_policy_entry(key: &[u8], value: &[u8]) -> Result<PolicyDecision> {
     let src_identity = LittleEndian::read_u32(&key[0..4]);
     let dst_port = NetworkEndian::read_u16(&key[4..6]) as u16;
     let protocol = key[6];
-    let egress = key[7];
+    let _egress = key[7];
 
     // Derive verdict from value (simplified)
     let verdict = if value.len() >= 8 {

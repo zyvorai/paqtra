@@ -1,10 +1,10 @@
 // Baseline Learning - Establishes normal behavior patterns
 use anyhow::Result;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Datelike, Duration, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 
-use super::{Metric, MetricType};
+use super::Metric;
 
 /// Learns and maintains baseline behavior for metrics
 pub struct BaselineLearner {
@@ -57,16 +57,24 @@ impl BaselineLearner {
     /// Update baseline with new metric
     pub fn update(&mut self, metric: &Metric) -> Result<()> {
         let key = self.get_metric_key(metric);
+        let cutoff = Utc::now() - Duration::hours(self.learning_period_hours as i64);
 
-        let baseline = self.baselines.entry(key.clone()).or_insert_with(|| {
-            MetricBaseline {
-                metric_key: key,
-                data_points: VecDeque::new(),
-                stats: BaselineStats::default(),
-                seasonal_patterns: SeasonalPatterns::default(),
-                last_updated: Utc::now(),
-            }
-        });
+        // Get or create baseline
+        if !self.baselines.contains_key(&key) {
+            self.baselines.insert(
+                key.clone(),
+                MetricBaseline {
+                    metric_key: key.clone(),
+                    data_points: VecDeque::new(),
+                    stats: BaselineStats::default(),
+                    seasonal_patterns: SeasonalPatterns::default(),
+                    last_updated: Utc::now(),
+                },
+            );
+        }
+
+        // Now we can safely get mutable reference
+        let baseline = self.baselines.get_mut(&key).unwrap();
 
         // Add data point
         baseline.data_points.push_back(DataPoint {
@@ -75,7 +83,6 @@ impl BaselineLearner {
         });
 
         // Remove old data points
-        let cutoff = Utc::now() - Duration::hours(self.learning_period_hours as i64);
         while let Some(front) = baseline.data_points.front() {
             if front.timestamp < cutoff {
                 baseline.data_points.pop_front();
@@ -84,9 +91,12 @@ impl BaselineLearner {
             }
         }
 
+        // Clone data points for calculations
+        let data_points = baseline.data_points.clone();
+
         // Recalculate statistics
-        baseline.stats = self.calculate_stats(&baseline.data_points);
-        baseline.seasonal_patterns = self.calculate_seasonal_patterns(&baseline.data_points);
+        baseline.stats = Self::calculate_stats_static(&data_points);
+        baseline.seasonal_patterns = Self::calculate_seasonal_patterns_static(&data_points);
         baseline.last_updated = Utc::now();
 
         Ok(())
@@ -113,7 +123,7 @@ impl BaselineLearner {
         )
     }
 
-    fn calculate_stats(&self, data_points: &VecDeque<DataPoint>) -> BaselineStats {
+    fn calculate_stats_static(data_points: &VecDeque<DataPoint>) -> BaselineStats {
         if data_points.is_empty() {
             return BaselineStats::default();
         }
@@ -150,7 +160,7 @@ impl BaselineLearner {
         }
     }
 
-    fn calculate_seasonal_patterns(&self, data_points: &VecDeque<DataPoint>) -> SeasonalPatterns {
+    fn calculate_seasonal_patterns_static(data_points: &VecDeque<DataPoint>) -> SeasonalPatterns {
         let mut hourly_patterns: HashMap<u32, Vec<f64>> = HashMap::new();
         let mut daily_patterns: HashMap<u32, Vec<f64>> = HashMap::new();
 

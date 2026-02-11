@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Traffic Replay Module
 ///
 /// Records real network traffic and replays it in different contexts
@@ -14,7 +15,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::ebpf::{ConntrackEntry, MapReader, PolicyVerdict};
 use crate::kubernetes::K8sClient;
@@ -366,8 +367,11 @@ impl<M: MapReader> ReplayEngine<M> {
         let start_time = session.start_time;
         let mut captured = 0;
 
+        // Read IPCache for resolution
+        let ipcache = self.ebpf_reader.read_ipcache_map().unwrap_or_default();
+
         for conn in &connections {
-            let flow = Self::conntrack_to_recorded_flow_static(conn, &start_time).await?;
+            let flow = Self::conntrack_to_recorded_flow(conn, &start_time, &ipcache).await?;
             session.flows.push(flow);
             captured += 1;
 
@@ -423,10 +427,34 @@ impl<M: MapReader> ReplayEngine<M> {
         Ok(recording)
     }
 
+    /// Resolve IP to identity and namespace from IPCache entries
+    fn resolve_ip_from_cache(ip: &str, ipcache: &[crate::ebpf::IPCacheEntry]) -> (u32, String, HashMap<String, String>) {
+        if let Some(entry) = ipcache.iter().find(|e| e.ip == ip) {
+            let namespace = if entry.namespace.is_empty() {
+                "unknown".to_string()
+            } else {
+                entry.namespace.clone()
+            };
+            let labels: HashMap<String, String> = entry.labels.iter()
+                .filter_map(|l| {
+                    let parts: Vec<&str> = l.splitn(2, '=').collect();
+                    if parts.len() == 2 {
+                        Some((parts[0].to_string(), parts[1].to_string()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            return (entry.identity, namespace, labels);
+        }
+        (0, "unknown".to_string(), HashMap::new())
+    }
+
     /// Convert conntrack entry to recorded flow
-    async fn conntrack_to_recorded_flow_static(
+    async fn conntrack_to_recorded_flow(
         conn: &ConntrackEntry,
         start_time: &SystemTime,
+        ipcache: &[crate::ebpf::IPCacheEntry],
     ) -> Result<RecordedFlow> {
         let now = SystemTime::now();
         let offset_ms = now.duration_since(*start_time)?.as_millis() as u64;
@@ -438,6 +466,9 @@ impl<M: MapReader> ReplayEngine<M> {
         let dst_ip: IpAddr = conn.dst_ip.parse()
             .unwrap_or_else(|_| IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)));
 
+        let (src_identity, src_namespace, src_labels) = Self::resolve_ip_from_cache(&conn.src_ip, ipcache);
+        let (dst_identity, dst_namespace, dst_labels) = Self::resolve_ip_from_cache(&conn.dst_ip, ipcache);
+
         Ok(RecordedFlow {
             timestamp,
             offset_ms,
@@ -446,16 +477,16 @@ impl<M: MapReader> ReplayEngine<M> {
             src_port: conn.src_port,
             dst_port: conn.dst_port,
             protocol: conn.protocol,
-            src_identity: 0,  // TODO: Resolve from IPCache
-            dst_identity: 0,  // TODO: Resolve from IPCache
-            src_namespace: "unknown".to_string(),  // TODO: Resolve
-            dst_namespace: "unknown".to_string(),  // TODO: Resolve
-            src_labels: HashMap::new(),  // TODO: Resolve
-            dst_labels: HashMap::new(),  // TODO: Resolve
+            src_identity,
+            dst_identity,
+            src_namespace,
+            dst_namespace,
+            src_labels,
+            dst_labels,
             verdict: PolicyVerdict::Allow,  // Assume allowed if in conntrack
             bytes: conn.bytes,
             packets: conn.packets,
-            http_method: None,  // TODO: Get from Hubble L7
+            http_method: None,
             http_path: None,
             http_status: None,
         })

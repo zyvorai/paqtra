@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Enriched Map Reader
 ///
 /// Combines eBPF map reading with Kubernetes identity resolution
@@ -7,12 +8,14 @@ use anyhow::Result;
 use std::sync::Arc;
 
 use super::{
-    CiliumMapReader, ConntrackEntry, DropReason, IPCacheEntry,
+    ConntrackEntry, DropReason, IPCacheEntry,
     LoadBalancerEntry, MapReader, PolicyDecision,
 };
+use super::bpf_reader::CiliumMapReader;
 use crate::kubernetes::K8sIdentityResolver;
 
 /// Enriched Map Reader with Kubernetes context
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct EnrichedMapReader {
     cilium_reader: Arc<CiliumMapReader>,

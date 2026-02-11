@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Self-Healer Module
 ///
 /// Automatically detects and fixes common network issues:
@@ -419,5 +420,233 @@ mod tests {
 
         let healer = SelfHealer::new(config, reader, k8s_client);
         assert!(!healer.config.auto_apply); // Safe default
+    }
+
+    #[test]
+    fn test_healer_config_defaults() {
+        let config = HealerConfig::default();
+        assert!(config.enabled);
+        assert!(!config.auto_apply);
+        assert!(config.dry_run);
+        assert_eq!(config.check_interval_secs, 30);
+    }
+
+    #[tokio::test]
+    async fn test_analyze_dns_drops_empty() {
+        let config = HealerConfig::default();
+        let reader = MockMapReader;
+        let k8s_client = K8sClient::mock();
+        let healer = SelfHealer::new(config, reader, k8s_client);
+
+        let drops: Vec<DropReason> = vec![];
+        let problems = healer.analyze_dns_drops(&drops);
+        assert!(problems.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_analyze_dns_drops_threshold() {
+        let config = HealerConfig::default();
+        let reader = MockMapReader;
+        let k8s_client = K8sClient::mock();
+        let healer = SelfHealer::new(config, reader, k8s_client);
+
+        // 5 DNS drops from same IP - at threshold (> 5 needed)
+        let drops: Vec<DropReason> = (0..5).map(|_| DropReason {
+            src_ip: "10.0.0.1".to_string(),
+            dst_ip: "10.96.0.10".to_string(),
+            port: 53,
+            protocol: 17,
+            reason: DropReasonType::PolicyDenied,
+            timestamp: 0,
+        }).collect();
+
+        let problems = healer.analyze_dns_drops(&drops);
+        assert!(problems.is_empty()); // 5 is not > 5
+
+        // 6 DNS drops - above threshold
+        let drops: Vec<DropReason> = (0..6).map(|_| DropReason {
+            src_ip: "10.0.0.1".to_string(),
+            dst_ip: "10.96.0.10".to_string(),
+            port: 53,
+            protocol: 17,
+            reason: DropReasonType::PolicyDenied,
+            timestamp: 0,
+        }).collect();
+
+        let problems = healer.analyze_dns_drops(&drops);
+        assert_eq!(problems.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_analyze_dns_drops_non_dns_ignored() {
+        let config = HealerConfig::default();
+        let reader = MockMapReader;
+        let k8s_client = K8sClient::mock();
+        let healer = SelfHealer::new(config, reader, k8s_client);
+
+        // Drops on port 80, not DNS
+        let drops: Vec<DropReason> = (0..10).map(|_| DropReason {
+            src_ip: "10.0.0.1".to_string(),
+            dst_ip: "10.0.0.2".to_string(),
+            port: 80,
+            protocol: 6,
+            reason: DropReasonType::PolicyDenied,
+            timestamp: 0,
+        }).collect();
+
+        let problems = healer.analyze_dns_drops(&drops);
+        assert!(problems.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_analyze_policy_gaps() {
+        let config = HealerConfig::default();
+        let reader = MockMapReader;
+        let k8s_client = K8sClient::mock();
+        let healer = SelfHealer::new(config, reader, k8s_client);
+
+        let drops = vec![
+            DropReason {
+                src_ip: "10.0.0.1".to_string(),
+                dst_ip: "10.0.0.2".to_string(),
+                port: 80,
+                protocol: 6,
+                reason: DropReasonType::PolicyDenied,
+                timestamp: 0,
+            },
+            DropReason {
+                src_ip: "10.0.0.3".to_string(),
+                dst_ip: "10.0.0.4".to_string(),
+                port: 443,
+                protocol: 6,
+                reason: DropReasonType::PolicyDenied,
+                timestamp: 0,
+            },
+        ];
+
+        let problems = healer.analyze_policy_gaps(&drops);
+        assert_eq!(problems.len(), 2);
+
+        match &problems[0] {
+            Problem::PolicyGap { src_pod, dst_pod, port, protocol, .. } => {
+                assert_eq!(src_pod, "10.0.0.1");
+                assert_eq!(dst_pod, "10.0.0.2");
+                assert_eq!(*port, 80);
+                assert_eq!(protocol, "TCP");
+            }
+            _ => panic!("Expected PolicyGap"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_analyze_policy_gaps_non_policy_ignored() {
+        let config = HealerConfig::default();
+        let reader = MockMapReader;
+        let k8s_client = K8sClient::mock();
+        let healer = SelfHealer::new(config, reader, k8s_client);
+
+        let drops = vec![
+            DropReason {
+                src_ip: "10.0.0.1".to_string(),
+                dst_ip: "10.0.0.2".to_string(),
+                port: 80,
+                protocol: 6,
+                reason: DropReasonType::FragmentationNeeded,
+                timestamp: 0,
+            },
+        ];
+
+        let problems = healer.analyze_policy_gaps(&drops);
+        assert!(problems.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_analyze_policy_gaps_udp_protocol() {
+        let config = HealerConfig::default();
+        let reader = MockMapReader;
+        let k8s_client = K8sClient::mock();
+        let healer = SelfHealer::new(config, reader, k8s_client);
+
+        let drops = vec![
+            DropReason {
+                src_ip: "10.0.0.1".to_string(),
+                dst_ip: "10.0.0.2".to_string(),
+                port: 53,
+                protocol: 17,
+                reason: DropReasonType::PolicyDenied,
+                timestamp: 0,
+            },
+        ];
+
+        let problems = healer.analyze_policy_gaps(&drops);
+        assert_eq!(problems.len(), 1);
+        match &problems[0] {
+            Problem::PolicyGap { protocol, .. } => {
+                assert_eq!(protocol, "UDP");
+            }
+            _ => panic!("Expected PolicyGap"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_healer_stats_initial() {
+        let config = HealerConfig::default();
+        let reader = MockMapReader;
+        let k8s_client = K8sClient::mock();
+        let healer = SelfHealer::new(config, reader, k8s_client);
+
+        let stats = healer.stats();
+        assert_eq!(stats.problems_detected, 0);
+        assert_eq!(stats.fixes_proposed, 0);
+        assert_eq!(stats.fixes_applied, 0);
+    }
+
+    #[tokio::test]
+    async fn test_healer_problems_empty() {
+        let config = HealerConfig::default();
+        let reader = MockMapReader;
+        let k8s_client = K8sClient::mock();
+        let healer = SelfHealer::new(config, reader, k8s_client);
+
+        assert!(healer.problems().is_empty());
+        assert!(healer.fixes().is_empty());
+    }
+
+    #[test]
+    fn test_problem_equality() {
+        let p1 = Problem::DNSDrops {
+            namespace: "default".to_string(),
+            pod: "web".to_string(),
+            count: 10,
+        };
+        let p2 = Problem::DNSDrops {
+            namespace: "default".to_string(),
+            pod: "web".to_string(),
+            count: 10,
+        };
+        assert_eq!(p1, p2);
+    }
+
+    #[test]
+    fn test_fix_action_equality() {
+        let a1 = FixAction::CreateDNSPolicy { namespace: "default".to_string() };
+        let a2 = FixAction::CreateDNSPolicy { namespace: "default".to_string() };
+        assert_eq!(a1, a2);
+
+        let a3 = FixAction::AdjustMTU {
+            namespace: "prod".to_string(),
+            pod: "web".to_string(),
+            new_mtu: 1450,
+        };
+        let a4 = FixAction::CreateDNSPolicy { namespace: "prod".to_string() };
+        assert_ne!(a3, a4);
+    }
+
+    #[test]
+    fn test_healer_stats_default() {
+        let stats = HealerStats::default();
+        assert_eq!(stats.problems_detected, 0);
+        assert_eq!(stats.fixes_proposed, 0);
+        assert_eq!(stats.fixes_applied, 0);
     }
 }

@@ -175,7 +175,7 @@ int packet_filter(struct xdp_md *ctx) {
         }
     }
 
-    fn ip_to_u32(&self, ip: &str) -> u32 {
+    fn ip_to_u32(&self, _ip: &str) -> u32 {
         // Convert IP string to u32 (network byte order)
         // Simplified - in real implementation would properly parse IP
         0

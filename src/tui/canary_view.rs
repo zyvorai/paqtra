@@ -1,13 +1,14 @@
+#![allow(dead_code)]
 /// Canary Deployment View - Sidecarless Progressive Traffic Shifting
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
     Frame,
 };
 
-use crate::modules::canary::{CanaryEngine, CanaryDeployment, CanaryState};
+use crate::modules::canary::CanaryEngine;
 use super::theme::*;
 
 pub struct CanaryView {

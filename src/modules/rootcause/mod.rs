@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Root-Cause Engine Module
 ///
 /// Analyzes packet drops and provides human-readable explanations
@@ -320,6 +321,21 @@ impl<M: MapReader> RootCauseEngine<M> {
         Ok(analyses)
     }
 
+    /// Resolve an IP address to identity and namespace via IPCache
+    fn resolve_ip_info(&self, ip: &str) -> (u32, Option<String>) {
+        if let Ok(ipcache) = self.ebpf_reader.read_ipcache_map() {
+            if let Some(entry) = ipcache.iter().find(|e| e.ip == ip) {
+                let namespace = if entry.namespace.is_empty() {
+                    None
+                } else {
+                    Some(entry.namespace.clone())
+                };
+                return (entry.identity, namespace);
+            }
+        }
+        (0, None)
+    }
+
     /// Convert eBPF drop to drop event
     async fn ebpf_drop_to_event(&self, ebpf_drop: &EbpfDropReason) -> Result<DropEvent> {
         // Parse IP addresses
@@ -328,19 +344,22 @@ impl<M: MapReader> RootCauseEngine<M> {
         let dst_ip: IpAddr = ebpf_drop.dst_ip.parse()
             .unwrap_or_else(|_| IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)));
 
-        // TODO: Resolve IPs to pod info via IPCache
+        // Resolve IPs to pod info via IPCache
+        let (identity_src, src_ns) = self.resolve_ip_info(&ebpf_drop.src_ip);
+        let (identity_dst, dst_ns) = self.resolve_ip_info(&ebpf_drop.dst_ip);
+
         let event = DropEvent {
             timestamp: ebpf_drop.timestamp,
             src_ip,
             dst_ip,
-            src_port: 0, // TODO: Get from eBPF if available
+            src_port: 0,
             dst_port: ebpf_drop.port,
             protocol: ebpf_drop.protocol,
             reason: DropReason::from_ebpf(&ebpf_drop.reason),
-            identity_src: 0, // TODO: Resolve from IPCache
-            identity_dst: 0, // TODO: Resolve from IPCache
-            namespace: None, // TODO: Resolve from identity
-            pod_name: None,  // TODO: Resolve from identity
+            identity_src,
+            identity_dst,
+            namespace: src_ns.or(dst_ns),
+            pod_name: None,
         };
 
         Ok(event)
@@ -471,7 +490,7 @@ impl<M: MapReader> RootCauseEngine<M> {
     async fn generate_fix(
         &self,
         event: &DropEvent,
-        related_policy: &Option<String>,
+        _related_policy: &Option<String>,
     ) -> Result<SuggestedFix> {
         match &event.reason {
             DropReason::PolicyDenied | DropReason::PortNotAllowed => {

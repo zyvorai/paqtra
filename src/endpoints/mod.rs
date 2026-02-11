@@ -1,6 +1,7 @@
+#![allow(dead_code)]
 use anyhow::Result;
 use k8s_openapi::api::core::v1::Pod;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use crate::kubernetes::K8sClient;
 

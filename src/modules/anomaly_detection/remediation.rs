@@ -131,7 +131,7 @@ impl RemediationEngine {
         }
     }
 
-    fn default_remediation(&self, anomaly: &Anomaly) -> RemediationAction {
+    fn default_remediation(&self, _anomaly: &Anomaly) -> RemediationAction {
         RemediationAction {
             action_type: RemediationType::AlertOnly,
             description: "Manual investigation recommended".to_string(),

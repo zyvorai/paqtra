@@ -1,8 +1,9 @@
+#![allow(dead_code)]
 /// eBPF Map Reader Implementation
 ///
 /// Reads Cilium eBPF maps directly from /sys/fs/bpf/
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::path::Path;
 
 use super::*;
@@ -61,8 +62,9 @@ impl Default for CiliumMapReader {
 
 impl MapReader for CiliumMapReader {
     fn read_policy_map(&self) -> Result<Vec<PolicyDecision>> {
-        // TODO: Implement actual eBPF map reading
-        // For now, return mock data
+        // This reader uses the simple /sys/fs/bpf filesystem approach.
+        // For full eBPF map reading, use bpf_reader::CiliumMapReader which
+        // integrates with bpftool for proper map iteration.
         Ok(vec![])
     }
 

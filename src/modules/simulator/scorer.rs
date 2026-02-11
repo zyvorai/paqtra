@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Risk Scorer
 ///
 /// Calculates risk scores for policy changes

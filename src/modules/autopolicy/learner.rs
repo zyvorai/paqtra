@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Traffic Learning Engine
 ///
 /// Learns traffic patterns over time by observing connections

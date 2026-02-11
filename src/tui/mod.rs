@@ -14,10 +14,6 @@ use ratatui::{
 };
 use std::io;
 use std::time::Duration;
-use std::collections::HashSet;
-
-use std::sync::Arc;
-
 use crate::ebpf::{MockMapReader, EnrichedMapReader, CiliumMapReader};
 use crate::endpoints::{Endpoint, EndpointManager};
 use crate::hubble::{Flow, HubbleClient};
@@ -27,7 +23,7 @@ use crate::modules::healer::{SelfHealer, HealerConfig};
 use crate::modules::rootcause::{RootCauseEngine, RootCauseConfig};
 use crate::modules::simulator::{Simulator, SimulatorConfig};
 use crate::modules::replay::{ReplayEngine, ReplayConfig};
-use crate::integration::{IntegratedDataProvider, EnrichedConnection, format_enriched_connection};
+use crate::integration::{IntegratedDataProvider, EnrichedConnection};
 
 mod simulator_view;
 mod replay_view;
@@ -76,6 +72,7 @@ impl ModuleContainer {
     }
 
     /// Get autopolicy stats
+    #[allow(dead_code)]
     fn autopolicy_stats(&self) -> crate::modules::autopolicy::AutoPolicyStats {
         match self {
             ModuleContainer::Enriched { autopolicy, .. } => autopolicy.stats(),
@@ -92,6 +89,7 @@ impl ModuleContainer {
 pub struct TuiApp {
     hubble_client: HubbleClient,
     endpoint_manager: EndpointManager,
+    #[allow(dead_code)]
     k8s_client: K8sClient,
     flows: Vec<Flow>,
     endpoints: Vec<Endpoint>,
@@ -142,7 +140,9 @@ pub struct TuiApp {
 
     // UX enhancements
     show_help: bool,
+    #[allow(dead_code)]
     operation_in_progress: bool,
+    #[allow(dead_code)]
     operation_message: String,
 }
 
@@ -1197,11 +1197,6 @@ impl TuiApp {
                     "?: Help | ↑/↓: Select | p: Promote | r: Rollback | +: Progress | d: Details".to_string()
                 },
                 12 => "?: Help | ↑/↓: Select | v: Cycle View (Clusters/Topology/Syncs/Placements)".to_string(),
-                0 => if self.show_packet_explanation {
-                    "?: Help | q: Quit | Esc: Exit Explanation".to_string()
-                } else {
-                    "?: Help | q: Quit | ↑/↓: Select Flow | e: Explain Packet".to_string()
-                },
                 _ => "?: Help | q: Quit | Tab: Next | Shift+Tab: Previous".to_string(),
             }
         };
