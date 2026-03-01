@@ -20,8 +20,8 @@ spec:
     spec:
       containers:
       - name: ui
-        image: cilium-vision-ui:latest
-        imagePullPolicy: IfNotPresent
+        image: ghcr.io/ssahani/cilium-flow-ui:latest
+        imagePullPolicy: Always
         ports:
         - name: http
           containerPort: 80
@@ -31,11 +31,11 @@ spec:
           value: "http://cilium-vision-api:8080"
         resources:
           requests:
-            memory: "64Mi"
-            cpu: "100m"
+            memory: "128Mi"
+            cpu: "50m"
           limits:
             memory: "256Mi"
-            cpu: "500m"
+            cpu: "200m"
         livenessProbe:
           httpGet:
             path: /

@@ -25,8 +25,8 @@ spec:
       serviceAccountName: cilium-vision-api
       containers:
       - name: api
-        image: cilium-vision-api:latest
-        imagePullPolicy: IfNotPresent
+        image: ghcr.io/ssahani/cilium-flow-api:latest
+        imagePullPolicy: Always
         ports:
         - name: http
           containerPort: 8080
@@ -50,10 +50,10 @@ spec:
         resources:
           requests:
             memory: "256Mi"
-            cpu: "250m"
+            cpu: "100m"
           limits:
-            memory: "1Gi"
-            cpu: "1000m"
+            memory: "512Mi"
+            cpu: "500m"
         livenessProbe:
           httpGet:
             path: /health
