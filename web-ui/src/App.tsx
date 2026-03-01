@@ -16,6 +16,7 @@ import Settings from './pages/Settings';
 
 // Layout
 import Layout from './components/Layout';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Create dark theme
 const darkTheme = createTheme({
@@ -42,19 +43,21 @@ const App: React.FC = () => {
     <Provider store={store}>
       <ThemeProvider theme={darkTheme}>
         <CssBaseline />
-        <Router>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/flows" element={<Flows />} />
-              <Route path="/topology" element={<Topology />} />
-              <Route path="/policies" element={<Policies />} />
-              <Route path="/anomalies" element={<Anomalies />} />
-              <Route path="/compliance" element={<Compliance />} />
-              <Route path="/settings" element={<Settings />} />
-            </Routes>
-          </Layout>
-        </Router>
+        <ErrorBoundary>
+          <Router>
+            <Layout>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/flows" element={<Flows />} />
+                <Route path="/topology" element={<Topology />} />
+                <Route path="/policies" element={<Policies />} />
+                <Route path="/anomalies" element={<Anomalies />} />
+                <Route path="/compliance" element={<Compliance />} />
+                <Route path="/settings" element={<Settings />} />
+              </Routes>
+            </Layout>
+          </Router>
+        </ErrorBoundary>
       </ThemeProvider>
     </Provider>
   );

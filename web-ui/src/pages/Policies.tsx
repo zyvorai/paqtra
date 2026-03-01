@@ -33,25 +33,15 @@ import {
   Close,
   Science,
 } from '@mui/icons-material';
-import axios from 'axios';
+import {
+  fetchPolicies as apiFetchPolicies,
+  createPolicy as apiCreatePolicy,
+  deletePolicy as apiDeletePolicy,
+  simulatePolicy as apiSimulatePolicy,
+  Policy,
+} from '../services/api';
+import { isAxiosError } from 'axios';
 import { format, parseISO } from 'date-fns';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface Policy {
-  id: string;
-  name: string;
-  namespace: string;
-  created_at: string;
-  status: string;
-}
-
-interface PoliciesResponse {
-  policies: Policy[];
-  total: number;
-}
 
 interface SimulationResult {
   policy: string;
@@ -111,10 +101,10 @@ const Policies: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.get<PoliciesResponse>('/api/v1/policies');
+      const response = await apiFetchPolicies();
       setPolicies(response.data.policies);
     } catch (err) {
-      const message = axios.isAxiosError(err)
+      const message = isAxiosError(err)
         ? err.response?.data?.message ?? err.message
         : 'Failed to fetch policies';
       setError(String(message));
@@ -145,7 +135,7 @@ const Policies: React.FC = () => {
         return;
       }
 
-      await axios.post('/api/v1/policies', {
+      await apiCreatePolicy({
         name: newName.trim(),
         namespace: newNamespace.trim() || 'default',
         spec,
@@ -158,7 +148,7 @@ const Policies: React.FC = () => {
       setSuccessMessage('Policy created successfully');
       fetchPolicies();
     } catch (err) {
-      const message = axios.isAxiosError(err)
+      const message = isAxiosError(err)
         ? err.response?.data?.message ?? err.message
         : 'Failed to create policy';
       setError(String(message));
@@ -176,13 +166,13 @@ const Policies: React.FC = () => {
     setDeleting(true);
     setError(null);
     try {
-      await axios.delete(`/api/v1/policies/${deletingId}`);
+      await apiDeletePolicy(deletingId);
       setDeleteOpen(false);
       setDeletingId(null);
       setSuccessMessage('Policy deleted successfully');
       fetchPolicies();
     } catch (err) {
-      const message = axios.isAxiosError(err)
+      const message = isAxiosError(err)
         ? err.response?.data?.message ?? err.message
         : 'Failed to delete policy';
       setError(String(message));
@@ -208,7 +198,7 @@ const Policies: React.FC = () => {
         return;
       }
 
-      const response = await axios.post<SimulationResult>('/api/v1/policies/simulate', {
+      const response = await apiSimulatePolicy({
         name: newName.trim() || 'simulation-test',
         namespace: newNamespace.trim() || 'default',
         spec,
@@ -216,7 +206,7 @@ const Policies: React.FC = () => {
       setSimulationResult(response.data);
       setSimulateOpen(true);
     } catch (err) {
-      const message = axios.isAxiosError(err)
+      const message = isAxiosError(err)
         ? err.response?.data?.message ?? err.message
         : 'Simulation failed';
       setError(String(message));

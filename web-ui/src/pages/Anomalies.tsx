@@ -33,7 +33,8 @@ import {
   ReportProblem,
   BugReport,
 } from '@mui/icons-material';
-import axios from 'axios';
+import { fetchAnomalies as apiFetchAnomalies, remediateAnomaly as apiRemediateAnomaly, Anomaly } from '../services/api';
+import { isAxiosError } from 'axios';
 import { format, parseISO } from 'date-fns';
 
 // ---------------------------------------------------------------------------
@@ -41,23 +42,6 @@ import { format, parseISO } from 'date-fns';
 // ---------------------------------------------------------------------------
 
 type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
-
-interface Anomaly {
-  id: string;
-  title: string;
-  description: string;
-  severity: Severity;
-  category: string;
-  source_namespace: string;
-  source_pod: string;
-  detected_at: string;
-  status: string;
-}
-
-interface AnomaliesResponse {
-  anomalies: Anomaly[];
-  total: number;
-}
 
 const SEVERITY_CONFIG: Record<Severity, { color: 'error' | 'warning' | 'info' | 'success' | 'default'; icon: React.ReactElement }> = {
   critical: { color: 'error', icon: <ErrorIcon fontSize="small" /> },
@@ -98,10 +82,10 @@ const Anomalies: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.get<AnomaliesResponse>('/api/v1/anomalies');
+      const response = await apiFetchAnomalies();
       setAnomalies(response.data.anomalies ?? []);
     } catch (err) {
-      const message = axios.isAxiosError(err)
+      const message = isAxiosError(err)
         ? err.response?.data?.message ?? err.message
         : 'Failed to fetch anomalies';
       setError(String(message));
@@ -123,13 +107,13 @@ const Anomalies: React.FC = () => {
     setRemediating(true);
     setError(null);
     try {
-      await axios.post(`/api/v1/anomalies/${remediatingId}/remediate`);
+      await apiRemediateAnomaly(remediatingId);
       setRemediateOpen(false);
       setRemediatingId(null);
       setSuccessMessage('Remediation initiated successfully');
       fetchAnomalies();
     } catch (err) {
-      const message = axios.isAxiosError(err)
+      const message = isAxiosError(err)
         ? err.response?.data?.message ?? err.message
         : 'Remediation failed';
       setError(String(message));
@@ -283,7 +267,7 @@ const Anomalies: React.FC = () => {
                 </TableRow>
               ) : (
                 anomalies.map((anomaly) => {
-                  const severityCfg = SEVERITY_CONFIG[anomaly.severity] ?? SEVERITY_CONFIG.info;
+                  const severityCfg = SEVERITY_CONFIG[anomaly.severity as Severity] ?? SEVERITY_CONFIG.info;
                   return (
                     <TableRow key={anomaly.id} hover>
                       <TableCell>

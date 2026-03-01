@@ -132,6 +132,8 @@ export interface Anomaly {
   severity: string;
   category: string;
   source: string;
+  source_namespace: string;
+  source_pod: string;
   detected_at: string;
   status: string;
 }

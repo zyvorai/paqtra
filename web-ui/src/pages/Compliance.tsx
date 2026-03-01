@@ -33,7 +33,8 @@ import {
   GppMaybe,
   GppBad,
 } from '@mui/icons-material';
-import axios from 'axios';
+import { fetchFrameworks as apiFetchFrameworks, runAudit as apiRunAudit, fetchSecurityPosture as apiFetchSecurityPosture } from '../services/api';
+import { isAxiosError } from 'axios';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -135,13 +136,13 @@ const Compliance: React.FC = () => {
     setError(null);
     try {
       const [frameworksRes, postureRes] = await Promise.all([
-        axios.get<{ frameworks: string[] }>('/api/v1/compliance/frameworks'),
-        axios.get<SecurityPosture>('/api/v1/security/posture'),
+        apiFetchFrameworks(),
+        apiFetchSecurityPosture(),
       ]);
       setFrameworks(buildFrameworks(frameworksRes.data.frameworks));
       setPosture(postureRes.data);
     } catch (err) {
-      const message = axios.isAxiosError(err)
+      const message = isAxiosError(err)
         ? err.response?.data?.message ?? err.message
         : 'Failed to load compliance data';
       setError(String(message));
@@ -162,7 +163,7 @@ const Compliance: React.FC = () => {
     setAuditingFramework(frameworkName);
     setError(null);
     try {
-      await axios.post('/api/v1/compliance/audit', { framework: frameworkName });
+      await apiRunAudit(frameworkName);
       setSuccessMessage(`Audit started for ${frameworkName}`);
 
       // Optimistically update the framework status
@@ -174,7 +175,7 @@ const Compliance: React.FC = () => {
         ),
       );
     } catch (err) {
-      const message = axios.isAxiosError(err)
+      const message = isAxiosError(err)
         ? err.response?.data?.message ?? err.message
         : 'Failed to start audit';
       setError(String(message));

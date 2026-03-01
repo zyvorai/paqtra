@@ -26,7 +26,7 @@ import {
   Cancel,
   Circle,
 } from '@mui/icons-material';
-import axios from 'axios';
+import { checkHealth } from '../services/api';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -97,7 +97,7 @@ const Settings: React.FC = () => {
   const checkApiConnection = async () => {
     setConnectionStatus((prev) => ({ ...prev, api: 'checking' }));
     try {
-      await axios.get('/health', { timeout: 5000 });
+      await checkHealth();
       setConnectionStatus((prev) => ({ ...prev, api: 'connected' }));
     } catch {
       setConnectionStatus((prev) => ({ ...prev, api: 'disconnected' }));

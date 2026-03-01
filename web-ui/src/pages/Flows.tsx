@@ -37,43 +37,13 @@ import {
   CallMade,
   CallReceived,
 } from '@mui/icons-material';
-import axios from 'axios';
+import { fetchFlows as apiFetchFlows, fetchFlowStats as apiFetchFlowStats, Flow, FlowStats } from '../services/api';
+import { isAxiosError } from 'axios';
 import { format, parseISO } from 'date-fns';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface FlowEndpoint {
-  namespace: string;
-  pod: string;
-  ip: string;
-}
-
-interface Flow {
-  id: string;
-  timestamp: string;
-  source: FlowEndpoint;
-  destination: FlowEndpoint;
-  verdict: string;
-  protocol: string;
-  port: number;
-}
-
-interface FlowsResponse {
-  flows: Flow[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
-interface FlowStats {
-  total_flows: number;
-  forwarded: number;
-  dropped: number;
-  requests_per_second: number;
-  avg_latency_ms: number;
-}
 
 type Verdict = 'ALL' | 'FORWARDED' | 'DROPPED' | 'AUDIT';
 
@@ -137,11 +107,11 @@ const Flows: React.FC = () => {
       if (namespace) params.namespace = namespace;
       if (verdict !== 'ALL') params.verdict = verdict;
 
-      const response = await axios.get<FlowsResponse>('/api/v1/flows', { params });
+      const response = await apiFetchFlows(params);
       setFlows(response.data.flows);
       setTotal(response.data.total);
     } catch (err) {
-      const message = axios.isAxiosError(err)
+      const message = isAxiosError(err)
         ? err.response?.data?.message ?? err.message
         : 'Failed to fetch flows';
       setError(String(message));
@@ -152,7 +122,7 @@ const Flows: React.FC = () => {
 
   const fetchStats = useCallback(async () => {
     try {
-      const response = await axios.get<FlowStats>('/api/v1/flows/stats');
+      const response = await apiFetchFlowStats();
       setStats(response.data);
     } catch {
       // Stats are non-critical; silently ignore

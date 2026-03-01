@@ -28,19 +28,8 @@ import {
   Circle,
   CloudQueue,
 } from '@mui/icons-material';
-import axios from 'axios';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface FlowStats {
-  total_flows: number;
-  forwarded: number;
-  dropped: number;
-  requests_per_second: number;
-  avg_latency_ms: number;
-}
+import { fetchFlowStats, FlowStats } from '../services/api';
+import { isAxiosError } from 'axios';
 
 interface NamespaceInfo {
   name: string;
@@ -161,10 +150,10 @@ const Topology: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.get<FlowStats>('/api/v1/flows/stats');
+      const response = await fetchFlowStats();
       setStats(response.data);
     } catch (err) {
-      const message = axios.isAxiosError(err)
+      const message = isAxiosError(err)
         ? err.response?.data?.message ?? err.message
         : 'Failed to load topology data';
       setError(String(message));
