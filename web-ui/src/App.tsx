@@ -14,6 +14,7 @@ const Policies = React.lazy(() => import('./pages/Policies'));
 const Anomalies = React.lazy(() => import('./pages/Anomalies'));
 const Compliance = React.lazy(() => import('./pages/Compliance'));
 const Settings = React.lazy(() => import('./pages/Settings'));
+const NotFound = React.lazy(() => import('./pages/NotFound'));
 
 // Layout & ErrorBoundary (loaded eagerly - small)
 import Layout from './components/Layout';
@@ -63,6 +64,7 @@ const App: React.FC = () => {
                   <Route path="/anomalies" element={<Anomalies />} />
                   <Route path="/compliance" element={<Compliance />} />
                   <Route path="/settings" element={<Settings />} />
+                  <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
             </Layout>
