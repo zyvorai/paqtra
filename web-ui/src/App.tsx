@@ -1,22 +1,30 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
+import { CircularProgress, Box } from '@mui/material';
 import { Provider } from 'react-redux';
 import { store } from './store';
 
-// Pages
-import Dashboard from './pages/Dashboard';
-import Flows from './pages/Flows';
-import Topology from './pages/Topology';
-import Policies from './pages/Policies';
-import Anomalies from './pages/Anomalies';
-import Compliance from './pages/Compliance';
-import Settings from './pages/Settings';
+// Lazy-loaded pages (code-split per route)
+const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const Flows = React.lazy(() => import('./pages/Flows'));
+const Topology = React.lazy(() => import('./pages/Topology'));
+const Policies = React.lazy(() => import('./pages/Policies'));
+const Anomalies = React.lazy(() => import('./pages/Anomalies'));
+const Compliance = React.lazy(() => import('./pages/Compliance'));
+const Settings = React.lazy(() => import('./pages/Settings'));
 
-// Layout
+// Layout & ErrorBoundary (loaded eagerly - small)
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
+
+// Loading fallback
+const PageLoader = () => (
+  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+    <CircularProgress />
+  </Box>
+);
 
 // Create dark theme
 const darkTheme = createTheme({
@@ -46,15 +54,17 @@ const App: React.FC = () => {
         <ErrorBoundary>
           <Router>
             <Layout>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/flows" element={<Flows />} />
-                <Route path="/topology" element={<Topology />} />
-                <Route path="/policies" element={<Policies />} />
-                <Route path="/anomalies" element={<Anomalies />} />
-                <Route path="/compliance" element={<Compliance />} />
-                <Route path="/settings" element={<Settings />} />
-              </Routes>
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/flows" element={<Flows />} />
+                  <Route path="/topology" element={<Topology />} />
+                  <Route path="/policies" element={<Policies />} />
+                  <Route path="/anomalies" element={<Anomalies />} />
+                  <Route path="/compliance" element={<Compliance />} />
+                  <Route path="/settings" element={<Settings />} />
+                </Routes>
+              </Suspense>
             </Layout>
           </Router>
         </ErrorBoundary>
