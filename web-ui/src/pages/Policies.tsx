@@ -28,7 +28,6 @@ import {
   Add,
   Delete,
   Refresh,
-  PlayArrow,
   Visibility,
   Policy as PolicyIcon,
   Close,

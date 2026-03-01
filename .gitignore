@@ -1,8 +1,10 @@
 # Rust
-/target/
+**/target/
 **/*.rs.bk
 *.pdb
-Cargo.lock
+
+# Node
+**/node_modules/
 
 # IDE
 .idea/
@@ -17,3 +19,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Environment
+.env
+.env.local
+.env.*.local
