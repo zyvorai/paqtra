@@ -47,8 +47,40 @@ impl COREHandler {
     }
 
     fn check_btf_support() -> Result<bool> {
-        // Check if /sys/kernel/btf/vmlinux exists
-        Ok(std::path::Path::new("/sys/kernel/btf/vmlinux").exists())
+        let btf_path = std::path::Path::new("/sys/kernel/btf/vmlinux");
+
+        if !btf_path.exists() {
+            tracing::debug!("BTF vmlinux file does not exist at /sys/kernel/btf/vmlinux");
+            return Ok(false);
+        }
+
+        // Check that the file is actually readable, not just that it exists
+        match std::fs::metadata(btf_path) {
+            Ok(meta) => {
+                if meta.len() == 0 {
+                    tracing::warn!("BTF vmlinux file exists but is empty");
+                    return Ok(false);
+                }
+                // Attempt a small read to verify access
+                match std::fs::File::open(btf_path) {
+                    Ok(_) => {
+                        tracing::debug!(
+                            "BTF vmlinux is available and readable ({} bytes)",
+                            meta.len()
+                        );
+                        Ok(true)
+                    }
+                    Err(e) => {
+                        tracing::warn!("BTF vmlinux exists but is not readable: {}", e);
+                        Ok(false)
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Cannot stat BTF vmlinux: {}", e);
+                Ok(false)
+            }
+        }
     }
 
     /// Extract BTF information from kernel
@@ -64,9 +96,24 @@ impl COREHandler {
         })
     }
 
+    /// Read the actual kernel version from /proc/version.
+    /// Falls back to a descriptive "unknown" string if reading fails.
     fn get_kernel_version() -> String {
-        // Read from /proc/version or uname
-        "5.15.0".to_string() // Stub
+        match std::fs::read_to_string("/proc/version") {
+            Ok(version_string) => {
+                // /proc/version format: "Linux version 6.1.0-xxx ..."
+                // Extract the version token (third whitespace-delimited field)
+                version_string
+                    .split_whitespace()
+                    .nth(2)
+                    .unwrap_or("unknown")
+                    .to_string()
+            }
+            Err(e) => {
+                tracing::warn!("Failed to read /proc/version: {}", e);
+                "unknown".to_string()
+            }
+        }
     }
 }
 
@@ -74,4 +121,12 @@ impl COREHandler {
 pub struct BTFInfo {
     pub kernel_version: String,
     pub available_types: Vec<String>,
+}
+
+impl Default for COREHandler {
+    fn default() -> Self {
+        Self {
+            btf_available: false,
+        }
+    }
 }

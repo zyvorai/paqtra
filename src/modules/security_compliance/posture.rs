@@ -14,50 +14,52 @@ impl SecurityPosture {
     }
 
     pub async fn calculate_score(&self) -> Result<SecurityScore> {
+        // All dimensions start at 0.0 (unknown/not-assessed) until real
+        // cluster inspection logic is implemented.
         let mut dimensions = HashMap::new();
 
         dimensions.insert(
             "Network Segmentation".to_string(),
             DimensionScore {
-                score: 85.0,
+                score: 0.0,
                 weight: 0.25,
-                findings: vec!["Good micro-segmentation".to_string()],
+                findings: vec!["assessment_status: pending - not yet inspected against live cluster".to_string()],
             },
         );
 
         dimensions.insert(
             "Access Control".to_string(),
             DimensionScore {
-                score: 75.0,
+                score: 0.0,
                 weight: 0.25,
-                findings: vec!["Some overly permissive policies".to_string()],
+                findings: vec!["assessment_status: pending - RBAC and policy analysis not implemented".to_string()],
             },
         );
 
         dimensions.insert(
             "Encryption".to_string(),
             DimensionScore {
-                score: 90.0,
+                score: 0.0,
                 weight: 0.20,
-                findings: vec!["TLS enabled for all services".to_string()],
+                findings: vec!["assessment_status: pending - TLS configuration check not implemented".to_string()],
             },
         );
 
         dimensions.insert(
             "Monitoring & Logging".to_string(),
             DimensionScore {
-                score: 80.0,
+                score: 0.0,
                 weight: 0.15,
-                findings: vec!["Comprehensive observability".to_string()],
+                findings: vec!["assessment_status: pending - observability stack check not implemented".to_string()],
             },
         );
 
         dimensions.insert(
             "Compliance".to_string(),
             DimensionScore {
-                score: 70.0,
+                score: 0.0,
                 weight: 0.15,
-                findings: vec!["Some compliance gaps".to_string()],
+                findings: vec!["assessment_status: pending - compliance framework checks not implemented".to_string()],
             },
         );
 
@@ -65,6 +67,12 @@ impl SecurityPosture {
             .values()
             .map(|d| d.score * d.weight)
             .sum::<f64>();
+
+        tracing::warn!(
+            "Security posture score is {:.1}/100 - all dimensions are pending assessment. \
+             Connect to a live cluster and implement real checks.",
+            overall_score
+        );
 
         Ok(SecurityScore {
             overall_score,
@@ -84,5 +92,11 @@ impl SecurityPosture {
             effort: Effort::Medium,
             auto_applicable: false,
         }])
+    }
+}
+
+impl Default for SecurityPosture {
+    fn default() -> Self {
+        Self {}
     }
 }

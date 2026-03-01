@@ -86,7 +86,11 @@ impl AnomalyScorer {
         }
 
         let avg_score = total_score / self.algorithms.len() as f64;
-        let confidence = (triggered_count as f64 / self.algorithms.len() as f64) * avg_score;
+        // Confidence is based on algorithm agreement ratio, weighted by average score.
+        // avg_score is already in 0.0..1.0 range, so multiplying by agreement ratio
+        // gives a proper confidence value without double-normalization.
+        let agreement_ratio = triggered_count as f64 / self.algorithms.len() as f64;
+        let confidence = (agreement_ratio * avg_score).clamp(0.0, 1.0);
 
         // Calculate deviation from baseline
         let deviation = ((metric.value - baseline.stats.mean) / baseline.stats.std_dev).abs();
@@ -107,16 +111,71 @@ impl AnomalyScorer {
         }))
     }
 
-    /// Z-Score algorithm: Statistical deviation from mean
+    /// Z-Score algorithm: Statistical deviation from mean.
+    /// Calculates the number of standard deviations the metric value is from the
+    /// baseline mean. Values beyond the sensitivity-adjusted threshold (default ~3
+    /// stddevs) are scored proportionally, clamped to 0.0..1.0.
     fn z_score(&self, metric: &Metric, stats: &BaselineStats) -> Result<f64> {
         if stats.std_dev == 0.0 {
+            // No variance in baseline - any deviation from mean is anomalous
+            if (metric.value - stats.mean).abs() > f64::EPSILON {
+                return Ok(1.0);
+            }
             return Ok(0.0);
         }
 
         let z = ((metric.value - stats.mean) / stats.std_dev).abs();
 
-        // Z-score > 3 is typically considered anomalous
-        Ok((z / 3.0).min(1.0))
+        // Threshold scales with sensitivity: high sensitivity lowers the bar.
+        // At sensitivity 0.0 -> threshold 3.0, at 1.0 -> threshold 2.0
+        let threshold = 3.0 - self.sensitivity;
+
+        // Score proportionally: z at threshold -> 0.5, z at 2*threshold -> 1.0
+        let score = if z <= threshold * 0.5 {
+            0.0
+        } else {
+            ((z - threshold * 0.5) / (threshold * 1.5)).clamp(0.0, 1.0)
+        };
+
+        Ok(score)
+    }
+
+    /// IQR-based detection: Uses interquartile range for robust outlier detection.
+    /// Less sensitive to extreme outliers than Z-Score. Flags values outside
+    /// Q1 - 1.5*IQR or Q3 + 1.5*IQR as anomalous.
+    fn iqr_score(&self, metric: &Metric, stats: &BaselineStats) -> Result<f64> {
+        // Approximate Q1 and Q3 from available stats.
+        // Q1 ~ mean - 0.675*stddev, Q3 ~ mean + 0.675*stddev (normal distribution)
+        let q1 = stats.mean - 0.675 * stats.std_dev;
+        let q3 = stats.mean + 0.675 * stats.std_dev;
+        let iqr = q3 - q1;
+
+        if iqr < f64::EPSILON {
+            if (metric.value - stats.mean).abs() > f64::EPSILON {
+                return Ok(1.0);
+            }
+            return Ok(0.0);
+        }
+
+        let lower_fence = q1 - 1.5 * iqr;
+        let upper_fence = q3 + 1.5 * iqr;
+        let extreme_lower = q1 - 3.0 * iqr;
+        let extreme_upper = q3 + 3.0 * iqr;
+
+        let value = metric.value;
+        if value >= lower_fence && value <= upper_fence {
+            Ok(0.0) // Within normal range
+        } else if value < extreme_lower || value > extreme_upper {
+            Ok(1.0) // Extreme outlier
+        } else {
+            // Mild outlier - score proportionally
+            let distance = if value < lower_fence {
+                (lower_fence - value) / (lower_fence - extreme_lower)
+            } else {
+                (value - upper_fence) / (extreme_upper - upper_fence)
+            };
+            Ok(distance.clamp(0.0, 1.0))
+        }
     }
 
     /// Simplified Isolation Forest: Measures how "isolated" a point is

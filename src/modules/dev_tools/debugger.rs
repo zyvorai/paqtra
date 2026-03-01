@@ -12,17 +12,28 @@ impl InteractiveDebugger {
     }
 
     pub async fn start_session(&self, config: DebugConfig) -> Result<String> {
-        tracing::info!("Starting debug session for: {}/{}", config.namespace, config.service);
+        if config.service.is_empty() {
+            anyhow::bail!("service name cannot be empty");
+        }
+        if config.namespace.is_empty() {
+            anyhow::bail!("namespace cannot be empty");
+        }
 
-        // In real implementation:
-        // 1. Attach eBPF probes to service
-        // 2. Set up request/response interception
-        // 3. Enable breakpoints
-        // 4. Start trace collection
+        anyhow::bail!(
+            "Interactive debugging is not yet implemented. \
+             Would start {:?} debug session for {}/{} with {} breakpoint(s). \
+             In production: attach eBPF probes to service, set up request/response \
+             interception, enable breakpoints, and start trace collection.",
+            config.debug_mode,
+            config.namespace,
+            config.service,
+            config.breakpoints.len()
+        )
+    }
+}
 
-        let session_id = uuid::Uuid::new_v4().to_string();
-
-        tracing::info!("Debug session started: {}", session_id);
-        Ok(session_id)
+impl Default for InteractiveDebugger {
+    fn default() -> Self {
+        Self {}
     }
 }

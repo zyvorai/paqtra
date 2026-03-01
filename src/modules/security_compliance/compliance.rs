@@ -17,6 +17,10 @@ impl ComplianceEngine {
 
     pub async fn audit(&self, framework: ComplianceFramework) -> Result<ComplianceReport> {
         tracing::info!("Running compliance audit for {:?}", framework);
+        tracing::warn!(
+            "Compliance checks are structural stubs - no live cluster inspection is performed. \
+             All controls are reported as 'not_checked' until real audit logic is implemented."
+        );
 
         let controls = match framework {
             ComplianceFramework::PCIDSS => self.audit_pci_dss().await?,
@@ -36,38 +40,34 @@ impl ComplianceEngine {
             overall_score,
             controls,
             violations,
-            recommendations: vec![],
+            recommendations: vec![
+                "WARNING: Compliance checks are not yet implemented. All results are placeholders.".to_string(),
+                "Connect to a live cluster and implement real audit logic before relying on these results.".to_string(),
+            ],
         })
     }
 
     async fn audit_pci_dss(&self) -> Result<Vec<ControlStatus>> {
-        let mut controls = Vec::new();
-
-        // Requirement 1: Firewall configuration
-        controls.push(ControlStatus {
-            control_id: "PCI-DSS-1.1".to_string(),
-            name: "Network segmentation".to_string(),
-            status: ControlState::Compliant,
-            evidence: vec!["CiliumNetworkPolicies enforced".to_string()],
-        });
-
-        // Requirement 2: Default passwords
-        controls.push(ControlStatus {
-            control_id: "PCI-DSS-2.1".to_string(),
-            name: "Default credentials not used".to_string(),
-            status: ControlState::Compliant,
-            evidence: vec!["Service accounts with unique credentials".to_string()],
-        });
-
-        // Requirement 7: Access control
-        controls.push(ControlStatus {
-            control_id: "PCI-DSS-7.1".to_string(),
-            name: "Least privilege access".to_string(),
-            status: ControlState::PartiallyCompliant,
-            evidence: vec!["Some overly permissive RBAC roles detected".to_string()],
-        });
-
-        Ok(controls)
+        Ok(vec![
+            ControlStatus {
+                control_id: "PCI-DSS-1.1".to_string(),
+                name: "Install and maintain network security controls".to_string(),
+                status: ControlState::NotChecked,
+                evidence: vec!["Audit not implemented: would verify CiliumNetworkPolicy enforcement and firewall rules".to_string()],
+            },
+            ControlStatus {
+                control_id: "PCI-DSS-2.1".to_string(),
+                name: "Apply secure configurations to all system components".to_string(),
+                status: ControlState::NotChecked,
+                evidence: vec!["Audit not implemented: would verify no default credentials in service accounts".to_string()],
+            },
+            ControlStatus {
+                control_id: "PCI-DSS-7.1".to_string(),
+                name: "Restrict access to system components by business need to know".to_string(),
+                status: ControlState::NotChecked,
+                evidence: vec!["Audit not implemented: would verify RBAC roles follow least-privilege principle".to_string()],
+            },
+        ])
     }
 
     async fn audit_soc2(&self) -> Result<Vec<ControlStatus>> {
@@ -75,14 +75,14 @@ impl ComplianceEngine {
             ControlStatus {
                 control_id: "CC6.1".to_string(),
                 name: "Logical and physical access controls".to_string(),
-                status: ControlState::Compliant,
-                evidence: vec!["Network policies enforced".to_string()],
+                status: ControlState::NotChecked,
+                evidence: vec!["Audit not implemented: would verify network policy enforcement and access controls".to_string()],
             },
             ControlStatus {
                 control_id: "CC7.2".to_string(),
-                name: "System monitoring".to_string(),
-                status: ControlState::Compliant,
-                evidence: vec!["Cilium Hubble observability enabled".to_string()],
+                name: "System monitoring and anomaly detection".to_string(),
+                status: ControlState::NotChecked,
+                evidence: vec!["Audit not implemented: would verify observability stack (Hubble) is enabled and functioning".to_string()],
             },
         ])
     }
@@ -91,15 +91,15 @@ impl ComplianceEngine {
         Ok(vec![
             ControlStatus {
                 control_id: "164.312(a)(1)".to_string(),
-                name: "Access control".to_string(),
-                status: ControlState::Compliant,
-                evidence: vec!["Identity-based policies".to_string()],
+                name: "Access control - unique user identification".to_string(),
+                status: ControlState::NotChecked,
+                evidence: vec!["Audit not implemented: would verify identity-based policies and authentication".to_string()],
             },
             ControlStatus {
                 control_id: "164.312(e)(1)".to_string(),
-                name: "Transmission security".to_string(),
-                status: ControlState::Compliant,
-                evidence: vec!["TLS encryption enforced".to_string()],
+                name: "Transmission security - encryption of ePHI in transit".to_string(),
+                status: ControlState::NotChecked,
+                evidence: vec!["Audit not implemented: would verify TLS encryption on all service-to-service communication".to_string()],
             },
         ])
     }
@@ -107,27 +107,27 @@ impl ComplianceEngine {
     async fn audit_gdpr(&self) -> Result<Vec<ControlStatus>> {
         Ok(vec![ControlStatus {
             control_id: "Art.32".to_string(),
-            name: "Security of processing".to_string(),
-            status: ControlState::Compliant,
-            evidence: vec!["Encryption and access controls in place".to_string()],
+            name: "Security of processing - appropriate technical and organisational measures".to_string(),
+            status: ControlState::NotChecked,
+            evidence: vec!["Audit not implemented: would verify encryption, access controls, and data protection measures".to_string()],
         }])
     }
 
     async fn audit_iso27001(&self) -> Result<Vec<ControlStatus>> {
         Ok(vec![ControlStatus {
             control_id: "A.13.1.1".to_string(),
-            name: "Network controls".to_string(),
-            status: ControlState::Compliant,
-            evidence: vec!["Network segmentation implemented".to_string()],
+            name: "Network controls - networks managed and controlled to protect information".to_string(),
+            status: ControlState::NotChecked,
+            evidence: vec!["Audit not implemented: would verify network segmentation and micro-segmentation policies".to_string()],
         }])
     }
 
     async fn audit_nist(&self) -> Result<Vec<ControlStatus>> {
         Ok(vec![ControlStatus {
             control_id: "PR.AC-5".to_string(),
-            name: "Network integrity protection".to_string(),
-            status: ControlState::Compliant,
-            evidence: vec!["Network policies enforced".to_string()],
+            name: "Network integrity is protected (e.g., network segregation, segmentation)".to_string(),
+            status: ControlState::NotChecked,
+            evidence: vec!["Audit not implemented: would verify network policy enforcement and segmentation".to_string()],
         }])
     }
 
@@ -146,11 +146,26 @@ impl ComplianceEngine {
     }
 
     fn calculate_score(&self, controls: &[ControlStatus]) -> f64 {
-        let compliant = controls
+        if controls.is_empty() {
+            return 0.0;
+        }
+
+        // Only count controls that have actually been checked
+        let checked_controls: Vec<_> = controls
+            .iter()
+            .filter(|c| c.status != ControlState::NotChecked && c.status != ControlState::NotApplicable)
+            .collect();
+
+        if checked_controls.is_empty() {
+            // No controls have been checked - score is 0 (unknown)
+            return 0.0;
+        }
+
+        let compliant = checked_controls
             .iter()
             .filter(|c| c.status == ControlState::Compliant)
             .count();
-        (compliant as f64 / controls.len() as f64) * 100.0
+        (compliant as f64 / checked_controls.len() as f64) * 100.0
     }
 
     pub async fn get_recommendations(&self) -> Result<Vec<SecurityRecommendation>> {
@@ -163,5 +178,11 @@ impl ComplianceEngine {
             effort: Effort::Medium,
             auto_applicable: false,
         }])
+    }
+}
+
+impl Default for ComplianceEngine {
+    fn default() -> Self {
+        Self {}
     }
 }

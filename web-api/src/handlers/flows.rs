@@ -8,66 +8,194 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::AppState;
-use crate::models::flow::{Flow, FlowEndpoint, FlowQueryParams};
+use crate::models::flow::{Flow, FlowQueryParams};
+
+/// Cache key prefix for flow queries
+const FLOWS_CACHE_PREFIX: &str = "flows";
+/// Cache TTL for flow lists (seconds)
+const FLOWS_CACHE_TTL: u64 = 10;
 
 pub async fn list_flows(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Query(params): Query<FlowQueryParams>,
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Fetching flows with params: {:?}", params);
 
-    // TODO: Integrate with Cilium Vision core to get flows
-    let flows = vec![
-        Flow {
-            id: "flow-1".to_string(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-            source: FlowEndpoint {
-                namespace: "default".to_string(),
-                pod: "frontend-7d4b9c".to_string(),
-                ip: "10.0.1.5".to_string(),
-            },
-            destination: FlowEndpoint {
-                namespace: "default".to_string(),
-                pod: "backend-9f8a2b".to_string(),
-                ip: "10.0.1.10".to_string(),
-            },
-            verdict: "FORWARDED".to_string(),
-            protocol: "TCP".to_string(),
-            port: 8080,
-        },
-    ];
+    // Increment metrics
+    {
+        let mut m = state.metrics.write().await;
+        m.total_requests += 1;
+        m.hubble_queries += 1;
+    }
+
+    let limit = params.limit.unwrap_or(100);
+    let offset = params.offset.unwrap_or(0);
+    let cache_key = format!(
+        "{}:ns={:?}:v={:?}:l={}",
+        FLOWS_CACHE_PREFIX,
+        params.namespace,
+        params.verdict,
+        limit
+    );
+
+    // Try cache first
+    match state.cache.get::<Vec<Flow>>(&cache_key).await {
+        Ok(Some(cached_flows)) => {
+            tracing::debug!("Cache hit for flows (key={})", cache_key);
+            {
+                let mut m = state.metrics.write().await;
+                m.cache_hits += 1;
+                m.flows_fetched += cached_flows.len() as u64;
+            }
+
+            let total = cached_flows.len();
+            let page = apply_pagination(&cached_flows, offset, limit);
+
+            return Ok(Json(json!({
+                "flows": page,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "cached": true,
+            })));
+        }
+        Ok(None) => {
+            let mut m = state.metrics.write().await;
+            m.cache_misses += 1;
+        }
+        Err(e) => {
+            tracing::warn!("Cache read error: {}", e);
+        }
+    }
+
+    // Fetch from Hubble
+    let mut flows = match state
+        .hubble
+        .get_flows(limit + offset, params.namespace.as_deref())
+        .await
+    {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::error!("Failed to fetch flows from Hubble: {}", e);
+            {
+                let mut m = state.metrics.write().await;
+                m.total_errors += 1;
+            }
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Apply verdict filter if present
+    if let Some(ref verdict) = params.verdict {
+        flows.retain(|f| f.verdict.eq_ignore_ascii_case(verdict));
+    }
+
+    // Store in cache (best-effort)
+    if let Err(e) = state.cache.set(&cache_key, &flows, FLOWS_CACHE_TTL).await {
+        tracing::warn!("Cache write error: {}", e);
+    }
+
+    {
+        let mut m = state.metrics.write().await;
+        m.flows_fetched += flows.len() as u64;
+    }
+
+    let total = flows.len();
+    let page = apply_pagination(&flows, offset, limit);
 
     Ok(Json(json!({
-        "flows": flows,
-        "total": 1,
-        "limit": params.limit.unwrap_or(100),
-        "offset": params.offset.unwrap_or(0),
+        "flows": page,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "cached": false,
     })))
 }
 
 pub async fn get_flow(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Fetching flow: {}", id);
 
-    // TODO: Get specific flow from Hubble
-    Ok(Json(json!({
-        "id": id,
-        "message": "Flow details would go here"
-    })))
+    {
+        let mut m = state.metrics.write().await;
+        m.total_requests += 1;
+        m.hubble_queries += 1;
+    }
+
+    // Try cache
+    let cache_key = format!("flow:{}", id);
+    if let Ok(Some(flow)) = state.cache.get::<Flow>(&cache_key).await {
+        let mut m = state.metrics.write().await;
+        m.cache_hits += 1;
+        return Ok(Json(serde_json::to_value(flow).unwrap_or(json!({}))));
+    }
+
+    // Fetch a batch and find by id
+    let flows = state
+        .hubble
+        .get_flows(500, None)
+        .await
+        .unwrap_or_default();
+
+    match flows.into_iter().find(|f| f.id == id) {
+        Some(flow) => {
+            // Cache the individual flow
+            let _ = state.cache.set(&cache_key, &flow, 30).await;
+            Ok(Json(serde_json::to_value(flow).unwrap_or(json!({}))))
+        }
+        None => {
+            let mut m = state.metrics.write().await;
+            m.total_errors += 1;
+            Ok(Json(json!({
+                "error": "not_found",
+                "id": id,
+                "message": "Flow not found. It may have expired from Hubble's buffer."
+            })))
+        }
+    }
 }
 
 pub async fn flow_stats(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, StatusCode> {
-    // TODO: Calculate flow statistics from Hubble
-    Ok(Json(json!({
-        "total_flows": 0,
-        "forwarded": 0,
-        "dropped": 0,
-        "requests_per_second": 0,
-        "avg_latency_ms": 0,
-        "note": "Connect to Hubble for real statistics"
-    })))
+    {
+        let mut m = state.metrics.write().await;
+        m.total_requests += 1;
+        m.hubble_queries += 1;
+    }
+
+    // Try cache
+    let cache_key = "flow_stats";
+    if let Ok(Some(stats)) = state
+        .cache
+        .get::<crate::models::flow::FlowStats>(cache_key)
+        .await
+    {
+        let mut m = state.metrics.write().await;
+        m.cache_hits += 1;
+        return Ok(Json(serde_json::to_value(stats).unwrap_or(json!({}))));
+    }
+
+    match state.hubble.get_flow_stats().await {
+        Ok(stats) => {
+            // Cache stats for 5 seconds
+            let _ = state.cache.set(cache_key, &stats, 5).await;
+            Ok(Json(serde_json::to_value(&stats).unwrap_or(json!({}))))
+        }
+        Err(e) => {
+            tracing::error!("Failed to compute flow stats: {}", e);
+            let mut m = state.metrics.write().await;
+            m.total_errors += 1;
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Apply offset/limit pagination to a slice
+fn apply_pagination(flows: &[Flow], offset: usize, limit: usize) -> &[Flow] {
+    let start = offset.min(flows.len());
+    let end = (start + limit).min(flows.len());
+    &flows[start..end]
 }

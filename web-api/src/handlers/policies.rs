@@ -11,83 +11,179 @@ use crate::AppState;
 use crate::models::policy::CreatePolicyRequest;
 
 pub async fn list_policies(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Listing policies");
 
-    // TODO: List policies from K8s API
-    Ok(Json(json!({
-        "policies": [],
-        "total": 0,
-        "note": "Connect to Kubernetes for real policies"
-    })))
+    {
+        let mut m = state.metrics.write().await;
+        m.total_requests += 1;
+        m.k8s_queries += 1;
+    }
+
+    match state.k8s.list_policies().await {
+        Ok(policies) => {
+            let total = policies.len();
+            Ok(Json(json!({
+                "policies": policies,
+                "total": total,
+            })))
+        }
+        Err(e) => {
+            tracing::error!("Failed to list policies: {}", e);
+            let mut m = state.metrics.write().await;
+            m.total_errors += 1;
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 pub async fn create_policy(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Creating policy: {}/{}", req.namespace, req.name);
 
-    // TODO: Apply policy via K8s API
-    Ok(Json(json!({
-        "id": uuid::Uuid::new_v4().to_string(),
-        "name": req.name,
-        "namespace": req.namespace,
-        "status": "created"
-    })))
+    {
+        let mut m = state.metrics.write().await;
+        m.total_requests += 1;
+        m.k8s_queries += 1;
+    }
+
+    match state.k8s.create_policy(&req).await {
+        Ok(policy) => {
+            {
+                let mut m = state.metrics.write().await;
+                m.policies_created += 1;
+            }
+            Ok(Json(serde_json::to_value(policy).unwrap_or(json!({
+                "status": "created"
+            }))))
+        }
+        Err(e) => {
+            tracing::error!("Failed to create policy: {}", e);
+            let mut m = state.metrics.write().await;
+            m.total_errors += 1;
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 pub async fn get_policy(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Getting policy: {}", id);
 
-    Ok(Json(json!({
-        "id": id,
-        "message": "Policy details"
-    })))
+    {
+        let mut m = state.metrics.write().await;
+        m.total_requests += 1;
+        m.k8s_queries += 1;
+    }
+
+    // Fetch all and find by id
+    match state.k8s.list_policies().await {
+        Ok(policies) => {
+            match policies.into_iter().find(|p| p.id == id || p.name == id) {
+                Some(policy) => {
+                    Ok(Json(serde_json::to_value(policy).unwrap_or(json!({}))))
+                }
+                None => Ok(Json(json!({
+                    "error": "not_found",
+                    "id": id,
+                }))),
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to get policy: {}", e);
+            let mut m = state.metrics.write().await;
+            m.total_errors += 1;
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 pub async fn update_policy(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Updating policy: {}", id);
 
-    Ok(Json(json!({
-        "id": id,
-        "name": req.name,
-        "status": "updated"
-    })))
+    {
+        let mut m = state.metrics.write().await;
+        m.total_requests += 1;
+        m.k8s_queries += 1;
+    }
+
+    // kubectl apply is idempotent, so create == update
+    match state.k8s.create_policy(&req).await {
+        Ok(mut policy) => {
+            policy.id = id;
+            policy.status = "updated".to_string();
+            Ok(Json(serde_json::to_value(policy).unwrap_or(json!({
+                "status": "updated"
+            }))))
+        }
+        Err(e) => {
+            tracing::error!("Failed to update policy: {}", e);
+            let mut m = state.metrics.write().await;
+            m.total_errors += 1;
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 pub async fn delete_policy(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
     tracing::info!("Deleting policy: {}", id);
 
-    // TODO: Delete policy via K8s API
-    Ok(StatusCode::NO_CONTENT)
+    {
+        let mut m = state.metrics.write().await;
+        m.total_requests += 1;
+        m.k8s_queries += 1;
+    }
+
+    match state.k8s.delete_policy(&id).await {
+        Ok(()) => {
+            {
+                let mut m = state.metrics.write().await;
+                m.policies_deleted += 1;
+            }
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Err(e) => {
+            tracing::error!("Failed to delete policy: {}", e);
+            let mut m = state.metrics.write().await;
+            m.total_errors += 1;
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 pub async fn simulate_policy(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Simulating policy: {}", req.name);
 
-    // TODO: Use simulator module
+    {
+        let mut m = state.metrics.write().await;
+        m.total_requests += 1;
+    }
+
+    // Simulation would analyze flows against the proposed policy
+    // For now, return structured response
     Ok(Json(json!({
         "policy": req.name,
+        "namespace": req.namespace,
         "impact": {
             "flows_affected": 0,
             "services_impacted": 0,
             "risk_level": "unknown",
-            "note": "Connect to simulator for real analysis"
+            "note": "Policy simulation engine not yet connected"
         }
     })))
 }

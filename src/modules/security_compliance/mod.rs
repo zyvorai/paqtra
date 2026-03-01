@@ -109,6 +109,8 @@ pub enum ControlState {
     PartiallyCompliant,
     NonCompliant,
     NotApplicable,
+    /// Check has not been implemented or executed yet
+    NotChecked,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -13,6 +13,8 @@ use axum::{
     routing::{get, post},
 };
 use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tower_http::{
     trace::TraceLayer,
     compression::CompressionLayer,
@@ -20,6 +22,9 @@ use tower_http::{
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::Config;
+use crate::services::hubble::HubbleService;
+use crate::services::k8s::K8sService;
+use crate::services::cache::CacheService;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -36,15 +41,31 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::load()?;
     tracing::info!("Configuration loaded");
 
-    // Initialize services
+    // Initialize Redis
     let redis_client = redis::Client::open(config.redis_url.as_str())?;
     let redis_conn = redis_client.get_connection_manager().await?;
     tracing::info!("Connected to Redis");
 
+    // Initialize services
+    let hubble = HubbleService::new(&config.hubble_address);
+    tracing::info!("HubbleService initialized (relay: {})", config.hubble_address);
+
+    let k8s = K8sService::new(config.k8s_context.clone());
+    tracing::info!("K8sService initialized (context: {:?})", config.k8s_context);
+
+    let cache = CacheService::new(redis_conn.clone());
+    tracing::info!("CacheService initialized");
+
+    let metrics = Arc::new(RwLock::new(AppMetrics::default()));
+
     // Build shared application state
-    let app_state = std::sync::Arc::new(AppState {
+    let app_state = Arc::new(AppState {
         config: config.clone(),
         redis: redis_conn,
+        hubble,
+        k8s,
+        cache,
+        metrics,
     });
 
     // Build API router
@@ -113,8 +134,42 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Application-level metrics tracked in memory
+#[derive(Debug, Clone)]
+pub struct AppMetrics {
+    pub total_requests: u64,
+    pub total_errors: u64,
+    pub flows_fetched: u64,
+    pub policies_created: u64,
+    pub policies_deleted: u64,
+    pub cache_hits: u64,
+    pub cache_misses: u64,
+    pub hubble_queries: u64,
+    pub k8s_queries: u64,
+}
+
+impl Default for AppMetrics {
+    fn default() -> Self {
+        Self {
+            total_requests: 0,
+            total_errors: 0,
+            flows_fetched: 0,
+            policies_created: 0,
+            policies_deleted: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+            hubble_queries: 0,
+            k8s_queries: 0,
+        }
+    }
+}
+
 // Application state shared across handlers
 pub struct AppState {
     pub config: Config,
     pub redis: redis::aio::ConnectionManager,
+    pub hubble: HubbleService,
+    pub k8s: K8sService,
+    pub cache: CacheService,
+    pub metrics: Arc<RwLock<AppMetrics>>,
 }

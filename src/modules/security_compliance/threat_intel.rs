@@ -1,6 +1,5 @@
 // Threat Intelligence Integration
 use anyhow::Result;
-use chrono::Utc;
 
 use super::{Priority, RecommendationCategory, SecurityRecommendation, ThreatAssessment, ThreatLevel, Effort};
 
@@ -12,12 +11,32 @@ pub struct ThreatIntelligence {
 impl ThreatIntelligence {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            feeds_enabled: true,
+            feeds_enabled: false, // No feeds are actually configured
         })
     }
 
     pub async fn assess(&self, indicator: &str) -> Result<ThreatAssessment> {
         tracing::debug!("Assessing threat indicator: {}", indicator);
+
+        if !self.feeds_enabled {
+            tracing::warn!(
+                indicator = %indicator,
+                "Threat assessment requested but no feeds are configured. \
+                 Returning 'not_assessed' with zero confidence. \
+                 Configure threat intel feeds (VirusTotal, AlienVault OTX, Abuse.ch, MISP) \
+                 for real assessments."
+            );
+
+            return Ok(ThreatAssessment {
+                indicator: indicator.to_string(),
+                threat_level: ThreatLevel::Clean, // Not assessed, not "clean"
+                categories: vec![],
+                sources: vec!["not_assessed: no threat intelligence feeds configured".to_string()],
+                first_seen: None,
+                last_seen: None,
+                confidence: 0.0,
+            });
+        }
 
         // In real implementation: query threat intel APIs
         // - VirusTotal
@@ -29,10 +48,10 @@ impl ThreatIntelligence {
             indicator: indicator.to_string(),
             threat_level: ThreatLevel::Clean,
             categories: vec![],
-            sources: vec!["Internal analysis".to_string()],
-            first_seen: Some(Utc::now()),
-            last_seen: Some(Utc::now()),
-            confidence: 0.5,
+            sources: vec!["not_assessed: feed integration not implemented".to_string()],
+            first_seen: None,
+            last_seen: None,
+            confidence: 0.0,
         })
     }
 
@@ -46,5 +65,13 @@ impl ThreatIntelligence {
             effort: Effort::Medium,
             auto_applicable: false,
         }])
+    }
+}
+
+impl Default for ThreatIntelligence {
+    fn default() -> Self {
+        Self {
+            feeds_enabled: false,
+        }
     }
 }

@@ -200,3 +200,13 @@ spec:
         Ok(recommendations)
     }
 }
+
+impl Default for ZeroTrustEngine {
+    fn default() -> Self {
+        Self {
+            default_deny_all: true,
+            micro_segmentation: true,
+            identity_based: true,
+        }
+    }
+}

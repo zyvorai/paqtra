@@ -198,3 +198,11 @@ int packet_filter(struct xdp_md *ctx) {
         filters.keys().cloned().collect()
     }
 }
+
+impl Default for AdvancedPacketFilter {
+    fn default() -> Self {
+        Self {
+            active_filters: RwLock::new(HashMap::new()),
+        }
+    }
+}

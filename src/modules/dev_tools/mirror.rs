@@ -12,21 +12,35 @@ impl EnvironmentMirror {
     }
 
     pub async fn create_mirror(&self, config: MirrorConfig) -> Result<String> {
-        tracing::info!(
-            "Creating environment mirror: {} -> {}",
+        if config.source_namespace.is_empty() {
+            anyhow::bail!("source_namespace cannot be empty");
+        }
+        if config.target_namespace.is_empty() {
+            anyhow::bail!("target_namespace cannot be empty");
+        }
+        if config.source_namespace == config.target_namespace {
+            anyhow::bail!(
+                "source_namespace and target_namespace must differ, both are '{}'",
+                config.source_namespace
+            );
+        }
+
+        anyhow::bail!(
+            "Environment mirroring is not yet implemented. \
+             Would mirror {} -> {} ({:?} mode, {} services). \
+             In production: copy deployments/services/configmaps, \
+             adjust resource limits, set up traffic routing, \
+             and configure namespace isolation.",
             config.source_namespace,
-            config.target_namespace
-        );
+            config.target_namespace,
+            config.mirror_type,
+            if config.services.is_empty() { "all".to_string() } else { config.services.len().to_string() }
+        )
+    }
+}
 
-        // In real implementation:
-        // 1. Copy deployments, services, configmaps
-        // 2. Adjust resource limits for dev environment
-        // 3. Set up traffic routing
-        // 4. Configure namespace isolation
-
-        let mirror_id = uuid::Uuid::new_v4().to_string();
-
-        tracing::info!("Mirror created: {}", mirror_id);
-        Ok(mirror_id)
+impl Default for EnvironmentMirror {
+    fn default() -> Self {
+        Self {}
     }
 }

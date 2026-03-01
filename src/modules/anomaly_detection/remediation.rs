@@ -26,6 +26,27 @@ impl RemediationEngine {
             _ => self.default_remediation(&anomaly),
         };
 
+        // Audit log all remediation suggestions
+        tracing::info!(
+            anomaly_id = %anomaly.id,
+            anomaly_type = ?anomaly.anomaly_type,
+            severity = ?anomaly.severity,
+            action_type = ?remediation.action_type,
+            auto_applicable = remediation.auto_applicable,
+            confidence = remediation.confidence,
+            "Remediation suggested: {}",
+            remediation.description
+        );
+
+        if remediation.auto_applicable {
+            tracing::warn!(
+                anomaly_id = %anomaly.id,
+                action_type = ?remediation.action_type,
+                "AUTO-REMEDIATION: Action marked for automatic application - {}",
+                remediation.description
+            );
+        }
+
         anomaly.remediation = Some(remediation);
         Ok(anomaly)
     }
@@ -113,7 +134,7 @@ impl RemediationEngine {
                 anomaly.context.namespace, anomaly.context.pod
             ),
             confidence: 0.9,
-            auto_applicable: self.auto_apply && anomaly.severity == Severity::Critical,
+            auto_applicable: self.auto_apply && anomaly.severity >= Severity::Critical,
             policy_yaml: Some(self.generate_isolation_policy(anomaly)),
         }
     }
@@ -187,7 +208,7 @@ spec:
   ingress:
   - fromEndpoints:
     - matchLabels:
-        k8s:io.kubernetes.pod.name: {}
+        io.kubernetes.pod.name: {}
     toPorts:
     - ports:
       - port: "{}"
@@ -217,7 +238,7 @@ spec:
   egress:
   - toEndpoints:
     - matchLabels:
-        k8s:io.kubernetes.pod.namespace: kube-system
+        io.kubernetes.pod.namespace: kube-system
         k8s-app: kube-dns
     toPorts:
     - ports:
@@ -244,13 +265,13 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      k8s:io.kubernetes.pod.name: {}
+      io.kubernetes.pod.name: {}
   ingress:
   - {{}}
   egress:
   - toEndpoints:
     - matchLabels:
-        k8s:io.kubernetes.pod.namespace: kube-system
+        io.kubernetes.pod.namespace: kube-system
         k8s-app: kube-dns
     toPorts:
     - ports:

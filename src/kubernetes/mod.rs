@@ -26,7 +26,7 @@ impl K8sClient {
     }
 
     /// Create a mock K8sClient for testing (uses default kube config or fails gracefully)
-    #[cfg(test)]
+    #[doc(hidden)]
     pub fn mock() -> Self {
         // Create a minimal client for testing that doesn't require a real cluster
         let config = Config::new(

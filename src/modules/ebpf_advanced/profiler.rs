@@ -92,56 +92,96 @@ impl PerformanceProfiler {
 
     fn attach_cpu_profiler(&self, target: &ProfilingTarget) -> Result<()> {
         tracing::info!(
-            "Attaching CPU profiler ({}Hz sampling)",
-            target.sample_frequency_hz
+            sample_hz = target.sample_frequency_hz,
+            duration_secs = target.duration_seconds,
+            filter = ?target.filter,
+            "STUB: Would attach CPU profiler via perf_event eBPF program. \
+             In production: attach BPF_PROG_TYPE_PERF_EVENT to sample CPU stacks \
+             at {}Hz for {}s.",
+            target.sample_frequency_hz,
+            target.duration_seconds
         );
-        // In real implementation: attach perf_event eBPF program
         Ok(())
     }
 
-    fn attach_memory_profiler(&self, _target: &ProfilingTarget) -> Result<()> {
-        tracing::info!("Attaching memory profiler");
-        // Attach to malloc/free and related functions
+    fn attach_memory_profiler(&self, target: &ProfilingTarget) -> Result<()> {
+        tracing::info!(
+            duration_secs = target.duration_seconds,
+            filter = ?target.filter,
+            "STUB: Would attach memory profiler via uprobe/kprobe. \
+             In production: attach to malloc/free/mmap/munmap to track allocations \
+             and detect leaks."
+        );
         Ok(())
     }
 
-    fn attach_network_profiler(&self, _target: &ProfilingTarget) -> Result<()> {
-        tracing::info!("Attaching network I/O profiler");
-        // Attach to network syscalls and TCP/IP stack
+    fn attach_network_profiler(&self, target: &ProfilingTarget) -> Result<()> {
+        tracing::info!(
+            duration_secs = target.duration_seconds,
+            filter = ?target.filter,
+            "STUB: Would attach network I/O profiler via tracepoints. \
+             In production: attach to tcp_sendmsg/tcp_recvmsg and socket syscalls."
+        );
         Ok(())
     }
 
-    fn attach_syscall_tracer(&self, _target: &ProfilingTarget) -> Result<()> {
-        tracing::info!("Attaching syscall tracer");
-        // Attach to sys_enter/sys_exit tracepoints
+    fn attach_syscall_tracer(&self, target: &ProfilingTarget) -> Result<()> {
+        tracing::info!(
+            duration_secs = target.duration_seconds,
+            filter = ?target.filter,
+            "STUB: Would attach syscall tracer via tracepoints. \
+             In production: attach to raw_syscalls:sys_enter and raw_syscalls:sys_exit."
+        );
         Ok(())
     }
 
-    fn attach_lock_profiler(&self, _target: &ProfilingTarget) -> Result<()> {
-        tracing::info!("Attaching lock contention profiler");
-        // Attach to mutex/semaphore functions
+    fn attach_lock_profiler(&self, target: &ProfilingTarget) -> Result<()> {
+        tracing::info!(
+            duration_secs = target.duration_seconds,
+            filter = ?target.filter,
+            "STUB: Would attach lock contention profiler via kprobes. \
+             In production: attach to mutex_lock/mutex_unlock and measure contention."
+        );
         Ok(())
     }
 
     fn identify_hot_spots(&self, samples: &[Sample]) -> Vec<HotSpot> {
+        if samples.is_empty() {
+            tracing::debug!("No samples collected - no hot spots to identify");
+            return Vec::new();
+        }
+
         let mut function_counts: HashMap<String, u64> = HashMap::new();
+        let mut function_cpus: HashMap<String, std::collections::HashSet<u32>> = HashMap::new();
 
         for sample in samples {
             *function_counts.entry(sample.function.clone()).or_insert(0) += 1;
+            function_cpus
+                .entry(sample.function.clone())
+                .or_default()
+                .insert(sample.cpu);
         }
 
         let total_samples = samples.len() as u64;
         let mut hot_spots: Vec<HotSpot> = function_counts
             .into_iter()
-            .map(|(function, count)| HotSpot {
-                function: function.clone(),
-                percentage: (count as f64 / total_samples as f64) * 100.0,
-                samples: count,
-                context: format!("Called {} times", count),
+            .map(|(function, count)| {
+                let cpu_count = function_cpus.get(&function).map_or(0, |s| s.len());
+                HotSpot {
+                    function: function.clone(),
+                    percentage: (count as f64 / total_samples as f64) * 100.0,
+                    samples: count,
+                    context: format!(
+                        "{} samples across {} CPU(s), {:.1}% of total",
+                        count,
+                        cpu_count,
+                        (count as f64 / total_samples as f64) * 100.0
+                    ),
+                }
             })
             .collect();
 
-        hot_spots.sort_by(|a, b| b.percentage.partial_cmp(&a.percentage).unwrap());
+        hot_spots.sort_by(|a, b| b.percentage.partial_cmp(&a.percentage).unwrap_or(std::cmp::Ordering::Equal));
         hot_spots.truncate(10); // Top 10
 
         hot_spots
@@ -172,8 +212,46 @@ impl PerformanceProfiler {
         }
     }
 
-    fn generate_flame_graph(&self, _samples: &[Sample]) -> Result<String> {
-        // In real implementation: generate SVG flame graph
-        Ok("<!-- Flame graph would be generated here -->".to_string())
+    /// Generate a flame graph representation from collected samples.
+    /// Returns folded stack format (compatible with brendangregg/FlameGraph tools)
+    /// which can be piped into flamegraph.pl to produce an SVG.
+    fn generate_flame_graph(&self, samples: &[Sample]) -> Result<String> {
+        if samples.is_empty() {
+            return Ok(String::new());
+        }
+
+        // Aggregate stack traces into folded format: "func1;func2;func3 count\n"
+        let mut stack_counts: HashMap<String, u64> = HashMap::new();
+        for sample in samples {
+            let stack_key = if sample.stack_trace.is_empty() {
+                sample.function.clone()
+            } else {
+                // Build stack from bottom (first) to top (last), with leaf function appended
+                let mut stack = sample.stack_trace.clone();
+                stack.push(sample.function.clone());
+                stack.join(";")
+            };
+            *stack_counts.entry(stack_key).or_insert(0) += 1;
+        }
+
+        // Sort by count descending for readability
+        let mut entries: Vec<(String, u64)> = stack_counts.into_iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let folded: String = entries
+            .iter()
+            .map(|(stack, count)| format!("{} {}", stack, count))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        Ok(folded)
+    }
+}
+
+impl Default for PerformanceProfiler {
+    fn default() -> Self {
+        Self {
+            active_sessions: RwLock::new(HashMap::new()),
+        }
     }
 }

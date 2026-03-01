@@ -23,18 +23,31 @@ impl TrafficShadowing {
     }
 
     pub async fn start(&mut self, config: ShadowConfig) -> Result<String> {
+        // Validate config
+        if config.source_service.is_empty() {
+            anyhow::bail!("source_service cannot be empty");
+        }
+        if config.target_service.is_empty() {
+            anyhow::bail!("target_service cannot be empty");
+        }
+        if config.sampling_rate <= 0.0 || config.sampling_rate > 1.0 {
+            anyhow::bail!(
+                "sampling_rate must be in range (0.0, 1.0], got {}",
+                config.sampling_rate
+            );
+        }
+
         let shadow_id = uuid::Uuid::new_v4().to_string();
 
-        tracing::info!(
-            "Starting traffic shadow: {} -> {}",
-            config.source_service,
-            config.target_service
+        tracing::warn!(
+            shadow_id = %shadow_id,
+            source = %config.source_service,
+            target = %config.target_service,
+            "Traffic shadowing is not yet implemented. Shadow session created \
+             but no actual traffic mirroring will occur. In production: \
+             create Envoy/Cilium L7 policy to mirror traffic, set up response \
+             comparison, and configure sampling rate."
         );
-
-        // In real implementation:
-        // 1. Create Envoy/Cilium L7 policy to mirror traffic
-        // 2. Set up response comparison if enabled
-        // 3. Configure sampling rate
 
         let shadow = Shadow {
             config: config.clone(),
@@ -50,12 +63,14 @@ impl TrafficShadowing {
 
         self.active_shadows.write().await.insert(shadow_id.clone(), shadow);
 
-        tracing::info!("Shadow created: {}", shadow_id);
         Ok(shadow_id)
     }
 
     pub async fn stop(&mut self, shadow_id: &str) -> Result<()> {
-        self.active_shadows.write().await.remove(shadow_id);
+        let removed = self.active_shadows.write().await.remove(shadow_id);
+        if removed.is_none() {
+            anyhow::bail!("Shadow session not found: {}", shadow_id);
+        }
         tracing::info!("Shadow stopped: {}", shadow_id);
         Ok(())
     }
@@ -65,6 +80,14 @@ impl TrafficShadowing {
         shadows
             .get(shadow_id)
             .map(|s| s.stats.clone())
-            .ok_or_else(|| anyhow::anyhow!("Shadow not found"))
+            .ok_or_else(|| anyhow::anyhow!("Shadow session not found: {}", shadow_id))
+    }
+}
+
+impl Default for TrafficShadowing {
+    fn default() -> Self {
+        Self {
+            active_shadows: RwLock::new(HashMap::new()),
+        }
     }
 }
