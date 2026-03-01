@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// Kubernetes Identity Resolution
 ///
 /// Maps Cilium security identities to Kubernetes pod information

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Interactive Debugger - Debug network requests in real-time
 use anyhow::Result;
 

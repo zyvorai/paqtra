@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Anomaly Scoring - Multiple ML algorithms for anomaly detection
 use anyhow::Result;
 use chrono::Timelike;

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Security Posture Assessment
 use anyhow::Result;
 use chrono::Utc;

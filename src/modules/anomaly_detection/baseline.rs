@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Baseline Learning - Establishes normal behavior patterns
 use anyhow::Result;
 use chrono::{DateTime, Datelike, Duration, Timelike, Utc};

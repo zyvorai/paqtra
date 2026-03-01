@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Advanced eBPF Capabilities - Hot-loading, CO-RE, Performance Profiling
 // Experimental: Cutting-edge eBPF features
 

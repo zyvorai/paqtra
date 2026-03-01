@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Developer Experience Tools - Traffic shadowing, replay, debugging
 // Experimental: Developer-focused productivity features
 

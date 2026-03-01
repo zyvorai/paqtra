@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Zero-Trust Policy Engine - Never trust, always verify
 use anyhow::Result;
 

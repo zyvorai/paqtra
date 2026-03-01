@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Compliance Engine - PCI-DSS, SOC2, HIPAA, GDPR, ISO 27001, NIST
 use anyhow::Result;
 use chrono::Utc;

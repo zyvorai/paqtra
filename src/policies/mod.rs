@@ -30,6 +30,7 @@ fn validate_k8s_name(name: &str, field: &str) -> Result<()> {
 }
 
 /// Validate a port number.
+#[allow(dead_code)]
 fn validate_port(port: u16) -> Result<()> {
     if port == 0 {
         bail!("Port must be between 1 and 65535");
@@ -121,6 +122,7 @@ spec:
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn apply_best_practice_policy(&self, namespace: &str, from_app: &str, to_app: &str, port: u16) -> Result<()> {
         validate_k8s_name(namespace, "namespace")?;
         validate_k8s_name(from_app, "from_app")?;

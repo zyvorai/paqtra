@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // CO-RE (Compile Once - Run Everywhere) Support
 use anyhow::Result;
 

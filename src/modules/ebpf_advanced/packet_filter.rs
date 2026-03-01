@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Advanced Packet Filtering - Beyond standard filters
 use anyhow::Result;
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ struct ActiveFilter {
 }
 
 #[derive(Debug, Clone)]
-struct FilterStats {
+pub struct FilterStats {
     packets_matched: u64,
     packets_dropped: u64,
     packets_rate_limited: u64,

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Traffic Shadowing - Mirror production traffic for testing
 use anyhow::Result;
 use std::collections::HashMap;

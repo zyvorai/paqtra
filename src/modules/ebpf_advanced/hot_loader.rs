@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Hot Loader - Load/unload eBPF programs without restart
 use anyhow::Result;
 use chrono::Utc;

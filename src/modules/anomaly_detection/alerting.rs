@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Alert Management - Intelligent alerting with noise reduction
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};

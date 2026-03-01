@@ -18,6 +18,7 @@ impl BootstrapManager {
         self.k8s_client.clone()
     }
 
+    #[allow(dead_code)]
     pub async fn run_bootstrap(&self) -> Result<BootstrapResult> {
         self.run_bootstrap_with_options(false, false).await
     }

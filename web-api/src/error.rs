@@ -2,6 +2,7 @@
 use axum::{http::StatusCode, response::{IntoResponse, Response}, Json};
 use serde_json::json;
 
+#[allow(dead_code)]
 pub enum ApiError {
     NotFound,
     BadRequest(String),

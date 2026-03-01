@@ -172,6 +172,7 @@ impl DropReasonType {
         }
     }
 
+    #[allow(dead_code)]
     pub fn description(&self) -> &str {
         match self {
             DropReasonType::PolicyDenied => "Policy denied",

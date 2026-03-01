@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // Threat Intelligence Integration
 use anyhow::Result;
 
