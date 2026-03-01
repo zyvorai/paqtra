@@ -33,7 +33,7 @@ docker-compose down
 
 Access the application:
 - **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8080
+- **Backend API**: http://localhost:9191
 - **Redis**: localhost:6379
 
 ### Option 2: Kubernetes (Production)
@@ -116,8 +116,8 @@ kubectl logs -n cilium-system -l app=cilium-vision,component=api
 kubectl logs -n cilium-system -l app=cilium-vision,component=ui
 
 # Test backend health
-kubectl port-forward -n cilium-system svc/cilium-vision-api 8080:8080
-curl http://localhost:8080/health
+kubectl port-forward -n cilium-system svc/cilium-vision-api 9191:9191
+curl http://localhost:9191/health
 
 # Test frontend
 kubectl port-forward -n cilium-system svc/cilium-vision-ui 3000:80
@@ -163,7 +163,7 @@ helm uninstall cilium-vision -n cilium-system
 
 **Backend (API)**:
 - `HOST`: Bind address (default: 0.0.0.0)
-- `PORT`: Server port (default: 8080)
+- `PORT`: Server port (default: 9191)
 - `REDIS_URL`: Redis connection URL
 - `JWT_SECRET`: JWT signing secret (change in production!)
 - `HUBBLE_ADDRESS`: Hubble Relay address

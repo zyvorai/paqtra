@@ -263,7 +263,7 @@ const Settings: React.FC = () => {
                   label="API Base URL"
                   value={settings.apiUrl}
                   onChange={handleChange('apiUrl')}
-                  helperText="Base URL for the Cilium Vision API server (e.g., /api/v1 or http://localhost:8080/api/v1)"
+                  helperText="Base URL for the Cilium Vision API server (e.g., /api/v1 or http://localhost:9191/api/v1)"
                   InputProps={{
                     sx: { fontFamily: 'monospace' },
                   }}

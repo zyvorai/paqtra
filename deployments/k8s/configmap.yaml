@@ -9,7 +9,7 @@ data:
   config.yaml: |
     api:
       host: "0.0.0.0"
-      port: 8080
+      port: 9191
       cors_allowed_origins:
         - "https://cilium-vision.example.com"
 

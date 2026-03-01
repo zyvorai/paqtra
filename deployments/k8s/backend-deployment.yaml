@@ -19,7 +19,7 @@ spec:
         component: api
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
+        prometheus.io/port: "9191"
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: cilium-vision-api
@@ -29,13 +29,13 @@ spec:
         imagePullPolicy: Always
         ports:
         - name: http
-          containerPort: 8080
+          containerPort: 9191
           protocol: TCP
         env:
         - name: HOST
           value: "0.0.0.0"
         - name: PORT
-          value: "8080"
+          value: "9191"
         - name: REDIS_URL
           value: "redis://cilium-vision-redis:6379"
         - name: HUBBLE_ADDRESS
@@ -89,7 +89,7 @@ spec:
   type: ClusterIP
   ports:
   - name: http
-    port: 8080
+    port: 9191
     targetPort: http
     protocol: TCP
   selector:

@@ -93,7 +93,7 @@ cd deployments
 docker-compose up -d
 
 # Frontend: http://localhost:3000
-# Backend: http://localhost:8080
+# Backend: http://localhost:9191
 ```
 
 ### Kubernetes

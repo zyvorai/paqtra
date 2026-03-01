@@ -45,7 +45,7 @@ cp deployments/.env.example deployments/.env
 # 2. Start all services (API + UI + Redis)
 make docker-up
 
-# UI: http://localhost:3001   API: http://localhost:8080
+# UI: http://localhost:3001   API: http://localhost:9191
 ```
 
 To stop:
@@ -75,7 +75,7 @@ npm run dev       # or start the dev server on :3000
 ```bash
 make dev          # TUI: format, check, build
 make api-dev      # Web API dev server
-make ui-dev       # Web UI Vite dev server (port 3000, proxies /api to :8080)
+make ui-dev       # Web UI Vite dev server (port 3000, proxies /api to :9191)
 make test-all     # Run all tests (TUI + API)
 make check-all    # Lint/check all components
 make build-all    # Production build of everything

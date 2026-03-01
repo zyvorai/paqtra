@@ -1,6 +1,6 @@
 # Multi-stage build for Cilium Vision API
-# Stage 1: Build
-FROM rust:1.82-slim AS builder
+# Stage 1: Build (use bookworm to match runtime glibc)
+FROM rust:bookworm AS builder
 
 WORKDIR /build
 
@@ -17,7 +17,7 @@ COPY src ./src
 # Build for release
 RUN cargo build --release
 
-# Stage 2: Runtime
+# Stage 2: Runtime (same Debian release as builder)
 FROM debian:bookworm-slim
 
 # Install runtime dependencies
@@ -41,12 +41,12 @@ RUN chown -R appuser:appuser /app
 # Switch to non-root user
 USER appuser
 
-# Expose port (use PORT env var to set at runtime)
-EXPOSE 8080
+# Expose port
+EXPOSE 9191
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
+    CMD curl -f http://localhost:${PORT:-9191}/health || exit 1
 
 # Run
 CMD ["./cilium-vision-api"]

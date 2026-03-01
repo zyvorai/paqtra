@@ -28,7 +28,7 @@ spec:
           protocol: TCP
         env:
         - name: API_URL
-          value: "http://cilium-vision-api:8080"
+          value: "http://cilium-vision-api:9191"
         resources:
           requests:
             memory: "128Mi"

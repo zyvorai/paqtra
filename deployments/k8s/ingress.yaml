@@ -28,7 +28,7 @@ spec:
           service:
             name: cilium-vision-api
             port:
-              number: 8080
+              number: 9191
       - path: /
         pathType: Prefix
         backend:

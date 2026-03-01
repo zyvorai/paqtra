@@ -1,6 +1,6 @@
 # Multi-stage build for Cilium Vision UI
 # Stage 1: Build
-FROM node:20-alpine as builder
+FROM node:20-alpine AS builder
 
 WORKDIR /build
 

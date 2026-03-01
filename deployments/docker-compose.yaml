@@ -18,20 +18,20 @@ services:
       dockerfile: Dockerfile
     container_name: cilium-vision-api
     ports:
-      - "8080:8080"
+      - "9191:9191"
     environment:
       - HOST=0.0.0.0
-      - PORT=8080
+      - PORT=9191
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set (at least 32 characters)}
       - HUBBLE_ADDRESS=${HUBBLE_ADDRESS:-localhost:4245}
       - RUST_LOG=info,cilium_vision_api=debug
-      - ALLOWED_ORIGINS=http://localhost:3001,http://localhost:3000
+      - ALLOWED_ORIGINS=http://localhost:3001,http://localhost:3000,http://localhost:9191
     depends_on:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:9191/health"]
       interval: 30s
       timeout: 3s
       retries: 3
