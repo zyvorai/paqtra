@@ -206,7 +206,19 @@ pub enum BreakpointAction {
 
 impl Default for DevToolsManager {
     fn default() -> Self {
-        Self::new().expect("Failed to create DevToolsManager")
+        match Self::new() {
+            Ok(manager) => manager,
+            Err(e) => {
+                tracing::error!("Failed to create DevToolsManager: {}", e);
+                // Return a minimal, non-functional instance rather than panicking
+                Self {
+                    shadowing: shadowing::TrafficShadowing::default(),
+                    replay: replay::RequestReplay::default(),
+                    mirror: mirror::EnvironmentMirror::default(),
+                    debugger: debugger::InteractiveDebugger::default(),
+                }
+            }
+        }
     }
 }
 

@@ -56,6 +56,8 @@ metadata:
   name: default-deny-all
   namespace: {}
 spec:
+  # TODO: Replace with traffic-based selectors derived from observed flow patterns.
+  # An empty endpointSelector matches all pods in the namespace.
   endpointSelector: {{}}
   ingress: []
   egress: []
@@ -72,6 +74,8 @@ metadata:
   name: allow-dns
   namespace: {}
 spec:
+  # TODO: Replace with traffic-based selectors derived from observed flow patterns.
+  # An empty endpointSelector matches all pods in the namespace.
   endpointSelector: {{}}
   egress:
   - toEndpoints:
@@ -98,6 +102,8 @@ metadata:
   name: allow-kubernetes-api
   namespace: {}
 spec:
+  # TODO: Replace with traffic-based selectors derived from observed flow patterns.
+  # An empty endpointSelector matches all pods in the namespace.
   endpointSelector: {{}}
   egress:
   - toEntities:

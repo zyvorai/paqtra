@@ -167,18 +167,19 @@ impl CiliumManager {
         let os = std::env::consts::OS;
         let arch = std::env::consts::ARCH;
 
-        let (download_url, binary_name) = match (os, arch) {
+        let (download_url, checksum_url, binary_name) = match (os, arch) {
             ("linux", "x86_64") => (
                 "https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz",
+                "https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz.sha256sum",
                 "cilium-linux-amd64.tar.gz"
             ),
             ("linux", "aarch64") => (
                 "https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-arm64.tar.gz",
+                "https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-arm64.tar.gz.sha256sum",
                 "cilium-linux-arm64.tar.gz"
             ),
             ("macos", _) | ("darwin", _) => {
-                // For macOS, suggest using brew
-                println!("ℹ️  For macOS, please install using Homebrew:");
+                println!("For macOS, please install using Homebrew:");
                 println!("   brew install cilium-cli");
                 anyhow::bail!("Please install cilium-cli using Homebrew on macOS");
             },
@@ -187,9 +188,9 @@ impl CiliumManager {
             }
         };
 
-        println!("📥 Downloading Cilium CLI from GitHub...");
+        println!("Downloading Cilium CLI from GitHub...");
 
-        // Download to /tmp
+        // Download binary and checksum to /tmp
         let output = Command::new("curl")
             .args(["-L", "--remote-name-all", download_url])
             .current_dir("/tmp")
@@ -200,7 +201,37 @@ impl CiliumManager {
             anyhow::bail!("Failed to download Cilium CLI");
         }
 
-        println!("📦 Extracting Cilium CLI...");
+        let checksum_output = Command::new("curl")
+            .args(["-L", "-o", &format!("{}.sha256sum", binary_name), checksum_url])
+            .current_dir("/tmp")
+            .status()
+            .context("Failed to download checksum file")?;
+
+        if !checksum_output.success() {
+            tracing::warn!("Failed to download checksum file, skipping verification");
+        } else {
+            // Verify checksum
+            println!("Verifying download integrity...");
+            let verify_output = Command::new("sha256sum")
+                .args(["--check", &format!("{}.sha256sum", binary_name)])
+                .current_dir("/tmp")
+                .output()
+                .context("Failed to verify checksum")?;
+
+            if !verify_output.status.success() {
+                // Clean up the downloaded file
+                let _ = Command::new("rm")
+                    .args(["-f", &format!("/tmp/{}", binary_name)])
+                    .status();
+                anyhow::bail!(
+                    "Checksum verification failed! The downloaded file may be corrupted or tampered with. \
+                     Aborting installation for security."
+                );
+            }
+            println!("Checksum verified successfully.");
+        }
+
+        println!("Extracting Cilium CLI...");
 
         // Extract
         let extract_output = Command::new("tar")
@@ -298,7 +329,8 @@ impl CiliumManager {
             .create_or_update_service_account("kube-system", sa)
             .await?;
 
-        // Create ClusterRoleBinding
+        // Create ClusterRoleBinding with least-privilege: view-only access
+        // The TUI only needs to read pods, services, configmaps, and Cilium resources
         let crb = ClusterRoleBinding {
             metadata: ObjectMeta {
                 name: Some("cilium-tui-binding".to_string()),
@@ -313,7 +345,7 @@ impl CiliumManager {
             role_ref: RoleRef {
                 api_group: "rbac.authorization.k8s.io".to_string(),
                 kind: "ClusterRole".to_string(),
-                name: "cluster-admin".to_string(),
+                name: "view".to_string(),
             },
         };
 

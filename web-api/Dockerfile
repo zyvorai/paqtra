@@ -1,6 +1,6 @@
 # Multi-stage build for Cilium Vision API
 # Stage 1: Build
-FROM rust:1.75-slim as builder
+FROM rust:1.82-slim AS builder
 
 WORKDIR /build
 
@@ -10,13 +10,9 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy manifests
+# Copy manifests and lock file for reproducible builds
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-
-# Copy parent crate (cilium-tui) for dependency
-COPY ../src /parent/src
-COPY ../Cargo.toml /parent/Cargo.toml
 
 # Build for release
 RUN cargo build --release
@@ -28,6 +24,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -44,12 +41,12 @@ RUN chown -R appuser:appuser /app
 # Switch to non-root user
 USER appuser
 
-# Expose port
+# Expose port (use PORT env var to set at runtime)
 EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
 
 # Run
 CMD ["./cilium-vision-api"]

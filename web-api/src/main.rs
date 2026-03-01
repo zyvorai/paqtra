@@ -1,7 +1,7 @@
 // Cilium Vision Web API Server
 mod config;
 mod routes;
-mod handlers;
+pub mod handlers;
 mod models;
 mod services;
 mod middleware;
@@ -14,14 +14,12 @@ use axum::{
 };
 use std::net::SocketAddr;
 use tower_http::{
-    cors::{CorsLayer, Any},
     trace::TraceLayer,
     compression::CompressionLayer,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::Config;
-use crate::routes::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -51,27 +49,27 @@ async fn main() -> anyhow::Result<()> {
 
     // Build API router
     let api_routes = Router::new()
-        // Health checks
+        // Health checks (no auth required - handled by middleware)
         .route("/health", get(handlers::health::health_check))
         .route("/ready", get(handlers::health::readiness_check))
 
         // Flow monitoring
         .route("/api/v1/flows", get(handlers::flows::list_flows))
-        .route("/api/v1/flows/:id", get(handlers::flows::get_flow))
+        .route("/api/v1/flows/{id}", get(handlers::flows::get_flow))
         .route("/api/v1/flows/stats", get(handlers::flows::flow_stats))
 
         // Policy management
         .route("/api/v1/policies", get(handlers::policies::list_policies))
         .route("/api/v1/policies", post(handlers::policies::create_policy))
-        .route("/api/v1/policies/:id", get(handlers::policies::get_policy))
-        .route("/api/v1/policies/:id", axum::routing::put(handlers::policies::update_policy))
-        .route("/api/v1/policies/:id", axum::routing::delete(handlers::policies::delete_policy))
+        .route("/api/v1/policies/{id}", get(handlers::policies::get_policy))
+        .route("/api/v1/policies/{id}", axum::routing::put(handlers::policies::update_policy))
+        .route("/api/v1/policies/{id}", axum::routing::delete(handlers::policies::delete_policy))
         .route("/api/v1/policies/simulate", post(handlers::policies::simulate_policy))
 
         // Anomaly detection
         .route("/api/v1/anomalies", get(handlers::anomalies::list_anomalies))
-        .route("/api/v1/anomalies/:id", get(handlers::anomalies::get_anomaly))
-        .route("/api/v1/anomalies/:id/remediate", post(handlers::anomalies::remediate_anomaly))
+        .route("/api/v1/anomalies/{id}", get(handlers::anomalies::get_anomaly))
+        .route("/api/v1/anomalies/{id}/remediate", post(handlers::anomalies::remediate_anomaly))
 
         // Compliance
         .route("/api/v1/compliance/frameworks", get(handlers::compliance::list_frameworks))
@@ -82,34 +80,34 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/modules/autopolicy/generate", post(handlers::modules::generate_autopolicy))
         .route("/api/v1/modules/chaos/experiments", get(handlers::modules::list_chaos_experiments))
         .route("/api/v1/modules/chaos/run", post(handlers::modules::run_chaos_experiment))
-        .route("/api/v1/modules/canary/:id", get(handlers::modules::canary_status))
+        .route("/api/v1/modules/canary/{id}", get(handlers::modules::canary_status))
 
         // WebSocket endpoints
         .route("/api/v1/ws/flows", get(websocket::flows_websocket))
         .route("/api/v1/ws/metrics", get(websocket::metrics_websocket))
 
-        // Metrics endpoint for Prometheus
+        // Metrics endpoint for Prometheus (no auth required - handled by middleware)
         .route("/metrics", get(handlers::metrics::prometheus_metrics))
 
         // State
-        .with_state(app_state);
+        .with_state(app_state.clone());
 
     // Configure middleware
     let app = api_routes
         .layer(CompressionLayer::new())
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any),
-        )
+        .layer(axum::middleware::from_fn_with_state(
+            app_state,
+            middleware::auth::auth_middleware,
+        ))
+        .layer(middleware::cors::cors_layer())
         .layer(TraceLayer::new_for_http());
 
-    // Start server
+    // Start server (port 0 = OS-assigned random port)
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
-    tracing::info!("Starting Cilium Vision API server on {}", addr);
-
     let listener = tokio::net::TcpListener::bind(addr).await?;
+    let actual_addr = listener.local_addr()?;
+    tracing::info!("Starting Cilium Vision API server on {}", actual_addr);
+
     axum::serve(listener, app).await?;
 
     Ok(())
@@ -117,6 +115,6 @@ async fn main() -> anyhow::Result<()> {
 
 // Application state shared across handlers
 pub struct AppState {
-    config: Config,
-    redis: redis::aio::ConnectionManager,
+    pub config: Config,
+    pub redis: redis::aio::ConnectionManager,
 }

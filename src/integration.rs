@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Integration layer combining eBPF and Kubernetes
 ///
 /// Provides enriched data structures with both kernel-level network data

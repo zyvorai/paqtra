@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::process::{Command, Stdio};
 
 #[cfg(feature = "grpc")]
@@ -19,8 +19,8 @@ impl HubbleClient {
         if use_grpc {
             match grpc::GrpcHubbleClient::connect(format!("http://localhost:{}", port)).await {
                 Ok(client) => Ok(HubbleClient::Grpc(client)),
-                Err(_) => {
-                    // Fallback to CLI
+                Err(e) => {
+                    tracing::warn!("gRPC connection failed, falling back to CLI: {}", e);
                     Ok(HubbleClient::Cli(CliHubbleClient::new(port)))
                 }
             }
@@ -37,19 +37,67 @@ impl HubbleClient {
     }
 }
 
+/// Start Hubble port-forward and verify it is running.
+/// Returns the port on success, or an error if port-forward fails to start.
 pub async fn start_port_forward() -> Result<u16> {
-    tokio::spawn(async {
-        let _ = Command::new("cilium")
-            .args(["hubble", "port-forward"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
+    let port: u16 = 4245;
+
+    let child = Command::new("cilium")
+        .args(["hubble", "port-forward"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("Failed to start cilium hubble port-forward. Is cilium CLI installed?")?;
+
+    // Store the child PID so we can clean up on exit
+    let pid = child.id();
+    tracing::info!("Started hubble port-forward (pid: {})", pid);
+
+    // Register a cleanup handler for the port-forward process
+    let pid_for_cleanup = pid;
+    tokio::spawn(async move {
+        // Wait for a shutdown signal or the process to exit
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("Cleaning up port-forward process (pid: {})", pid_for_cleanup);
+        #[cfg(unix)]
+        {
+            unsafe {
+                libc::kill(pid_for_cleanup as i32, libc::SIGTERM);
+            }
+        }
     });
 
-    // Give it time to start
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    // Wait and verify the port-forward is actually listening
+    let max_retries = 10;
+    for attempt in 1..=max_retries {
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-    Ok(4245)
+        // Try connecting to verify port-forward is ready
+        match tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)).await {
+            Ok(_) => {
+                tracing::info!("Hubble port-forward ready on port {}", port);
+                return Ok(port);
+            }
+            Err(_) if attempt < max_retries => {
+                tracing::debug!("Port-forward not ready yet (attempt {}/{})", attempt, max_retries);
+            }
+            Err(e) => {
+                tracing::error!("Port-forward failed to start after {} attempts: {}", max_retries, e);
+                // Kill the process since it's not working
+                #[cfg(unix)]
+                unsafe {
+                    libc::kill(pid as i32, libc::SIGTERM);
+                }
+                anyhow::bail!(
+                    "Hubble port-forward failed to start on port {}. \
+                     Ensure Hubble is enabled and the Hubble relay is running.",
+                    port
+                );
+            }
+        }
+    }
+
+    Ok(port)
 }
 
 pub struct CliHubbleClient {
@@ -65,7 +113,8 @@ impl CliHubbleClient {
     pub async fn get_flows(&self) -> Result<Vec<Flow>> {
         let output = Command::new("cilium")
             .args(["hubble", "observe", "--last", "100", "-o", "json"])
-            .output()?;
+            .output()
+            .context("Failed to execute cilium hubble observe")?;
 
         let flows_json = String::from_utf8_lossy(&output.stdout);
         let flows: Vec<Flow> = flows_json
@@ -86,7 +135,8 @@ impl CliHubbleClient {
     pub async fn get_flows(&self) -> Result<Vec<Flow>> {
         let output = Command::new("cilium")
             .args(["hubble", "observe", "--last", "100", "-o", "json"])
-            .output()?;
+            .output()
+            .context("Failed to execute cilium hubble observe")?;
 
         let flows_json = String::from_utf8_lossy(&output.stdout);
         let flows: Vec<Flow> = flows_json

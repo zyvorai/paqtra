@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Kubernetes Identity Resolution
 ///
 /// Maps Cilium security identities to Kubernetes pod information
@@ -12,6 +11,9 @@ use tokio::time::{Duration, interval};
 
 use crate::ebpf::IdentityInfo;
 
+/// Maximum age for cache entries before they are evicted (5 minutes)
+const CACHE_TTL_SECS: u64 = 300;
+
 /// Identity resolver with Kubernetes integration
 pub struct K8sIdentityResolver {
     client: Client,
@@ -20,13 +22,13 @@ pub struct K8sIdentityResolver {
 
 /// Identity cache
 struct IdentityCache {
-    /// Identity → IdentityInfo mapping
+    /// Identity -> IdentityInfo mapping
     identities: HashMap<u32, IdentityInfo>,
 
-    /// IP → Identity mapping
+    /// IP -> Identity mapping
     ip_to_identity: HashMap<String, u32>,
 
-    /// Pod name → Identity mapping
+    /// Pod name -> Identity mapping
     pod_to_identity: HashMap<String, u32>,
 
     /// Last update timestamp
@@ -49,11 +51,19 @@ impl K8sIdentityResolver {
     /// Refresh identity cache from Kubernetes
     pub async fn refresh(&self) -> Result<usize> {
         let pods: Api<Pod> = Api::all(self.client.clone());
-        let lp = ListParams::default();
+        // Only fetch pods that have Cilium identity labels to avoid listing all pods
+        let lp = ListParams::default().labels("security.cilium.io/identity");
 
         let pod_list = pods.list(&lp).await?;
 
-        let mut cache = self.cache.write().unwrap();
+        let mut cache = self.cache.write()
+            .map_err(|e| anyhow::anyhow!("Identity cache lock poisoned: {}", e))?;
+
+        // Clear stale entries before repopulating
+        cache.identities.clear();
+        cache.ip_to_identity.clear();
+        cache.pod_to_identity.clear();
+
         let mut count = 0;
 
         for pod in pod_list.items {
@@ -85,19 +95,11 @@ impl K8sIdentityResolver {
         Ok(count)
     }
 
-    /// Extract Cilium identity from pod
+    /// Extract Cilium identity from pod labels
     fn extract_identity(pod: &Pod) -> Option<u32> {
-        // Try to get identity from pod labels
-        // Cilium adds labels like: security.cilium.io/identity=100
         pod.metadata.labels.as_ref()
             .and_then(|labels| labels.get("security.cilium.io/identity"))
             .and_then(|s| s.parse::<u32>().ok())
-            .or_else(|| {
-                // Fallback: try annotations
-                pod.metadata.annotations.as_ref()
-                    .and_then(|annot| annot.get("cilium.io/identity"))
-                    .and_then(|s| s.parse::<u32>().ok())
-            })
     }
 
     /// Convert Pod to IdentityInfo
@@ -127,14 +129,18 @@ impl K8sIdentityResolver {
 
     /// Resolve identity to pod information
     pub fn resolve_identity(&self, identity: u32) -> Option<IdentityInfo> {
-        self.cache.read().unwrap()
+        self.cache.read()
+            .map_err(|e| tracing::warn!("Identity cache read lock poisoned: {}", e))
+            .ok()?
             .identities.get(&identity)
             .cloned()
     }
 
     /// Resolve IP to identity
     pub fn resolve_ip(&self, ip: &str) -> Option<u32> {
-        self.cache.read().unwrap()
+        self.cache.read()
+            .map_err(|e| tracing::warn!("Identity cache read lock poisoned: {}", e))
+            .ok()?
             .ip_to_identity.get(ip)
             .copied()
     }
@@ -142,28 +148,45 @@ impl K8sIdentityResolver {
     /// Resolve pod name to identity
     pub fn resolve_pod(&self, namespace: &str, pod_name: &str) -> Option<u32> {
         let key = format!("{}/{}", namespace, pod_name);
-        self.cache.read().unwrap()
+        self.cache.read()
+            .map_err(|e| tracing::warn!("Identity cache read lock poisoned: {}", e))
+            .ok()?
             .pod_to_identity.get(&key)
             .copied()
     }
 
     /// Get all identities
     pub fn get_all_identities(&self) -> Vec<IdentityInfo> {
-        self.cache.read().unwrap()
-            .identities.values()
-            .cloned()
-            .collect()
+        self.cache.read()
+            .map_err(|e| tracing::warn!("Identity cache read lock poisoned: {}", e))
+            .ok()
+            .map(|cache| cache.identities.values().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// Get cache statistics
     pub fn stats(&self) -> CacheStats {
-        let cache = self.cache.read().unwrap();
-        CacheStats {
-            total_identities: cache.identities.len(),
-            total_ips: cache.ip_to_identity.len(),
-            total_pods: cache.pod_to_identity.len(),
-            age_seconds: cache.last_update.elapsed().as_secs(),
+        match self.cache.read() {
+            Ok(cache) => CacheStats {
+                total_identities: cache.identities.len(),
+                total_ips: cache.ip_to_identity.len(),
+                total_pods: cache.pod_to_identity.len(),
+                age_seconds: cache.last_update.elapsed().as_secs(),
+            },
+            Err(_) => CacheStats {
+                total_identities: 0,
+                total_ips: 0,
+                total_pods: 0,
+                age_seconds: 0,
+            },
         }
+    }
+
+    /// Check if cache is stale and needs refresh
+    pub fn is_cache_stale(&self) -> bool {
+        self.cache.read()
+            .map(|cache| cache.last_update.elapsed().as_secs() > CACHE_TTL_SECS)
+            .unwrap_or(true)
     }
 
     /// Start background refresh task
@@ -196,13 +219,9 @@ impl K8sIdentityResolver {
 
     /// Enrich connection tracking entry with pod information
     pub fn enrich_ct_entry(&self, entry: &mut crate::ebpf::ConntrackEntry) {
-        // For CT entries, we need to resolve IPs first, then identities
-        // This is simplified - in production would need proper IP → identity → pod chain
-
         // Try to resolve source IP
         if let Some(src_identity) = self.resolve_ip(&entry.src_ip) {
             if let Some(info) = self.resolve_identity(src_identity) {
-                // Could add fields to ConntrackEntry to store this info
                 tracing::trace!("Source: {}/{}", info.namespace, info.pod_name);
             }
         }

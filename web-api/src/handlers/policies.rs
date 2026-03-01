@@ -4,42 +4,22 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::AppState;
-
-#[derive(Debug, Deserialize)]
-pub struct CreatePolicyRequest {
-    pub name: String,
-    pub namespace: String,
-    pub spec: Value,
-}
-
-#[derive(Debug, Serialize)]
-pub struct Policy {
-    pub id: String,
-    pub name: String,
-    pub namespace: String,
-    pub created_at: String,
-    pub status: String,
-}
+use crate::models::policy::CreatePolicyRequest;
 
 pub async fn list_policies(
     State(_state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Listing policies");
 
+    // TODO: List policies from K8s API
     Ok(Json(json!({
-        "policies": [
-            {
-                "id": "policy-1",
-                "name": "allow-frontend-backend",
-                "namespace": "default",
-                "status": "active"
-            }
-        ]
+        "policies": [],
+        "total": 0,
+        "note": "Connect to Kubernetes for real policies"
     })))
 }
 
@@ -104,9 +84,10 @@ pub async fn simulate_policy(
     Ok(Json(json!({
         "policy": req.name,
         "impact": {
-            "flows_affected": 42,
-            "services_impacted": 3,
-            "risk_level": "low"
+            "flows_affected": 0,
+            "services_impacted": 0,
+            "risk_level": "unknown",
+            "note": "Connect to simulator for real analysis"
         }
     })))
 }

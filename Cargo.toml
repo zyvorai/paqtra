@@ -43,11 +43,17 @@ prost = { version = "0.13", optional = true }
 # CLI
 clap = { version = "4.5", features = ["derive"] }
 
+# Input validation
+regex = "1.10"
+
 # Utils
 chrono = "0.4"
 uuid = { version = "1.11", features = ["v4"] }
 flate2 = "1.0"
 tempfile = "3.8"
+
+# Process management
+libc = "0.2"
 
 # BPF map access
 libbpf-rs = { version = "0.24", optional = true }

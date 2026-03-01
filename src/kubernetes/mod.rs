@@ -114,14 +114,30 @@ impl K8sClient {
     }
 
     pub async fn apply_custom_resource(&self, _namespace: Option<&str>, yaml: &str) -> Result<()> {
-        // For now, use kubectl to apply CRDs directly
-        // This is more reliable for CiliumNetworkPolicy resources
+        // Validate the YAML is well-formed before passing to kubectl
+        let parsed: serde_yaml::Value = serde_yaml::from_str(yaml)
+            .context("Invalid YAML: refusing to apply malformed resource")?;
+
+        // Basic validation: ensure it looks like a Kubernetes resource
+        let mapping = parsed.as_mapping()
+            .context("YAML must be a mapping (object)")?;
+
+        if !mapping.contains_key(&serde_yaml::Value::String("apiVersion".to_string())) {
+            anyhow::bail!("YAML missing required field: apiVersion");
+        }
+        if !mapping.contains_key(&serde_yaml::Value::String("kind".to_string())) {
+            anyhow::bail!("YAML missing required field: kind");
+        }
+
+        // Apply via kubectl with --validate flag for server-side validation
         use std::process::Command;
         use std::io::Write;
 
         let mut child = Command::new("kubectl")
-            .args(["apply", "-f", "-"])
+            .args(["apply", "--validate=true", "-f", "-"])
             .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
             .spawn()
             .context("Failed to spawn kubectl")?;
 

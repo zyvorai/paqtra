@@ -130,7 +130,7 @@ impl BaselineLearner {
 
         let values: Vec<f64> = data_points.iter().map(|dp| dp.value).collect();
         let mut sorted_values = values.clone();
-        sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let n = values.len();
         let sum: f64 = values.iter().sum();

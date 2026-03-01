@@ -1,2 +1,2 @@
 // Route definitions - re-export from handlers
-pub mod handlers;
+pub use crate::handlers;

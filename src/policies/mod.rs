@@ -1,6 +1,6 @@
-#![allow(dead_code)]
-use anyhow::Result;
+use anyhow::{bail, Result};
 use crate::kubernetes::K8sClient;
+use regex::Regex;
 
 #[cfg(test)]
 mod tests;
@@ -9,12 +9,42 @@ pub struct PolicyManager {
     k8s_client: K8sClient,
 }
 
+/// Validate a Kubernetes resource name (RFC 1123 label).
+/// Must be lowercase alphanumeric or '-', start/end with alphanumeric, max 63 chars.
+fn validate_k8s_name(name: &str, field: &str) -> Result<()> {
+    if name.is_empty() {
+        bail!("{} must not be empty", field);
+    }
+    if name.len() > 63 {
+        bail!("{} must be at most 63 characters", field);
+    }
+    let re = Regex::new(r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$").unwrap();
+    if !re.is_match(name) {
+        bail!(
+            "{} '{}' is invalid: must be lowercase alphanumeric or '-', \
+             and must start and end with an alphanumeric character",
+            field, name
+        );
+    }
+    Ok(())
+}
+
+/// Validate a port number.
+fn validate_port(port: u16) -> Result<()> {
+    if port == 0 {
+        bail!("Port must be between 1 and 65535");
+    }
+    Ok(())
+}
+
 impl PolicyManager {
     pub fn new(k8s_client: K8sClient) -> Self {
         Self { k8s_client }
     }
 
     pub async fn apply_intra_namespace_policy(&self, namespace: &str) -> Result<()> {
+        validate_k8s_name(namespace, "namespace")?;
+
         let policy = format!(
             r#"
 apiVersion: cilium.io/v2
@@ -35,6 +65,8 @@ spec:
     }
 
     pub async fn apply_dns_policy(&self, namespace: &str) -> Result<()> {
+        validate_k8s_name(namespace, "namespace")?;
+
         let policy = format!(
             r#"
 apiVersion: cilium.io/v2
@@ -90,6 +122,11 @@ spec:
     }
 
     pub async fn apply_best_practice_policy(&self, namespace: &str, from_app: &str, to_app: &str, port: u16) -> Result<()> {
+        validate_k8s_name(namespace, "namespace")?;
+        validate_k8s_name(from_app, "from_app")?;
+        validate_k8s_name(to_app, "to_app")?;
+        validate_port(port)?;
+
         let policy = format!(
             r#"
 apiVersion: cilium.io/v2

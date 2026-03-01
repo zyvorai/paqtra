@@ -79,7 +79,7 @@ impl AlertManager {
         match anomaly.severity {
             Severity::Critical => {
                 tracing::error!(
-                    "🚨 CRITICAL ANOMALY: {:?} in {}/{}",
+                    "[CRITICAL] ANOMALY: {:?} in {}/{}",
                     anomaly.anomaly_type,
                     anomaly.context.namespace,
                     anomaly.context.service
@@ -88,7 +88,7 @@ impl AlertManager {
             }
             Severity::High => {
                 tracing::warn!(
-                    "⚠️  HIGH SEVERITY: {:?} in {}/{}",
+                    "[WARNING] HIGH SEVERITY: {:?} in {}/{}",
                     anomaly.anomaly_type,
                     anomaly.context.namespace,
                     anomaly.context.service
@@ -97,14 +97,14 @@ impl AlertManager {
             }
             Severity::Medium => {
                 tracing::warn!(
-                    "📊 MEDIUM: {:?} detected",
+                    "[MEDIUM] {:?} detected",
                     anomaly.anomaly_type
                 );
                 // In production: Slack notification
             }
             Severity::Low | Severity::Info => {
                 tracing::info!(
-                    "ℹ️  INFO: {:?} observed",
+                    "[INFO] {:?} observed",
                     anomaly.anomaly_type
                 );
                 // In production: Log aggregation only

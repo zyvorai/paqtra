@@ -175,10 +175,15 @@ int packet_filter(struct xdp_md *ctx) {
         }
     }
 
-    fn ip_to_u32(&self, _ip: &str) -> u32 {
+    fn ip_to_u32(&self, ip: &str) -> u32 {
         // Convert IP string to u32 (network byte order)
-        // Simplified - in real implementation would properly parse IP
-        0
+        match ip.parse::<std::net::Ipv4Addr>() {
+            Ok(addr) => u32::from(addr).to_be(),
+            Err(e) => {
+                tracing::warn!("Failed to parse IP address '{}': {}", ip, e);
+                0
+            }
+        }
     }
 
     /// Get filter statistics

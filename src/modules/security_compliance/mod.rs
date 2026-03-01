@@ -220,7 +220,19 @@ pub enum Effort {
 
 impl Default for SecurityComplianceManager {
     fn default() -> Self {
-        Self::new().expect("Failed to create SecurityComplianceManager")
+        match Self::new() {
+            Ok(manager) => manager,
+            Err(e) => {
+                tracing::error!("Failed to create SecurityComplianceManager: {}", e);
+                // Return a minimal, non-functional instance rather than panicking
+                Self {
+                    zero_trust: zero_trust::ZeroTrustEngine::default(),
+                    compliance: compliance::ComplianceEngine::default(),
+                    threat_intel: threat_intel::ThreatIntelligence::default(),
+                    posture: posture::SecurityPosture::default(),
+                }
+            }
+        }
     }
 }
 

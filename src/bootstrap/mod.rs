@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use anyhow::Result;
 
 use crate::kubernetes::K8sClient;
@@ -84,11 +83,6 @@ impl BootstrapManager {
     async fn detect_cluster(&self) -> Result<String> {
         let context = self.k8s_client.get_current_context().await?;
         Ok(context)
-    }
-
-    async fn detect_cilium(&self) -> Result<bool> {
-        let cilium_mgr = CiliumManager::new(self.k8s_client.clone());
-        cilium_mgr.is_installed().await
     }
 
     async fn enable_cilium_features(&self) -> Result<()> {

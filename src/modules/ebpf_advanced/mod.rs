@@ -252,7 +252,19 @@ pub struct ProgramStats {
 
 impl Default for AdvancedEBPFManager {
     fn default() -> Self {
-        Self::new().expect("Failed to create AdvancedEBPFManager")
+        match Self::new() {
+            Ok(manager) => manager,
+            Err(e) => {
+                tracing::error!("Failed to create AdvancedEBPFManager: {}", e);
+                // Return a minimal, non-functional instance rather than panicking
+                Self {
+                    hot_loader: hot_loader::HotLoader::default(),
+                    profiler: profiler::PerformanceProfiler::default(),
+                    core_handler: core_support::COREHandler::default(),
+                    packet_filter: packet_filter::AdvancedPacketFilter::default(),
+                }
+            }
+        }
     }
 }
 

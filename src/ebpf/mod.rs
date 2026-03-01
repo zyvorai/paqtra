@@ -111,6 +111,8 @@ pub struct DropReason {
     pub timestamp: u64,
 }
 
+/// Drop reason types from Cilium kernel eBPF programs.
+/// See: https://docs.cilium.io/en/stable/operations/metrics/#drop-reasons
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DropReasonType {
     PolicyDenied,
@@ -120,12 +122,29 @@ pub enum DropReasonType {
     FragmentationNeeded,
     CTMapFull,
     NATMapFull,
+    InvalidSourceIP,
+    InvalidDestIP,
+    UnsupportedL3Protocol,
+    MissedTailCall,
+    ErrorWritingToPacket,
+    UnknownL4ICMPType,
+    UnknownICMPv6Type,
+    UnknownICMPv6Code,
+    ServiceBackendNotFound,
+    NoTunnelEndpoint,
+    HostUnreachable,
+    StaleOrUnroutable,
+    ConnectionTrackingInvalid,
+    AuthRequired,
+    NATNotNeeded,
+    IsClusterIP,
     Other(u32),
 }
 
 impl DropReasonType {
     pub fn from_code(code: u32) -> Self {
         match code {
+            0 => DropReasonType::PolicyDenied,
             1 => DropReasonType::PolicyDenied,
             2 => DropReasonType::InvalidPacket,
             3 => DropReasonType::NoRoute,
@@ -133,7 +152,55 @@ impl DropReasonType {
             5 => DropReasonType::FragmentationNeeded,
             6 => DropReasonType::CTMapFull,
             7 => DropReasonType::NATMapFull,
+            130 => DropReasonType::InvalidSourceIP,
+            131 => DropReasonType::InvalidDestIP,
+            132 => DropReasonType::UnsupportedL3Protocol,
+            133 => DropReasonType::MissedTailCall,
+            134 => DropReasonType::ErrorWritingToPacket,
+            135 => DropReasonType::UnknownL4ICMPType,
+            136 => DropReasonType::UnknownICMPv6Type,
+            137 => DropReasonType::UnknownICMPv6Code,
+            140 => DropReasonType::ServiceBackendNotFound,
+            141 => DropReasonType::NoTunnelEndpoint,
+            148 => DropReasonType::HostUnreachable,
+            152 => DropReasonType::StaleOrUnroutable,
+            153 => DropReasonType::ConnectionTrackingInvalid,
+            181 => DropReasonType::AuthRequired,
+            184 => DropReasonType::NATNotNeeded,
+            185 => DropReasonType::IsClusterIP,
             _ => DropReasonType::Other(code),
+        }
+    }
+
+    pub fn description(&self) -> &str {
+        match self {
+            DropReasonType::PolicyDenied => "Policy denied",
+            DropReasonType::InvalidPacket => "Invalid packet",
+            DropReasonType::NoRoute => "No route",
+            DropReasonType::UnknownL4Protocol => "Unknown L4 protocol",
+            DropReasonType::FragmentationNeeded => "Fragmentation needed",
+            DropReasonType::CTMapFull => "Connection tracking map full",
+            DropReasonType::NATMapFull => "NAT map full",
+            DropReasonType::InvalidSourceIP => "Invalid source IP",
+            DropReasonType::InvalidDestIP => "Invalid destination IP",
+            DropReasonType::UnsupportedL3Protocol => "Unsupported L3 protocol",
+            DropReasonType::MissedTailCall => "Missed tail call",
+            DropReasonType::ErrorWritingToPacket => "Error writing to packet",
+            DropReasonType::UnknownL4ICMPType => "Unknown L4 ICMP type",
+            DropReasonType::UnknownICMPv6Type => "Unknown ICMPv6 type",
+            DropReasonType::UnknownICMPv6Code => "Unknown ICMPv6 code",
+            DropReasonType::ServiceBackendNotFound => "Service backend not found",
+            DropReasonType::NoTunnelEndpoint => "No tunnel endpoint",
+            DropReasonType::HostUnreachable => "Host unreachable",
+            DropReasonType::StaleOrUnroutable => "Stale or unroutable",
+            DropReasonType::ConnectionTrackingInvalid => "Connection tracking invalid",
+            DropReasonType::AuthRequired => "Authentication required",
+            DropReasonType::NATNotNeeded => "NAT not needed",
+            DropReasonType::IsClusterIP => "Is ClusterIP",
+            DropReasonType::Other(code) => {
+                let _ = code;
+                "Unknown drop reason"
+            }
         }
     }
 }
@@ -206,13 +273,24 @@ mod tests {
         assert_eq!(DropReasonType::from_code(5), DropReasonType::FragmentationNeeded);
         assert_eq!(DropReasonType::from_code(6), DropReasonType::CTMapFull);
         assert_eq!(DropReasonType::from_code(7), DropReasonType::NATMapFull);
+        assert_eq!(DropReasonType::from_code(130), DropReasonType::InvalidSourceIP);
+        assert_eq!(DropReasonType::from_code(131), DropReasonType::InvalidDestIP);
+        assert_eq!(DropReasonType::from_code(140), DropReasonType::ServiceBackendNotFound);
+        assert_eq!(DropReasonType::from_code(181), DropReasonType::AuthRequired);
     }
 
     #[test]
     fn test_drop_reason_type_unknown_code() {
-        assert_eq!(DropReasonType::from_code(0), DropReasonType::Other(0));
         assert_eq!(DropReasonType::from_code(99), DropReasonType::Other(99));
         assert_eq!(DropReasonType::from_code(255), DropReasonType::Other(255));
+    }
+
+    #[test]
+    fn test_drop_reason_description() {
+        assert_eq!(DropReasonType::PolicyDenied.description(), "Policy denied");
+        assert_eq!(DropReasonType::NoRoute.description(), "No route");
+        assert_eq!(DropReasonType::AuthRequired.description(), "Authentication required");
+        assert_eq!(DropReasonType::Other(99).description(), "Unknown drop reason");
     }
 
     #[test]
