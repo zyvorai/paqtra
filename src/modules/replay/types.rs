@@ -35,7 +35,7 @@ impl Default for ReplayConfig {
             enabled: true,
             recording_dir: PathBuf::from("/tmp/cilium-vision/recordings"),
             max_recording_size: 100 * 1024 * 1024, // 100 MB
-            max_recording_duration: 300,            // 5 minutes
+            max_recording_duration: 300,           // 5 minutes
             compress: true,
             replay_rate: 1.0,
             detailed_comparison: true,
@@ -219,7 +219,7 @@ pub struct PerformanceDifference {
 }
 
 /// Replay filter
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ReplayFilter {
     /// Filter by namespace
     pub namespaces: Option<Vec<String>>,
@@ -243,20 +243,6 @@ pub struct ReplayFilter {
     pub limit: Option<usize>,
 }
 
-impl Default for ReplayFilter {
-    fn default() -> Self {
-        Self {
-            namespaces: None,
-            src_labels: None,
-            dst_labels: None,
-            ports: None,
-            protocols: None,
-            verdicts: None,
-            limit: None,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ReplayStats {
     pub total_recordings: usize,
@@ -273,7 +259,10 @@ mod tests {
     fn test_replay_config_defaults() {
         let config = ReplayConfig::default();
         assert!(config.enabled);
-        assert_eq!(config.recording_dir, PathBuf::from("/tmp/cilium-vision/recordings"));
+        assert_eq!(
+            config.recording_dir,
+            PathBuf::from("/tmp/cilium-vision/recordings")
+        );
         assert_eq!(config.max_recording_size, 100 * 1024 * 1024);
         assert_eq!(config.max_recording_duration, 300);
         assert!(config.compress);

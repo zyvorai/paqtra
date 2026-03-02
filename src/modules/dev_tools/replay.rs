@@ -5,6 +5,7 @@ use anyhow::Result;
 use super::{ReplayConfig, ReplayResults};
 
 /// Replays recorded HTTP requests
+#[derive(Default)]
 pub struct RequestReplay {}
 
 impl RequestReplay {
@@ -39,12 +40,6 @@ impl RequestReplay {
             timing_comparison: None,
             differences: vec![],
         })
-    }
-}
-
-impl Default for RequestReplay {
-    fn default() -> Self {
-        Self {}
     }
 }
 

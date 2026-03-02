@@ -119,13 +119,15 @@ impl Protocol {
             _ => Protocol::Other(proto),
         }
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl std::fmt::Display for Protocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Protocol::TCP => "TCP".to_string(),
-            Protocol::UDP => "UDP".to_string(),
-            Protocol::ICMP => "ICMP".to_string(),
-            Protocol::Other(n) => format!("{}", n),
+            Protocol::TCP => write!(f, "TCP"),
+            Protocol::UDP => write!(f, "UDP"),
+            Protocol::ICMP => write!(f, "ICMP"),
+            Protocol::Other(n) => write!(f, "{}", n),
         }
     }
 }
@@ -199,7 +201,10 @@ mod tests {
     fn test_auto_policy_config_defaults() {
         let config = AutoPolicyConfig::default();
         assert!(config.enabled);
-        assert_eq!(config.learning_duration, Duration::from_secs(7 * 24 * 60 * 60));
+        assert_eq!(
+            config.learning_duration,
+            Duration::from_secs(7 * 24 * 60 * 60)
+        );
         assert_eq!(config.min_observations, 10);
         assert!(!config.auto_generate);
         assert!(!config.auto_apply);
@@ -224,7 +229,11 @@ mod tests {
         assert_ne!(not_started, generating);
 
         // Verify Learning state holds values
-        if let LearningState::Learning { started_at, progress } = learning {
+        if let LearningState::Learning {
+            started_at,
+            progress,
+        } = learning
+        {
             assert_eq!(started_at, 1000);
             assert!((progress - 0.5).abs() < f32::EPSILON);
         } else {

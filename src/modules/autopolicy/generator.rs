@@ -2,7 +2,6 @@
 /// Policy Generator
 ///
 /// Generates CiliumNetworkPolicy resources from learned patterns
-
 use super::*;
 
 pub struct PolicyGenerator {
@@ -42,7 +41,7 @@ impl PolicyGenerator {
         &self,
         observations: &'a HashMap<TrafficPattern, TrafficObservation>,
     ) -> HashMap<(String, LabelSet), Vec<&'a TrafficObservation>> {
-        let mut grouped = HashMap::new();
+        let mut grouped: HashMap<(String, LabelSet), Vec<&TrafficObservation>> = HashMap::new();
 
         for obs in observations.values() {
             if obs.count >= self.min_observations {
@@ -50,7 +49,7 @@ impl PolicyGenerator {
                     obs.pattern.src_namespace.clone(),
                     obs.pattern.src_labels.clone(),
                 );
-                grouped.entry(key).or_insert_with(Vec::new).push(obs);
+                grouped.entry(key).or_default().push(obs);
             }
         }
 
@@ -66,12 +65,7 @@ impl PolicyGenerator {
     ) -> Result<GeneratedPolicy> {
         let policy_name = self.generate_policy_name(namespace, labels);
 
-        let yaml = self.build_policy_yaml(
-            &policy_name,
-            namespace,
-            labels,
-            &observations,
-        )?;
+        let yaml = self.build_policy_yaml(&policy_name, namespace, labels, &observations)?;
 
         let confidence = self.calculate_confidence(&observations);
 
@@ -151,10 +145,7 @@ spec:
     /// Build egress rules
     fn build_egress_rules(&self, observations: &[&TrafficObservation]) -> String {
         // Group by destination
-        let mut by_dest: HashMap<
-            (String, LabelSet),
-            Vec<(u16, Protocol)>,
-        > = HashMap::new();
+        let mut by_dest: HashMap<(String, LabelSet), Vec<(u16, Protocol)>> = HashMap::new();
 
         for obs in observations {
             let key = (
@@ -163,7 +154,7 @@ spec:
             );
             by_dest
                 .entry(key)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push((obs.pattern.port, obs.pattern.protocol));
         }
 
@@ -197,7 +188,7 @@ spec:
                     if seen_ports.insert(key) {
                         rules.push_str("        - ports:\n");
                         rules.push_str(&format!("            - port: \"{}\"\n", port));
-                        rules.push_str(&format!("              protocol: {}\n", proto.to_string()));
+                        rules.push_str(&format!("              protocol: {}\n", proto));
                     }
                 }
             }
@@ -216,16 +207,10 @@ spec:
 
         // Confidence based on:
         // 1. Number of observations (more = better)
-        let obs_score = (total_obs as f32 / (self.min_observations as f32 * 100.0))
-            .min(1.0)
-            .max(0.5);
+        let obs_score = (total_obs as f32 / (self.min_observations as f32 * 100.0)).clamp(0.5, 1.0);
 
         // 2. Pattern consistency (fewer unique patterns = more consistent)
-        let pattern_score = if observations.len() < 10 {
-            1.0
-        } else {
-            0.5
-        };
+        let pattern_score = if observations.len() < 10 { 1.0 } else { 0.5 };
 
         // 3. Time span (longer = better)
         let time_score = if observations.iter().any(|o| {

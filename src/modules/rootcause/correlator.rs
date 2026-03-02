@@ -2,7 +2,6 @@
 /// Policy Correlator
 ///
 /// Correlates drop events with policies and other eBPF data
-
 use super::*;
 use crate::ebpf::{MapReader, PolicyVerdict};
 
@@ -55,18 +54,14 @@ impl PolicyCorrelator {
         decisions
             .iter()
             .filter(|d| {
-                d.src_identity == event.identity_src
-                    || d.dst_identity == event.identity_dst
+                d.src_identity == event.identity_src || d.dst_identity == event.identity_dst
             })
             .cloned()
             .collect()
     }
 
     /// Analyze policy decisions to understand the drop
-    fn analyze_policy_decisions(
-        event: &DropEvent,
-        decisions: &[PolicyDecision],
-    ) -> PolicyAnalysis {
+    fn analyze_policy_decisions(event: &DropEvent, decisions: &[PolicyDecision]) -> PolicyAnalysis {
         let mut explanations = Vec::new();
         let mut policy_name = None;
 
@@ -87,19 +82,19 @@ impl PolicyCorrelator {
                     ));
                 }
                 PolicyVerdict::Allow => {
-                    explanations.push(format!(
-                        "Policy shows ALLOW but packet was still dropped (possible conntrack issue)"
-                    ));
+                    explanations.push(
+                        "Policy shows ALLOW but packet was still dropped (possible conntrack issue)".to_string()
+                    );
                 }
                 PolicyVerdict::Redirect => {
-                    explanations.push(format!(
-                        "Traffic should be redirected but was dropped instead"
-                    ));
+                    explanations
+                        .push("Traffic should be redirected but was dropped instead".to_string());
                 }
                 PolicyVerdict::Audit => {
-                    explanations.push(format!(
+                    explanations.push(
                         "Traffic is in AUDIT mode - may be dropped due to other reasons"
-                    ));
+                            .to_string(),
+                    );
                 }
             }
         } else {
@@ -216,10 +211,7 @@ impl PolicyCorrelator {
                 "This suggests a new connection that doesn't match existing state".to_string(),
             );
         } else {
-            context.push(format!(
-                "Found {} related conntrack entries",
-                related.len()
-            ));
+            context.push(format!("Found {} related conntrack entries", related.len()));
 
             for entry in related {
                 context.push(format!(
@@ -323,13 +315,19 @@ mod tests {
             .unwrap();
 
         // MockMapReader returns empty data
-        assert!(context.len() > 0);
+        assert!(!context.is_empty());
     }
 
     #[test]
     fn test_is_policy_related() {
-        assert!(PolicyCorrelator::is_policy_related(&DropReason::PolicyDenied));
-        assert!(PolicyCorrelator::is_policy_related(&DropReason::PortNotAllowed));
-        assert!(!PolicyCorrelator::is_policy_related(&DropReason::FragNeeded));
+        assert!(PolicyCorrelator::is_policy_related(
+            &DropReason::PolicyDenied
+        ));
+        assert!(PolicyCorrelator::is_policy_related(
+            &DropReason::PortNotAllowed
+        ));
+        assert!(!PolicyCorrelator::is_policy_related(
+            &DropReason::FragNeeded
+        ));
     }
 }

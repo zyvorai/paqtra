@@ -2,9 +2,12 @@
 // Threat Intelligence Integration
 use anyhow::Result;
 
-use super::{Priority, RecommendationCategory, SecurityRecommendation, ThreatAssessment, ThreatLevel, Effort};
+use super::{
+    Effort, Priority, RecommendationCategory, SecurityRecommendation, ThreatAssessment, ThreatLevel,
+};
 
 /// Integrates with threat intelligence feeds
+#[derive(Default)]
 pub struct ThreatIntelligence {
     feeds_enabled: bool,
 }
@@ -61,19 +64,12 @@ impl ThreatIntelligence {
             priority: Priority::P3Medium,
             category: RecommendationCategory::ThreatMitigation,
             title: "Enable threat intelligence feeds".to_string(),
-            description: "Integrate with external threat feeds for real-time protection".to_string(),
+            description: "Integrate with external threat feeds for real-time protection"
+                .to_string(),
             impact: "Proactive threat detection".to_string(),
             effort: Effort::Medium,
             auto_applicable: false,
         }])
-    }
-}
-
-impl Default for ThreatIntelligence {
-    fn default() -> Self {
-        Self {
-            feeds_enabled: false,
-        }
     }
 }
 

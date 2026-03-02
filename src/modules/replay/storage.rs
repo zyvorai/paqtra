@@ -2,12 +2,11 @@
 /// Recording Storage
 ///
 /// Handles persistence of recorded traffic to disk
-
 use super::*;
 use anyhow::Result;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct RecordingStorage {
     base_dir: PathBuf,
@@ -40,7 +39,7 @@ impl RecordingStorage {
     /// Save uncompressed
     fn save_uncompressed(
         &self,
-        file_path: &PathBuf,
+        file_path: &Path,
         recording: &Recording,
         flows: &[RecordedFlow],
     ) -> Result<()> {
@@ -60,7 +59,7 @@ impl RecordingStorage {
     /// Save compressed (gzip)
     fn save_compressed(
         &self,
-        file_path: &PathBuf,
+        file_path: &Path,
         recording: &Recording,
         flows: &[RecordedFlow],
     ) -> Result<()> {
@@ -96,7 +95,7 @@ impl RecordingStorage {
     }
 
     /// Load uncompressed
-    fn load_uncompressed(&self, file_path: &PathBuf) -> Result<Vec<RecordedFlow>> {
+    fn load_uncompressed(&self, file_path: &Path) -> Result<Vec<RecordedFlow>> {
         let file = File::open(file_path)?;
         let reader = BufReader::new(file);
 
@@ -106,7 +105,7 @@ impl RecordingStorage {
     }
 
     /// Load compressed
-    fn load_compressed(&self, file_path: &PathBuf) -> Result<Vec<RecordedFlow>> {
+    fn load_compressed(&self, file_path: &Path) -> Result<Vec<RecordedFlow>> {
         use flate2::read::GzDecoder;
 
         let file_path_gz = file_path.with_extension("json.gz");
@@ -134,7 +133,7 @@ impl RecordingStorage {
         }
     }
 
-    fn load_metadata_from_file(&self, file_path: &PathBuf, compressed: bool) -> Result<Recording> {
+    fn load_metadata_from_file(&self, file_path: &Path, compressed: bool) -> Result<Recording> {
         if compressed {
             use flate2::read::GzDecoder;
 
@@ -186,7 +185,7 @@ impl RecordingStorage {
         Ok(recordings)
     }
 
-    fn load_metadata_from_path(&self, path: &PathBuf) -> Result<Recording> {
+    fn load_metadata_from_path(&self, path: &Path) -> Result<Recording> {
         let compressed = path.to_string_lossy().ends_with(".gz");
         self.load_metadata_from_file(path, compressed)
     }
@@ -230,9 +229,7 @@ impl RecordingStorage {
     /// Clean old recordings
     pub fn cleanup_old(&self, max_age_secs: u64) -> Result<usize> {
         let recordings = self.list()?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_secs();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
         let mut deleted = 0;
 

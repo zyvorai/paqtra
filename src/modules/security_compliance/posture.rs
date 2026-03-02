@@ -4,9 +4,13 @@ use anyhow::Result;
 use chrono::Utc;
 use std::collections::HashMap;
 
-use super::{DimensionScore, Priority, RecommendationCategory, SecurityRecommendation, SecurityScore, ScoreTrend, Effort};
+use super::{
+    DimensionScore, Effort, Priority, RecommendationCategory, ScoreTrend, SecurityRecommendation,
+    SecurityScore,
+};
 
 /// Calculates overall security posture
+#[derive(Default)]
 pub struct SecurityPosture {}
 
 impl SecurityPosture {
@@ -24,7 +28,10 @@ impl SecurityPosture {
             DimensionScore {
                 score: 0.0,
                 weight: 0.25,
-                findings: vec!["assessment_status: pending - not yet inspected against live cluster".to_string()],
+                findings: vec![
+                    "assessment_status: pending - not yet inspected against live cluster"
+                        .to_string(),
+                ],
             },
         );
 
@@ -33,7 +40,10 @@ impl SecurityPosture {
             DimensionScore {
                 score: 0.0,
                 weight: 0.25,
-                findings: vec!["assessment_status: pending - RBAC and policy analysis not implemented".to_string()],
+                findings: vec![
+                    "assessment_status: pending - RBAC and policy analysis not implemented"
+                        .to_string(),
+                ],
             },
         );
 
@@ -42,7 +52,10 @@ impl SecurityPosture {
             DimensionScore {
                 score: 0.0,
                 weight: 0.20,
-                findings: vec!["assessment_status: pending - TLS configuration check not implemented".to_string()],
+                findings: vec![
+                    "assessment_status: pending - TLS configuration check not implemented"
+                        .to_string(),
+                ],
             },
         );
 
@@ -51,7 +64,10 @@ impl SecurityPosture {
             DimensionScore {
                 score: 0.0,
                 weight: 0.15,
-                findings: vec!["assessment_status: pending - observability stack check not implemented".to_string()],
+                findings: vec![
+                    "assessment_status: pending - observability stack check not implemented"
+                        .to_string(),
+                ],
             },
         );
 
@@ -60,14 +76,14 @@ impl SecurityPosture {
             DimensionScore {
                 score: 0.0,
                 weight: 0.15,
-                findings: vec!["assessment_status: pending - compliance framework checks not implemented".to_string()],
+                findings: vec![
+                    "assessment_status: pending - compliance framework checks not implemented"
+                        .to_string(),
+                ],
             },
         );
 
-        let overall_score = dimensions
-            .values()
-            .map(|d| d.score * d.weight)
-            .sum::<f64>();
+        let overall_score = dimensions.values().map(|d| d.score * d.weight).sum::<f64>();
 
         tracing::warn!(
             "Security posture score is {:.1}/100 - all dimensions are pending assessment. \
@@ -93,12 +109,6 @@ impl SecurityPosture {
             effort: Effort::Medium,
             auto_applicable: false,
         }])
-    }
-}
-
-impl Default for SecurityPosture {
-    fn default() -> Self {
-        Self {}
     }
 }
 
@@ -153,7 +163,11 @@ mod tests {
         let score = posture.calculate_score().await.unwrap();
         // All scores should be 0.0 (pending assessment)
         for (name, dim) in &score.dimensions {
-            assert_eq!(dim.score, 0.0, "Dimension '{}' should be 0.0 (pending)", name);
+            assert_eq!(
+                dim.score, 0.0,
+                "Dimension '{}' should be 0.0 (pending)",
+                name
+            );
         }
         // Overall score should also be 0.0
         assert_eq!(score.overall_score, 0.0);

@@ -2,7 +2,6 @@
 /// Replay Player
 ///
 /// Replays recorded flows in a target environment
-
 use super::*;
 use anyhow::Result;
 use std::time::Duration;
@@ -25,11 +24,7 @@ pub struct ReplayOutcome {
 }
 
 impl<'a, M: MapReader> ReplayPlayer<'a, M> {
-    pub fn new(
-        replay_rate: f32,
-        ebpf_reader: &'a M,
-        k8s_client: &'a K8sClient,
-    ) -> Self {
+    pub fn new(replay_rate: f32, ebpf_reader: &'a M, k8s_client: &'a K8sClient) -> Self {
         Self {
             replay_rate,
             ebpf_reader,
@@ -41,7 +36,11 @@ impl<'a, M: MapReader> ReplayPlayer<'a, M> {
     pub async fn replay(&self, flows: &[RecordedFlow]) -> Result<Vec<ReplayOutcome>> {
         let mut outcomes = Vec::new();
 
-        println!("▶️  Replaying {} flows at {}x speed", flows.len(), self.replay_rate);
+        println!(
+            "▶️  Replaying {} flows at {}x speed",
+            flows.len(),
+            self.replay_rate
+        );
 
         for (idx, flow) in flows.iter().enumerate() {
             if idx > 0 && idx % 100 == 0 {
@@ -63,9 +62,11 @@ impl<'a, M: MapReader> ReplayPlayer<'a, M> {
             }
         }
 
-        println!("✅ Replay complete: {}/{} successful",
+        println!(
+            "✅ Replay complete: {}/{} successful",
             outcomes.iter().filter(|o| o.success).count(),
-            outcomes.len());
+            outcomes.len()
+        );
 
         Ok(outcomes)
     }
@@ -124,32 +125,26 @@ impl<'a, M: MapReader> ReplayPlayer<'a, M> {
     }
 
     /// Replay with validation
-    pub async fn replay_with_validation(
-        &self,
-        flows: &[RecordedFlow],
-    ) -> Result<ReplayValidation> {
+    pub async fn replay_with_validation(&self, flows: &[RecordedFlow]) -> Result<ReplayValidation> {
         let outcomes = self.replay(flows).await?;
 
         let total = outcomes.len();
         let successful = outcomes.iter().filter(|o| o.success).count();
         let failed = total - successful;
 
-        let verdict_matches = outcomes.iter()
+        let verdict_matches = outcomes
+            .iter()
             .filter(|o| o.verdict == o.flow.verdict)
             .count();
 
-        let new_drops = outcomes.iter()
-            .filter(|o| {
-                o.flow.verdict == PolicyVerdict::Allow
-                    && o.verdict == PolicyVerdict::Deny
-            })
+        let new_drops = outcomes
+            .iter()
+            .filter(|o| o.flow.verdict == PolicyVerdict::Allow && o.verdict == PolicyVerdict::Deny)
             .count();
 
-        let fixed_flows = outcomes.iter()
-            .filter(|o| {
-                o.flow.verdict == PolicyVerdict::Deny
-                    && o.verdict == PolicyVerdict::Allow
-            })
+        let fixed_flows = outcomes
+            .iter()
+            .filter(|o| o.flow.verdict == PolicyVerdict::Deny && o.verdict == PolicyVerdict::Allow)
             .count();
 
         Ok(ReplayValidation {
@@ -172,7 +167,11 @@ impl<'a, M: MapReader> ReplayPlayer<'a, M> {
         let mut all_outcomes = Vec::new();
 
         for (batch_idx, chunk) in flows.chunks(batch_size).enumerate() {
-            println!("📦 Batch {}/{}", batch_idx + 1, (flows.len() + batch_size - 1) / batch_size);
+            println!(
+                "📦 Batch {}/{}",
+                batch_idx + 1,
+                flows.len().div_ceil(batch_size)
+            );
 
             let outcomes = self.replay(chunk).await?;
             all_outcomes.extend(outcomes);
@@ -190,12 +189,13 @@ impl<'a, M: MapReader> ReplayPlayer<'a, M> {
         flows: &[RecordedFlow],
         predicate: impl Fn(&RecordedFlow) -> bool,
     ) -> Result<Vec<ReplayOutcome>> {
-        let filtered: Vec<_> = flows.iter()
-            .filter(|f| predicate(f))
-            .cloned()
-            .collect();
+        let filtered: Vec<_> = flows.iter().filter(|f| predicate(f)).cloned().collect();
 
-        println!("🔍 Replaying {} filtered flows (from {})", filtered.len(), flows.len());
+        println!(
+            "🔍 Replaying {} filtered flows (from {})",
+            filtered.len(),
+            flows.len()
+        );
 
         self.replay(&filtered).await
     }

@@ -1,11 +1,11 @@
 pub mod identity;
 
 use anyhow::{Context, Result};
-use kube::{Api, Client, Config};
 use k8s_openapi::api::core::v1::{ConfigMap, Namespace, Pod, ServiceAccount};
 use k8s_openapi::api::rbac::v1::ClusterRoleBinding;
+use kube::{Api, Client, Config};
 
-pub use identity::{K8sIdentityResolver, CacheStats};
+pub use identity::{CacheStats, K8sIdentityResolver};
 
 #[derive(Clone)]
 pub struct K8sClient {
@@ -15,8 +15,11 @@ pub struct K8sClient {
 
 impl K8sClient {
     pub async fn new() -> Result<Self> {
-        let config = Config::infer().await.context("Failed to infer Kubernetes config")?;
-        let client = Client::try_from(config.clone()).context("Failed to create Kubernetes client")?;
+        let config = Config::infer()
+            .await
+            .context("Failed to infer Kubernetes config")?;
+        let client =
+            Client::try_from(config.clone()).context("Failed to create Kubernetes client")?;
 
         Ok(Self { client, config })
     }
@@ -30,9 +33,7 @@ impl K8sClient {
     #[allow(dead_code)]
     pub fn mock() -> Self {
         // Create a minimal client for testing that doesn't require a real cluster
-        let config = Config::new(
-            "https://localhost:6443".parse().expect("valid URL"),
-        );
+        let config = Config::new("https://localhost:6443".parse().expect("valid URL"));
         let client = Client::try_from(config.clone()).expect("mock client");
         Self { client, config }
     }
@@ -59,16 +60,28 @@ impl K8sClient {
         Ok(pods.items)
     }
 
-    pub async fn get_pods_by_label(&self, namespace: &str, label_selector: &str) -> Result<Vec<Pod>> {
+    pub async fn get_pods_by_label(
+        &self,
+        namespace: &str,
+        label_selector: &str,
+    ) -> Result<Vec<Pod>> {
         let api: Api<Pod> = Api::namespaced(self.client.clone(), namespace);
         let lp = kube::api::ListParams::default().labels(label_selector);
         let pods = api.list(&lp).await?;
         Ok(pods.items)
     }
 
-    pub async fn create_or_update_configmap(&self, namespace: &str, configmap: ConfigMap) -> Result<()> {
+    pub async fn create_or_update_configmap(
+        &self,
+        namespace: &str,
+        configmap: ConfigMap,
+    ) -> Result<()> {
         let api: Api<ConfigMap> = Api::namespaced(self.client.clone(), namespace);
-        let name = configmap.metadata.name.as_ref().context("ConfigMap name missing")?;
+        let name = configmap
+            .metadata
+            .name
+            .as_ref()
+            .context("ConfigMap name missing")?;
 
         match api.get(name).await {
             Ok(_) => {
@@ -82,9 +95,17 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn create_or_update_service_account(&self, namespace: &str, sa: ServiceAccount) -> Result<()> {
+    pub async fn create_or_update_service_account(
+        &self,
+        namespace: &str,
+        sa: ServiceAccount,
+    ) -> Result<()> {
         let api: Api<ServiceAccount> = Api::namespaced(self.client.clone(), namespace);
-        let name = sa.metadata.name.as_ref().context("ServiceAccount name missing")?;
+        let name = sa
+            .metadata
+            .name
+            .as_ref()
+            .context("ServiceAccount name missing")?;
 
         match api.get(name).await {
             Ok(_) => {
@@ -98,9 +119,16 @@ impl K8sClient {
         Ok(())
     }
 
-    pub async fn create_or_update_cluster_role_binding(&self, crb: ClusterRoleBinding) -> Result<()> {
+    pub async fn create_or_update_cluster_role_binding(
+        &self,
+        crb: ClusterRoleBinding,
+    ) -> Result<()> {
         let api: Api<ClusterRoleBinding> = Api::all(self.client.clone());
-        let name = crb.metadata.name.as_ref().context("ClusterRoleBinding name missing")?;
+        let name = crb
+            .metadata
+            .name
+            .as_ref()
+            .context("ClusterRoleBinding name missing")?;
 
         match api.get(name).await {
             Ok(_) => {
@@ -120,19 +148,20 @@ impl K8sClient {
             .context("Invalid YAML: refusing to apply malformed resource")?;
 
         // Basic validation: ensure it looks like a Kubernetes resource
-        let mapping = parsed.as_mapping()
+        let mapping = parsed
+            .as_mapping()
             .context("YAML must be a mapping (object)")?;
 
-        if !mapping.contains_key(&serde_yaml::Value::String("apiVersion".to_string())) {
+        if !mapping.contains_key(serde_yaml::Value::String("apiVersion".to_string())) {
             anyhow::bail!("YAML missing required field: apiVersion");
         }
-        if !mapping.contains_key(&serde_yaml::Value::String("kind".to_string())) {
+        if !mapping.contains_key(serde_yaml::Value::String("kind".to_string())) {
             anyhow::bail!("YAML missing required field: kind");
         }
 
         // Apply via kubectl with --validate flag for server-side validation
-        use std::process::Command;
         use std::io::Write;
+        use std::process::Command;
 
         let mut child = Command::new("kubectl")
             .args(["apply", "--validate=true", "-f", "-"])

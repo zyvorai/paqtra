@@ -7,8 +7,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::modules::multicluster::MultiClusterAutopilot;
 use super::theme::*;
+use crate::modules::multicluster::MultiClusterAutopilot;
 
 pub struct MultiClusterView {
     pub selected_cluster_index: usize,
@@ -17,10 +17,10 @@ pub struct MultiClusterView {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ViewMode {
-    Clusters,     // List of clusters
-    Topology,     // Cluster topology map
-    Syncs,        // Active policy syncs
-    Placements,   // Workload placements
+    Clusters,   // List of clusters
+    Topology,   // Cluster topology map
+    Syncs,      // Active policy syncs
+    Placements, // Workload placements
 }
 
 impl MultiClusterView {
@@ -57,9 +57,9 @@ impl MultiClusterView {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(9),  // Header
-                Constraint::Min(10),    // Main View
-                Constraint::Length(8),  // Details
+                Constraint::Length(9), // Header
+                Constraint::Min(10),   // Main View
+                Constraint::Length(8), // Details
             ])
             .split(area);
 
@@ -115,11 +115,35 @@ impl MultiClusterView {
     }
 
     fn render_clusters(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let clusters = vec![
-            ("prod-us-east-1", "AWS", "us-east-1", "Active", SUCCESS_COLOR),
-            ("prod-eu-west-1", "AWS", "eu-west-1", "Active", SUCCESS_COLOR),
-            ("prod-ap-south-1", "GCP", "ap-south-1", "Degraded", WARNING_COLOR),
-            ("staging-us-west-2", "Azure", "us-west-2", "Active", SUCCESS_COLOR),
+        let clusters = [
+            (
+                "prod-us-east-1",
+                "AWS",
+                "us-east-1",
+                "Active",
+                SUCCESS_COLOR,
+            ),
+            (
+                "prod-eu-west-1",
+                "AWS",
+                "eu-west-1",
+                "Active",
+                SUCCESS_COLOR,
+            ),
+            (
+                "prod-ap-south-1",
+                "GCP",
+                "ap-south-1",
+                "Degraded",
+                WARNING_COLOR,
+            ),
+            (
+                "staging-us-west-2",
+                "Azure",
+                "us-west-2",
+                "Active",
+                SUCCESS_COLOR,
+            ),
         ];
 
         let items: Vec<ListItem> = clusters
@@ -142,7 +166,9 @@ impl MultiClusterView {
             })
             .collect();
 
-        let list = List::new(items).block(bordered_block("Managed Clusters [↑/↓: Select | v: Cycle View]"));
+        let list = List::new(items).block(bordered_block(
+            "Managed Clusters [↑/↓: Select | v: Cycle View]",
+        ));
 
         f.render_widget(list, area);
     }
@@ -203,9 +229,19 @@ impl MultiClusterView {
     }
 
     fn render_syncs(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let syncs = vec![
-            ("NetworkPolicy sync", "us-east-1 → eu-west-1", "In Progress", INFO_COLOR),
-            ("CiliumPolicy sync", "us-east-1 → all", "Completed", SUCCESS_COLOR),
+        let syncs = [
+            (
+                "NetworkPolicy sync",
+                "us-east-1 → eu-west-1",
+                "In Progress",
+                INFO_COLOR,
+            ),
+            (
+                "CiliumPolicy sync",
+                "us-east-1 → all",
+                "Completed",
+                SUCCESS_COLOR,
+            ),
         ];
 
         let items: Vec<ListItem> = syncs
@@ -241,19 +277,34 @@ impl MultiClusterView {
     }
 
     fn render_placements(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let placements = vec![
-            ("payment-service", "us-east-1", "Lower latency", "95%", SUCCESS_COLOR),
-            ("analytics-job", "ap-south-1", "Cost optimization", "82%", INFO_COLOR),
-            ("cache-redis", "eu-west-1", "Region affinity", "88%", SUCCESS_COLOR),
+        let placements = [
+            (
+                "payment-service",
+                "us-east-1",
+                "Lower latency",
+                "95%",
+                SUCCESS_COLOR,
+            ),
+            (
+                "analytics-job",
+                "ap-south-1",
+                "Cost optimization",
+                "82%",
+                INFO_COLOR,
+            ),
+            (
+                "cache-redis",
+                "eu-west-1",
+                "Region affinity",
+                "88%",
+                SUCCESS_COLOR,
+            ),
         ];
 
         let items: Vec<ListItem> = placements
             .iter()
             .map(|(workload, cluster, reason, conf, color)| {
-                let content = format!(
-                    "{:<20} → {:<18} | {} ({})",
-                    workload, cluster, reason, conf
-                );
+                let content = format!("{:<20} → {:<18} | {} ({})", workload, cluster, reason, conf);
                 ListItem::new(Line::from(Span::styled(
                     content,
                     Style::default().fg(*color),

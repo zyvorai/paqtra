@@ -5,6 +5,7 @@ use anyhow::Result;
 use super::EBPFProgram;
 
 /// Handles CO-RE compilation and BTF
+#[derive(Default)]
 pub struct COREHandler {
     btf_available: bool,
 }
@@ -124,14 +125,6 @@ pub struct BTFInfo {
     pub available_types: Vec<String>,
 }
 
-impl Default for COREHandler {
-    fn default() -> Self {
-        Self {
-            btf_available: false,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,7 +155,10 @@ mod tests {
         let handler = COREHandler::default(); // btf_available = false
         let result = handler.get_btf_info();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("BTF not available"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("BTF not available"));
     }
 
     #[tokio::test]

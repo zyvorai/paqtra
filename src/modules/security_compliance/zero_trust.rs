@@ -2,7 +2,7 @@
 // Zero-Trust Policy Engine - Never trust, always verify
 use anyhow::Result;
 
-use super::{Priority, RecommendationCategory, SecurityRecommendation, Effort};
+use super::{Effort, Priority, RecommendationCategory, SecurityRecommendation};
 
 /// Generates and enforces zero-trust network policies
 pub struct ZeroTrustEngine {
@@ -22,7 +22,10 @@ impl ZeroTrustEngine {
 
     /// Generate zero-trust policies for a namespace
     pub async fn generate_policies(&self, namespace: &str) -> Result<Vec<String>> {
-        tracing::info!("Generating zero-trust policies for namespace: {}", namespace);
+        tracing::info!(
+            "Generating zero-trust policies for namespace: {}",
+            namespace
+        );
 
         let mut policies = Vec::new();
 
@@ -176,27 +179,30 @@ spec:
     }
 
     pub async fn get_recommendations(&self) -> Result<Vec<SecurityRecommendation>> {
-        let mut recommendations = Vec::new();
-
-        recommendations.push(SecurityRecommendation {
-            priority: Priority::P1Critical,
-            category: RecommendationCategory::ZeroTrust,
-            title: "Implement default-deny policies".to_string(),
-            description: "No default-deny policies detected. All traffic is implicitly allowed.".to_string(),
-            impact: "High - reduces attack surface by 90%".to_string(),
-            effort: Effort::Low,
-            auto_applicable: true,
-        });
-
-        recommendations.push(SecurityRecommendation {
-            priority: Priority::P2High,
-            category: RecommendationCategory::ZeroTrust,
-            title: "Enable micro-segmentation".to_string(),
-            description: "Implement fine-grained network segmentation between application tiers".to_string(),
-            impact: "Medium - prevents lateral movement".to_string(),
-            effort: Effort::Medium,
-            auto_applicable: false,
-        });
+        let recommendations = vec![
+            SecurityRecommendation {
+                priority: Priority::P1Critical,
+                category: RecommendationCategory::ZeroTrust,
+                title: "Implement default-deny policies".to_string(),
+                description:
+                    "No default-deny policies detected. All traffic is implicitly allowed."
+                        .to_string(),
+                impact: "High - reduces attack surface by 90%".to_string(),
+                effort: Effort::Low,
+                auto_applicable: true,
+            },
+            SecurityRecommendation {
+                priority: Priority::P2High,
+                category: RecommendationCategory::ZeroTrust,
+                title: "Enable micro-segmentation".to_string(),
+                description:
+                    "Implement fine-grained network segmentation between application tiers"
+                        .to_string(),
+                impact: "Medium - prevents lateral movement".to_string(),
+                effort: Effort::Medium,
+                auto_applicable: false,
+            },
+        ];
 
         Ok(recommendations)
     }
@@ -259,7 +265,10 @@ mod tests {
         let engine = ZeroTrustEngine::new().unwrap();
         let policies = engine.generate_policies("default").await.unwrap();
         for policy in &policies {
-            assert!(policy.contains("apiVersion:"), "Policy should have apiVersion");
+            assert!(
+                policy.contains("apiVersion:"),
+                "Policy should have apiVersion"
+            );
             assert!(policy.contains("kind:"), "Policy should have kind");
             assert!(policy.contains("metadata:"), "Policy should have metadata");
             assert!(policy.contains("spec:"), "Policy should have spec");
@@ -290,6 +299,8 @@ mod tests {
         let engine = ZeroTrustEngine::new().unwrap();
         let recs = engine.get_recommendations().await.unwrap();
         assert!(!recs.is_empty());
-        assert!(recs.iter().all(|r| r.category == RecommendationCategory::ZeroTrust));
+        assert!(recs
+            .iter()
+            .all(|r| r.category == RecommendationCategory::ZeroTrust));
     }
 }

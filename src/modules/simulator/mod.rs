@@ -15,7 +15,6 @@
 /// - Risk assessment scoring
 /// - Rollback recommendations
 /// - Safe testing environment
-
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
@@ -23,8 +22,8 @@ use std::net::IpAddr;
 use crate::ebpf::{ConntrackEntry, MapReader, PolicyDecision, PolicyVerdict};
 use crate::kubernetes::K8sClient;
 
-pub mod engine;
 pub mod analyzer;
+pub mod engine;
 pub mod scorer;
 
 /// Simulator configuration
@@ -101,14 +100,10 @@ pub enum SimulationScenario {
     },
 
     /// Test blocking external IP
-    BlockExternalIP {
-        ip: IpAddr,
-    },
+    BlockExternalIP { ip: IpAddr },
 
     /// Test default-deny for namespace
-    DefaultDeny {
-        namespace: String,
-    },
+    DefaultDeny { namespace: String },
 }
 
 /// Simulation result
@@ -297,9 +292,9 @@ pub struct Dependency {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DependencyCriticality {
-    Critical,   // Service won't work without it
-    Important,  // Degraded functionality
-    Optional,   // Nice to have
+    Critical,  // Service won't work without it
+    Important, // Degraded functionality
+    Optional,  // Nice to have
 }
 
 /// Simulation details
@@ -354,11 +349,7 @@ pub struct HistoricalFlow {
 }
 
 impl<M: MapReader> Simulator<M> {
-    pub fn new(
-        config: SimulatorConfig,
-        ebpf_reader: M,
-        k8s_client: K8sClient,
-    ) -> Self {
+    pub fn new(config: SimulatorConfig, ebpf_reader: M, k8s_client: K8sClient) -> Self {
         Self {
             config,
             ebpf_reader,
@@ -395,9 +386,13 @@ impl<M: MapReader> Simulator<M> {
 
     /// Convert conntrack entry to historical flow
     fn conntrack_to_flow(&self, ct: &ConntrackEntry) -> Result<HistoricalFlow> {
-        let src_ip: IpAddr = ct.src_ip.parse()
+        let src_ip: IpAddr = ct
+            .src_ip
+            .parse()
             .unwrap_or_else(|_| IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)));
-        let dst_ip: IpAddr = ct.dst_ip.parse()
+        let dst_ip: IpAddr = ct
+            .dst_ip
+            .parse()
             .unwrap_or_else(|_| IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)));
 
         Ok(HistoricalFlow {
@@ -414,8 +409,8 @@ impl<M: MapReader> Simulator<M> {
 
     /// Simulate a scenario
     pub async fn simulate(&mut self, scenario: SimulationScenario) -> Result<SimulationResult> {
-        use engine::SimulationEngine;
         use analyzer::ImpactAnalyzer;
+        use engine::SimulationEngine;
         use scorer::RiskScorer;
 
         let start = std::time::Instant::now();
@@ -499,7 +494,7 @@ impl<M: MapReader> Simulator<M> {
                 && decision.port == flow.port
                 && decision.protocol == flow.protocol
             {
-                return decision.verdict.clone();
+                return decision.verdict;
             }
         }
 
@@ -517,12 +512,11 @@ impl<M: MapReader> Simulator<M> {
         let mut recommendations = Vec::new();
 
         if risk.score >= 8 {
-            recommendations.push(
-                "⚠️  HIGH RISK: Do not apply this change in production".to_string()
-            );
+            recommendations
+                .push("⚠️  HIGH RISK: Do not apply this change in production".to_string());
         }
 
-        if impact.critical_services.len() > 0 {
+        if !impact.critical_services.is_empty() {
             recommendations.push(format!(
                 "Critical services affected: {}. Consider gradual rollout.",
                 impact.critical_services.join(", ")
@@ -531,20 +525,20 @@ impl<M: MapReader> Simulator<M> {
 
         if impact.blocked_flows > impact.total_flows / 2 {
             recommendations.push(
-                "More than 50% of flows would be blocked. Review policy carefully.".to_string()
+                "More than 50% of flows would be blocked. Review policy carefully.".to_string(),
             );
         }
 
         match scenario {
             SimulationScenario::DefaultDeny { .. } => {
                 recommendations.push(
-                    "Ensure all required egress is explicitly allowed before applying default-deny".to_string()
+                    "Ensure all required egress is explicitly allowed before applying default-deny"
+                        .to_string(),
                 );
             }
             SimulationScenario::BlockExternalIP { .. } => {
-                recommendations.push(
-                    "Verify DNS and external dependencies before blocking IPs".to_string()
-                );
+                recommendations
+                    .push("Verify DNS and external dependencies before blocking IPs".to_string());
             }
             _ => {}
         }
@@ -564,7 +558,8 @@ impl<M: MapReader> Simulator<M> {
 
         // Confidence based on:
         // 1. Amount of historical data
-        let data_score = (flow_results.len() as f32 / self.config.replay_flow_count as f32).min(1.0);
+        let data_score =
+            (flow_results.len() as f32 / self.config.replay_flow_count as f32).min(1.0);
 
         // 2. Coverage of identities
         let unique_src: HashSet<_> = flow_results.iter().map(|f| f.src_identity).collect();

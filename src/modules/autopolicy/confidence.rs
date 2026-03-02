@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use super::{Protocol, TrafficObservation, TrafficPattern};
 /// ML-Based Confidence Scoring for Policy Recommendations
 ///
 /// Uses machine learning-inspired features to score policy confidence:
@@ -10,9 +11,7 @@
 /// - Historical accuracy
 ///
 /// Confidence scores range from 0.0 (low) to 1.0 (high)
-
 use std::collections::HashMap;
-use super::{TrafficPattern, TrafficObservation, Protocol};
 
 /// ML-based confidence scorer
 pub struct ConfidenceScorer {
@@ -32,32 +31,116 @@ struct PortInfo {
     trust_score: f32,
 }
 
+impl Default for ConfidenceScorer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConfidenceScorer {
     pub fn new() -> Self {
         let mut known_ports = HashMap::new();
 
         // HTTP/HTTPS
-        known_ports.insert(80, PortInfo { name: "HTTP", trust_score: 0.9 });
-        known_ports.insert(443, PortInfo { name: "HTTPS", trust_score: 0.95 });
-        known_ports.insert(8080, PortInfo { name: "HTTP-Alt", trust_score: 0.85 });
-        known_ports.insert(8443, PortInfo { name: "HTTPS-Alt", trust_score: 0.85 });
+        known_ports.insert(
+            80,
+            PortInfo {
+                name: "HTTP",
+                trust_score: 0.9,
+            },
+        );
+        known_ports.insert(
+            443,
+            PortInfo {
+                name: "HTTPS",
+                trust_score: 0.95,
+            },
+        );
+        known_ports.insert(
+            8080,
+            PortInfo {
+                name: "HTTP-Alt",
+                trust_score: 0.85,
+            },
+        );
+        known_ports.insert(
+            8443,
+            PortInfo {
+                name: "HTTPS-Alt",
+                trust_score: 0.85,
+            },
+        );
 
         // DNS
-        known_ports.insert(53, PortInfo { name: "DNS", trust_score: 0.95 });
+        known_ports.insert(
+            53,
+            PortInfo {
+                name: "DNS",
+                trust_score: 0.95,
+            },
+        );
 
         // Databases
-        known_ports.insert(3306, PortInfo { name: "MySQL", trust_score: 0.9 });
-        known_ports.insert(5432, PortInfo { name: "PostgreSQL", trust_score: 0.9 });
-        known_ports.insert(27017, PortInfo { name: "MongoDB", trust_score: 0.9 });
-        known_ports.insert(6379, PortInfo { name: "Redis", trust_score: 0.9 });
+        known_ports.insert(
+            3306,
+            PortInfo {
+                name: "MySQL",
+                trust_score: 0.9,
+            },
+        );
+        known_ports.insert(
+            5432,
+            PortInfo {
+                name: "PostgreSQL",
+                trust_score: 0.9,
+            },
+        );
+        known_ports.insert(
+            27017,
+            PortInfo {
+                name: "MongoDB",
+                trust_score: 0.9,
+            },
+        );
+        known_ports.insert(
+            6379,
+            PortInfo {
+                name: "Redis",
+                trust_score: 0.9,
+            },
+        );
 
         // Message Queues
-        known_ports.insert(5672, PortInfo { name: "RabbitMQ", trust_score: 0.85 });
-        known_ports.insert(9092, PortInfo { name: "Kafka", trust_score: 0.85 });
+        known_ports.insert(
+            5672,
+            PortInfo {
+                name: "RabbitMQ",
+                trust_score: 0.85,
+            },
+        );
+        known_ports.insert(
+            9092,
+            PortInfo {
+                name: "Kafka",
+                trust_score: 0.85,
+            },
+        );
 
         // Kubernetes
-        known_ports.insert(10250, PortInfo { name: "Kubelet", trust_score: 0.8 });
-        known_ports.insert(6443, PortInfo { name: "K8s API", trust_score: 0.8 });
+        known_ports.insert(
+            10250,
+            PortInfo {
+                name: "Kubelet",
+                trust_score: 0.8,
+            },
+        );
+        known_ports.insert(
+            6443,
+            PortInfo {
+                name: "K8s API",
+                trust_score: 0.8,
+            },
+        );
 
         // Default namespace trust (can be updated based on history)
         let mut namespace_trust = HashMap::new();
@@ -107,39 +190,19 @@ impl ConfidenceScorer {
 
     /// Score an individual pattern based on ML features
     fn score_pattern(&self, pattern: &TrafficPattern, obs: &TrafficObservation) -> f32 {
-        let mut features = Vec::new();
-
-        // Feature 1: Temporal Stability (0.0 - 1.0)
-        // How consistent is this pattern over time?
-        features.push(self.temporal_stability_score(obs));
-
-        // Feature 2: Traffic Volume (0.0 - 1.0)
-        // More observations = higher confidence
-        features.push(self.traffic_volume_score(obs));
-
-        // Feature 3: Port Trust (0.0 - 1.0)
-        // Well-known ports score higher
-        features.push(self.port_trust_score(pattern.port));
-
-        // Feature 4: Protocol Score (0.0 - 1.0)
-        // TCP is more reliable than UDP for policy
-        features.push(self.protocol_score(pattern.protocol));
-
-        // Feature 5: Namespace Trust (0.0 - 1.0)
-        // Trusted namespaces score higher
-        features.push(self.namespace_trust_score(&pattern.src_namespace, &pattern.dst_namespace));
-
-        // Feature 6: Label Specificity (0.0 - 1.0)
-        // More specific labels = higher confidence
-        features.push(self.label_specificity_score(&pattern.src_labels, &pattern.dst_labels));
-
-        // Feature 7: Traffic Regularity (0.0 - 1.0)
-        // Regular, predictable traffic patterns score higher
-        features.push(self.traffic_regularity_score(obs));
+        let features = [
+            self.temporal_stability_score(obs),
+            self.traffic_volume_score(obs),
+            self.port_trust_score(pattern.port),
+            self.protocol_score(pattern.protocol),
+            self.namespace_trust_score(&pattern.src_namespace, &pattern.dst_namespace),
+            self.label_specificity_score(&pattern.src_labels, &pattern.dst_labels),
+            self.traffic_regularity_score(obs),
+        ];
 
         // Combined score using weighted average
         // Assign weights to each feature based on importance
-        let weights = vec![
+        let weights = [
             0.20, // Temporal stability (very important)
             0.20, // Traffic volume (very important)
             0.15, // Port trust
@@ -155,7 +218,7 @@ impl ConfidenceScorer {
             .map(|(f, w)| f * w)
             .sum();
 
-        weighted_sum.min(1.0).max(0.0)
+        weighted_sum.clamp(0.0, 1.0)
     }
 
     fn temporal_stability_score(&self, obs: &TrafficObservation) -> f32 {
@@ -168,7 +231,7 @@ impl ConfidenceScorer {
         // Longer observation periods = higher stability
         // Use logarithmic scale: 1 hour = 0.6, 1 day = 0.8, 1 week = 0.95
         let hours = duration_secs as f32 / 3600.0;
-        let score = (hours.log10() / 2.0).min(1.0).max(0.0);
+        let score = (hours.log10() / 2.0).clamp(0.0, 1.0);
 
         // Bonus for many observations over time (consistency)
         let consistency_bonus = (obs.count as f32 / (hours + 1.0) / 10.0).min(0.2);
@@ -180,7 +243,7 @@ impl ConfidenceScorer {
         // Logarithmic scale: more observations = higher confidence
         // 1 obs = 0.3, 10 obs = 0.6, 100 obs = 0.8, 1000+ obs = 0.95
         let log_count = (obs.count as f32).log10();
-        (log_count / 3.0).min(0.95).max(0.3)
+        (log_count / 3.0).clamp(0.3, 0.95)
     }
 
     fn port_trust_score(&self, port: u16) -> f32 {
@@ -191,17 +254,17 @@ impl ConfidenceScorer {
 
         // Port ranges scoring
         match port {
-            0..=1023 => 0.7,    // System ports (generally trusted)
-            1024..=49151 => 0.6, // Registered ports
+            0..=1023 => 0.7,      // System ports (generally trusted)
+            1024..=49151 => 0.6,  // Registered ports
             49152..=65535 => 0.4, // Dynamic/ephemeral ports (lower trust)
         }
     }
 
     fn protocol_score(&self, protocol: Protocol) -> f32 {
         match protocol {
-            Protocol::TCP => 0.9,   // TCP is stateful, reliable
-            Protocol::UDP => 0.7,   // UDP is stateless, less reliable
-            Protocol::ICMP => 0.6,  // ICMP is operational
+            Protocol::TCP => 0.9,      // TCP is stateful, reliable
+            Protocol::UDP => 0.7,      // UDP is stateless, less reliable
+            Protocol::ICMP => 0.6,     // ICMP is operational
             Protocol::Other(_) => 0.4, // Unknown protocols
         }
     }
@@ -220,8 +283,16 @@ impl ConfidenceScorer {
         dst_labels: &super::LabelSet,
     ) -> f32 {
         // More labels = more specific = higher confidence
-        let src_count = if src_labels.is_empty() { 0 } else { src_labels.iter().count() };
-        let dst_count = if dst_labels.is_empty() { 0 } else { dst_labels.iter().count() };
+        let src_count = if src_labels.is_empty() {
+            0
+        } else {
+            src_labels.iter().count()
+        };
+        let dst_count = if dst_labels.is_empty() {
+            0
+        } else {
+            dst_labels.iter().count()
+        };
 
         let total_labels = src_count + dst_count;
 
@@ -257,7 +328,8 @@ impl ConfidenceScorer {
 
     /// Update namespace trust score
     pub fn update_namespace_trust(&mut self, namespace: String, trust: f32) {
-        self.namespace_trust.insert(namespace, trust.min(1.0).max(0.0));
+        self.namespace_trust
+            .insert(namespace, trust.clamp(0.0, 1.0));
     }
 
     /// Get confidence level as human-readable string

@@ -42,8 +42,8 @@ pub struct BaselineStats {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeasonalPatterns {
-    pub hourly_patterns: HashMap<u32, f64>,    // Hour of day -> avg value
-    pub daily_patterns: HashMap<u32, f64>,     // Day of week -> avg value
+    pub hourly_patterns: HashMap<u32, f64>, // Hour of day -> avg value
+    pub daily_patterns: HashMap<u32, f64>,  // Day of week -> avg value
     pub weekly_trend: f64,
 }
 
@@ -140,7 +140,7 @@ impl BaselineLearner {
         let variance: f64 = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n as f64;
         let std_dev = variance.sqrt();
 
-        let median = if n % 2 == 0 {
+        let median = if n.is_multiple_of(2) {
             (sorted_values[n / 2 - 1] + sorted_values[n / 2]) / 2.0
         } else {
             sorted_values[n / 2]
@@ -169,15 +169,9 @@ impl BaselineLearner {
             let hour = dp.timestamp.hour();
             let day = dp.timestamp.weekday().num_days_from_monday();
 
-            hourly_patterns
-                .entry(hour)
-                .or_insert_with(Vec::new)
-                .push(dp.value);
+            hourly_patterns.entry(hour).or_default().push(dp.value);
 
-            daily_patterns
-                .entry(day)
-                .or_insert_with(Vec::new)
-                .push(dp.value);
+            daily_patterns.entry(day).or_default().push(dp.value);
         }
 
         let hourly_avgs = hourly_patterns

@@ -2,14 +2,13 @@
 /// BPF Data Structure Parsers
 ///
 /// Parses raw binary data from Cilium BPF maps into Rust structures
-
 use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian, NetworkEndian};
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use super::{
-    ConntrackEntry, ConntrackState, DropReasonType, IPCacheEntry,
-    LoadBalancerEntry, PolicyDecision, PolicyVerdict,
+    ConntrackEntry, ConntrackState, DropReasonType, IPCacheEntry, LoadBalancerEntry,
+    PolicyDecision, PolicyVerdict,
 };
 
 /// Parse Cilium policy map entry
@@ -35,7 +34,7 @@ pub fn parse_policy_entry(key: &[u8], value: &[u8]) -> Result<PolicyDecision> {
     }
 
     let src_identity = LittleEndian::read_u32(&key[0..4]);
-    let dst_port = NetworkEndian::read_u16(&key[4..6]) as u16;
+    let dst_port = NetworkEndian::read_u16(&key[4..6]);
     let protocol = key[6];
     let _egress = key[7];
 
@@ -141,17 +140,13 @@ pub fn parse_ct6_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
 
     // Parse IPv6 addresses (16 bytes each)
     let dst_ip = Ipv6Addr::from([
-        key[0], key[1], key[2], key[3],
-        key[4], key[5], key[6], key[7],
-        key[8], key[9], key[10], key[11],
-        key[12], key[13], key[14], key[15],
+        key[0], key[1], key[2], key[3], key[4], key[5], key[6], key[7], key[8], key[9], key[10],
+        key[11], key[12], key[13], key[14], key[15],
     ]);
 
     let src_ip = Ipv6Addr::from([
-        key[16], key[17], key[18], key[19],
-        key[20], key[21], key[22], key[23],
-        key[24], key[25], key[26], key[27],
-        key[28], key[29], key[30], key[31],
+        key[16], key[17], key[18], key[19], key[20], key[21], key[22], key[23], key[24], key[25],
+        key[26], key[27], key[28], key[29], key[30], key[31],
     ]);
 
     // Parse ports
@@ -168,7 +163,11 @@ pub fn parse_ct6_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
         let tx_packets = LittleEndian::read_u64(&value[16..24]);
         let tx_bytes = LittleEndian::read_u64(&value[24..32]);
 
-        (rx_packets + tx_packets, rx_bytes + tx_bytes, ConntrackState::Established)
+        (
+            rx_packets + tx_packets,
+            rx_bytes + tx_bytes,
+            ConntrackState::Established,
+        )
     } else {
         (0, 0, ConntrackState::New)
     };
@@ -225,10 +224,8 @@ pub fn parse_ipcache_entry(key: &[u8], value: &[u8]) -> Result<IPCacheEntry> {
     } else if family == 10 && key.len() >= 24 {
         // IPv6
         let ip6 = Ipv6Addr::from([
-            key[8], key[9], key[10], key[11],
-            key[12], key[13], key[14], key[15],
-            key[16], key[17], key[18], key[19],
-            key[20], key[21], key[22], key[23],
+            key[8], key[9], key[10], key[11], key[12], key[13], key[14], key[15], key[16], key[17],
+            key[18], key[19], key[20], key[21], key[22], key[23],
         ]);
         ip6.to_string()
     } else {
@@ -246,7 +243,7 @@ pub fn parse_ipcache_entry(key: &[u8], value: &[u8]) -> Result<IPCacheEntry> {
         ip,
         identity,
         namespace: String::new(), // Needs K8s resolution
-        labels: Vec::new(),        // Needs K8s resolution
+        labels: Vec::new(),       // Needs K8s resolution
     })
 }
 
@@ -292,7 +289,7 @@ pub fn parse_lb_entry(key: &[u8], value: &[u8]) -> Result<LoadBalancerEntry> {
         service_port,
         backend_ip,
         backend_port,
-        weight: 100, // Default weight
+        weight: 100,     // Default weight
         active_conns: 0, // Would need separate metrics
     })
 }
@@ -310,7 +307,7 @@ pub fn parse_lb_entry(key: &[u8], value: &[u8]) -> Result<LoadBalancerEntry> {
 ///   __u64 bytes;       // Bytes dropped
 /// }
 pub fn parse_metrics_entry(key: &[u8], value: &[u8]) -> Result<(DropReasonType, u64)> {
-    if key.len() < 1 {
+    if key.is_empty() {
         anyhow::bail!("Metrics key too short");
     }
 
@@ -374,19 +371,19 @@ mod tests {
     fn test_parse_ct_entry() {
         // Mock CT4 entry: 10.0.0.1:12345 -> 10.0.0.2:80 (TCP)
         let key = vec![
-            10, 0, 0, 2,        // dst_ip
-            10, 0, 0, 1,        // src_ip
-            0x00, 0x50,         // dst_port (80)
-            0x30, 0x39,         // src_port (12345)
-            6,                  // protocol (TCP)
-            0,                  // flags
+            10, 0, 0, 2, // dst_ip
+            10, 0, 0, 1, // src_ip
+            0x00, 0x50, // dst_port (80)
+            0x30, 0x39, // src_port (12345)
+            6,    // protocol (TCP)
+            0,    // flags
         ];
 
         let value = vec![
-            100, 0, 0, 0, 0, 0, 0, 0,  // rx_packets
-            0, 0, 50, 0, 0, 0, 0, 0,   // rx_bytes
-            50, 0, 0, 0, 0, 0, 0, 0,   // tx_packets
-            0, 0, 25, 0, 0, 0, 0, 0,   // tx_bytes
+            100, 0, 0, 0, 0, 0, 0, 0, // rx_packets
+            0, 0, 50, 0, 0, 0, 0, 0, // rx_bytes
+            50, 0, 0, 0, 0, 0, 0, 0, // tx_packets
+            0, 0, 25, 0, 0, 0, 0, 0, // tx_bytes
         ];
 
         let entry = parse_ct_entry(&key, &value).unwrap();
@@ -403,15 +400,15 @@ mod tests {
     fn test_parse_ipcache_entry() {
         // Mock ipcache entry
         let key = vec![
-            0, 0, 0, 0,         // LPM prefix
-            0, 0,               // cluster_id
-            2,                  // family (AF_INET)
-            0,                  // pad
-            10, 0, 0, 1,        // IPv4: 10.0.0.1
+            0, 0, 0, 0, // LPM prefix
+            0, 0, // cluster_id
+            2, // family (AF_INET)
+            0, // pad
+            10, 0, 0, 1, // IPv4: 10.0.0.1
         ];
 
         let value = vec![
-            100, 0, 0, 0,       // identity: 100
+            100, 0, 0, 0, // identity: 100
         ];
 
         let entry = parse_ipcache_entry(&key, &value).unwrap();
@@ -424,17 +421,17 @@ mod tests {
     fn test_parse_lb_entry() {
         // Mock LB entry: 10.0.1.100:80 -> 10.0.2.10:8080
         let key = vec![
-            10, 0, 1, 100,      // service VIP
-            0x00, 0x50,         // service port (80)
-            0, 0,               // backend_slot
-            6,                  // proto (TCP)
-            0,                  // scope
-            0,                  // pad
+            10, 0, 1, 100, // service VIP
+            0x00, 0x50, // service port (80)
+            0, 0, // backend_slot
+            6, // proto (TCP)
+            0, // scope
+            0, // pad
         ];
 
         let value = vec![
-            10, 0, 2, 10,       // backend IP
-            0x1F, 0x90,         // backend port (8080)
+            10, 0, 2, 10, // backend IP
+            0x1F, 0x90, // backend port (8080)
         ];
 
         let entry = parse_lb_entry(&key, &value).unwrap();
@@ -463,8 +460,8 @@ mod tests {
 
     #[test]
     fn test_parse_metrics_entry() {
-        let key = vec![1, 0, 0, 0];  // reason: PolicyDenied
-        let value = vec![42, 0, 0, 0, 0, 0, 0, 0];  // count: 42
+        let key = vec![1, 0, 0, 0]; // reason: PolicyDenied
+        let value = vec![42, 0, 0, 0, 0, 0, 0, 0]; // count: 42
 
         let (reason, count) = parse_metrics_entry(&key, &value).unwrap();
 

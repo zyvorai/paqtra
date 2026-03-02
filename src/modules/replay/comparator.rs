@@ -1,13 +1,18 @@
 #![allow(dead_code)]
+use super::player::ReplayOutcome;
 /// Replay Comparator
 ///
 /// Compares original recordings with replay outcomes
-
 use super::*;
-use super::player::ReplayOutcome;
 use anyhow::Result;
 
 pub struct ReplayComparator;
+
+impl Default for ReplayComparator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ReplayComparator {
     pub fn new() -> Self {
@@ -31,19 +36,22 @@ impl ReplayComparator {
         let total_flows = original.len();
 
         // Count identical flows
-        let identical = replay.iter()
+        let identical = replay
+            .iter()
             .filter(|o| o.success && o.verdict == o.flow.verdict)
             .count();
 
         // Count verdict changes
-        let verdict_changed = replay.iter()
+        let verdict_changed = replay
+            .iter()
             .filter(|o| o.verdict != o.flow.verdict)
             .count();
 
         // Build a lookup from original flows to estimate original latency.
         // We derive per-flow latency from the inter-flow offset_ms deltas, which
         // approximate the original timing between consecutive flows during recording.
-        let original_latency_lookup: HashMap<usize, f64> = original.iter()
+        let original_latency_lookup: HashMap<usize, f64> = original
+            .iter()
             .enumerate()
             .map(|(i, flow)| {
                 // Use the offset delta between consecutive flows as a latency proxy
@@ -57,11 +65,11 @@ impl ReplayComparator {
             .collect();
 
         // Find new drops (was allowed, now denied)
-        let new_drops: Vec<_> = replay.iter()
+        let new_drops: Vec<_> = replay
+            .iter()
             .enumerate()
             .filter(|(_i, o)| {
-                o.flow.verdict == PolicyVerdict::Allow
-                    && o.verdict == PolicyVerdict::Deny
+                o.flow.verdict == PolicyVerdict::Allow && o.verdict == PolicyVerdict::Deny
             })
             .map(|(i, o)| FlowDifference {
                 flow: o.flow.clone(),
@@ -73,11 +81,11 @@ impl ReplayComparator {
             .collect();
 
         // Find fixed drops (was denied, now allowed)
-        let fixed_drops: Vec<_> = replay.iter()
+        let fixed_drops: Vec<_> = replay
+            .iter()
             .enumerate()
             .filter(|(_i, o)| {
-                o.flow.verdict == PolicyVerdict::Deny
-                    && o.verdict == PolicyVerdict::Allow
+                o.flow.verdict == PolicyVerdict::Deny && o.verdict == PolicyVerdict::Allow
             })
             .map(|(i, o)| FlowDifference {
                 flow: o.flow.clone(),
@@ -127,9 +135,7 @@ impl ReplayComparator {
         replay: &[ReplayOutcome],
     ) -> PerformanceDifference {
         // Calculate average latency from replay
-        let replay_latencies: Vec<f64> = replay.iter()
-            .filter_map(|o| o.latency_ms)
-            .collect();
+        let replay_latencies: Vec<f64> = replay.iter().filter_map(|o| o.latency_ms).collect();
 
         let avg_latency_replay_ms = if !replay_latencies.is_empty() {
             replay_latencies.iter().sum::<f64>() / replay_latencies.len() as f64
@@ -154,8 +160,10 @@ impl ReplayComparator {
         // Estimate duration (would be tracked in real implementation)
         let duration_secs = 10.0; // Placeholder
 
-        let throughput_original_mbps = (total_bytes_original as f64 * 8.0) / (duration_secs * 1_000_000.0);
-        let throughput_replay_mbps = (total_bytes_replay as f64 * 8.0) / (duration_secs * 1_000_000.0);
+        let throughput_original_mbps =
+            (total_bytes_original as f64 * 8.0) / (duration_secs * 1_000_000.0);
+        let throughput_replay_mbps =
+            (total_bytes_replay as f64 * 8.0) / (duration_secs * 1_000_000.0);
 
         let throughput_delta_percent = if throughput_original_mbps > 0.0 {
             ((throughput_replay_mbps - throughput_original_mbps) / throughput_original_mbps) * 100.0
@@ -182,10 +190,15 @@ impl ReplayComparator {
 
         // Overall summary
         report.push_str(&format!("Total Flows: {}\n", comparison.total_flows));
-        report.push_str(&format!("Identical: {} ({:.1}%)\n",
+        report.push_str(&format!(
+            "Identical: {} ({:.1}%)\n",
             comparison.identical,
-            comparison.similarity_score * 100.0));
-        report.push_str(&format!("Verdict Changed: {}\n", comparison.verdict_changed));
+            comparison.similarity_score * 100.0
+        ));
+        report.push_str(&format!(
+            "Verdict Changed: {}\n",
+            comparison.verdict_changed
+        ));
 
         // New drops
         if !comparison.new_drops.is_empty() {
@@ -203,13 +216,19 @@ impl ReplayComparator {
                 ));
             }
             if comparison.new_drops.len() > 5 {
-                report.push_str(&format!("  ... and {} more\n", comparison.new_drops.len() - 5));
+                report.push_str(&format!(
+                    "  ... and {} more\n",
+                    comparison.new_drops.len() - 5
+                ));
             }
         }
 
         // Fixed drops
         if !comparison.fixed_drops.is_empty() {
-            report.push_str(&format!("\n✅ Fixed Drops: {}\n", comparison.fixed_drops.len()));
+            report.push_str(&format!(
+                "\n✅ Fixed Drops: {}\n",
+                comparison.fixed_drops.len()
+            ));
             for (idx, diff) in comparison.fixed_drops.iter().take(5).enumerate() {
                 report.push_str(&format!(
                     "  {}. {}:{} → {}:{} (was: {:?}, now: {:?})\n",
@@ -223,7 +242,10 @@ impl ReplayComparator {
                 ));
             }
             if comparison.fixed_drops.len() > 5 {
-                report.push_str(&format!("  ... and {} more\n", comparison.fixed_drops.len() - 5));
+                report.push_str(&format!(
+                    "  ... and {} more\n",
+                    comparison.fixed_drops.len() - 5
+                ));
             }
         }
 
@@ -243,8 +265,10 @@ impl ReplayComparator {
         ));
 
         // Similarity score
-        report.push_str(&format!("\n🎯 Similarity Score: {:.1}%\n",
-            comparison.similarity_score * 100.0));
+        report.push_str(&format!(
+            "\n🎯 Similarity Score: {:.1}%\n",
+            comparison.similarity_score * 100.0
+        ));
 
         if comparison.similarity_score >= 0.95 {
             report.push_str("✅ Excellent match - behavior is nearly identical\n");
@@ -269,7 +293,8 @@ impl ReplayComparator {
         // Group new drops by namespace
         for diff in &comparison.new_drops {
             let ns = diff.flow.src_namespace.clone();
-            by_namespace.entry(ns)
+            by_namespace
+                .entry(ns)
                 .or_insert_with(|| NamespaceComparison {
                     namespace: diff.flow.src_namespace.clone(),
                     new_drops: 0,
@@ -282,7 +307,8 @@ impl ReplayComparator {
         // Group fixed drops by namespace
         for diff in &comparison.fixed_drops {
             let ns = diff.flow.src_namespace.clone();
-            by_namespace.entry(ns)
+            by_namespace
+                .entry(ns)
                 .or_insert_with(|| NamespaceComparison {
                     namespace: diff.flow.src_namespace.clone(),
                     new_drops: 0,
@@ -326,12 +352,12 @@ impl ReplayComparator {
     fn assess_regression_severity(&self, flow: &RecordedFlow) -> RegressionSeverity {
         // Critical if common service ports
         match flow.dst_port {
-            53 => RegressionSeverity::Critical,    // DNS
-            443 => RegressionSeverity::High,       // HTTPS
-            5432 => RegressionSeverity::Critical,  // PostgreSQL
-            3306 => RegressionSeverity::Critical,  // MySQL
-            6379 => RegressionSeverity::High,      // Redis
-            80 => RegressionSeverity::High,        // HTTP
+            53 => RegressionSeverity::Critical,   // DNS
+            443 => RegressionSeverity::High,      // HTTPS
+            5432 => RegressionSeverity::Critical, // PostgreSQL
+            3306 => RegressionSeverity::Critical, // MySQL
+            6379 => RegressionSeverity::High,     // Redis
+            80 => RegressionSeverity::High,       // HTTP
             _ => RegressionSeverity::Medium,
         }
     }
@@ -437,7 +463,7 @@ mod tests {
                     src_ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
                     dst_ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
                     src_port: 12345,
-                    dst_port: 5432,  // PostgreSQL - critical
+                    dst_port: 5432, // PostgreSQL - critical
                     protocol: 6,
                     src_identity: 100,
                     dst_identity: 200,

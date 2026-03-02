@@ -12,22 +12,21 @@
 /// - Minimal privilege policy generation
 /// - Audit mode for safe testing
 /// - Policy refinement over time
-
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::ebpf::{ConntrackEntry, MapReader, EnrichedMapReader};
+use crate::ebpf::{ConntrackEntry, EnrichedMapReader, MapReader};
 use crate::kubernetes::K8sClient;
 use crate::policies::PolicyManager;
 
 pub mod types;
 pub use types::*;
 
-pub mod learner;
-pub mod generator;
 pub mod analyzer;
 pub mod confidence;
+pub mod generator;
+pub mod learner;
 
 /// AutoPolicy Engine
 pub struct AutoPolicy<M: MapReader> {
@@ -44,11 +43,7 @@ pub struct AutoPolicy<M: MapReader> {
 }
 
 impl<M: MapReader> AutoPolicy<M> {
-    pub fn new(
-        config: AutoPolicyConfig,
-        ebpf_reader: M,
-        k8s_client: K8sClient,
-    ) -> Self {
+    pub fn new(config: AutoPolicyConfig, ebpf_reader: M, k8s_client: K8sClient) -> Self {
         let policy_manager = PolicyManager::new(k8s_client.clone());
 
         Self {
@@ -69,9 +64,7 @@ impl<M: MapReader> AutoPolicy<M> {
             anyhow::bail!("AutoPolicy is not enabled");
         }
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_secs();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
         self.learning_start = Some(now);
         self.state = LearningState::Learning {
@@ -80,8 +73,18 @@ impl<M: MapReader> AutoPolicy<M> {
         };
 
         println!("🔍 AutoPolicy learning started");
-        println!("   Duration: {} days", self.config.learning_duration.as_secs() / 86400);
-        println!("   Mode: {}", if self.config.audit_mode { "Audit" } else { "Enforce" });
+        println!(
+            "   Duration: {} days",
+            self.config.learning_duration.as_secs() / 86400
+        );
+        println!(
+            "   Mode: {}",
+            if self.config.audit_mode {
+                "Audit"
+            } else {
+                "Enforce"
+            }
+        );
 
         Ok(())
     }
@@ -95,8 +98,10 @@ impl<M: MapReader> AutoPolicy<M> {
         // Read current connections from eBPF
         let connections = self.ebpf_reader.read_conntrack_map()?;
 
-        let mut stats = LearningStats::default();
-        stats.connections_observed = connections.len();
+        let mut stats = LearningStats {
+            connections_observed: connections.len(),
+            ..Default::default()
+        };
 
         // Process each connection
         for conn in &connections {
@@ -128,7 +133,9 @@ impl<M: MapReader> AutoPolicy<M> {
                 } else {
                     entry.namespace.clone()
                 };
-                let labels: HashMap<String, String> = entry.labels.iter()
+                let labels: HashMap<String, String> = entry
+                    .labels
+                    .iter()
                     .filter_map(|l| {
                         let parts: Vec<&str> = l.splitn(2, '=').collect();
                         if parts.len() == 2 {
@@ -188,9 +195,7 @@ impl<M: MapReader> AutoPolicy<M> {
     /// Update learning progress
     fn update_progress(&mut self) -> Result<()> {
         if let Some(start) = self.learning_start {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)?
-                .as_secs();
+            let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
             let elapsed = now - start;
             let total = self.config.learning_duration.as_secs();
@@ -208,9 +213,7 @@ impl<M: MapReader> AutoPolicy<M> {
     /// Check if learning phase is complete
     fn is_learning_complete(&self) -> Result<bool> {
         if let Some(start) = self.learning_start {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)?
-                .as_secs();
+            let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
             let elapsed = now - start;
             Ok(elapsed >= self.config.learning_duration.as_secs())
@@ -221,9 +224,7 @@ impl<M: MapReader> AutoPolicy<M> {
 
     /// Complete learning phase
     fn complete_learning(&mut self) -> Result<()> {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_secs();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
         self.state = LearningState::Completed { learned_at: now };
 
@@ -247,8 +248,11 @@ impl<M: MapReader> AutoPolicy<M> {
         for obs in self.observations.values() {
             // Only include patterns with sufficient observations
             if obs.count >= self.config.min_observations {
-                let key = (obs.pattern.src_namespace.clone(), obs.pattern.src_labels.clone());
-                by_source.entry(key).or_insert_with(Vec::new).push(obs);
+                let key = (
+                    obs.pattern.src_namespace.clone(),
+                    obs.pattern.src_labels.clone(),
+                );
+                by_source.entry(key).or_default().push(obs);
             }
         }
 
@@ -288,7 +292,7 @@ impl<M: MapReader> AutoPolicy<M> {
             );
             by_dest
                 .entry(key)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push((obs.pattern.port, obs.pattern.protocol));
         }
 
@@ -357,7 +361,10 @@ spec:
                 rule.push_str(&format!("            {}: \"{}\"\n", k, v));
             }
         } else {
-            rule.push_str(&format!("            k8s:io.kubernetes.pod.namespace: \"{}\"\n", dst_namespace));
+            rule.push_str(&format!(
+                "            k8s:io.kubernetes.pod.namespace: \"{}\"\n",
+                dst_namespace
+            ));
         }
 
         // Add ports
@@ -432,8 +439,11 @@ spec:
             // Apply via kubectl
             if self.apply_policy_yaml(&policy.yaml).await.is_ok() {
                 applied += 1;
-                println!("✅ Applied policy: {} (confidence: {:.0}%)",
-                    policy.name, policy.confidence * 100.0);
+                println!(
+                    "✅ Applied policy: {} (confidence: {:.0}%)",
+                    policy.name,
+                    policy.confidence * 100.0
+                );
             }
         }
 
@@ -470,7 +480,10 @@ spec:
             unique_patterns: self.observations.len(),
             policies_generated: self.generated_policies.len(),
             avg_confidence: if !self.generated_policies.is_empty() {
-                self.generated_policies.iter().map(|p| p.confidence).sum::<f32>()
+                self.generated_policies
+                    .iter()
+                    .map(|p| p.confidence)
+                    .sum::<f32>()
                     / self.generated_policies.len() as f32
             } else {
                 0.0
@@ -525,8 +538,10 @@ impl AutoPolicy<EnrichedMapReader> {
         // Read enriched connections from eBPF
         let enriched_connections = self.ebpf_reader.read_enriched_connections()?;
 
-        let mut stats = LearningStats::default();
-        stats.connections_observed = enriched_connections.len();
+        let mut stats = LearningStats {
+            connections_observed: enriched_connections.len(),
+            ..Default::default()
+        };
 
         // Process each enriched connection
         for (conn, info) in &enriched_connections {
@@ -560,9 +575,15 @@ impl AutoPolicy<EnrichedMapReader> {
         let dst_labels_map = self.labels_vec_to_map(&info.dst_labels);
 
         let pattern = TrafficPattern {
-            src_namespace: info.src_namespace.clone().unwrap_or_else(|| "unknown".to_string()),
+            src_namespace: info
+                .src_namespace
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
             src_labels: LabelSet::new(src_labels_map),
-            dst_namespace: info.dst_namespace.clone().unwrap_or_else(|| "unknown".to_string()),
+            dst_namespace: info
+                .dst_namespace
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
             dst_labels: LabelSet::new(dst_labels_map),
             port: conn.dst_port,
             protocol: Protocol::from_number(conn.protocol),
@@ -586,4 +607,3 @@ impl AutoPolicy<EnrichedMapReader> {
             .collect()
     }
 }
-

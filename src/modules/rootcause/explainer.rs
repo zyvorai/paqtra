@@ -2,7 +2,6 @@
 /// Drop Explainer
 ///
 /// Generates human-readable explanations for packet drops
-
 use super::*;
 
 pub struct DropExplainer;
@@ -11,9 +10,7 @@ impl DropExplainer {
     /// Generate human-readable explanation for a drop event
     pub fn explain(event: &DropEvent) -> String {
         match &event.reason {
-            DropReason::PolicyDenied => {
-                Self::explain_policy_denied(event)
-            }
+            DropReason::PolicyDenied => Self::explain_policy_denied(event),
             DropReason::InvalidSourceIP => {
                 format!(
                     "Packet from {} was dropped because the source IP is invalid or not recognized by Cilium",
@@ -23,26 +20,19 @@ impl DropExplainer {
             DropReason::InvalidPacket => {
                 format!(
                     "Malformed packet from {} to {}:{} was dropped during parsing",
-                    event.src_ip,
-                    event.dst_ip,
-                    event.dst_port
+                    event.src_ip, event.dst_ip, event.dst_port
                 )
             }
-            DropReason::CTStateMismatch => {
-                Self::explain_ct_state_mismatch(event)
-            }
+            DropReason::CTStateMismatch => Self::explain_ct_state_mismatch(event),
             DropReason::PortNotAllowed => {
                 format!(
                     "Connection to {}:{} was blocked because port {} is not allowed by any policy",
-                    event.dst_ip,
-                    event.dst_port,
-                    event.dst_port
+                    event.dst_ip, event.dst_port, event.dst_port
                 )
             }
             DropReason::UnknownL3Protocol => {
-                format!(
-                    "Packet dropped due to unknown or unsupported Layer 3 protocol (not IPv4/IPv6)"
-                )
+                "Packet dropped due to unknown or unsupported Layer 3 protocol (not IPv4/IPv6)"
+                    .to_string()
             }
             DropReason::UnknownL4Protocol => {
                 format!(
@@ -51,9 +41,8 @@ impl DropExplainer {
                 )
             }
             DropReason::UnsupportedL3Protocol => {
-                format!(
-                    "Packet dropped because the Layer 3 protocol is not supported by this policy"
-                )
+                "Packet dropped because the Layer 3 protocol is not supported by this policy"
+                    .to_string()
             }
             DropReason::NoMapping => {
                 format!(
@@ -61,30 +50,20 @@ impl DropExplainer {
                     event.dst_ip
                 )
             }
-            DropReason::UnknownDestination => {
-                Self::explain_unknown_destination(event)
-            }
+            DropReason::UnknownDestination => Self::explain_unknown_destination(event),
             DropReason::LBError => {
                 format!(
                     "Load balancer error occurred while processing connection to {}:{}",
-                    event.dst_ip,
-                    event.dst_port
+                    event.dst_ip, event.dst_port
                 )
             }
-            DropReason::ServiceNotFound => {
-                Self::explain_service_not_found(event)
-            }
-            DropReason::NoBackend => {
-                Self::explain_no_backend(event)
-            }
-            DropReason::FragNeeded => {
-                Self::explain_frag_needed(event)
-            }
+            DropReason::ServiceNotFound => Self::explain_service_not_found(event),
+            DropReason::NoBackend => Self::explain_no_backend(event),
+            DropReason::FragNeeded => Self::explain_frag_needed(event),
             DropReason::TTLExceeded => {
                 format!(
                     "Packet from {} to {} was dropped because TTL (Time To Live) reached zero",
-                    event.src_ip,
-                    event.dst_ip
+                    event.src_ip, event.dst_ip
                 )
             }
             DropReason::Other(code) => {
@@ -138,9 +117,7 @@ impl DropExplainer {
             • Connection state was cleared/reset\n\
             • Asymmetric routing is occurring\n\
             • Connection was established before Cilium was installed",
-            event.src_ip,
-            event.dst_ip,
-            event.dst_port
+            event.src_ip, event.dst_ip, event.dst_port
         )
     }
 
@@ -152,9 +129,7 @@ impl DropExplainer {
             • Identity not yet propagated to this node\n\
             • Destination is outside the cluster and no egress policy exists\n\
             Target: {}:{}",
-            event.identity_dst,
-            event.dst_ip,
-            event.dst_port
+            event.identity_dst, event.dst_ip, event.dst_port
         )
     }
 
@@ -165,8 +140,7 @@ impl DropExplainer {
             • No Kubernetes Service exists for this destination\n\
             • Service exists but Cilium hasn't synced it yet\n\
             • Service selector doesn't match any pods",
-            event.dst_ip,
-            event.dst_port
+            event.dst_ip, event.dst_port
         )
     }
 
@@ -178,8 +152,7 @@ impl DropExplainer {
             • Backend pods were recently deleted\n\
             • Service selector doesn't match any running pods\n\
             • Backend pods exist but on nodes that are unreachable",
-            event.dst_ip,
-            event.dst_port
+            event.dst_ip, event.dst_port
         )
     }
 
@@ -190,8 +163,7 @@ impl DropExplainer {
             • Source is trying to send packets larger than the path MTU\n\
             • Common with overlay networks (VXLAN, Geneve)\n\
             • Typical solution: reduce MTU on pod interfaces to 1450 or enable MTU discovery",
-            event.dst_ip,
-            event.dst_port
+            event.dst_ip, event.dst_port
         )
     }
 
@@ -214,7 +186,12 @@ impl DropExplainer {
                 format!("Conntrack mismatch → {}:{}", event.dst_ip, event.dst_port)
             }
             _ => {
-                format!("{} → {}:{}", event.reason.to_string(), event.dst_ip, event.dst_port)
+                format!(
+                    "{} → {}:{}",
+                    event.reason.to_string(),
+                    event.dst_ip,
+                    event.dst_port
+                )
             }
         }
     }

@@ -2,7 +2,6 @@
 /// Simulation Engine
 ///
 /// Core policy simulation engine that evaluates flows against modified policies
-
 use super::*;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -29,18 +28,29 @@ impl SimulationEngine {
 
     /// Apply a simulation scenario to policies
     pub fn apply_scenario(&mut self, scenario: &SimulationScenario) -> Result<()> {
-        self.trace.push(format!("Applying scenario: {:?}", scenario));
+        self.trace
+            .push(format!("Applying scenario: {:?}", scenario));
 
         match scenario {
-            SimulationScenario::AddPolicy { policy_yaml, namespace } => {
+            SimulationScenario::AddPolicy {
+                policy_yaml,
+                namespace,
+            } => {
                 self.add_policy(policy_yaml, namespace)?;
             }
 
-            SimulationScenario::RemovePolicy { policy_name, namespace } => {
+            SimulationScenario::RemovePolicy {
+                policy_name,
+                namespace,
+            } => {
                 self.remove_policy(policy_name, namespace)?;
             }
 
-            SimulationScenario::ModifyPolicy { policy_name, namespace, new_yaml } => {
+            SimulationScenario::ModifyPolicy {
+                policy_name,
+                namespace,
+                new_yaml,
+            } => {
                 self.remove_policy(policy_name, namespace)?;
                 self.add_policy(new_yaml, namespace)?;
             }
@@ -72,14 +82,18 @@ impl SimulationEngine {
             }
         }
 
-        self.trace.push(format!("Scenario applied. Total policies: {}", self.simulated_policies.len()));
+        self.trace.push(format!(
+            "Scenario applied. Total policies: {}",
+            self.simulated_policies.len()
+        ));
 
         Ok(())
     }
 
     /// Add a new policy (parsed from YAML)
     fn add_policy(&mut self, policy_yaml: &str, namespace: &str) -> Result<()> {
-        self.trace.push(format!("Adding policy in namespace: {}", namespace));
+        self.trace
+            .push(format!("Adding policy in namespace: {}", namespace));
 
         // Parse YAML to extract basic policy rules
         if let Ok(yaml_value) = serde_yaml::from_str::<serde_yaml::Value>(policy_yaml) {
@@ -95,13 +109,17 @@ impl SimulationEngine {
                                         if let Some(ports_inner) = port_entry.get("ports") {
                                             if let Some(port_seq) = ports_inner.as_sequence() {
                                                 for p in port_seq {
-                                                    let port = p.get("port")
+                                                    let port = p
+                                                        .get("port")
                                                         .and_then(|v| v.as_str())
                                                         .and_then(|s| s.parse::<u16>().ok())
                                                         .unwrap_or(0);
-                                                    let protocol = p.get("protocol")
+                                                    let protocol = p
+                                                        .get("protocol")
                                                         .and_then(|v| v.as_str())
-                                                        .map(|s| if s == "UDP" { 17u8 } else { 6u8 })
+                                                        .map(
+                                                            |s| if s == "UDP" { 17u8 } else { 6u8 },
+                                                        )
                                                         .unwrap_or(6);
                                                     self.simulated_policies.push(PolicyDecision {
                                                         src_identity: 0,
@@ -127,13 +145,18 @@ impl SimulationEngine {
 
     /// Remove a policy
     fn remove_policy(&mut self, policy_name: &str, namespace: &str) -> Result<()> {
-        self.trace.push(format!("Removing policy: {}/{}", namespace, policy_name));
+        self.trace
+            .push(format!("Removing policy: {}/{}", namespace, policy_name));
 
         // Remove policies that were added for this policy name
         // Since we don't track policy names in PolicyDecision, remove by marking
         let before = self.simulated_policies.len();
         self.simulated_policies.retain(|_| true); // Keep all for now - real impl would track by name
-        self.trace.push(format!("Policies: {} → {}", before, self.simulated_policies.len()));
+        self.trace.push(format!(
+            "Policies: {} → {}",
+            before,
+            self.simulated_policies.len()
+        ));
 
         Ok(())
     }
@@ -159,7 +182,7 @@ impl SimulationEngine {
 
         // Add deny rules
         if let Some(p) = port {
-            let proto_opt = protocol.map(|s| s.clone());
+            let proto_opt = protocol.cloned();
             let proto = Self::protocol_to_number(&proto_opt);
 
             self.simulated_policies.push(PolicyDecision {
@@ -234,10 +257,8 @@ impl SimulationEngine {
         };
 
         // Add deny rules for common ports to block traffic to this external IP
-        let common_ports: &[(u16, u8)] = &[
-            (80, 6), (443, 6), (8080, 6), (8443, 6),
-            (53, 17), (53, 6),
-        ];
+        let common_ports: &[(u16, u8)] =
+            &[(80, 6), (443, 6), (8080, 6), (8443, 6), (53, 17), (53, 6)];
 
         for &(port, protocol) in common_ports {
             self.simulated_policies.push(PolicyDecision {
@@ -272,14 +293,14 @@ impl SimulationEngine {
 
     /// Apply default-deny to namespace
     fn apply_default_deny(&mut self, namespace: &str) -> Result<()> {
-        self.trace.push(format!("Applying default-deny to namespace: {}", namespace));
+        self.trace
+            .push(format!("Applying default-deny to namespace: {}", namespace));
 
         // Remove all wildcard allow rules
-        self.simulated_policies.retain(|p| {
-            !(p.dst_identity == 0 && p.verdict == PolicyVerdict::Allow)
-        });
+        self.simulated_policies
+            .retain(|p| !(p.dst_identity == 0 && p.verdict == PolicyVerdict::Allow));
 
-        self.trace.push(format!("Removed wildcard allow rules"));
+        self.trace.push("Removed wildcard allow rules".to_string());
 
         Ok(())
     }
@@ -289,7 +310,7 @@ impl SimulationEngine {
         // Find matching policy decision
         for decision in &self.simulated_policies {
             if self.matches_flow(decision, flow) {
-                return decision.verdict.clone();
+                return decision.verdict;
             }
         }
 
@@ -309,8 +330,8 @@ impl SimulationEngine {
         }
 
         // Wildcard matches
-        if decision.src_identity == flow.src_identity
-            && decision.dst_identity == 0 // wildcard destination
+        if decision.src_identity == flow.src_identity && decision.dst_identity == 0
+        // wildcard destination
         {
             return true;
         }
@@ -362,8 +383,14 @@ impl SimulationEngine {
 
     /// Compare with original policies
     pub fn get_changes(&self) -> PolicyChanges {
-        let added = self.simulated_policies.len().saturating_sub(self.policies.len());
-        let removed = self.policies.len().saturating_sub(self.simulated_policies.len());
+        let added = self
+            .simulated_policies
+            .len()
+            .saturating_sub(self.policies.len());
+        let removed = self
+            .policies
+            .len()
+            .saturating_sub(self.simulated_policies.len());
 
         // Count modifications: policies that share the same (src_identity, dst_identity)
         // tuple but have different (port, protocol, verdict).
@@ -408,15 +435,13 @@ mod tests {
 
     #[test]
     fn test_engine_creation() {
-        let policies = vec![
-            PolicyDecision {
-                src_identity: 100,
-                dst_identity: 200,
-                port: 80,
-                protocol: 6,
-                verdict: PolicyVerdict::Allow,
-            },
-        ];
+        let policies = vec![PolicyDecision {
+            src_identity: 100,
+            dst_identity: 200,
+            port: 80,
+            protocol: 6,
+            verdict: PolicyVerdict::Allow,
+        }];
 
         let engine = SimulationEngine::new(policies);
         assert_eq!(engine.policy_count(), 1);
@@ -430,22 +455,27 @@ mod tests {
         let from_labels = HashMap::from([("app".to_string(), "web".to_string())]);
         let to_labels = HashMap::from([("app".to_string(), "db".to_string())]);
 
-        engine.block_traffic(&from_labels, &to_labels, Some(&5432), Some(&"TCP".to_string())).unwrap();
+        engine
+            .block_traffic(
+                &from_labels,
+                &to_labels,
+                Some(&5432),
+                Some(&"TCP".to_string()),
+            )
+            .unwrap();
 
         assert!(engine.policy_count() > 0);
     }
 
     #[test]
     fn test_evaluate_flow() {
-        let policies = vec![
-            PolicyDecision {
-                src_identity: 100,
-                dst_identity: 200,
-                port: 80,
-                protocol: 6,
-                verdict: PolicyVerdict::Allow,
-            },
-        ];
+        let policies = vec![PolicyDecision {
+            src_identity: 100,
+            dst_identity: 200,
+            port: 80,
+            protocol: 6,
+            verdict: PolicyVerdict::Allow,
+        }];
 
         let engine = SimulationEngine::new(policies);
 
@@ -466,22 +496,43 @@ mod tests {
 
     #[test]
     fn test_protocol_conversion() {
-        assert_eq!(SimulationEngine::protocol_to_number(&Some("TCP".to_string())), 6);
-        assert_eq!(SimulationEngine::protocol_to_number(&Some("UDP".to_string())), 17);
-        assert_eq!(SimulationEngine::protocol_to_number(&Some("ICMP".to_string())), 1);
+        assert_eq!(
+            SimulationEngine::protocol_to_number(&Some("TCP".to_string())),
+            6
+        );
+        assert_eq!(
+            SimulationEngine::protocol_to_number(&Some("UDP".to_string())),
+            17
+        );
+        assert_eq!(
+            SimulationEngine::protocol_to_number(&Some("ICMP".to_string())),
+            1
+        );
     }
 
     #[test]
     fn test_protocol_conversion_lowercase() {
-        assert_eq!(SimulationEngine::protocol_to_number(&Some("tcp".to_string())), 6);
-        assert_eq!(SimulationEngine::protocol_to_number(&Some("udp".to_string())), 17);
-        assert_eq!(SimulationEngine::protocol_to_number(&Some("icmp".to_string())), 1);
+        assert_eq!(
+            SimulationEngine::protocol_to_number(&Some("tcp".to_string())),
+            6
+        );
+        assert_eq!(
+            SimulationEngine::protocol_to_number(&Some("udp".to_string())),
+            17
+        );
+        assert_eq!(
+            SimulationEngine::protocol_to_number(&Some("icmp".to_string())),
+            1
+        );
     }
 
     #[test]
     fn test_protocol_conversion_default() {
         assert_eq!(SimulationEngine::protocol_to_number(&None), 6); // Default TCP
-        assert_eq!(SimulationEngine::protocol_to_number(&Some("SCTP".to_string())), 6); // Unknown defaults to TCP
+        assert_eq!(
+            SimulationEngine::protocol_to_number(&Some("SCTP".to_string())),
+            6
+        ); // Unknown defaults to TCP
     }
 
     #[test]
@@ -512,7 +563,9 @@ mod tests {
         let to_labels = HashMap::from([("app".to_string(), "db".to_string())]);
 
         // Block without specifying port - should block common ports
-        engine.block_traffic(&from_labels, &to_labels, None, None).unwrap();
+        engine
+            .block_traffic(&from_labels, &to_labels, None, None)
+            .unwrap();
 
         // Should have added deny rules for multiple common ports
         assert!(engine.policy_count() >= 7); // 80, 443, 8080, 3000, 5432, 6379, 9200
@@ -525,22 +578,22 @@ mod tests {
         let from_labels = HashMap::from([("app".to_string(), "web".to_string())]);
         let to_labels = HashMap::from([("app".to_string(), "api".to_string())]);
 
-        engine.allow_traffic(&from_labels, &to_labels, 8080, "TCP").unwrap();
+        engine
+            .allow_traffic(&from_labels, &to_labels, 8080, "TCP")
+            .unwrap();
 
         assert_eq!(engine.policy_count(), 1);
     }
 
     #[test]
     fn test_default_deny_scenario() {
-        let policies = vec![
-            PolicyDecision {
-                src_identity: 0,
-                dst_identity: 0, // Wildcard
-                port: 80,
-                protocol: 6,
-                verdict: PolicyVerdict::Allow,
-            },
-        ];
+        let policies = vec![PolicyDecision {
+            src_identity: 0,
+            dst_identity: 0, // Wildcard
+            port: 80,
+            protocol: 6,
+            verdict: PolicyVerdict::Allow,
+        }];
 
         let mut engine = SimulationEngine::new(policies);
         assert_eq!(engine.policy_count(), 1);
@@ -580,27 +633,34 @@ spec:
         let mut engine = SimulationEngine::new(vec![]);
 
         // Invalid YAML should not crash
-        engine.add_policy("not: valid: yaml: {{", "default").unwrap();
+        engine
+            .add_policy("not: valid: yaml: {{", "default")
+            .unwrap();
         assert_eq!(engine.policy_count(), 0);
     }
 
     #[test]
     fn test_get_changes() {
-        let policies = vec![
-            PolicyDecision {
-                src_identity: 100,
-                dst_identity: 200,
-                port: 80,
-                protocol: 6,
-                verdict: PolicyVerdict::Allow,
-            },
-        ];
+        let policies = vec![PolicyDecision {
+            src_identity: 100,
+            dst_identity: 200,
+            port: 80,
+            protocol: 6,
+            verdict: PolicyVerdict::Allow,
+        }];
 
         let mut engine = SimulationEngine::new(policies);
 
         let from_labels = HashMap::from([("app".to_string(), "web".to_string())]);
         let to_labels = HashMap::from([("app".to_string(), "db".to_string())]);
-        engine.block_traffic(&from_labels, &to_labels, Some(&5432), Some(&"TCP".to_string())).unwrap();
+        engine
+            .block_traffic(
+                &from_labels,
+                &to_labels,
+                Some(&5432),
+                Some(&"TCP".to_string()),
+            )
+            .unwrap();
 
         let changes = engine.get_changes();
         assert_eq!(changes.total_before, 1);
@@ -614,7 +674,14 @@ spec:
 
         let from_labels = HashMap::from([("app".to_string(), "web".to_string())]);
         let to_labels = HashMap::from([("app".to_string(), "db".to_string())]);
-        engine.block_traffic(&from_labels, &to_labels, Some(&80), Some(&"TCP".to_string())).unwrap();
+        engine
+            .block_traffic(
+                &from_labels,
+                &to_labels,
+                Some(&80),
+                Some(&"TCP".to_string()),
+            )
+            .unwrap();
 
         let trace = engine.get_trace();
         assert!(!trace.is_empty());

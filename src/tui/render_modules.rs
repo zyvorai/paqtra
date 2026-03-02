@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{TuiApp, ModuleContainer};
+use super::app::{ModuleContainer, TuiApp};
 use super::theme::*;
 
 impl TuiApp {
@@ -20,21 +20,13 @@ impl TuiApp {
 
         // Get actual problems and fixes
         let (problems_list, fixes_list) = match &self.modules {
-            ModuleContainer::Enriched { healer, .. } => {
-                (healer.problems(), healer.fixes())
-            }
-            ModuleContainer::Mock { healer, .. } => {
-                (healer.problems(), healer.fixes())
-            }
+            ModuleContainer::Enriched { healer, .. } => (healer.problems(), healer.fixes()),
+            ModuleContainer::Mock { healer, .. } => (healer.problems(), healer.fixes()),
         };
 
         // Last run info
         let elapsed = self.last_healer_run.elapsed().as_secs();
-        let next_run = if elapsed < 30 {
-            30 - elapsed
-        } else {
-            0
-        };
+        let next_run = 30_u64.saturating_sub(elapsed);
 
         // Build problems display
         let mut problem_text = String::new();
@@ -49,7 +41,12 @@ impl TuiApp {
         let mut fixes_text = String::new();
         for (idx, fix) in fixes_list.iter().take(3).enumerate() {
             let status = if fix.applied { "✅" } else { "📝" };
-            fixes_text.push_str(&format!("\n{}. {} {}", idx + 1, status, Self::format_fix_action(&fix.action)));
+            fixes_text.push_str(&format!(
+                "\n{}. {} {}",
+                idx + 1,
+                status,
+                Self::format_fix_action(&fix.action)
+            ));
         }
         if fixes_text.is_empty() {
             fixes_text = "\n  No fixes proposed".to_string();
@@ -76,27 +73,65 @@ impl TuiApp {
 
         let content = Paragraph::new(healer_status)
             .style(Style::default().fg(SUCCESS_COLOR))
-            .block(Block::default().borders(Borders::ALL).title("🏥 Self-Healer (Auto-Scan: 30s | Press 'd' for manual)").border_style(Style::default().fg(BORDER_COLOR)));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("🏥 Self-Healer (Auto-Scan: 30s | Press 'd' for manual)")
+                    .border_style(Style::default().fg(BORDER_COLOR)),
+            );
         f.render_widget(content, area);
     }
 
     pub(crate) fn format_problem(problem: &crate::modules::healer::Problem) -> String {
         use crate::modules::healer::Problem;
         match problem {
-            Problem::DNSDrops { namespace, pod, count } => {
+            Problem::DNSDrops {
+                namespace,
+                pod,
+                count,
+            } => {
                 format!("DNS drops: {}/{} ({} drops)", namespace, pod, count)
             }
-            Problem::MTUMismatch { namespace, pod, expected, actual } => {
-                format!("MTU mismatch: {}/{} (expected {}, got {})", namespace, pod, expected, actual)
+            Problem::MTUMismatch {
+                namespace,
+                pod,
+                expected,
+                actual,
+            } => {
+                format!(
+                    "MTU mismatch: {}/{} (expected {}, got {})",
+                    namespace, pod, expected, actual
+                )
             }
-            Problem::PolicyGap { src_namespace, src_pod, dst_namespace, dst_pod, port, protocol } => {
-                format!("Policy gap: {}/{} → {}/{}:{} {}", src_namespace, src_pod, dst_namespace, dst_pod, port, protocol)
+            Problem::PolicyGap {
+                src_namespace,
+                src_pod,
+                dst_namespace,
+                dst_pod,
+                port,
+                protocol,
+            } => {
+                format!(
+                    "Policy gap: {}/{} → {}/{}:{} {}",
+                    src_namespace, src_pod, dst_namespace, dst_pod, port, protocol
+                )
             }
-            Problem::LoadBalancerTimeout { service, backend, timeout_count } => {
-                format!("LB timeout: {} → {} ({} timeouts)", service, backend, timeout_count)
+            Problem::LoadBalancerTimeout {
+                service,
+                backend,
+                timeout_count,
+            } => {
+                format!(
+                    "LB timeout: {} → {} ({} timeouts)",
+                    service, backend, timeout_count
+                )
             }
             Problem::ConntrackFull { node, utilization } => {
-                format!("Conntrack full: {} ({:.1}% util)", node, utilization * 100.0)
+                format!(
+                    "Conntrack full: {} ({:.1}% util)",
+                    node,
+                    utilization * 100.0
+                )
             }
         }
     }
@@ -107,7 +142,11 @@ impl TuiApp {
             FixAction::CreateDNSPolicy { namespace } => {
                 format!("Create DNS policy for '{}'", namespace)
             }
-            FixAction::AdjustMTU { namespace, pod, new_mtu } => {
+            FixAction::AdjustMTU {
+                namespace,
+                pod,
+                new_mtu,
+            } => {
                 format!("Adjust MTU for {}/{} to {}", namespace, pod, new_mtu)
             }
             FixAction::CreateAllowPolicy { src, dst, port } => {
@@ -132,10 +171,14 @@ impl TuiApp {
             let no_policies = Paragraph::new(
                 "No policies generated yet.\n\n\
                 Press 'g' to generate policies from learned patterns.\n\
-                Press 'Esc' to return to main view."
+                Press 'Esc' to return to main view.",
             )
             .style(Style::default().fg(Color::Yellow))
-            .block(Block::default().borders(Borders::ALL).title("Policy Detail"));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Policy Detail"),
+            );
             f.render_widget(no_policies, area);
             return;
         }
@@ -194,10 +237,12 @@ impl TuiApp {
 
         let policy_detail = Paragraph::new(detail_text)
             .style(Style::default().fg(Color::White))
-            .block(Block::default()
-                .borders(Borders::ALL)
-                .title(format!("Policy Detail: {}", selected_policy.name))
-                .style(Style::default().fg(Color::Cyan)));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!("Policy Detail: {}", selected_policy.name))
+                    .style(Style::default().fg(Color::Cyan)),
+            );
 
         f.render_widget(policy_detail, area);
     }

@@ -8,15 +8,15 @@ use ratatui::{
     Frame,
 };
 
+use super::theme::*;
 use crate::ebpf::MapReader;
 use crate::modules::replay::ReplayEngine;
-use super::theme::*;
 
 pub struct ReplayView {
     // Time-travel state
     pub time_travel_mode: bool,
     pub selected_recording_index: usize,
-    pub timeline_position: usize,  // Current position in timeline (0-100)
+    pub timeline_position: usize, // Current position in timeline (0-100)
     pub is_playing: bool,
     pub playback_speed: f32,
     pub show_event_markers: bool,
@@ -101,9 +101,9 @@ impl ReplayView {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(8),  // Header
-                    Constraint::Min(10),    // Recordings List
-                    Constraint::Length(8),  // Comparison Results
+                    Constraint::Length(8), // Header
+                    Constraint::Min(10),   // Recordings List
+                    Constraint::Length(8), // Comparison Results
                 ])
                 .split(area);
 
@@ -132,7 +132,11 @@ impl ReplayView {
                 Total Recordings:  {}\n\
                 Total Flows:       {}\n\n\
                 Press 'r' to refresh recordings list",
-                if s.recording_in_progress { "🔴 Recording" } else { "⏹️  Idle" },
+                if s.recording_in_progress {
+                    "🔴 Recording"
+                } else {
+                    "⏹️  Idle"
+                },
                 s.total_recordings,
                 s.total_flows_recorded,
             )
@@ -148,7 +152,7 @@ impl ReplayView {
     }
 
     fn render_recordings(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let recordings = vec![
+        let recordings = [
             ("rec-prod-baseline", "1000", "5.2 MB", "2h ago"),
             ("rec-policy-test", "450", "2.1 MB", "30m ago"),
             ("rec-migration", "2500", "12 MB", "1d ago"),
@@ -188,8 +192,7 @@ impl ReplayView {
             .split(area);
 
         // Comparison Stats
-        let stats_text =
-            "📊 Last Replay Comparison:\n\n\
+        let stats_text = "📊 Last Replay Comparison:\n\n\
             Total Flows:       1000\n\
             Identical:         950 (95%)\n\
             Verdict Changed:   50\n\
@@ -242,8 +245,8 @@ impl ReplayView {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(6),  // Header & Info
-                Constraint::Length(4),  // Timeline bar
+                Constraint::Length(6), // Header & Info
+                Constraint::Length(4), // Timeline bar
             ])
             .split(area);
 
@@ -282,7 +285,7 @@ impl ReplayView {
         let position = (self.timeline_position as f32 / 100.0 * bar_width as f32) as usize;
 
         // Event markers (drops at specific positions)
-        let events = vec![10, 25, 45, 60, 80]; // Example event positions
+        let events = [10, 25, 45, 60, 80]; // Example event positions
 
         let mut bar = String::new();
         bar.push_str("Time:  ");
@@ -336,12 +339,42 @@ impl ReplayView {
         // Show flows around current timeline position
         let current_flow = (self.timeline_position * 10).min(1000);
 
-        let events = vec![
-            (current_flow.saturating_sub(2), "frontend → backend:8080", "ALLOWED", "TCP", SUCCESS_COLOR),
-            (current_flow.saturating_sub(1), "api → postgres:5432", "ALLOWED", "TCP", SUCCESS_COLOR),
-            (current_flow, "frontend → backend:8080", "DROPPED", "TCP", ERROR_COLOR),
-            (current_flow + 1, "frontend → redis:6379", "ALLOWED", "TCP", SUCCESS_COLOR),
-            (current_flow + 2, "api → external:443", "ALLOWED", "TCP", SUCCESS_COLOR),
+        let events = [
+            (
+                current_flow.saturating_sub(2),
+                "frontend → backend:8080",
+                "ALLOWED",
+                "TCP",
+                SUCCESS_COLOR,
+            ),
+            (
+                current_flow.saturating_sub(1),
+                "api → postgres:5432",
+                "ALLOWED",
+                "TCP",
+                SUCCESS_COLOR,
+            ),
+            (
+                current_flow,
+                "frontend → backend:8080",
+                "DROPPED",
+                "TCP",
+                ERROR_COLOR,
+            ),
+            (
+                current_flow + 1,
+                "frontend → redis:6379",
+                "ALLOWED",
+                "TCP",
+                SUCCESS_COLOR,
+            ),
+            (
+                current_flow + 2,
+                "api → external:443",
+                "ALLOWED",
+                "TCP",
+                SUCCESS_COLOR,
+            ),
         ];
 
         let items: Vec<ListItem> = events
@@ -349,7 +382,11 @@ impl ReplayView {
             .map(|(flow_num, flow, verdict, proto, color)| {
                 let is_current = *flow_num == current_flow;
                 let prefix = if is_current { "▶ " } else { "  " };
-                let modifier = if is_current { Modifier::BOLD } else { Modifier::empty() };
+                let modifier = if is_current {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                };
 
                 let content = format!(
                     "{}#{:<5} {:<35} [{:>7}] {}",

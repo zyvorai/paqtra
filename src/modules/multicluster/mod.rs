@@ -15,7 +15,6 @@
 /// - Intelligent workload placement
 /// - Multi-cluster failover
 /// - Global traffic management
-
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -82,15 +81,15 @@ pub enum CloudProvider {
     Other(String),
 }
 
-impl CloudProvider {
-    pub fn to_string(&self) -> String {
+impl std::fmt::Display for CloudProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CloudProvider::AWS => "AWS".to_string(),
-            CloudProvider::GCP => "GCP".to_string(),
-            CloudProvider::Azure => "Azure".to_string(),
-            CloudProvider::DigitalOcean => "DigitalOcean".to_string(),
-            CloudProvider::OnPremise => "On-Premise".to_string(),
-            CloudProvider::Other(s) => s.clone(),
+            CloudProvider::AWS => write!(f, "AWS"),
+            CloudProvider::GCP => write!(f, "GCP"),
+            CloudProvider::Azure => write!(f, "Azure"),
+            CloudProvider::DigitalOcean => write!(f, "DigitalOcean"),
+            CloudProvider::OnPremise => write!(f, "On-Premise"),
+            CloudProvider::Other(s) => write!(f, "{}", s),
         }
     }
 }
@@ -152,21 +151,11 @@ impl Default for ClusterResources {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ClusterConnectivity {
     pub connected_clusters: Vec<String>,
     pub avg_latency_ms: HashMap<String, f64>,
     pub bandwidth_mbps: HashMap<String, f64>,
-}
-
-impl Default for ClusterConnectivity {
-    fn default() -> Self {
-        Self {
-            connected_clusters: Vec::new(),
-            avg_latency_ms: HashMap::new(),
-            bandwidth_mbps: HashMap::new(),
-        }
-    }
 }
 
 /// Cross-cluster policy sync
@@ -319,7 +308,8 @@ impl MultiClusterAutopilot {
     /// Recommend workload placement
     pub fn recommend_placement(&mut self, workload_name: String) -> Result<PlacementDecision> {
         // Find cluster with best resources
-        let best_cluster = self.clusters
+        let best_cluster = self
+            .clusters
             .values()
             .filter(|c| c.state == ClusterState::Active)
             .max_by_key(|c| c.resources.available_cpu_cores)
@@ -361,14 +351,15 @@ impl MultiClusterAutopilot {
 
     /// Get cluster topology
     pub fn get_topology(&self) -> ClusterTopology {
-        let regions: HashMap<String, Vec<String>> = self.clusters
-            .values()
-            .fold(HashMap::new(), |mut acc, cluster| {
-                acc.entry(cluster.region.clone())
-                    .or_insert_with(Vec::new)
-                    .push(cluster.name.clone());
-                acc
-            });
+        let regions: HashMap<String, Vec<String>> =
+            self.clusters
+                .values()
+                .fold(HashMap::new(), |mut acc, cluster| {
+                    acc.entry(cluster.region.clone())
+                        .or_default()
+                        .push(cluster.name.clone());
+                    acc
+                });
 
         // Calculate connected pairs from the cluster connectivity data.
         // A pair (A, B) is connected if A lists B in its connected_clusters.
@@ -376,7 +367,7 @@ impl MultiClusterAutopilot {
         let mut pairs = HashSet::new();
         for cluster in self.clusters.values() {
             for connected_id in &cluster.connectivity.connected_clusters {
-                let mut pair = vec![cluster.id.clone(), connected_id.clone()];
+                let mut pair = [cluster.id.clone(), connected_id.clone()];
                 pair.sort();
                 pairs.insert((pair[0].clone(), pair[1].clone()));
             }
@@ -396,12 +387,14 @@ impl MultiClusterAutopilot {
 
     /// Get statistics
     pub fn stats(&self) -> MultiClusterStats {
-        let active_clusters = self.clusters
+        let active_clusters = self
+            .clusters
             .values()
             .filter(|c| c.state == ClusterState::Active)
             .count();
 
-        let degraded_clusters = self.clusters
+        let degraded_clusters = self
+            .clusters
             .values()
             .filter(|c| c.state == ClusterState::Degraded)
             .count();

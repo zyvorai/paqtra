@@ -5,15 +5,17 @@
 /// Provides BPF map reading through multiple methods:
 /// 1. Direct bpftool command execution
 /// 2. Reading from pinned maps (future: via libbpf)
-
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::process::Command;
 
-use super::{ConntrackEntry, IPCacheEntry, LoadBalancerEntry, PolicyDecision, DropReasonType};
-use super::bpf_parser::{parse_ct_entry, parse_ct6_entry, parse_ipcache_entry, parse_lb_entry, parse_policy_entry, parse_metrics_entry};
+use super::bpf_parser::{
+    parse_ct6_entry, parse_ct_entry, parse_ipcache_entry, parse_lb_entry, parse_metrics_entry,
+    parse_policy_entry,
+};
+use super::{ConntrackEntry, DropReasonType, IPCacheEntry, LoadBalancerEntry, PolicyDecision};
 
 /// BPF map accessor using bpftool
 pub struct BpfToolReader {
@@ -67,11 +69,11 @@ impl BpfToolReader {
             anyhow::bail!("bpftool map list failed");
         }
 
-        let json_str = String::from_utf8(output.stdout)
-            .context("Failed to parse bpftool output")?;
+        let json_str =
+            String::from_utf8(output.stdout).context("Failed to parse bpftool output")?;
 
-        let maps: Vec<Value> = serde_json::from_str(&json_str)
-            .context("Failed to parse bpftool JSON")?;
+        let maps: Vec<Value> =
+            serde_json::from_str(&json_str).context("Failed to parse bpftool JSON")?;
 
         let mut result = Vec::new();
         for map in maps {
@@ -80,7 +82,11 @@ impl BpfToolReader {
                 result.push(BpfMapInfo {
                     id: id as u32,
                     name: name.to_string(),
-                    map_type: map.get("type").and_then(|v| v.as_str()).unwrap_or("unknown").to_string(),
+                    map_type: map
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string(),
                 });
             }
         }
@@ -105,23 +111,17 @@ impl BpfToolReader {
             return Ok(Vec::new());
         }
 
-        let json_str = String::from_utf8(output.stdout)
-            .context("Failed to parse dump output")?;
+        let json_str = String::from_utf8(output.stdout).context("Failed to parse dump output")?;
 
-        let entries: Vec<Value> = serde_json::from_str(&json_str)
-            .unwrap_or_default();
+        let entries: Vec<Value> = serde_json::from_str(&json_str).unwrap_or_default();
 
         let mut result = Vec::new();
         for entry in entries {
-            if let (Some(key), Some(value)) = (
-                entry.get("key"),
-                entry.get("value"),
-            ) {
+            if let (Some(key), Some(value)) = (entry.get("key"), entry.get("value")) {
                 // Parse hex arrays to bytes
-                if let (Ok(key_bytes), Ok(val_bytes)) = (
-                    Self::parse_hex_array(key),
-                    Self::parse_hex_array(value),
-                ) {
+                if let (Ok(key_bytes), Ok(val_bytes)) =
+                    (Self::parse_hex_array(key), Self::parse_hex_array(value))
+                {
                     result.push((key_bytes, val_bytes));
                 }
             }
@@ -287,6 +287,12 @@ pub struct IdentityInfo {
 #[allow(dead_code)]
 pub struct IdentityResolver {
     identity_cache: HashMap<u32, IdentityInfo>,
+}
+
+impl Default for IdentityResolver {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[allow(dead_code)]

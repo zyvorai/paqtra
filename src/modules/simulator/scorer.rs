@@ -2,7 +2,6 @@
 /// Risk Scorer
 ///
 /// Calculates risk scores for policy changes
-
 use super::*;
 
 pub struct RiskScorer {
@@ -41,7 +40,8 @@ impl RiskScorer {
 
         // Factor 2: Data Path Risk
         if impact.blocked_flows > 0 {
-            let percentage = (impact.blocked_flows as f32 / impact.total_flows as f32 * 100.0) as u8;
+            let percentage =
+                (impact.blocked_flows as f32 / impact.total_flows as f32 * 100.0) as u8;
             let severity = if percentage > 50 {
                 8
             } else if percentage > 25 {
@@ -158,7 +158,8 @@ impl RiskScorer {
 
         // Too many flows blocked
         if impact.total_flows > 0 {
-            let block_percentage = (impact.blocked_flows as f32 / impact.total_flows as f32) * 100.0;
+            let block_percentage =
+                (impact.blocked_flows as f32 / impact.total_flows as f32) * 100.0;
             if block_percentage > 50.0 {
                 unsafe_reasons.push(format!(
                     "More than 50% of flows would be blocked ({:.0}%)",
@@ -212,7 +213,7 @@ impl RiskScorer {
         }
 
         // Ensure within bounds
-        adjusted.max(0.0).min(1.0)
+        adjusted.clamp(0.0, 1.0)
     }
 
     /// Generate risk summary
@@ -291,27 +292,18 @@ impl RiskScorer {
         for factor in &risk.factors {
             match factor.category {
                 RiskCategory::ServiceAvailability => {
-                    mitigations.push(
-                        "Consider gradual rollout with canary deployments".to_string()
-                    );
-                    mitigations.push(
-                        "Ensure monitoring and rollback plan is ready".to_string()
-                    );
+                    mitigations
+                        .push("Consider gradual rollout with canary deployments".to_string());
+                    mitigations.push("Ensure monitoring and rollback plan is ready".to_string());
                 }
                 RiskCategory::DataPath => {
                     if factor.severity > 5 {
-                        mitigations.push(
-                            "Test in staging environment first".to_string()
-                        );
-                        mitigations.push(
-                            "Review and validate all blocked flows".to_string()
-                        );
+                        mitigations.push("Test in staging environment first".to_string());
+                        mitigations.push("Review and validate all blocked flows".to_string());
                     }
                 }
                 RiskCategory::Security => {
-                    mitigations.push(
-                        "Enable audit mode first to observe behavior".to_string()
-                    );
+                    mitigations.push("Enable audit mode first to observe behavior".to_string());
                 }
                 _ => {}
             }
@@ -384,15 +376,13 @@ mod tests {
             pod_identities: vec![],
             services: vec![],
             endpoints: vec![],
-            broken_dependencies: vec![
-                Dependency {
-                    from_service: "web".to_string(),
-                    to_service: "database".to_string(),
-                    port: 5432,
-                    protocol: "TCP".to_string(),
-                    criticality: DependencyCriticality::Critical,
-                },
-            ],
+            broken_dependencies: vec![Dependency {
+                from_service: "web".to_string(),
+                to_service: "database".to_string(),
+                port: 5432,
+                protocol: "TCP".to_string(),
+                criticality: DependencyCriticality::Critical,
+            }],
         };
 
         let scenario = SimulationScenario::BlockExternalIP {

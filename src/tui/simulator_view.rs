@@ -8,9 +8,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::ebpf::MapReader;
-use crate::modules::simulator::{Simulator, SimulationResult};
 use super::theme::*;
+use crate::ebpf::MapReader;
+use crate::modules::simulator::{SimulationResult, Simulator};
 
 pub struct SimulatorView {
     pub should_simulate: bool,
@@ -96,7 +96,11 @@ impl SimulatorView {
                 Flow History:      {}\n\
                 Current Policies:  {}\n\
                 History Window:    {}s",
-                if self.simulation_running { "Running..." } else { "Ready" },
+                if self.simulation_running {
+                    "Running..."
+                } else {
+                    "Ready"
+                },
                 stats.flow_history_size,
                 stats.current_policies,
                 stats.history_window_secs
@@ -106,7 +110,8 @@ impl SimulatorView {
             Status:            Initializing...\n\
             Flow History:      0\n\
             Current Policies:  0\n\
-            History Window:    3600s".to_string()
+            History Window:    3600s"
+                .to_string()
         };
 
         let content = Paragraph::new(stats)
@@ -117,7 +122,7 @@ impl SimulatorView {
     }
 
     fn render_scenario_list(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let scenarios = vec![
+        let scenarios = [
             "Add DNS Egress Policy (allow DNS to 8.8.8.8)",
             "Block External IP 1.2.3.4",
             "Default Deny for 'production' namespace",
@@ -137,7 +142,11 @@ impl SimulatorView {
                     Style::default().fg(TEXT_COLOR)
                 };
 
-                let prefix = if idx == self.selected_scenario_index { "▶ " } else { "  " };
+                let prefix = if idx == self.selected_scenario_index {
+                    "▶ "
+                } else {
+                    "  "
+                };
                 let content = format!("{}{}. {}", prefix, idx + 1, name);
 
                 ListItem::new(Line::from(Span::styled(content, style)))
@@ -308,7 +317,11 @@ impl SimulatorView {
             Factors:       {}",
             result.risk.level.to_string(),
             result.risk.score,
-            if result.risk.safe_to_apply { "✅ YES" } else { "❌ NO" },
+            if result.risk.safe_to_apply {
+                "✅ YES"
+            } else {
+                "❌ NO"
+            },
             result.confidence * 100.0,
             result.risk.factors.len(),
         );
@@ -332,7 +345,8 @@ impl SimulatorView {
         // Recommendations
         let rec_text = format!(
             "💡 Recommendations\n\n{}",
-            result.recommendations
+            result
+                .recommendations
                 .iter()
                 .enumerate()
                 .map(|(i, r)| format!("{}. {}", i + 1, r))
@@ -342,7 +356,9 @@ impl SimulatorView {
 
         let recommendations = Paragraph::new(rec_text)
             .style(Style::default().fg(TEXT_COLOR))
-            .block(bordered_block("Recommendations [c: Clear Results | Esc: Back]"))
+            .block(bordered_block(
+                "Recommendations [c: Clear Results | Esc: Back]",
+            ))
             .wrap(Wrap { trim: false });
 
         f.render_widget(recommendations, chunks[2]);

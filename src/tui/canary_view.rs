@@ -8,8 +8,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::modules::canary::CanaryEngine;
 use super::theme::*;
+use crate::modules::canary::CanaryEngine;
 
 pub struct CanaryView {
     pub selected_canary_index: usize,
@@ -80,15 +80,13 @@ impl CanaryView {
     }
 
     fn render_header(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let header_text = format!(
-            "🚢 Sidecarless Canary Deployments\n\n\
+        let header_text = "🚢 Sidecarless Canary Deployments\n\n\
             Status:            Active\n\
             Active Canaries:   2\n\
             Total Deployed:    15\n\
             Success Rate:      93%\n\
             Rollbacks:         1\n\n\
-            Progressive traffic shifting without sidecar overhead"
-        );
+            Progressive traffic shifting without sidecar overhead";
 
         let header = Paragraph::new(header_text)
             .style(Style::default().fg(INFO_COLOR))
@@ -98,7 +96,7 @@ impl CanaryView {
     }
 
     fn render_canary_list(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let canaries = vec![
+        let canaries = [
             ("frontend-v2.1", "default", "Running", "60%", SUCCESS_COLOR),
             ("api-v3.0", "production", "Running", "20%", INFO_COLOR),
         ];

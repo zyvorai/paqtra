@@ -7,8 +7,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::modules::chaos::ChaosEngine;
 use super::theme::*;
+use crate::modules::chaos::ChaosEngine;
 
 pub struct ChaosView {
     pub selected_experiment_index: usize,
@@ -58,12 +58,7 @@ impl ChaosView {
         self.circuit_breaker_confirm = false;
     }
 
-    pub fn render(
-        &self,
-        f: &mut Frame,
-        area: ratatui::layout::Rect,
-        _chaos: Option<&ChaosEngine>,
-    ) {
+    pub fn render(&self, f: &mut Frame, area: ratatui::layout::Rect, _chaos: Option<&ChaosEngine>) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -98,7 +93,11 @@ impl ChaosView {
             View: {} | Press 'v' to toggle",
             if false { "🔴" } else { "✅" },
             if false { "TRIGGERED" } else { "Normal" },
-            if self.show_presets { "Experiment Presets" } else { "Active Experiments" }
+            if self.show_presets {
+                "Experiment Presets"
+            } else {
+                "Active Experiments"
+            }
         );
 
         let header = Paragraph::new(header_text)
@@ -109,14 +108,39 @@ impl ChaosView {
     }
 
     fn render_presets(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let presets = vec![
-            ("Network Partition", "Drop 20% of packets", "Medium", WARNING_COLOR),
+        let presets = [
+            (
+                "Network Partition",
+                "Drop 20% of packets",
+                "Medium",
+                WARNING_COLOR,
+            ),
             ("Latency Spike", "Add 500ms delay", "Medium", WARNING_COLOR),
             ("DNS Outage", "Fail 30% DNS lookups", "High", ERROR_COLOR),
-            ("Connection Reset", "Kill 15% connections", "Medium", WARNING_COLOR),
-            ("Bandwidth Limit", "Throttle to 10 Mbps", "Low", SUCCESS_COLOR),
-            ("Packet Corruption", "Corrupt 5% packets", "High", ERROR_COLOR),
-            ("Total Partition", "Drop 100% packets (DANGER)", "Critical", ERROR_COLOR),
+            (
+                "Connection Reset",
+                "Kill 15% connections",
+                "Medium",
+                WARNING_COLOR,
+            ),
+            (
+                "Bandwidth Limit",
+                "Throttle to 10 Mbps",
+                "Low",
+                SUCCESS_COLOR,
+            ),
+            (
+                "Packet Corruption",
+                "Corrupt 5% packets",
+                "High",
+                ERROR_COLOR,
+            ),
+            (
+                "Total Partition",
+                "Drop 100% packets (DANGER)",
+                "Critical",
+                ERROR_COLOR,
+            ),
         ];
 
         let items: Vec<ListItem> = presets
@@ -133,7 +157,11 @@ impl ChaosView {
                 let prefix = if is_selected { "▶ " } else { "  " };
                 let content = format!(
                     "{}{}. {:<25} - {:<30} [{}]",
-                    prefix, idx + 1, name, desc, severity
+                    prefix,
+                    idx + 1,
+                    name,
+                    desc,
+                    severity
                 );
                 ListItem::new(Line::from(Span::styled(content, style)))
             })
@@ -242,9 +270,21 @@ impl ChaosView {
     }
 
     fn render_active_experiments(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let experiments = vec![
-            ("chaos-1234", "Network Partition", "Active", "2m ago", SUCCESS_COLOR),
-            ("chaos-5678", "Latency Spike", "Active", "5m ago", SUCCESS_COLOR),
+        let experiments = [
+            (
+                "chaos-1234",
+                "Network Partition",
+                "Active",
+                "2m ago",
+                SUCCESS_COLOR,
+            ),
+            (
+                "chaos-5678",
+                "Latency Spike",
+                "Active",
+                "5m ago",
+                SUCCESS_COLOR,
+            ),
         ];
 
         let items: Vec<ListItem> = experiments
@@ -267,7 +307,9 @@ impl ChaosView {
             })
             .collect();
 
-        let list = List::new(items).block(bordered_block("Active Experiments [↑/↓: Select | s: Stop | S: Stop All | v: View Presets]"));
+        let list = List::new(items).block(bordered_block(
+            "Active Experiments [↑/↓: Select | s: Stop | S: Stop All | v: View Presets]",
+        ));
 
         f.render_widget(list, area);
     }

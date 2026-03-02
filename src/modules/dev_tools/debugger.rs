@@ -5,6 +5,7 @@ use anyhow::Result;
 use super::DebugConfig;
 
 /// Interactive network debugger
+#[derive(Default)]
 pub struct InteractiveDebugger {}
 
 impl InteractiveDebugger {
@@ -33,16 +34,10 @@ impl InteractiveDebugger {
     }
 }
 
-impl Default for InteractiveDebugger {
-    fn default() -> Self {
-        Self {}
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::dev_tools::{DebugConfig, DebugMode, Breakpoint, BreakpointAction};
+    use crate::modules::dev_tools::{Breakpoint, BreakpointAction, DebugConfig, DebugMode};
 
     #[test]
     fn test_interactive_debugger_creation() {
@@ -98,7 +93,10 @@ mod tests {
         };
         let result = debugger.start_session(config).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not yet implemented"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not yet implemented"));
     }
 
     #[test]

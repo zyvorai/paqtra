@@ -4,11 +4,12 @@ use anyhow::Result;
 use chrono::Utc;
 
 use super::{
-    ComplianceFramework, ComplianceReport, ControlState, ControlStatus, Priority,
-    RecommendationCategory, SecurityRecommendation, Violation, ViolationSeverity, Effort,
+    ComplianceFramework, ComplianceReport, ControlState, ControlStatus, Effort, Priority,
+    RecommendationCategory, SecurityRecommendation, Violation, ViolationSeverity,
 };
 
 /// Audits cluster against compliance frameworks
+#[derive(Default)]
 pub struct ComplianceEngine {}
 
 impl ComplianceEngine {
@@ -126,9 +127,13 @@ impl ComplianceEngine {
     async fn audit_nist(&self) -> Result<Vec<ControlStatus>> {
         Ok(vec![ControlStatus {
             control_id: "PR.AC-5".to_string(),
-            name: "Network integrity is protected (e.g., network segregation, segmentation)".to_string(),
+            name: "Network integrity is protected (e.g., network segregation, segmentation)"
+                .to_string(),
             status: ControlState::NotChecked,
-            evidence: vec!["Audit not implemented: would verify network policy enforcement and segmentation".to_string()],
+            evidence: vec![
+                "Audit not implemented: would verify network policy enforcement and segmentation"
+                    .to_string(),
+            ],
         }])
     }
 
@@ -154,7 +159,9 @@ impl ComplianceEngine {
         // Only count controls that have actually been checked
         let checked_controls: Vec<_> = controls
             .iter()
-            .filter(|c| c.status != ControlState::NotChecked && c.status != ControlState::NotApplicable)
+            .filter(|c| {
+                c.status != ControlState::NotChecked && c.status != ControlState::NotApplicable
+            })
             .collect();
 
         if checked_controls.is_empty() {
@@ -182,12 +189,6 @@ impl ComplianceEngine {
     }
 }
 
-impl Default for ComplianceEngine {
-    fn default() -> Self {
-        Self {}
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,7 +210,10 @@ mod tests {
         let report = engine.audit(ComplianceFramework::PCIDSS).await.unwrap();
         assert_eq!(report.framework, ComplianceFramework::PCIDSS);
         assert!(!report.controls.is_empty());
-        assert!(report.controls.iter().all(|c| c.status == ControlState::NotChecked));
+        assert!(report
+            .controls
+            .iter()
+            .all(|c| c.status == ControlState::NotChecked));
     }
 
     #[tokio::test]
@@ -253,14 +257,12 @@ mod tests {
     #[test]
     fn test_calculate_score_all_not_checked() {
         let engine = ComplianceEngine::new().unwrap();
-        let controls = vec![
-            ControlStatus {
-                control_id: "C1".to_string(),
-                name: "Control 1".to_string(),
-                status: ControlState::NotChecked,
-                evidence: vec![],
-            },
-        ];
+        let controls = vec![ControlStatus {
+            control_id: "C1".to_string(),
+            name: "Control 1".to_string(),
+            status: ControlState::NotChecked,
+            evidence: vec![],
+        }];
         let score = engine.calculate_score(&controls);
         assert_eq!(score, 0.0);
     }

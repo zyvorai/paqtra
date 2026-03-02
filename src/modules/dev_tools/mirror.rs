@@ -5,6 +5,7 @@ use anyhow::Result;
 use super::MirrorConfig;
 
 /// Mirrors Kubernetes environments
+#[derive(Default)]
 pub struct EnvironmentMirror {}
 
 impl EnvironmentMirror {
@@ -35,14 +36,12 @@ impl EnvironmentMirror {
             config.source_namespace,
             config.target_namespace,
             config.mirror_type,
-            if config.services.is_empty() { "all".to_string() } else { config.services.len().to_string() }
+            if config.services.is_empty() {
+                "all".to_string()
+            } else {
+                config.services.len().to_string()
+            }
         )
-    }
-}
-
-impl Default for EnvironmentMirror {
-    fn default() -> Self {
-        Self {}
     }
 }
 
@@ -121,7 +120,10 @@ mod tests {
         // Valid config but feature is not implemented, so it should bail
         let result = mirror.create_mirror(config).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not yet implemented"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not yet implemented"));
     }
 
     #[test]

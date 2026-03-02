@@ -7,9 +7,9 @@ use ratatui::{
     Frame,
 };
 
+use super::theme::*;
 use crate::ebpf::MapReader;
 use crate::modules::rootcause::RootCauseEngine;
-use super::theme::*;
 
 pub struct RootCauseView;
 
@@ -31,7 +31,7 @@ impl RootCauseView {
             .constraints([
                 Constraint::Length(8),  // Header
                 Constraint::Min(10),    // Drop Analysis
-                Constraint::Length(12),  // Fixes
+                Constraint::Length(12), // Fixes
             ])
             .split(area);
 
@@ -51,8 +51,7 @@ impl RootCauseView {
         area: ratatui::layout::Rect,
         _rootcause: Option<&RootCauseEngine<M>>,
     ) {
-        let stats =
-            "🔍 Root-Cause Analysis Engine\n\n\
+        let stats = "🔍 Root-Cause Analysis Engine\n\n\
             Status:            Active\n\
             Drops Analyzed:    142\n\
             Issues Found:      8\n\
@@ -68,47 +67,24 @@ impl RootCauseView {
     }
 
     fn render_drops(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let drops = vec![
+        let drops = [
             (
                 "Policy Denied",
                 "frontend → backend:8080",
                 "Critical",
                 "12 drops",
             ),
-            (
-                "DNS Blocked",
-                "app → 8.8.8.8:53",
-                "Critical",
-                "45 drops",
-            ),
-            (
-                "MTU Exceeded",
-                "service-a → service-b",
-                "Medium",
-                "8 drops",
-            ),
-            (
-                "Port Not Allowed",
-                "api → db:5432",
-                "Medium",
-                "23 drops",
-            ),
-            (
-                "Invalid Packet",
-                "10.0.1.5 → 10.0.2.10",
-                "Low",
-                "3 drops",
-            ),
+            ("DNS Blocked", "app → 8.8.8.8:53", "Critical", "45 drops"),
+            ("MTU Exceeded", "service-a → service-b", "Medium", "8 drops"),
+            ("Port Not Allowed", "api → db:5432", "Medium", "23 drops"),
+            ("Invalid Packet", "10.0.1.5 → 10.0.2.10", "Low", "3 drops"),
         ];
 
         let items: Vec<ListItem> = drops
             .iter()
             .map(|(reason, flow, severity, count)| {
                 let color = severity_color(severity);
-                let content = format!(
-                    "{:<18} {:<30} [{:<8}] {}",
-                    reason, flow, severity, count
-                );
+                let content = format!("{:<18} {:<30} [{:<8}] {}", reason, flow, severity, count);
                 ListItem::new(Line::from(Span::styled(
                     content,
                     Style::default().fg(color).add_modifier(Modifier::BOLD),
@@ -121,14 +97,20 @@ impl RootCauseView {
         f.render_widget(list, area);
     }
 
-    fn render_fixes(&self, f: &mut Frame, area: ratatui::layout::Rect, selected_fix_index: usize, fix_apply_confirmation: bool) {
+    fn render_fixes(
+        &self,
+        f: &mut Frame,
+        area: ratatui::layout::Rect,
+        selected_fix_index: usize,
+        fix_apply_confirmation: bool,
+    ) {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
             .split(area);
 
         // Recommended Fixes (selectable list)
-        let fix_names = vec![
+        let fix_names = [
             "Add allow-8080 policy",
             "Enable DNS egress",
             "Adjust MTU to 1450",
@@ -145,7 +127,11 @@ impl RootCauseView {
                     Style::default().fg(SUCCESS_COLOR)
                 };
 
-                let prefix = if idx == selected_fix_index { "▶ " } else { "  " };
+                let prefix = if idx == selected_fix_index {
+                    "▶ "
+                } else {
+                    "  "
+                };
                 let content = format!("{}{}. {}", prefix, idx + 1, name);
 
                 ListItem::new(Line::from(Span::styled(content, style)))

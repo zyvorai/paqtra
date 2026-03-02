@@ -2,7 +2,6 @@
 /// Drop Pattern Analyzer
 ///
 /// Analyzes drop patterns and trends over time
-
 use super::*;
 use std::collections::HashMap;
 
@@ -144,7 +143,7 @@ impl DropAnalyzer {
                 .clone()
                 .unwrap_or_else(|| "unknown".to_string());
 
-            grouped.entry(namespace).or_insert_with(Vec::new).push(event.clone());
+            grouped.entry(namespace).or_default().push(event.clone());
         }
 
         grouped
@@ -232,27 +231,32 @@ impl DropAnalyzer {
     }
 
     /// Suggest investigations based on drop patterns
-    pub fn suggest_investigations(
-        patterns: &[RepeatingPattern],
-    ) -> Vec<Investigation> {
+    pub fn suggest_investigations(patterns: &[RepeatingPattern]) -> Vec<Investigation> {
         let mut investigations = Vec::new();
 
         for pattern in patterns {
             let investigation = match &pattern.pattern.reason {
                 DropReason::PolicyDenied | DropReason::PortNotAllowed => Investigation {
-                    title: format!("Investigate policy gaps for port {}", pattern.pattern.dst_port),
+                    title: format!(
+                        "Investigate policy gaps for port {}",
+                        pattern.pattern.dst_port
+                    ),
                     steps: vec![
                         format!(
                             "Check if traffic from identity {} to {} should be allowed",
                             pattern.pattern.src_identity, pattern.pattern.dst_identity
                         ),
                         "Review CiliumNetworkPolicy rules".to_string(),
-                        "Consider adding explicit allow rule or verify deny is intentional".to_string(),
+                        "Consider adding explicit allow rule or verify deny is intentional"
+                            .to_string(),
                     ],
                     priority: pattern.severity.clone(),
                 },
                 DropReason::NoBackend | DropReason::ServiceNotFound => Investigation {
-                    title: format!("Investigate service availability on port {}", pattern.pattern.dst_port),
+                    title: format!(
+                        "Investigate service availability on port {}",
+                        pattern.pattern.dst_port
+                    ),
                     steps: vec![
                         "Check if service exists: kubectl get svc --all-namespaces".to_string(),
                         "Verify pod readiness: kubectl get pods -l <selector>".to_string(),

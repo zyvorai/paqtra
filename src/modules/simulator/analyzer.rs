@@ -2,7 +2,6 @@
 /// Impact Analyzer
 ///
 /// Analyzes the impact of policy changes on services and dependencies
-
 use super::*;
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
@@ -27,18 +26,26 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
                 } else {
                     entry.namespace.clone()
                 };
-                let name = entry.labels.iter()
+                let name = entry
+                    .labels
+                    .iter()
                     .find(|l| l.starts_with("app="))
                     .map(|l| l.trim_start_matches("app=").to_string())
                     .unwrap_or_else(|| format!("service-{}", identity));
-                let labels: HashMap<String, String> = entry.labels.iter()
+                let labels: HashMap<String, String> = entry
+                    .labels
+                    .iter()
                     .filter_map(|l| l.split_once('='))
                     .map(|(k, v)| (k.to_string(), v.to_string()))
                     .collect();
                 return (name, namespace, labels);
             }
         }
-        (format!("service-{}", identity), "default".to_string(), HashMap::new())
+        (
+            format!("service-{}", identity),
+            "default".to_string(),
+            HashMap::new(),
+        )
     }
 
     /// Collect unique namespaces from IPCache for a set of identities.
@@ -69,9 +76,7 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
         // Count blocked and allowed flows
         let blocked_flows = flow_results
             .iter()
-            .filter(|f| {
-                f.after == PolicyVerdict::Deny && f.before != PolicyVerdict::Deny
-            })
+            .filter(|f| f.after == PolicyVerdict::Deny && f.before != PolicyVerdict::Deny)
             .count();
 
         let allowed_flows = flow_results
@@ -79,10 +84,7 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
             .filter(|f| f.after == PolicyVerdict::Allow)
             .count();
 
-        let changed_flows = flow_results
-            .iter()
-            .filter(|f| f.changed)
-            .count();
+        let changed_flows = flow_results.iter().filter(|f| f.changed).count();
 
         // Find impacted services
         let impacted_services = self.find_impacted_services(flow_results).await?;
@@ -136,13 +138,16 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
     }
 
     /// Find impacted services
-    async fn find_impacted_services(&self, flow_results: &[FlowSimulationResult]) -> Result<Vec<String>> {
+    async fn find_impacted_services(
+        &self,
+        flow_results: &[FlowSimulationResult],
+    ) -> Result<Vec<String>> {
         let mut services = HashSet::new();
 
         // Group flows by destination
         let mut by_dst: HashMap<u32, Vec<&FlowSimulationResult>> = HashMap::new();
         for result in flow_results.iter().filter(|f| f.changed) {
-            by_dst.entry(result.dst_identity).or_insert_with(Vec::new).push(result);
+            by_dst.entry(result.dst_identity).or_default().push(result);
         }
 
         // For each affected destination, identify service
@@ -160,13 +165,9 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
     /// well-known service name patterns (db, payment, auth, gateway, etc.).
     fn identify_critical_services(&self, impacted_services: &[String]) -> Vec<String> {
         let critical_name_patterns = [
-            "db", "database", "postgres", "mysql", "mongo",
-            "payment", "billing", "checkout",
-            "auth", "oauth", "identity", "login",
-            "gateway", "ingress", "proxy", "envoy",
-            "redis", "cache", "memcache",
-            "kafka", "rabbitmq", "nats", "mq",
-            "dns", "api", "core",
+            "db", "database", "postgres", "mysql", "mongo", "payment", "billing", "checkout",
+            "auth", "oauth", "identity", "login", "gateway", "ingress", "proxy", "envoy", "redis",
+            "cache", "memcache", "kafka", "rabbitmq", "nats", "mq", "dns", "api", "core",
         ];
 
         // Build a set of identities that carry a criticality annotation
@@ -174,9 +175,7 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
         if let Ok(entries) = self.reader.read_ipcache_map() {
             for entry in &entries {
                 let is_critical_by_label = entry.labels.iter().any(|l| {
-                    l == "criticality=high"
-                        || l == "tier=critical"
-                        || l == "priority=critical"
+                    l == "criticality=high" || l == "tier=critical" || l == "priority=critical"
                 });
                 if is_critical_by_label {
                     let namespace = if entry.namespace.is_empty() {
@@ -184,7 +183,9 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
                     } else {
                         entry.namespace.clone()
                     };
-                    let name = entry.labels.iter()
+                    let name = entry
+                        .labels
+                        .iter()
                         .find(|l| l.starts_with("app="))
                         .map(|l| l.trim_start_matches("app=").to_string())
                         .unwrap_or_else(|| format!("service-{}", entry.identity));
@@ -220,7 +221,7 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
         for result in flow_results {
             by_service
                 .entry(result.dst_identity)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(result);
         }
 
@@ -286,15 +287,20 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
         for result in flow_results {
             by_endpoint
                 .entry(result.src_identity)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(result);
         }
 
         for (identity, flows) in by_endpoint {
             // Group blocked flows by (dst_identity, port, protocol) and count occurrences
             let mut egress_counts: HashMap<(u32, u16, u8), usize> = HashMap::new();
-            for f in flows.iter().filter(|f| f.changed && f.after == PolicyVerdict::Deny) {
-                *egress_counts.entry((f.dst_identity, f.port, f.protocol)).or_insert(0) += 1;
+            for f in flows
+                .iter()
+                .filter(|f| f.changed && f.after == PolicyVerdict::Deny)
+            {
+                *egress_counts
+                    .entry((f.dst_identity, f.port, f.protocol))
+                    .or_insert(0) += 1;
             }
 
             let blocked_egress: Vec<_> = egress_counts
@@ -362,7 +368,7 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
     fn determine_criticality(port: u16, protocol: &str) -> DependencyCriticality {
         match (port, protocol) {
             // Critical infrastructure ports
-            (53, _) => DependencyCriticality::Critical,   // DNS
+            (53, _) => DependencyCriticality::Critical, // DNS
             (443, "TCP") => DependencyCriticality::Critical, // HTTPS
             (5432, _) => DependencyCriticality::Critical, // PostgreSQL
             (3306, _) => DependencyCriticality::Critical, // MySQL
@@ -370,10 +376,10 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
             (9200, _) => DependencyCriticality::Critical, // Elasticsearch
 
             // Important ports
-            (80, "TCP") => DependencyCriticality::Important,   // HTTP
-            (8080, _) => DependencyCriticality::Important,     // HTTP alt
-            (3000, _) => DependencyCriticality::Important,     // Common app port
-            (9090, _) => DependencyCriticality::Important,     // Prometheus
+            (80, "TCP") => DependencyCriticality::Important, // HTTP
+            (8080, _) => DependencyCriticality::Important,   // HTTP alt
+            (3000, _) => DependencyCriticality::Important,   // Common app port
+            (9090, _) => DependencyCriticality::Important,   // Prometheus
 
             // Everything else
             _ => DependencyCriticality::Optional,

@@ -1,16 +1,17 @@
+#![allow(clippy::upper_case_acronyms)]
 // Library re-exports for integration testing
 //
 // This file exposes internal modules so that integration tests in the
 // `tests/` directory can import crate types.
 
-pub mod ebpf;
-pub mod kubernetes;
-pub mod policies;
+pub mod bootstrap;
 pub mod cilium;
+pub mod ebpf;
 pub mod endpoints;
 pub mod hubble;
-pub mod bootstrap;
 pub mod integration;
+pub mod kubernetes;
+pub mod policies;
 
 // Selective module re-exports to avoid broken experimental modules.
 // Each stable module is declared directly with its path.

@@ -1,18 +1,19 @@
+#![allow(clippy::upper_case_acronyms)]
+
 mod bootstrap;
 mod cilium;
 mod ebpf;
 mod endpoints;
 mod hubble;
+mod integration;
 mod kubernetes;
 mod modules;
 mod policies;
 mod tui;
-mod integration;
 
 use anyhow::Result;
 use clap::Parser;
 use tracing::Level;
-use tracing_subscriber;
 
 use bootstrap::BootstrapManager;
 use tui::TuiApp;
@@ -47,7 +48,11 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Setup logging
-    let log_level = if args.verbose { Level::DEBUG } else { Level::INFO };
+    let log_level = if args.verbose {
+        Level::DEBUG
+    } else {
+        Level::INFO
+    };
     tracing_subscriber::fmt()
         .with_max_level(log_level)
         .with_target(false)
@@ -61,7 +66,9 @@ async fn main() -> Result<()> {
         // Run full bootstrap
         let bootstrap = BootstrapManager::new().await?;
         let k8s_client_clone = bootstrap.get_k8s_client();
-        let result = bootstrap.run_bootstrap_with_options(args.auto_install, args.auto_upgrade).await?;
+        let result = bootstrap
+            .run_bootstrap_with_options(args.auto_install, args.auto_upgrade)
+            .await?;
         (result.context, result.hubble_port, k8s_client_clone)
     };
 

@@ -1,7 +1,7 @@
 //! Per-tab key event handlers extracted from events.rs
 
+use super::app::{ModuleContainer, TuiApp};
 use crossterm::event::KeyCode;
-use super::app::{TuiApp, ModuleContainer};
 
 /// Handle keyboard events for the AutoPolicy tab (tab index 6).
 /// Returns `true` if the key was handled, `false` otherwise.
@@ -22,7 +22,9 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             match result {
                 Ok(policies) => {
                     if policies.is_empty() {
-                        app.set_status_message("No policies generated. Need more observations (min 10).");
+                        app.set_status_message(
+                            "No policies generated. Need more observations (min 10).",
+                        );
                         tracing::info!("No policies generated - insufficient observations");
                     } else {
                         // Save policies to files
@@ -48,24 +50,34 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             }
             true
         }
-        KeyCode::Char('A') if !app.show_help && app.selected_tab == 6 && !app.policy_detail_mode => {
+        KeyCode::Char('A')
+            if !app.show_help && app.selected_tab == 6 && !app.policy_detail_mode =>
+        {
             // Batch apply all unapplied policies
             let policies = match &app.modules {
                 ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
                 ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
             };
 
-            let unapplied_count = policies.iter().filter(|p| !app.applied_policies.contains(&p.name)).count();
+            let unapplied_count = policies
+                .iter()
+                .filter(|p| !app.applied_policies.contains(&p.name))
+                .count();
 
             if unapplied_count == 0 {
                 app.set_status_message("All policies already applied");
             } else {
                 app.policy_batch_apply_confirmation = true;
-                app.set_status_message(&format!("Apply {} policies? Press 'y' to confirm, 'n' to cancel", unapplied_count));
+                app.set_status_message(&format!(
+                    "Apply {} policies? Press 'y' to confirm, 'n' to cancel",
+                    unapplied_count
+                ));
             }
             true
         }
-        KeyCode::Char('R') if !app.show_help && app.selected_tab == 6 && !app.policy_detail_mode => {
+        KeyCode::Char('R')
+            if !app.show_help && app.selected_tab == 6 && !app.policy_detail_mode =>
+        {
             // Batch rollback all applied policies
             let applied_count = app.applied_policies.len();
 
@@ -73,11 +85,16 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
                 app.set_status_message("No policies applied to rollback");
             } else {
                 app.policy_batch_rollback_confirmation = true;
-                app.set_status_message(&format!("Rollback {} policies? Press 'y' to confirm, 'n' to cancel", applied_count));
+                app.set_status_message(&format!(
+                    "Rollback {} policies? Press 'y' to confirm, 'n' to cancel",
+                    applied_count
+                ));
             }
             true
         }
-        KeyCode::Char('y') if !app.show_help && app.selected_tab == 6 && app.policy_batch_apply_confirmation => {
+        KeyCode::Char('y')
+            if !app.show_help && app.selected_tab == 6 && app.policy_batch_apply_confirmation =>
+        {
             // Confirm batch apply
             app.policy_batch_apply_confirmation = false;
 
@@ -115,7 +132,11 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             }
             true
         }
-        KeyCode::Char('y') if !app.show_help && app.selected_tab == 6 && app.policy_batch_rollback_confirmation => {
+        KeyCode::Char('y')
+            if !app.show_help
+                && app.selected_tab == 6
+                && app.policy_batch_rollback_confirmation =>
+        {
             // Confirm batch rollback
             app.policy_batch_rollback_confirmation = false;
 
@@ -146,13 +167,24 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             }
 
             if failed == 0 {
-                app.set_status_message(&format!("Rolled back {} policies successfully", rolled_back));
+                app.set_status_message(&format!(
+                    "Rolled back {} policies successfully",
+                    rolled_back
+                ));
             } else {
-                app.set_status_message(&format!("Rolled back: {}, Failed: {}", rolled_back, failed));
+                app.set_status_message(&format!(
+                    "Rolled back: {}, Failed: {}",
+                    rolled_back, failed
+                ));
             }
             true
         }
-        KeyCode::Char('n') if !app.show_help && app.selected_tab == 6 && (app.policy_batch_apply_confirmation || app.policy_batch_rollback_confirmation) => {
+        KeyCode::Char('n')
+            if !app.show_help
+                && app.selected_tab == 6
+                && (app.policy_batch_apply_confirmation
+                    || app.policy_batch_rollback_confirmation) =>
+        {
             // Cancel batch operation
             if app.policy_batch_apply_confirmation {
                 app.policy_batch_apply_confirmation = false;
@@ -211,7 +243,12 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             }
             true
         }
-        KeyCode::Char('a') if !app.show_help && app.selected_tab == 6 && app.policy_detail_mode && !app.policy_apply_confirmation => {
+        KeyCode::Char('a')
+            if !app.show_help
+                && app.selected_tab == 6
+                && app.policy_detail_mode
+                && !app.policy_apply_confirmation =>
+        {
             // Trigger policy application confirmation
             let policies = match &app.modules {
                 ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
@@ -224,12 +261,17 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
                     app.set_status_message(&format!("Policy '{}' already applied", policy_name));
                 } else {
                     app.policy_apply_confirmation = true;
-                    app.set_status_message(&format!("Apply policy '{}'? Press 'y' to confirm, 'n' to cancel", policy_name));
+                    app.set_status_message(&format!(
+                        "Apply policy '{}'? Press 'y' to confirm, 'n' to cancel",
+                        policy_name
+                    ));
                 }
             }
             true
         }
-        KeyCode::Char('y') if !app.show_help && app.selected_tab == 6 && app.policy_apply_confirmation => {
+        KeyCode::Char('y')
+            if !app.show_help && app.selected_tab == 6 && app.policy_apply_confirmation =>
+        {
             // Confirm and apply policy
             app.policy_apply_confirmation = false;
 
@@ -247,7 +289,10 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
                 match app.apply_policy_kubectl(&policy_name, &policy_yaml) {
                     Ok(_) => {
                         app.applied_policies.insert(policy_name.clone());
-                        app.set_status_message(&format!("Policy '{}' applied successfully", policy_name));
+                        app.set_status_message(&format!(
+                            "Policy '{}' applied successfully",
+                            policy_name
+                        ));
                         tracing::info!("Applied policy: {}", policy_name);
                     }
                     Err(e) => {
@@ -258,13 +303,21 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             }
             true
         }
-        KeyCode::Char('n') if !app.show_help && app.selected_tab == 6 && app.policy_apply_confirmation => {
+        KeyCode::Char('n')
+            if !app.show_help && app.selected_tab == 6 && app.policy_apply_confirmation =>
+        {
             // Cancel policy application
             app.policy_apply_confirmation = false;
             app.set_status_message("Policy application cancelled");
             true
         }
-        KeyCode::Char('r') if !app.show_help && app.selected_tab == 6 && app.policy_detail_mode && !app.policy_apply_confirmation && !app.policy_rollback_confirmation => {
+        KeyCode::Char('r')
+            if !app.show_help
+                && app.selected_tab == 6
+                && app.policy_detail_mode
+                && !app.policy_apply_confirmation
+                && !app.policy_rollback_confirmation =>
+        {
             // Trigger policy rollback confirmation
             let policies = match &app.modules {
                 ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
@@ -274,15 +327,23 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             if !policies.is_empty() {
                 let policy_name = &policies[app.selected_policy_index].name;
                 if !app.applied_policies.contains(policy_name) {
-                    app.set_status_message(&format!("Policy '{}' not applied, cannot rollback", policy_name));
+                    app.set_status_message(&format!(
+                        "Policy '{}' not applied, cannot rollback",
+                        policy_name
+                    ));
                 } else {
                     app.policy_rollback_confirmation = true;
-                    app.set_status_message(&format!("Rollback policy '{}'? Press 'y' to confirm, 'n' to cancel", policy_name));
+                    app.set_status_message(&format!(
+                        "Rollback policy '{}'? Press 'y' to confirm, 'n' to cancel",
+                        policy_name
+                    ));
                 }
             }
             true
         }
-        KeyCode::Char('y') if !app.show_help && app.selected_tab == 6 && app.policy_rollback_confirmation => {
+        KeyCode::Char('y')
+            if !app.show_help && app.selected_tab == 6 && app.policy_rollback_confirmation =>
+        {
             // Confirm and rollback policy
             app.policy_rollback_confirmation = false;
 
@@ -299,7 +360,10 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
                 match app.rollback_policy_kubectl(&policy_name, &policy_namespace) {
                     Ok(_) => {
                         app.applied_policies.remove(&policy_name);
-                        app.set_status_message(&format!("Policy '{}' rolled back successfully", policy_name));
+                        app.set_status_message(&format!(
+                            "Policy '{}' rolled back successfully",
+                            policy_name
+                        ));
                         tracing::info!("Rolled back policy: {}", policy_name);
                     }
                     Err(e) => {
@@ -310,7 +374,9 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             }
             true
         }
-        KeyCode::Char('n') if !app.show_help && app.selected_tab == 6 && app.policy_rollback_confirmation => {
+        KeyCode::Char('n')
+            if !app.show_help && app.selected_tab == 6 && app.policy_rollback_confirmation =>
+        {
             // Cancel policy rollback
             app.policy_rollback_confirmation = false;
             app.set_status_message("Policy rollback cancelled");
@@ -339,14 +405,16 @@ pub(crate) fn handle_rootcause_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             }
             true
         }
-        KeyCode::Char('a') if !app.show_help && app.selected_tab == 7 && !app.fix_apply_confirmation => {
+        KeyCode::Char('a')
+            if !app.show_help && app.selected_tab == 7 && !app.fix_apply_confirmation =>
+        {
             // Trigger fix application confirmation
             app.fix_apply_confirmation = true;
-            let fix_names = vec![
+            let fix_names = [
                 "allow-8080 policy",
                 "DNS egress policy",
                 "MTU adjustment",
-                "DB access policy"
+                "DB access policy",
             ];
             app.set_status_message(&format!(
                 "Apply fix '{}'? Press 'y' to confirm, 'n' to cancel",
@@ -354,7 +422,9 @@ pub(crate) fn handle_rootcause_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             ));
             true
         }
-        KeyCode::Char('y') if !app.show_help && app.selected_tab == 7 && app.fix_apply_confirmation => {
+        KeyCode::Char('y')
+            if !app.show_help && app.selected_tab == 7 && app.fix_apply_confirmation =>
+        {
             // Confirm and apply fix
             app.fix_apply_confirmation = false;
 
@@ -372,7 +442,9 @@ pub(crate) fn handle_rootcause_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             }
             true
         }
-        KeyCode::Char('n') if !app.show_help && app.selected_tab == 7 && app.fix_apply_confirmation => {
+        KeyCode::Char('n')
+            if !app.show_help && app.selected_tab == 7 && app.fix_apply_confirmation =>
+        {
             // Cancel fix application
             app.fix_apply_confirmation = false;
             app.set_status_message("Fix application cancelled");
