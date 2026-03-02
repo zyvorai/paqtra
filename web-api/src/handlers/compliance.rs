@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::AppState;
+use super::{track_request, to_json};
 
 /// A compliance framework definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,10 +105,7 @@ fn supported_frameworks() -> Vec<ComplianceFramework> {
 pub async fn list_frameworks(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, StatusCode> {
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-    }
+    track_request(&state, |_| {}).await;
 
     let frameworks = supported_frameworks();
     Ok(Json(json!({
@@ -120,10 +118,7 @@ pub async fn run_audit(
     State(state): State<Arc<AppState>>,
     Json(req): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-    }
+    track_request(&state, |_| {}).await;
 
     let framework = req
         .get("framework")
@@ -144,18 +139,13 @@ pub async fn run_audit(
         findings: Vec::new(),
     };
 
-    Ok(Json(serde_json::to_value(audit).unwrap_or(json!({
-        "status": "error"
-    }))))
+    Ok(Json(to_json(&audit)))
 }
 
 pub async fn security_posture(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, StatusCode> {
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-    }
+    track_request(&state, |_| {}).await;
 
     let posture = SecurityPosture {
         score: 0.0,
@@ -166,7 +156,5 @@ pub async fn security_posture(
         last_audit: None,
     };
 
-    Ok(Json(
-        serde_json::to_value(posture).unwrap_or(json!({"score": 0.0})),
-    ))
+    Ok(Json(to_json(&posture)))
 }

@@ -1,9 +1,9 @@
 /// AutoPolicy View - Zero-Trust Policy Learning
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Style},
+    style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
+    widgets::{Gauge, List, ListItem, Paragraph},
     Frame,
 };
 
@@ -71,7 +71,7 @@ impl AutoPolicyView {
 
         let content = Paragraph::new(stats)
             .style(Style::default().fg(INFO_COLOR))
-            .block(Block::default().borders(Borders::ALL).title("Learning Status").border_style(Style::default().fg(BORDER_COLOR)));
+            .block(bordered_block("Learning Status"));
 
         f.render_widget(content, area);
     }
@@ -143,12 +143,7 @@ impl AutoPolicyView {
             "Communication Patterns".to_string()
         };
 
-        let list = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(Style::default().fg(BORDER_COLOR)),
-        );
+        let list = List::new(items).block(bordered_block(&title));
 
         f.render_widget(list, area);
     }
@@ -204,7 +199,7 @@ impl AutoPolicyView {
 
         let policies = Paragraph::new(policy_text)
             .style(Style::default().fg(TEXT_COLOR))
-            .block(Block::default().borders(Borders::ALL).title("Generated Policies").border_style(Style::default().fg(BORDER_COLOR)));
+            .block(bordered_block("Generated Policies"));
 
         f.render_widget(policies, chunks[0]);
 
@@ -219,12 +214,7 @@ impl AutoPolicyView {
         };
 
         let gauge = Gauge::default()
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Confidence")
-                    .border_style(Style::default().fg(BORDER_COLOR)),
-            )
+            .block(bordered_block("Confidence"))
             .gauge_style(Style::default().fg(gauge_color))
             .percent((readiness * 100.0) as u16)
             .label(format!("{:.0}%", readiness * 100.0));

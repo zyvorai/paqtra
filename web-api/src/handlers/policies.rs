@@ -9,17 +9,14 @@ use std::sync::Arc;
 
 use crate::AppState;
 use crate::models::policy::CreatePolicyRequest;
+use super::{track_request, track_error, to_json};
 
 pub async fn list_policies(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Listing policies");
 
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-        m.k8s_queries += 1;
-    }
+    track_request(&state, |m| m.k8s_queries += 1).await;
 
     match state.k8s.list_policies().await {
         Ok(policies) => {
@@ -31,8 +28,7 @@ pub async fn list_policies(
         }
         Err(e) => {
             tracing::error!("Failed to list policies: {}", e);
-            let mut m = state.metrics.write().await;
-            m.total_errors += 1;
+            track_error(&state).await;
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -44,11 +40,7 @@ pub async fn create_policy(
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Creating policy: {}/{}", req.namespace, req.name);
 
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-        m.k8s_queries += 1;
-    }
+    track_request(&state, |m| m.k8s_queries += 1).await;
 
     match state.k8s.create_policy(&req).await {
         Ok(policy) => {
@@ -56,14 +48,11 @@ pub async fn create_policy(
                 let mut m = state.metrics.write().await;
                 m.policies_created += 1;
             }
-            Ok(Json(serde_json::to_value(policy).unwrap_or(json!({
-                "status": "created"
-            }))))
+            Ok(Json(to_json(&policy)))
         }
         Err(e) => {
             tracing::error!("Failed to create policy: {}", e);
-            let mut m = state.metrics.write().await;
-            m.total_errors += 1;
+            track_error(&state).await;
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -75,18 +64,14 @@ pub async fn get_policy(
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Getting policy: {}", id);
 
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-        m.k8s_queries += 1;
-    }
+    track_request(&state, |m| m.k8s_queries += 1).await;
 
     // Fetch all and find by id
     match state.k8s.list_policies().await {
         Ok(policies) => {
             match policies.into_iter().find(|p| p.id == id || p.name == id) {
                 Some(policy) => {
-                    Ok(Json(serde_json::to_value(policy).unwrap_or(json!({}))))
+                    Ok(Json(to_json(&policy)))
                 }
                 None => Ok(Json(json!({
                     "error": "not_found",
@@ -96,8 +81,7 @@ pub async fn get_policy(
         }
         Err(e) => {
             tracing::error!("Failed to get policy: {}", e);
-            let mut m = state.metrics.write().await;
-            m.total_errors += 1;
+            track_error(&state).await;
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -110,25 +94,18 @@ pub async fn update_policy(
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Updating policy: {}", id);
 
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-        m.k8s_queries += 1;
-    }
+    track_request(&state, |m| m.k8s_queries += 1).await;
 
     // kubectl apply is idempotent, so create == update
     match state.k8s.create_policy(&req).await {
         Ok(mut policy) => {
             policy.id = id;
             policy.status = "updated".to_string();
-            Ok(Json(serde_json::to_value(policy).unwrap_or(json!({
-                "status": "updated"
-            }))))
+            Ok(Json(to_json(&policy)))
         }
         Err(e) => {
             tracing::error!("Failed to update policy: {}", e);
-            let mut m = state.metrics.write().await;
-            m.total_errors += 1;
+            track_error(&state).await;
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -140,11 +117,7 @@ pub async fn delete_policy(
 ) -> Result<StatusCode, StatusCode> {
     tracing::info!("Deleting policy: {}", id);
 
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-        m.k8s_queries += 1;
-    }
+    track_request(&state, |m| m.k8s_queries += 1).await;
 
     match state.k8s.delete_policy(&id).await {
         Ok(()) => {
@@ -156,8 +129,7 @@ pub async fn delete_policy(
         }
         Err(e) => {
             tracing::error!("Failed to delete policy: {}", e);
-            let mut m = state.metrics.write().await;
-            m.total_errors += 1;
+            track_error(&state).await;
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -169,10 +141,7 @@ pub async fn simulate_policy(
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Simulating policy: {}", req.name);
 
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-    }
+    track_request(&state, |_| {}).await;
 
     // Simulation would analyze flows against the proposed policy
     // For now, return structured response

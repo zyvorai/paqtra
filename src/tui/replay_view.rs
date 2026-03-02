@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap},
+    widgets::{Gauge, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -72,15 +72,11 @@ impl ReplayView {
     }
 
     pub fn move_selection_up(&mut self) {
-        if self.selected_recording_index > 0 {
-            self.selected_recording_index -= 1;
-        }
+        move_selection_up(&mut self.selected_recording_index);
     }
 
     pub fn move_selection_down(&mut self, max: usize) {
-        if self.selected_recording_index < max - 1 {
-            self.selected_recording_index += 1;
-        }
+        move_selection_down(&mut self.selected_recording_index, max);
     }
 
     pub fn adjust_speed(&mut self, faster: bool) {
@@ -146,7 +142,7 @@ impl ReplayView {
 
         let content = Paragraph::new(stats)
             .style(Style::default().fg(ORANGE))
-            .block(Block::default().borders(Borders::ALL).title("Replay Status").border_style(Style::default().fg(BORDER_COLOR)));
+            .block(bordered_block("Replay Status"));
 
         f.render_widget(content, area);
     }
@@ -165,7 +161,7 @@ impl ReplayView {
             .map(|(idx, (name, flows, size, age))| {
                 let is_selected = idx == self.selected_recording_index;
                 let style = if is_selected {
-                    Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)
+                    selected_style()
                 } else {
                     Style::default().fg(TEXT_COLOR)
                 };
@@ -180,12 +176,7 @@ impl ReplayView {
             .collect();
 
         let title = "Recordings [↑/↓: Select | t: Time-Travel | r: Refresh]";
-        let list = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(Style::default().fg(BORDER_COLOR)),
-        );
+        let list = List::new(items).block(bordered_block(title));
 
         f.render_widget(list, area);
     }
@@ -207,19 +198,14 @@ impl ReplayView {
 
         let stats = Paragraph::new(stats_text)
             .style(Style::default().fg(TEXT_COLOR))
-            .block(Block::default().borders(Borders::ALL).title("Comparison").border_style(Style::default().fg(BORDER_COLOR)));
+            .block(bordered_block("Comparison"));
 
         f.render_widget(stats, chunks[0]);
 
         // Similarity Gauge
         let similarity = 0.95; // 95%
         let gauge = Gauge::default()
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Similarity")
-                    .border_style(Style::default().fg(BORDER_COLOR)),
-            )
+            .block(bordered_block("Similarity"))
             .gauge_style(Style::default().fg(PROGRESS_NORMAL_COLOR))
             .percent((similarity * 100.0) as u16)
             .label(format!("{}%", (similarity * 100.0) as u16));
@@ -277,12 +263,7 @@ impl ReplayView {
 
         let header = Paragraph::new(header_text)
             .style(Style::default().fg(INFO_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Time-Travel Controls")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Time-Travel Controls"));
 
         f.render_widget(header, chunks[0]);
 
@@ -291,12 +272,7 @@ impl ReplayView {
 
         let timeline = Paragraph::new(timeline_text)
             .style(Style::default().fg(TEXT_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Timeline [←/→: Step | [/]: Jump Events | Space: Play/Pause | +/-: Speed | Esc: Exit]")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Timeline [←/→: Step | [/]: Jump Events | Space: Play/Pause | +/-: Speed | Esc: Exit]"));
 
         f.render_widget(timeline, chunks[1]);
     }
@@ -350,12 +326,7 @@ impl ReplayView {
 
         let state = Paragraph::new(state_text)
             .style(Style::default().fg(SUCCESS_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Network State Snapshot")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            )
+            .block(bordered_block("Network State Snapshot"))
             .wrap(Wrap { trim: false });
 
         f.render_widget(state, area);
@@ -391,12 +362,7 @@ impl ReplayView {
             })
             .collect();
 
-        let list = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Flow Events (Around Current Time)")
-                .border_style(Style::default().fg(BORDER_COLOR)),
-        );
+        let list = List::new(items).block(bordered_block("Flow Events (Around Current Time)"));
 
         f.render_widget(list, area);
     }

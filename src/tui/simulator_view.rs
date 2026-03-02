@@ -2,9 +2,9 @@
 /// Simulator View - What-If Scenario Testing
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap},
+    widgets::{Gauge, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -35,15 +35,11 @@ impl SimulatorView {
     }
 
     pub fn move_selection_up(&mut self) {
-        if self.selected_scenario_index > 0 {
-            self.selected_scenario_index -= 1;
-        }
+        move_selection_up(&mut self.selected_scenario_index);
     }
 
     pub fn move_selection_down(&mut self, max_scenarios: usize) {
-        if self.selected_scenario_index < max_scenarios - 1 {
-            self.selected_scenario_index += 1;
-        }
+        move_selection_down(&mut self.selected_scenario_index, max_scenarios);
     }
 
     pub fn set_simulation_result(&mut self, result: SimulationResult) {
@@ -115,12 +111,7 @@ impl SimulatorView {
 
         let content = Paragraph::new(stats)
             .style(Style::default().fg(INFO_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Simulator Status")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Simulator Status"));
 
         f.render_widget(content, area);
     }
@@ -141,7 +132,7 @@ impl SimulatorView {
             .enumerate()
             .map(|(idx, name)| {
                 let style = if idx == self.selected_scenario_index {
-                    Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)
+                    selected_style()
                 } else {
                     Style::default().fg(TEXT_COLOR)
                 };
@@ -159,12 +150,7 @@ impl SimulatorView {
             "Scenarios [↑/↓: Select | s: Simulate | c: Clear]"
         };
 
-        let list = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(Style::default().fg(BORDER_COLOR)),
-        );
+        let list = List::new(items).block(bordered_block(title));
 
         f.render_widget(list, area);
     }
@@ -253,12 +239,7 @@ impl SimulatorView {
 
         let paragraph = Paragraph::new(details)
             .style(Style::default().fg(INFO_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Scenario Details")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            )
+            .block(bordered_block("Scenario Details"))
             .wrap(Wrap { trim: false });
 
         f.render_widget(paragraph, area);
@@ -301,12 +282,7 @@ impl SimulatorView {
 
         let impact = Paragraph::new(impact_text)
             .style(Style::default().fg(INFO_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Impact Summary")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Impact Summary"));
 
         f.render_widget(impact, chunks[0]);
 
@@ -339,24 +315,14 @@ impl SimulatorView {
 
         let risk_info = Paragraph::new(risk_text)
             .style(Style::default().fg(risk_color))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Risk Analysis")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Risk Analysis"));
 
         f.render_widget(risk_info, risk_chunks[0]);
 
         // Risk Gauge
         let risk_percent = ((result.risk.score as f32 / 10.0) * 100.0) as u16;
         let gauge = Gauge::default()
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Risk Meter")
-                    .border_style(Style::default().fg(BORDER_COLOR)),
-            )
+            .block(bordered_block("Risk Meter"))
             .gauge_style(Style::default().fg(risk_color))
             .percent(risk_percent)
             .label(format!("{}%", risk_percent));
@@ -376,12 +342,7 @@ impl SimulatorView {
 
         let recommendations = Paragraph::new(rec_text)
             .style(Style::default().fg(TEXT_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Recommendations [c: Clear Results | Esc: Back]")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            )
+            .block(bordered_block("Recommendations [c: Clear Results | Esc: Back]"))
             .wrap(Wrap { trim: false });
 
         f.render_widget(recommendations, chunks[2]);

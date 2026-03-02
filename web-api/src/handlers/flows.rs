@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crate::AppState;
 use crate::models::flow::{Flow, FlowQueryParams};
+use super::{track_request, track_error, to_json};
 
 /// Cache key prefix for flow queries
 const FLOWS_CACHE_PREFIX: &str = "flows";
@@ -21,12 +22,7 @@ pub async fn list_flows(
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Fetching flows with params: {:?}", params);
 
-    // Increment metrics
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-        m.hubble_queries += 1;
-    }
+    track_request(&state, |m| m.hubble_queries += 1).await;
 
     let limit = params.limit.unwrap_or(100);
     let offset = params.offset.unwrap_or(0);
@@ -77,10 +73,7 @@ pub async fn list_flows(
         Ok(f) => f,
         Err(e) => {
             tracing::error!("Failed to fetch flows from Hubble: {}", e);
-            {
-                let mut m = state.metrics.write().await;
-                m.total_errors += 1;
-            }
+            track_error(&state).await;
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
@@ -118,18 +111,14 @@ pub async fn get_flow(
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Fetching flow: {}", id);
 
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-        m.hubble_queries += 1;
-    }
+    track_request(&state, |m| m.hubble_queries += 1).await;
 
     // Try cache
     let cache_key = format!("flow:{}", id);
     if let Ok(Some(flow)) = state.cache.get::<Flow>(&cache_key).await {
         let mut m = state.metrics.write().await;
         m.cache_hits += 1;
-        return Ok(Json(serde_json::to_value(flow).unwrap_or(json!({}))));
+        return Ok(Json(to_json(&flow)));
     }
 
     // Fetch a batch and find by id
@@ -143,11 +132,10 @@ pub async fn get_flow(
         Some(flow) => {
             // Cache the individual flow
             let _ = state.cache.set(&cache_key, &flow, 30).await;
-            Ok(Json(serde_json::to_value(flow).unwrap_or(json!({}))))
+            Ok(Json(to_json(&flow)))
         }
         None => {
-            let mut m = state.metrics.write().await;
-            m.total_errors += 1;
+            track_error(&state).await;
             Ok(Json(json!({
                 "error": "not_found",
                 "id": id,
@@ -160,11 +148,7 @@ pub async fn get_flow(
 pub async fn flow_stats(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, StatusCode> {
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-        m.hubble_queries += 1;
-    }
+    track_request(&state, |m| m.hubble_queries += 1).await;
 
     // Try cache
     let cache_key = "flow_stats";
@@ -175,19 +159,18 @@ pub async fn flow_stats(
     {
         let mut m = state.metrics.write().await;
         m.cache_hits += 1;
-        return Ok(Json(serde_json::to_value(stats).unwrap_or(json!({}))));
+        return Ok(Json(to_json(&stats)));
     }
 
     match state.hubble.get_flow_stats().await {
         Ok(stats) => {
             // Cache stats for 5 seconds
             let _ = state.cache.set(cache_key, &stats, 5).await;
-            Ok(Json(serde_json::to_value(&stats).unwrap_or(json!({}))))
+            Ok(Json(to_json(&stats)))
         }
         Err(e) => {
             tracing::error!("Failed to compute flow stats: {}", e);
-            let mut m = state.metrics.write().await;
-            m.total_errors += 1;
+            track_error(&state).await;
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

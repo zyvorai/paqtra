@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{List, ListItem, Paragraph},
     Frame,
 };
 
@@ -62,7 +62,7 @@ impl RootCauseView {
 
         let content = Paragraph::new(stats)
             .style(Style::default().fg(ERROR_COLOR))
-            .block(Block::default().borders(Borders::ALL).title("Analysis Status").border_style(Style::default().fg(BORDER_COLOR)));
+            .block(bordered_block("Analysis Status"));
 
         f.render_widget(content, area);
     }
@@ -116,12 +116,7 @@ impl RootCauseView {
             })
             .collect();
 
-        let list = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Recent Packet Drops (Top 5)")
-                .border_style(Style::default().fg(BORDER_COLOR)),
-        );
+        let list = List::new(items).block(bordered_block("Recent Packet Drops (Top 5)"));
 
         f.render_widget(list, area);
     }
@@ -145,7 +140,7 @@ impl RootCauseView {
             .enumerate()
             .map(|(idx, name)| {
                 let style = if idx == selected_fix_index {
-                    Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)
+                    selected_style()
                 } else {
                     Style::default().fg(SUCCESS_COLOR)
                 };
@@ -163,12 +158,7 @@ impl RootCauseView {
             "Fixes [↑/↓: Select | a: Apply]"
         };
 
-        let fixes = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(fixes_title)
-                .border_style(Style::default().fg(BORDER_COLOR)),
-        );
+        let fixes = List::new(items).block(bordered_block(fixes_title));
 
         f.render_widget(fixes, chunks[0]);
 
@@ -209,12 +199,7 @@ impl RootCauseView {
 
         let details = Paragraph::new(details_text)
             .style(Style::default().fg(INFO_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Policy Details")
-                    .border_style(Style::default().fg(BORDER_COLOR)),
-            );
+            .block(bordered_block("Policy Details"));
 
         f.render_widget(details, chunks[1]);
     }

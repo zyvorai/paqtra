@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::AppState;
+use super::{track_request, to_json};
 
 /// Anomaly severity levels
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,10 +49,7 @@ pub struct RemediationResult {
 pub async fn list_anomalies(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, StatusCode> {
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-    }
+    track_request(&state, |_| {}).await;
 
     // Return typed but empty list -- anomaly detection engine not yet integrated
     let anomalies: Vec<Anomaly> = Vec::new();
@@ -68,10 +66,7 @@ pub async fn get_anomaly(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-    }
+    track_request(&state, |_| {}).await;
 
     // Would look up from anomaly store; for now return typed not-found
     Ok(Json(json!({
@@ -85,10 +80,7 @@ pub async fn remediate_anomaly(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-    }
+    track_request(&state, |_| {}).await;
 
     let result = RemediationResult {
         id: id.clone(),
@@ -97,9 +89,5 @@ pub async fn remediate_anomaly(
         timestamp: chrono::Utc::now().to_rfc3339(),
     };
 
-    Ok(Json(serde_json::to_value(result).unwrap_or(json!({
-        "id": id,
-        "status": "error",
-        "message": "Remediation engine not connected"
-    }))))
+    Ok(Json(to_json(&result)))
 }

@@ -1,9 +1,9 @@
 /// Multi-Cluster Autopilot View - Global Orchestration
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -32,15 +32,11 @@ impl MultiClusterView {
     }
 
     pub fn move_selection_up(&mut self) {
-        if self.selected_cluster_index > 0 {
-            self.selected_cluster_index -= 1;
-        }
+        move_selection_up(&mut self.selected_cluster_index);
     }
 
     pub fn move_selection_down(&mut self, max: usize) {
-        if self.selected_cluster_index < max - 1 {
-            self.selected_cluster_index += 1;
-        }
+        move_selection_down(&mut self.selected_cluster_index, max);
     }
 
     pub fn cycle_view(&mut self) {
@@ -113,12 +109,7 @@ impl MultiClusterView {
 
         let header = Paragraph::new(header_text)
             .style(Style::default().fg(INFO_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Autopilot Status")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Autopilot Status"));
 
         f.render_widget(header, area);
     }
@@ -137,7 +128,7 @@ impl MultiClusterView {
             .map(|(idx, (name, provider, region, state, color))| {
                 let is_selected = idx == self.selected_cluster_index;
                 let style = if is_selected {
-                    Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)
+                    selected_style()
                 } else {
                     Style::default().fg(*color)
                 };
@@ -151,12 +142,7 @@ impl MultiClusterView {
             })
             .collect();
 
-        let list = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Managed Clusters [↑/↓: Select | v: Cycle View]")
-                .border_style(Style::default().fg(BORDER_COLOR)),
-        );
+        let list = List::new(items).block(bordered_block("Managed Clusters [↑/↓: Select | v: Cycle View]"));
 
         f.render_widget(list, area);
     }
@@ -173,12 +159,7 @@ impl MultiClusterView {
 
         let paragraph = Paragraph::new(details)
             .style(Style::default().fg(TEXT_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Cluster Details")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Cluster Details"));
 
         f.render_widget(paragraph, area);
     }
@@ -200,12 +181,7 @@ impl MultiClusterView {
 
         let paragraph = Paragraph::new(topology)
             .style(Style::default().fg(INFO_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Network Topology")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            )
+            .block(bordered_block("Network Topology"))
             .wrap(Wrap { trim: false });
 
         f.render_widget(paragraph, area);
@@ -221,12 +197,7 @@ impl MultiClusterView {
 
         let paragraph = Paragraph::new(stats)
             .style(Style::default().fg(TEXT_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Stats")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Stats"));
 
         f.render_widget(paragraph, area);
     }
@@ -248,12 +219,7 @@ impl MultiClusterView {
             })
             .collect();
 
-        let list = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Active Policy Syncs")
-                .border_style(Style::default().fg(BORDER_COLOR)),
-        );
+        let list = List::new(items).block(bordered_block("Active Policy Syncs"));
 
         f.render_widget(list, area);
     }
@@ -269,12 +235,7 @@ impl MultiClusterView {
 
         let paragraph = Paragraph::new(details)
             .style(Style::default().fg(TEXT_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Sync Details")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Sync Details"));
 
         f.render_widget(paragraph, area);
     }
@@ -300,12 +261,7 @@ impl MultiClusterView {
             })
             .collect();
 
-        let list = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Placement Recommendations")
-                .border_style(Style::default().fg(BORDER_COLOR)),
-        );
+        let list = List::new(items).block(bordered_block("Placement Recommendations"));
 
         f.render_widget(list, area);
     }
@@ -323,12 +279,7 @@ impl MultiClusterView {
 
         let paragraph = Paragraph::new(details)
             .style(Style::default().fg(TEXT_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Placement Details")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Placement Details"));
 
         f.render_widget(paragraph, area);
     }

@@ -1,9 +1,9 @@
 /// Chaos Engineering View - eBPF-based Fault Injection
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -31,25 +31,17 @@ impl ChaosView {
 
     pub fn move_selection_up(&mut self) {
         if self.show_presets {
-            if self.selected_preset_index > 0 {
-                self.selected_preset_index -= 1;
-            }
+            move_selection_up(&mut self.selected_preset_index);
         } else {
-            if self.selected_experiment_index > 0 {
-                self.selected_experiment_index -= 1;
-            }
+            move_selection_up(&mut self.selected_experiment_index);
         }
     }
 
     pub fn move_selection_down(&mut self, max: usize) {
         if self.show_presets {
-            if self.selected_preset_index < max - 1 {
-                self.selected_preset_index += 1;
-            }
+            move_selection_down(&mut self.selected_preset_index, max);
         } else {
-            if self.selected_experiment_index < max - 1 {
-                self.selected_experiment_index += 1;
-            }
+            move_selection_down(&mut self.selected_experiment_index, max);
         }
     }
 
@@ -111,12 +103,7 @@ impl ChaosView {
 
         let header = Paragraph::new(header_text)
             .style(Style::default().fg(WARNING_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Chaos Status")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Chaos Status"));
 
         f.render_widget(header, area);
     }
@@ -138,7 +125,7 @@ impl ChaosView {
             .map(|(idx, (name, desc, severity, color))| {
                 let is_selected = idx == self.selected_preset_index;
                 let style = if is_selected {
-                    Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)
+                    selected_style()
                 } else {
                     Style::default().fg(*color)
                 };
@@ -158,12 +145,7 @@ impl ChaosView {
             "Chaos Presets [↑/↓: Select | Enter: Run | v: View Active | b: Circuit Breaker]"
         };
 
-        let list = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(Style::default().fg(BORDER_COLOR)),
-        );
+        let list = List::new(items).block(bordered_block(title));
 
         f.render_widget(list, area);
     }
@@ -253,12 +235,7 @@ impl ChaosView {
 
         let paragraph = Paragraph::new(details)
             .style(Style::default().fg(TEXT_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Experiment Details")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            )
+            .block(bordered_block("Experiment Details"))
             .wrap(Wrap { trim: false });
 
         f.render_widget(paragraph, area);
@@ -276,7 +253,7 @@ impl ChaosView {
             .map(|(idx, (id, name, status, started, color))| {
                 let is_selected = idx == self.selected_experiment_index;
                 let style = if is_selected {
-                    Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)
+                    selected_style()
                 } else {
                     Style::default().fg(*color)
                 };
@@ -290,12 +267,7 @@ impl ChaosView {
             })
             .collect();
 
-        let list = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Active Experiments [↑/↓: Select | s: Stop | S: Stop All | v: View Presets]")
-                .border_style(Style::default().fg(BORDER_COLOR)),
-        );
+        let list = List::new(items).block(bordered_block("Active Experiments [↑/↓: Select | s: Stop | S: Stop All | v: View Presets]"));
 
         f.render_widget(list, area);
     }
@@ -314,12 +286,7 @@ impl ChaosView {
 
         let paragraph = Paragraph::new(details)
             .style(Style::default().fg(INFO_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Experiment Metrics")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Experiment Metrics"));
 
         f.render_widget(paragraph, area);
     }

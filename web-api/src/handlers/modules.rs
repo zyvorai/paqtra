@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::AppState;
+use super::{track_request, to_json};
 
 /// Auto-generated policy suggestion
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,10 +76,7 @@ pub async fn generate_autopolicy(
     State(state): State<Arc<AppState>>,
     Json(_req): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-    }
+    track_request(&state, |_| {}).await;
 
     let result = AutoPolicyResult {
         request_id: uuid::Uuid::new_v4().to_string(),
@@ -87,18 +85,13 @@ pub async fn generate_autopolicy(
         policies: Vec::new(),
     };
 
-    Ok(Json(serde_json::to_value(result).unwrap_or(json!({
-        "policies_generated": 0
-    }))))
+    Ok(Json(to_json(&result)))
 }
 
 pub async fn list_chaos_experiments(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, StatusCode> {
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-    }
+    track_request(&state, |_| {}).await;
 
     let experiments: Vec<ChaosExperiment> = Vec::new();
 
@@ -112,10 +105,7 @@ pub async fn run_chaos_experiment(
     State(state): State<Arc<AppState>>,
     Json(_req): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-    }
+    track_request(&state, |_| {}).await;
 
     let experiment = ChaosExperiment {
         id: uuid::Uuid::new_v4().to_string(),
@@ -128,19 +118,14 @@ pub async fn run_chaos_experiment(
         results: None,
     };
 
-    Ok(Json(serde_json::to_value(experiment).unwrap_or(json!({
-        "status": "error"
-    }))))
+    Ok(Json(to_json(&experiment)))
 }
 
 pub async fn canary_status(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
-    {
-        let mut m = state.metrics.write().await;
-        m.total_requests += 1;
-    }
+    track_request(&state, |_| {}).await;
 
     let status = CanaryStatus {
         id,
@@ -156,7 +141,5 @@ pub async fn canary_status(
         },
     };
 
-    Ok(Json(serde_json::to_value(status).unwrap_or(json!({
-        "status": "error"
-    }))))
+    Ok(Json(to_json(&status)))
 }

@@ -9,6 +9,31 @@ use crate::AppState;
 /// Maximum time without a pong before considering the connection dead
 const PING_INTERVAL_SECS: u64 = 30;
 
+/// Send a ping; returns false if the client disconnected.
+async fn ws_ping(socket: &mut WebSocket, label: &str) -> bool {
+    if socket.send(Message::Ping(vec![].into())).await.is_err() {
+        tracing::debug!("{} WebSocket client disconnected (ping failed)", label);
+        return false;
+    }
+    true
+}
+
+/// Handle a received WebSocket message. Returns `true` to keep looping.
+fn handle_ws_message(msg: Option<Result<Message, axum::Error>>, label: &str) -> bool {
+    match msg {
+        Some(Ok(Message::Close(_))) | None => {
+            tracing::debug!("{} WebSocket client disconnected", label);
+            false
+        }
+        Some(Ok(Message::Pong(_))) => true,
+        Some(Err(e)) => {
+            tracing::debug!("{} WebSocket error: {}", label, e);
+            false
+        }
+        _ => true,
+    }
+}
+
 pub async fn flows_websocket(
     ws: WebSocketUpgrade,
     State(_state): State<Arc<AppState>>,
@@ -27,7 +52,6 @@ async fn handle_flows_socket(mut socket: WebSocket) {
         return;
     }
 
-    // Handle incoming messages (client may send filter commands)
     let mut ping_interval = tokio::time::interval(
         tokio::time::Duration::from_secs(PING_INTERVAL_SECS)
     );
@@ -35,29 +59,10 @@ async fn handle_flows_socket(mut socket: WebSocket) {
     loop {
         tokio::select! {
             _ = ping_interval.tick() => {
-                if socket.send(Message::Ping(vec![].into())).await.is_err() {
-                    tracing::debug!("Flow WebSocket client disconnected (ping failed)");
-                    break;
-                }
+                if !ws_ping(&mut socket, "Flow").await { break; }
             }
             msg = socket.recv() => {
-                match msg {
-                    Some(Ok(Message::Close(_))) | None => {
-                        tracing::debug!("Flow WebSocket client disconnected");
-                        break;
-                    }
-                    Some(Ok(Message::Pong(_))) => {
-                        // Connection is alive
-                    }
-                    Some(Ok(Message::Text(_text))) => {
-                        // Could handle filter commands from client here
-                    }
-                    Some(Err(e)) => {
-                        tracing::debug!("Flow WebSocket error: {}", e);
-                        break;
-                    }
-                    _ => {}
-                }
+                if !handle_ws_message(msg, "Flow") { break; }
             }
         }
     }
@@ -73,7 +78,6 @@ pub async fn metrics_websocket(
 async fn handle_metrics_socket(mut socket: WebSocket) {
     tracing::info!("WebSocket connection established for metrics");
 
-    // Send metrics updates periodically with proper ping/pong
     let mut metrics_interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
     let mut ping_interval = tokio::time::interval(
         tokio::time::Duration::from_secs(PING_INTERVAL_SECS)
@@ -96,26 +100,10 @@ async fn handle_metrics_socket(mut socket: WebSocket) {
                 }
             }
             _ = ping_interval.tick() => {
-                if socket.send(Message::Ping(vec![].into())).await.is_err() {
-                    tracing::debug!("Metrics WebSocket client disconnected (ping failed)");
-                    break;
-                }
+                if !ws_ping(&mut socket, "Metrics").await { break; }
             }
             msg = socket.recv() => {
-                match msg {
-                    Some(Ok(Message::Close(_))) | None => {
-                        tracing::debug!("Metrics WebSocket client disconnected");
-                        break;
-                    }
-                    Some(Ok(Message::Pong(_))) => {
-                        // Connection is alive
-                    }
-                    Some(Err(e)) => {
-                        tracing::debug!("Metrics WebSocket error: {}", e);
-                        break;
-                    }
-                    _ => {}
-                }
+                if !handle_ws_message(msg, "Metrics") { break; }
             }
         }
     }

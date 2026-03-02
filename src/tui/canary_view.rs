@@ -2,9 +2,9 @@
 /// Canary Deployment View - Sidecarless Progressive Traffic Shifting
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
+    widgets::{Gauge, List, ListItem, Paragraph},
     Frame,
 };
 
@@ -35,15 +35,11 @@ impl CanaryView {
     }
 
     pub fn move_selection_up(&mut self) {
-        if self.selected_canary_index > 0 {
-            self.selected_canary_index -= 1;
-        }
+        move_selection_up(&mut self.selected_canary_index);
     }
 
     pub fn move_selection_down(&mut self, max: usize) {
-        if self.selected_canary_index < max - 1 {
-            self.selected_canary_index += 1;
-        }
+        move_selection_down(&mut self.selected_canary_index, max);
     }
 
     pub fn toggle_details(&mut self) {
@@ -96,12 +92,7 @@ impl CanaryView {
 
         let header = Paragraph::new(header_text)
             .style(Style::default().fg(INFO_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Canary Status")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Canary Status"));
 
         f.render_widget(header, area);
     }
@@ -118,7 +109,7 @@ impl CanaryView {
             .map(|(idx, (name, ns, state, traffic, color))| {
                 let is_selected = idx == self.selected_canary_index;
                 let style = if is_selected {
-                    Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)
+                    selected_style()
                 } else {
                     Style::default().fg(*color)
                 };
@@ -143,12 +134,7 @@ impl CanaryView {
             "Active Canaries [↑/↓: Select | p: Promote | r: Rollback | +: Progress | d: Details]"
         };
 
-        let list = List::new(items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(Style::default().fg(BORDER_COLOR)),
-        );
+        let list = List::new(items).block(bordered_block(title));
 
         f.render_widget(list, area);
     }
@@ -170,12 +156,7 @@ impl CanaryView {
 
         let split = Paragraph::new(split_text)
             .style(Style::default().fg(TEXT_COLOR))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Traffic Split")
-                    .border_style(Style::default().fg(BORDER_COLOR))
-            );
+            .block(bordered_block("Traffic Split"));
 
         f.render_widget(split, chunks[0]);
 
@@ -188,12 +169,7 @@ impl CanaryView {
         // Canary health
         let canary_health = 0.992; // 99.2%
         let gauge1 = Gauge::default()
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Canary Health")
-                    .border_style(Style::default().fg(BORDER_COLOR)),
-            )
+            .block(bordered_block("Canary Health"))
             .gauge_style(Style::default().fg(SUCCESS_COLOR))
             .percent((canary_health * 100.0) as u16)
             .label(format!("{:.1}%", canary_health * 100.0));
@@ -203,12 +179,7 @@ impl CanaryView {
         // Promotion progress
         let progress = 0.6; // 60% traffic
         let gauge2 = Gauge::default()
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Progress")
-                    .border_style(Style::default().fg(BORDER_COLOR)),
-            )
+            .block(bordered_block("Progress"))
             .gauge_style(Style::default().fg(INFO_COLOR))
             .percent((progress * 100.0) as u16)
             .label(format!("{}% → 100%", (progress * 100.0) as u16));

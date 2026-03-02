@@ -2,7 +2,8 @@
 // Theme colors for Cilium Vision TUI
 // Inspired by GuestKit's Coral-Terracotta Orange Theme (Pantone 7416 C)
 
-use ratatui::style::Color;
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::widgets::{Block, Borders};
 
 // Primary Theme Colors - Coral-Terracotta Orange Palette
 pub const ORANGE: Color = Color::Rgb(222, 115, 86);        // Primary coral orange
@@ -64,6 +65,31 @@ pub const RECORDING_WARNING_COLOR: Color = WARNING_COLOR;  // Warning state
 pub const PROGRESS_NORMAL_COLOR: Color = SUCCESS_COLOR;    // Normal progress
 pub const PROGRESS_WARNING_COLOR: Color = WARNING_COLOR;   // Warning progress
 pub const PROGRESS_ERROR_COLOR: Color = ERROR_COLOR;       // Error progress
+
+// Widget helpers — shared by all TUI views
+
+pub fn bordered_block(title: &str) -> Block<'_> {
+    Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .border_style(Style::default().fg(BORDER_COLOR))
+}
+
+pub fn selected_style() -> Style {
+    Style::default().fg(ORANGE).add_modifier(Modifier::BOLD)
+}
+
+pub fn move_selection_up(index: &mut usize) {
+    if *index > 0 {
+        *index -= 1;
+    }
+}
+
+pub fn move_selection_down(index: &mut usize, max: usize) {
+    if *index < max.saturating_sub(1) {
+        *index += 1;
+    }
+}
 
 // Helper function to get confidence color
 pub fn confidence_color(confidence: f64) -> Color {

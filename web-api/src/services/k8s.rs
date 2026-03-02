@@ -20,13 +20,21 @@ impl K8sService {
         self.context.as_deref()
     }
 
-    /// Check if Kubernetes API is reachable
-    pub async fn is_healthy(&self) -> bool {
+    /// Build a kubectl command with the configured context.
+    fn kubectl(&self, args: &[&str]) -> Command {
         let mut cmd = Command::new("kubectl");
-        cmd.arg("cluster-info").arg("--request-timeout=2s");
+        for arg in args {
+            cmd.arg(arg);
+        }
         if let Some(ctx) = &self.context {
             cmd.arg("--context").arg(ctx);
         }
+        cmd
+    }
+
+    /// Check if Kubernetes API is reachable
+    pub async fn is_healthy(&self) -> bool {
+        let mut cmd = self.kubectl(&["cluster-info", "--request-timeout=2s"]);
         match cmd.output().await {
             Ok(out) => out.status.success(),
             Err(_) => false,
@@ -35,15 +43,7 @@ impl K8sService {
 
     /// List CiliumNetworkPolicy resources across all namespaces
     pub async fn list_policies(&self) -> Result<Vec<Policy>> {
-        let mut cmd = Command::new("kubectl");
-        cmd.arg("get")
-            .arg("ciliumnetworkpolicies")
-            .arg("--all-namespaces")
-            .arg("-o")
-            .arg("json");
-        if let Some(ctx) = &self.context {
-            cmd.arg("--context").arg(ctx);
-        }
+        let mut cmd = self.kubectl(&["get", "ciliumnetworkpolicies", "--all-namespaces", "-o", "json"]);
 
         let output = cmd.output().await;
 
@@ -92,11 +92,7 @@ impl K8sService {
 
         let manifest_str = serde_json::to_string(&policy_manifest)?;
 
-        let mut cmd = Command::new("kubectl");
-        cmd.arg("apply").arg("-f").arg("-");
-        if let Some(ctx) = &self.context {
-            cmd.arg("--context").arg(ctx);
-        }
+        let mut cmd = self.kubectl(&["apply", "-f", "-"]);
 
         let mut child = cmd
             .stdin(std::process::Stdio::piped())
@@ -137,15 +133,7 @@ impl K8sService {
             ("default", id)
         };
 
-        let mut cmd = Command::new("kubectl");
-        cmd.arg("delete")
-            .arg("ciliumnetworkpolicy")
-            .arg(name)
-            .arg("-n")
-            .arg(namespace);
-        if let Some(ctx) = &self.context {
-            cmd.arg("--context").arg(ctx);
-        }
+        let mut cmd = self.kubectl(&["delete", "ciliumnetworkpolicy", name, "-n", namespace]);
 
         let output = cmd.output().await;
 
@@ -160,33 +148,22 @@ impl K8sService {
     }
 }
 
+/// Extract a string field from a JSON value, returning `fallback` if absent.
+fn json_str(v: &serde_json::Value, key: &str, fallback: &str) -> String {
+    v.get(key)
+        .and_then(|x| x.as_str())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
 /// Convert a raw Kubernetes resource JSON into our Policy model
 fn k8s_resource_to_policy(item: &serde_json::Value) -> Policy {
     let metadata = item.get("metadata").unwrap_or(item);
 
-    let name = metadata
-        .get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    let namespace = metadata
-        .get("namespace")
-        .and_then(|v| v.as_str())
-        .unwrap_or("default")
-        .to_string();
-
-    let created_at = metadata
-        .get("creationTimestamp")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    let uid = metadata
-        .get("uid")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let name = json_str(metadata, "name", "unknown");
+    let namespace = json_str(metadata, "namespace", "default");
+    let created_at = json_str(metadata, "creationTimestamp", "");
+    let uid = json_str(metadata, "uid", "");
 
     let status = item
         .get("status")
