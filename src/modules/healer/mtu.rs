@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 /// MTU-specific healing logic
-
 use super::*;
 
 pub struct MTUHealer;
@@ -54,7 +53,7 @@ impl MTUHealer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ebpf::{DropReason, DropReasonType, MockMapReader, MapReader};
+    use crate::ebpf::{DropReason, DropReasonType, MapReader, MockMapReader};
 
     #[test]
     fn test_no_mtu_issues_with_mock() {
@@ -69,21 +68,27 @@ mod tests {
         // Create a custom reader that returns FragmentationNeeded drops
         struct FragDropReader;
         impl MapReader for FragDropReader {
-            fn read_policy_map(&self) -> anyhow::Result<Vec<crate::ebpf::PolicyDecision>> { Ok(vec![]) }
-            fn read_conntrack_map(&self) -> anyhow::Result<Vec<crate::ebpf::ConntrackEntry>> { Ok(vec![]) }
-            fn read_lb_map(&self) -> anyhow::Result<Vec<crate::ebpf::LoadBalancerEntry>> { Ok(vec![]) }
-            fn read_ipcache_map(&self) -> anyhow::Result<Vec<crate::ebpf::IPCacheEntry>> { Ok(vec![]) }
+            fn read_policy_map(&self) -> anyhow::Result<Vec<crate::ebpf::PolicyDecision>> {
+                Ok(vec![])
+            }
+            fn read_conntrack_map(&self) -> anyhow::Result<Vec<crate::ebpf::ConntrackEntry>> {
+                Ok(vec![])
+            }
+            fn read_lb_map(&self) -> anyhow::Result<Vec<crate::ebpf::LoadBalancerEntry>> {
+                Ok(vec![])
+            }
+            fn read_ipcache_map(&self) -> anyhow::Result<Vec<crate::ebpf::IPCacheEntry>> {
+                Ok(vec![])
+            }
             fn read_drop_map(&self) -> anyhow::Result<Vec<DropReason>> {
-                Ok(vec![
-                    DropReason {
-                        src_ip: "10.0.0.5".to_string(),
-                        dst_ip: "10.0.0.6".to_string(),
-                        port: 80,
-                        protocol: 6,
-                        reason: DropReasonType::FragmentationNeeded,
-                        timestamp: 0,
-                    },
-                ])
+                Ok(vec![DropReason {
+                    src_ip: "10.0.0.5".to_string(),
+                    dst_ip: "10.0.0.6".to_string(),
+                    port: 80,
+                    protocol: 6,
+                    reason: DropReasonType::FragmentationNeeded,
+                    timestamp: 0,
+                }])
             }
         }
 
@@ -91,7 +96,12 @@ mod tests {
         let problems = MTUHealer::detect_mtu_issues(&reader);
         assert_eq!(problems.len(), 1);
         match &problems[0] {
-            Problem::MTUMismatch { pod, expected, actual, .. } => {
+            Problem::MTUMismatch {
+                pod,
+                expected,
+                actual,
+                ..
+            } => {
                 assert_eq!(pod, "10.0.0.5");
                 assert_eq!(*expected, 1500);
                 assert_eq!(*actual, 1450);
@@ -104,21 +114,27 @@ mod tests {
     fn test_non_fragmentation_drops_ignored() {
         struct PolicyDropReader;
         impl MapReader for PolicyDropReader {
-            fn read_policy_map(&self) -> anyhow::Result<Vec<crate::ebpf::PolicyDecision>> { Ok(vec![]) }
-            fn read_conntrack_map(&self) -> anyhow::Result<Vec<crate::ebpf::ConntrackEntry>> { Ok(vec![]) }
-            fn read_lb_map(&self) -> anyhow::Result<Vec<crate::ebpf::LoadBalancerEntry>> { Ok(vec![]) }
-            fn read_ipcache_map(&self) -> anyhow::Result<Vec<crate::ebpf::IPCacheEntry>> { Ok(vec![]) }
+            fn read_policy_map(&self) -> anyhow::Result<Vec<crate::ebpf::PolicyDecision>> {
+                Ok(vec![])
+            }
+            fn read_conntrack_map(&self) -> anyhow::Result<Vec<crate::ebpf::ConntrackEntry>> {
+                Ok(vec![])
+            }
+            fn read_lb_map(&self) -> anyhow::Result<Vec<crate::ebpf::LoadBalancerEntry>> {
+                Ok(vec![])
+            }
+            fn read_ipcache_map(&self) -> anyhow::Result<Vec<crate::ebpf::IPCacheEntry>> {
+                Ok(vec![])
+            }
             fn read_drop_map(&self) -> anyhow::Result<Vec<DropReason>> {
-                Ok(vec![
-                    DropReason {
-                        src_ip: "10.0.0.5".to_string(),
-                        dst_ip: "10.0.0.6".to_string(),
-                        port: 80,
-                        protocol: 6,
-                        reason: DropReasonType::PolicyDenied,
-                        timestamp: 0,
-                    },
-                ])
+                Ok(vec![DropReason {
+                    src_ip: "10.0.0.5".to_string(),
+                    dst_ip: "10.0.0.6".to_string(),
+                    port: 80,
+                    protocol: 6,
+                    reason: DropReasonType::PolicyDenied,
+                    timestamp: 0,
+                }])
             }
         }
 
@@ -131,13 +147,21 @@ mod tests {
     fn test_generate_mtu_fix() {
         let fix = MTUHealer::generate_mtu_fix("production", "web-pod", 1450);
         assert!(!fix.applied);
-        assert_eq!(fix.action, FixAction::AdjustMTU {
-            namespace: "production".to_string(),
-            pod: "web-pod".to_string(),
-            new_mtu: 1450,
-        });
+        assert_eq!(
+            fix.action,
+            FixAction::AdjustMTU {
+                namespace: "production".to_string(),
+                pod: "web-pod".to_string(),
+                new_mtu: 1450,
+            }
+        );
         match &fix.problem {
-            Problem::MTUMismatch { namespace, pod, expected, actual } => {
+            Problem::MTUMismatch {
+                namespace,
+                pod,
+                expected,
+                actual,
+            } => {
                 assert_eq!(namespace, "production");
                 assert_eq!(pod, "web-pod");
                 assert_eq!(*expected, 1500);

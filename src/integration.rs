@@ -3,7 +3,6 @@
 ///
 /// Provides enriched data structures with both kernel-level network data
 /// and Kubernetes pod/identity information
-
 use anyhow::Result;
 use std::sync::Arc;
 
@@ -45,7 +44,8 @@ impl IntegratedDataProvider {
         let ebpf_reader = CiliumMapReader::new()?;
 
         // Initialize identity resolver
-        let identity_resolver = Arc::new(K8sIdentityResolver::new(k8s_client.client().clone()).await?);
+        let identity_resolver =
+            Arc::new(K8sIdentityResolver::new(k8s_client.client().clone()).await?);
 
         // Do initial refresh
         identity_resolver.refresh().await?;
@@ -68,7 +68,9 @@ impl IntegratedDataProvider {
         let enriched = connections
             .into_iter()
             .map(|conn| {
-                let src_pod = self.identity_resolver.resolve_ip(&conn.src_ip)
+                let src_pod = self
+                    .identity_resolver
+                    .resolve_ip(&conn.src_ip)
                     .and_then(|id| self.identity_resolver.resolve_identity(id))
                     .map(|info| PodInfo {
                         namespace: info.namespace,
@@ -77,7 +79,9 @@ impl IntegratedDataProvider {
                         identity: info.identity,
                     });
 
-                let dst_pod = self.identity_resolver.resolve_ip(&conn.dst_ip)
+                let dst_pod = self
+                    .identity_resolver
+                    .resolve_ip(&conn.dst_ip)
                     .and_then(|id| self.identity_resolver.resolve_identity(id))
                     .map(|info| PodInfo {
                         namespace: info.namespace,
@@ -144,12 +148,7 @@ pub fn format_enriched_connection(conn: &EnrichedConnection) -> String {
 
     format!(
         "{}:{} -> {}:{} ({} packets, {} bytes)",
-        src,
-        conn.conn.src_port,
-        dst,
-        conn.conn.dst_port,
-        conn.conn.packets,
-        conn.conn.bytes
+        src, conn.conn.src_port, dst, conn.conn.dst_port, conn.conn.packets, conn.conn.bytes
     )
 }
 

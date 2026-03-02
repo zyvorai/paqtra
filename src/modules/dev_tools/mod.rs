@@ -2,10 +2,10 @@
 // Developer Experience Tools - Traffic shadowing, replay, debugging
 // Experimental: Developer-focused productivity features
 
-pub mod shadowing;
-pub mod replay;
-pub mod mirror;
 pub mod debugger;
+pub mod mirror;
+pub mod replay;
+pub mod shadowing;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -259,11 +259,17 @@ mod tests {
 
         // Stop should succeed for a valid shadow_id
         let stop_result = manager.stop_shadow(&shadow_id).await;
-        assert!(stop_result.is_ok(), "Stopping a valid shadow should succeed");
+        assert!(
+            stop_result.is_ok(),
+            "Stopping a valid shadow should succeed"
+        );
 
         // Stopping again should fail (already removed)
         let stop_again = manager.stop_shadow(&shadow_id).await;
-        assert!(stop_again.is_err(), "Stopping a non-existent shadow should fail");
+        assert!(
+            stop_again.is_err(),
+            "Stopping a non-existent shadow should fail"
+        );
     }
 
     #[tokio::test]

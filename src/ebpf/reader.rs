@@ -2,7 +2,6 @@
 /// eBPF Map Reader Implementation
 ///
 /// Reads Cilium eBPF maps directly from /sys/fs/bpf/
-
 use anyhow::Result;
 use std::path::Path;
 

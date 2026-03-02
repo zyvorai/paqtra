@@ -16,7 +16,6 @@
 /// - DNS failures
 /// - Target by namespace, labels, ports
 /// - Safe rollback and automatic cleanup
-
 use anyhow::Result;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -30,7 +29,7 @@ pub struct ChaosConfig {
     pub enabled: bool,
 
     /// Safety limits
-    pub max_drop_rate: f32,        // Maximum 50% drop rate
+    pub max_drop_rate: f32, // Maximum 50% drop rate
     pub max_latency_ms: u32,        // Maximum 5000ms latency
     pub require_confirmation: bool, // Require manual confirmation
 
@@ -42,9 +41,9 @@ impl Default for ChaosConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            max_drop_rate: 0.5,              // 50% max
-            max_latency_ms: 5000,             // 5 seconds max
-            require_confirmation: true,       // Safe default
+            max_drop_rate: 0.5,                              // 50% max
+            max_latency_ms: 5000,                            // 5 seconds max
+            require_confirmation: true,                      // Safe default
             auto_cleanup_duration: Duration::from_secs(300), // 5 minutes
         }
     }
@@ -65,9 +64,7 @@ pub enum ChaosExperiment {
     },
 
     /// Throttle bandwidth
-    Bandwidth {
-        limit_mbps: u32,
-    },
+    Bandwidth { limit_mbps: u32 },
 
     /// Terminate connections
     ConnectionKill {
@@ -108,7 +105,10 @@ impl ChaosExperiment {
             ChaosExperiment::PacketDrop { drop_rate } => {
                 format!("Drop {:.1}% of packets", drop_rate * 100.0)
             }
-            ChaosExperiment::Latency { delay_ms, jitter_ms } => {
+            ChaosExperiment::Latency {
+                delay_ms,
+                jitter_ms,
+            } => {
                 format!("Add {}ms delay (±{}ms jitter)", delay_ms, jitter_ms)
             }
             ChaosExperiment::Bandwidth { limit_mbps } => {
@@ -133,8 +133,12 @@ impl ChaosExperiment {
         match self {
             ChaosExperiment::PacketDrop { drop_rate } if *drop_rate > 0.3 => ChaosSeverity::High,
             ChaosExperiment::Latency { delay_ms, .. } if *delay_ms > 1000 => ChaosSeverity::High,
-            ChaosExperiment::ConnectionKill { kill_rate } if *kill_rate > 0.3 => ChaosSeverity::High,
-            ChaosExperiment::DNSFailure { failure_rate } if *failure_rate > 0.5 => ChaosSeverity::Critical,
+            ChaosExperiment::ConnectionKill { kill_rate } if *kill_rate > 0.3 => {
+                ChaosSeverity::High
+            }
+            ChaosExperiment::DNSFailure { failure_rate } if *failure_rate > 0.5 => {
+                ChaosSeverity::Critical
+            }
             _ => ChaosSeverity::Medium,
         }
     }
@@ -180,9 +184,9 @@ pub struct ChaosTarget {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChaosDirection {
-    Ingress,  // Incoming traffic
-    Egress,   // Outgoing traffic
-    Both,     // Both directions
+    Ingress, // Incoming traffic
+    Egress,  // Outgoing traffic
+    Both,    // Both directions
 }
 
 impl Default for ChaosTarget {
@@ -319,7 +323,11 @@ impl ChaosEngine {
         // 2. Attach to appropriate hook points (TC, XDP, etc.)
         // 3. Configure parameters via eBPF map
 
-        tracing::info!("🌪️  Starting chaos experiment: {} ({})", chaos.name, experiment.name());
+        tracing::info!(
+            "🌪️  Starting chaos experiment: {} ({})",
+            chaos.name,
+            experiment.name()
+        );
 
         self.active_experiments.push(chaos);
 
@@ -360,7 +368,8 @@ impl ChaosEngine {
 
     /// Stop a chaos experiment
     pub async fn stop_experiment(&mut self, id: &str) -> Result<ChaosResult> {
-        let idx = self.active_experiments
+        let idx = self
+            .active_experiments
             .iter()
             .position(|e| e.id == id)
             .ok_or_else(|| anyhow::anyhow!("Experiment not found"))?;

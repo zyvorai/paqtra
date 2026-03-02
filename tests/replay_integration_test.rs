@@ -3,11 +3,10 @@
 /// Tests the replay engine's recording lifecycle, filter system,
 /// and configuration using MockMapReader for eBPF data and
 /// K8sClient::mock() for Kubernetes interactions.
-
 use cilium_tui::ebpf::{MockMapReader, PolicyVerdict};
 use cilium_tui::kubernetes::K8sClient;
 use cilium_tui::modules::replay::{
-    ReplayConfig, ReplayEngine, ReplayFilter, ReplayStats, Recording,
+    Recording, ReplayConfig, ReplayEngine, ReplayFilter, ReplayStats,
 };
 use std::path::PathBuf;
 
@@ -60,10 +59,16 @@ async fn test_replay_start_recording_returns_id() {
     let k8s = mock_k8s_client();
 
     let mut engine = ReplayEngine::new(config, reader, k8s);
-    let id = engine.start_recording("test-capture".to_string()).await.unwrap();
+    let id = engine
+        .start_recording("test-capture".to_string())
+        .await
+        .unwrap();
 
     assert!(!id.is_empty(), "Recording ID should not be empty");
-    assert!(id.starts_with("rec-"), "Recording ID should start with 'rec-'");
+    assert!(
+        id.starts_with("rec-"),
+        "Recording ID should start with 'rec-'"
+    );
 }
 
 #[tokio::test]
@@ -73,7 +78,10 @@ async fn test_replay_start_recording_sets_in_progress() {
     let k8s = mock_k8s_client();
 
     let mut engine = ReplayEngine::new(config, reader, k8s);
-    engine.start_recording("test-capture".to_string()).await.unwrap();
+    engine
+        .start_recording("test-capture".to_string())
+        .await
+        .unwrap();
 
     assert!(
         engine.stats().recording_in_progress,
@@ -104,7 +112,10 @@ async fn test_replay_capture_with_mock_data() {
     let k8s = mock_k8s_client();
 
     let mut engine = ReplayEngine::new(config, reader, k8s);
-    engine.start_recording("test-capture".to_string()).await.unwrap();
+    engine
+        .start_recording("test-capture".to_string())
+        .await
+        .unwrap();
 
     // MockMapReader returns empty conntrack, so capture returns 0
     let captured = engine.capture().await.unwrap();
@@ -135,7 +146,10 @@ async fn test_replay_stop_recording_returns_metadata() {
     let k8s = mock_k8s_client();
 
     let mut engine = ReplayEngine::new(config, reader, k8s);
-    engine.start_recording("test-capture".to_string()).await.unwrap();
+    engine
+        .start_recording("test-capture".to_string())
+        .await
+        .unwrap();
     engine.capture().await.unwrap();
 
     let recording = engine.stop_recording().await.unwrap();
@@ -152,7 +166,10 @@ async fn test_replay_stop_recording_clears_in_progress() {
     let k8s = mock_k8s_client();
 
     let mut engine = ReplayEngine::new(config, reader, k8s);
-    engine.start_recording("test-capture".to_string()).await.unwrap();
+    engine
+        .start_recording("test-capture".to_string())
+        .await
+        .unwrap();
     engine.stop_recording().await.unwrap();
 
     assert!(
@@ -168,7 +185,10 @@ async fn test_replay_stop_recording_increments_total() {
     let k8s = mock_k8s_client();
 
     let mut engine = ReplayEngine::new(config, reader, k8s);
-    engine.start_recording("test-capture".to_string()).await.unwrap();
+    engine
+        .start_recording("test-capture".to_string())
+        .await
+        .unwrap();
     engine.stop_recording().await.unwrap();
 
     assert_eq!(

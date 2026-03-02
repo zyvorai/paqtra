@@ -3,12 +3,10 @@
 /// Tests the autopolicy engine's learning lifecycle, state transitions,
 /// and policy generation using MockMapReader for eBPF data and
 /// K8sClient::mock() for Kubernetes interactions.
-
 use cilium_tui::ebpf::MockMapReader;
 use cilium_tui::kubernetes::K8sClient;
 use cilium_tui::modules::autopolicy::{
-    AutoPolicy, AutoPolicyConfig, LabelSet, LearningState,
-    LearningStats, Protocol, TrafficPattern,
+    AutoPolicy, AutoPolicyConfig, LabelSet, LearningState, LearningStats, Protocol, TrafficPattern,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -207,9 +205,15 @@ async fn test_autopolicy_state_transitions_during_generation() {
 fn test_autopolicy_config_defaults_are_safe() {
     let config = AutoPolicyConfig::default();
     assert!(config.enabled, "Should be enabled by default");
-    assert!(config.audit_mode, "Audit mode should be on by default for safety");
+    assert!(
+        config.audit_mode,
+        "Audit mode should be on by default for safety"
+    );
     assert!(!config.auto_apply, "auto_apply should be off by default");
-    assert!(!config.auto_generate, "auto_generate should be off by default");
+    assert!(
+        !config.auto_generate,
+        "auto_generate should be off by default"
+    );
     assert!(
         config.min_observations >= 1,
         "Must require at least 1 observation"
@@ -344,7 +348,10 @@ fn test_label_set_equality_regardless_of_insertion_order() {
 
     let ls1 = LabelSet::new(m1);
     let ls2 = LabelSet::new(m2);
-    assert_eq!(ls1, ls2, "LabelSets should be equal regardless of insertion order");
+    assert_eq!(
+        ls1, ls2,
+        "LabelSets should be equal regardless of insertion order"
+    );
 }
 
 // ---------------------------------------------------------------------------

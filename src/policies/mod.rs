@@ -1,5 +1,5 @@
-use anyhow::{bail, Result};
 use crate::kubernetes::K8sClient;
+use anyhow::{bail, Result};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -9,9 +9,8 @@ mod tests;
 /// Pre-compiled regex for RFC 1123 label validation.
 /// Using `LazyLock` avoids recompiling on every call and removes the
 /// runtime `unwrap()` that could theoretically panic in production.
-static NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$").expect("valid regex literal")
-});
+static NAME_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$").expect("valid regex literal"));
 
 pub struct PolicyManager {
     k8s_client: K8sClient,
@@ -30,7 +29,8 @@ fn validate_k8s_name(name: &str, field: &str) -> Result<()> {
         bail!(
             "{} '{}' is invalid: must be lowercase alphanumeric or '-', \
              and must start and end with an alphanumeric character",
-            field, name
+            field,
+            name
         );
     }
     Ok(())
@@ -68,7 +68,9 @@ spec:
 "#
         );
 
-        self.k8s_client.apply_custom_resource(Some(namespace), &policy).await?;
+        self.k8s_client
+            .apply_custom_resource(Some(namespace), &policy)
+            .await?;
         Ok(())
     }
 
@@ -102,7 +104,9 @@ spec:
 "#
         );
 
-        self.k8s_client.apply_custom_resource(Some(namespace), &policy).await?;
+        self.k8s_client
+            .apply_custom_resource(Some(namespace), &policy)
+            .await?;
         Ok(())
     }
 
@@ -125,12 +129,20 @@ spec:
         - {}
 "#;
 
-        self.k8s_client.apply_custom_resource(Some("kube-system"), policy).await?;
+        self.k8s_client
+            .apply_custom_resource(Some("kube-system"), policy)
+            .await?;
         Ok(())
     }
 
     #[allow(dead_code)]
-    pub async fn apply_best_practice_policy(&self, namespace: &str, from_app: &str, to_app: &str, port: u16) -> Result<()> {
+    pub async fn apply_best_practice_policy(
+        &self,
+        namespace: &str,
+        from_app: &str,
+        to_app: &str,
+        port: u16,
+    ) -> Result<()> {
         validate_k8s_name(namespace, "namespace")?;
         validate_k8s_name(from_app, "from_app")?;
         validate_k8s_name(to_app, "to_app")?;
@@ -158,7 +170,9 @@ spec:
 "#
         );
 
-        self.k8s_client.apply_custom_resource(Some(namespace), &policy).await?;
+        self.k8s_client
+            .apply_custom_resource(Some(namespace), &policy)
+            .await?;
         Ok(())
     }
 }

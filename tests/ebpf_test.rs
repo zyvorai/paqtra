@@ -7,10 +7,8 @@
 /// - PolicyVerdict serialization/deserialization round-trips correctly
 /// - ConntrackState equality works as expected
 /// - All map types can be read from the mock reader
-
 use cilium_tui::ebpf::{
-    ConntrackState, DropReasonType, EbpfMetrics, MapReader, MockMapReader,
-    PolicyVerdict,
+    ConntrackState, DropReasonType, EbpfMetrics, MapReader, MockMapReader, PolicyVerdict,
 };
 
 // ---------------------------------------------------------------------------
@@ -21,7 +19,11 @@ use cilium_tui::ebpf::{
 fn test_mock_reader_policy_map_returns_one_entry() {
     let reader = MockMapReader;
     let decisions = reader.read_policy_map().unwrap();
-    assert_eq!(decisions.len(), 1, "MockMapReader should return exactly 1 policy decision");
+    assert_eq!(
+        decisions.len(),
+        1,
+        "MockMapReader should return exactly 1 policy decision"
+    );
 }
 
 #[test]
@@ -40,7 +42,10 @@ fn test_mock_reader_policy_map_entry_has_correct_fields() {
 fn test_mock_reader_conntrack_map_returns_empty() {
     let reader = MockMapReader;
     let entries = reader.read_conntrack_map().unwrap();
-    assert!(entries.is_empty(), "MockMapReader conntrack map should be empty");
+    assert!(
+        entries.is_empty(),
+        "MockMapReader conntrack map should be empty"
+    );
 }
 
 #[test]
@@ -54,7 +59,10 @@ fn test_mock_reader_lb_map_returns_empty() {
 fn test_mock_reader_ipcache_map_returns_empty() {
     let reader = MockMapReader;
     let entries = reader.read_ipcache_map().unwrap();
-    assert!(entries.is_empty(), "MockMapReader IP cache map should be empty");
+    assert!(
+        entries.is_empty(),
+        "MockMapReader IP cache map should be empty"
+    );
 }
 
 #[test]
@@ -132,23 +140,68 @@ fn test_specific_code_mappings() {
     assert_eq!(DropReasonType::from_code(1), DropReasonType::PolicyDenied);
     assert_eq!(DropReasonType::from_code(2), DropReasonType::InvalidPacket);
     assert_eq!(DropReasonType::from_code(3), DropReasonType::NoRoute);
-    assert_eq!(DropReasonType::from_code(4), DropReasonType::UnknownL4Protocol);
-    assert_eq!(DropReasonType::from_code(5), DropReasonType::FragmentationNeeded);
+    assert_eq!(
+        DropReasonType::from_code(4),
+        DropReasonType::UnknownL4Protocol
+    );
+    assert_eq!(
+        DropReasonType::from_code(5),
+        DropReasonType::FragmentationNeeded
+    );
     assert_eq!(DropReasonType::from_code(6), DropReasonType::CTMapFull);
     assert_eq!(DropReasonType::from_code(7), DropReasonType::NATMapFull);
-    assert_eq!(DropReasonType::from_code(130), DropReasonType::InvalidSourceIP);
-    assert_eq!(DropReasonType::from_code(131), DropReasonType::InvalidDestIP);
-    assert_eq!(DropReasonType::from_code(132), DropReasonType::UnsupportedL3Protocol);
-    assert_eq!(DropReasonType::from_code(133), DropReasonType::MissedTailCall);
-    assert_eq!(DropReasonType::from_code(134), DropReasonType::ErrorWritingToPacket);
-    assert_eq!(DropReasonType::from_code(135), DropReasonType::UnknownL4ICMPType);
-    assert_eq!(DropReasonType::from_code(136), DropReasonType::UnknownICMPv6Type);
-    assert_eq!(DropReasonType::from_code(137), DropReasonType::UnknownICMPv6Code);
-    assert_eq!(DropReasonType::from_code(140), DropReasonType::ServiceBackendNotFound);
-    assert_eq!(DropReasonType::from_code(141), DropReasonType::NoTunnelEndpoint);
-    assert_eq!(DropReasonType::from_code(148), DropReasonType::HostUnreachable);
-    assert_eq!(DropReasonType::from_code(152), DropReasonType::StaleOrUnroutable);
-    assert_eq!(DropReasonType::from_code(153), DropReasonType::ConnectionTrackingInvalid);
+    assert_eq!(
+        DropReasonType::from_code(130),
+        DropReasonType::InvalidSourceIP
+    );
+    assert_eq!(
+        DropReasonType::from_code(131),
+        DropReasonType::InvalidDestIP
+    );
+    assert_eq!(
+        DropReasonType::from_code(132),
+        DropReasonType::UnsupportedL3Protocol
+    );
+    assert_eq!(
+        DropReasonType::from_code(133),
+        DropReasonType::MissedTailCall
+    );
+    assert_eq!(
+        DropReasonType::from_code(134),
+        DropReasonType::ErrorWritingToPacket
+    );
+    assert_eq!(
+        DropReasonType::from_code(135),
+        DropReasonType::UnknownL4ICMPType
+    );
+    assert_eq!(
+        DropReasonType::from_code(136),
+        DropReasonType::UnknownICMPv6Type
+    );
+    assert_eq!(
+        DropReasonType::from_code(137),
+        DropReasonType::UnknownICMPv6Code
+    );
+    assert_eq!(
+        DropReasonType::from_code(140),
+        DropReasonType::ServiceBackendNotFound
+    );
+    assert_eq!(
+        DropReasonType::from_code(141),
+        DropReasonType::NoTunnelEndpoint
+    );
+    assert_eq!(
+        DropReasonType::from_code(148),
+        DropReasonType::HostUnreachable
+    );
+    assert_eq!(
+        DropReasonType::from_code(152),
+        DropReasonType::StaleOrUnroutable
+    );
+    assert_eq!(
+        DropReasonType::from_code(153),
+        DropReasonType::ConnectionTrackingInvalid
+    );
     assert_eq!(DropReasonType::from_code(181), DropReasonType::AuthRequired);
     assert_eq!(DropReasonType::from_code(184), DropReasonType::NATNotNeeded);
     assert_eq!(DropReasonType::from_code(185), DropReasonType::IsClusterIP);
@@ -203,9 +256,18 @@ fn test_all_drop_reason_descriptions_are_nonempty() {
 fn test_known_descriptions_match_expected_text() {
     assert_eq!(DropReasonType::PolicyDenied.description(), "Policy denied");
     assert_eq!(DropReasonType::NoRoute.description(), "No route");
-    assert_eq!(DropReasonType::AuthRequired.description(), "Authentication required");
-    assert_eq!(DropReasonType::CTMapFull.description(), "Connection tracking map full");
-    assert_eq!(DropReasonType::FragmentationNeeded.description(), "Fragmentation needed");
+    assert_eq!(
+        DropReasonType::AuthRequired.description(),
+        "Authentication required"
+    );
+    assert_eq!(
+        DropReasonType::CTMapFull.description(),
+        "Connection tracking map full"
+    );
+    assert_eq!(
+        DropReasonType::FragmentationNeeded.description(),
+        "Fragmentation needed"
+    );
     assert_eq!(DropReasonType::IsClusterIP.description(), "Is ClusterIP");
 }
 
@@ -302,7 +364,10 @@ fn test_all_map_reads_succeed_on_mock_reader() {
 
     // Each read must return Ok, regardless of contents
     assert!(reader.read_policy_map().is_ok(), "read_policy_map failed");
-    assert!(reader.read_conntrack_map().is_ok(), "read_conntrack_map failed");
+    assert!(
+        reader.read_conntrack_map().is_ok(),
+        "read_conntrack_map failed"
+    );
     assert!(reader.read_lb_map().is_ok(), "read_lb_map failed");
     assert!(reader.read_ipcache_map().is_ok(), "read_ipcache_map failed");
     assert!(reader.read_drop_map().is_ok(), "read_drop_map failed");

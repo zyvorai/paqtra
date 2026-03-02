@@ -2,10 +2,10 @@
 // Advanced eBPF Capabilities - Hot-loading, CO-RE, Performance Profiling
 // Experimental: Cutting-edge eBPF features
 
-pub mod hot_loader;
-pub mod profiler;
 pub mod core_support;
+pub mod hot_loader;
 pub mod packet_filter;
+pub mod profiler;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,10 @@ pub enum ProgramType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AttachPoint {
     /// Network interface
-    NetInterface { interface: String, direction: Direction },
+    NetInterface {
+        interface: String,
+        direction: Direction,
+    },
     /// Kernel function
     KernelFunction { function: String },
     /// Tracepoint
@@ -91,7 +94,11 @@ impl AdvancedEBPFManager {
         // Load program
         let program_id = self.hot_loader.load_program(compiled).await?;
 
-        tracing::info!("Successfully loaded program: {} (ID: {})", program.name, program_id);
+        tracing::info!(
+            "Successfully loaded program: {} (ID: {})",
+            program.name,
+            program_id
+        );
         Ok(program_id)
     }
 
@@ -323,7 +330,10 @@ mod tests {
 
         let result = manager.validate_program(&program);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("name cannot be empty"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("name cannot be empty"));
     }
 
     #[test]
@@ -342,7 +352,10 @@ mod tests {
 
         let result = manager.validate_program(&program);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("source code or compiled bytecode"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("source code or compiled bytecode"));
     }
 
     #[test]

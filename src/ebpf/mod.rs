@@ -7,20 +7,19 @@
 /// - IP caching
 /// - Metrics
 /// - Drop reasons
-
 use anyhow::Result;
 
-pub mod reader;
-pub mod parser;
+pub mod bpf_parser;
 pub mod bpf_reader;
 pub mod bpf_syscall;
-pub mod bpf_parser;
 pub mod enriched_reader;
+pub mod parser;
+pub mod reader;
 
 // Re-export for convenience
 pub use bpf_reader::CiliumMapReader;
 pub use bpf_syscall::IdentityInfo;
-pub use enriched_reader::{EnrichedMapReader, EnrichedConnectionInfo, EnrichedDropInfo};
+pub use enriched_reader::{EnrichedConnectionInfo, EnrichedDropInfo, EnrichedMapReader};
 
 /// Policy decision from eBPF map
 #[derive(Debug, Clone)]
@@ -216,15 +215,13 @@ pub struct MockMapReader;
 
 impl MapReader for MockMapReader {
     fn read_policy_map(&self) -> Result<Vec<PolicyDecision>> {
-        Ok(vec![
-            PolicyDecision {
-                src_identity: 100,
-                dst_identity: 200,
-                port: 80,
-                protocol: 6, // TCP
-                verdict: PolicyVerdict::Allow,
-            },
-        ])
+        Ok(vec![PolicyDecision {
+            src_identity: 100,
+            dst_identity: 200,
+            port: 80,
+            protocol: 6, // TCP
+            verdict: PolicyVerdict::Allow,
+        }])
     }
 
     fn read_conntrack_map(&self) -> Result<Vec<ConntrackEntry>> {
@@ -253,13 +250,28 @@ mod tests {
         assert_eq!(DropReasonType::from_code(1), DropReasonType::PolicyDenied);
         assert_eq!(DropReasonType::from_code(2), DropReasonType::InvalidPacket);
         assert_eq!(DropReasonType::from_code(3), DropReasonType::NoRoute);
-        assert_eq!(DropReasonType::from_code(4), DropReasonType::UnknownL4Protocol);
-        assert_eq!(DropReasonType::from_code(5), DropReasonType::FragmentationNeeded);
+        assert_eq!(
+            DropReasonType::from_code(4),
+            DropReasonType::UnknownL4Protocol
+        );
+        assert_eq!(
+            DropReasonType::from_code(5),
+            DropReasonType::FragmentationNeeded
+        );
         assert_eq!(DropReasonType::from_code(6), DropReasonType::CTMapFull);
         assert_eq!(DropReasonType::from_code(7), DropReasonType::NATMapFull);
-        assert_eq!(DropReasonType::from_code(130), DropReasonType::InvalidSourceIP);
-        assert_eq!(DropReasonType::from_code(131), DropReasonType::InvalidDestIP);
-        assert_eq!(DropReasonType::from_code(140), DropReasonType::ServiceBackendNotFound);
+        assert_eq!(
+            DropReasonType::from_code(130),
+            DropReasonType::InvalidSourceIP
+        );
+        assert_eq!(
+            DropReasonType::from_code(131),
+            DropReasonType::InvalidDestIP
+        );
+        assert_eq!(
+            DropReasonType::from_code(140),
+            DropReasonType::ServiceBackendNotFound
+        );
         assert_eq!(DropReasonType::from_code(181), DropReasonType::AuthRequired);
     }
 
@@ -273,8 +285,14 @@ mod tests {
     fn test_drop_reason_description() {
         assert_eq!(DropReasonType::PolicyDenied.description(), "Policy denied");
         assert_eq!(DropReasonType::NoRoute.description(), "No route");
-        assert_eq!(DropReasonType::AuthRequired.description(), "Authentication required");
-        assert_eq!(DropReasonType::Other(99).description(), "Unknown drop reason");
+        assert_eq!(
+            DropReasonType::AuthRequired.description(),
+            "Authentication required"
+        );
+        assert_eq!(
+            DropReasonType::Other(99).description(),
+            "Unknown drop reason"
+        );
     }
 
     #[test]

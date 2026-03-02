@@ -15,7 +15,6 @@
 /// - No sidecar overhead
 /// - L7 header-based routing
 /// - Real-time traffic split visualization
-
 use anyhow::Result;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -51,11 +50,11 @@ impl Default for CanaryConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            initial_traffic_pct: 10,  // Start with 10%
-            traffic_step_pct: 10,      // Increase by 10% each step
+            initial_traffic_pct: 10,                 // Start with 10%
+            traffic_step_pct: 10,                    // Increase by 10% each step
             step_interval: Duration::from_secs(300), // 5 minutes per step
-            auto_promote_threshold: 0.99, // 99% success rate
-            auto_rollback_threshold: 0.90, // Rollback if <90% success
+            auto_promote_threshold: 0.99,            // 99% success rate
+            auto_rollback_threshold: 0.90,           // Rollback if <90% success
             max_duration: Duration::from_secs(3600), // 1 hour max
         }
     }
@@ -103,8 +102,8 @@ pub struct CanaryDeployment {
 
 #[derive(Debug, Clone)]
 pub struct TrafficSplit {
-    pub stable_pct: u8,   // 0-100
-    pub canary_pct: u8,   // 0-100 (should sum to 100)
+    pub stable_pct: u8, // 0-100
+    pub canary_pct: u8, // 0-100 (should sum to 100)
 }
 
 impl TrafficSplit {
@@ -129,13 +128,13 @@ impl TrafficSplit {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CanaryState {
-    Created,      // Created but not started
-    Running,      // Active canary in progress
-    Paused,       // Paused for manual review
-    Promoting,    // Promoting canary to stable
-    Promoted,     // Canary fully promoted
-    RollingBack,  // Rolling back to stable
-    RolledBack,   // Rolled back to stable
+    Created,     // Created but not started
+    Running,     // Active canary in progress
+    Paused,      // Paused for manual review
+    Promoting,   // Promoting canary to stable
+    Promoted,    // Canary fully promoted
+    RollingBack, // Rolling back to stable
+    RolledBack,  // Rolled back to stable
     Failed { reason: String },
 }
 
@@ -221,10 +220,10 @@ pub struct CanaryAnalysis {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CanaryDecision {
-    Continue,     // Continue with current traffic split
-    Promote,      // Increase traffic to canary
-    Rollback,     // Rollback to stable
-    Pause,        // Pause for manual review
+    Continue, // Continue with current traffic split
+    Promote,  // Increase traffic to canary
+    Rollback, // Rollback to stable
+    Pause,    // Pause for manual review
 }
 
 /// Sidecarless Canary Engine
@@ -465,8 +464,16 @@ impl CanaryEngine {
         CanaryStats {
             active_canaries: self.active_canaries.len(),
             total_deployments: self.history.len() + self.active_canaries.len(),
-            successful_promotions: self.history.iter().filter(|c| matches!(c.state, CanaryState::Promoted)).count(),
-            rollbacks: self.history.iter().filter(|c| matches!(c.state, CanaryState::RolledBack)).count(),
+            successful_promotions: self
+                .history
+                .iter()
+                .filter(|c| matches!(c.state, CanaryState::Promoted))
+                .count(),
+            rollbacks: self
+                .history
+                .iter()
+                .filter(|c| matches!(c.state, CanaryState::RolledBack))
+                .count(),
         }
     }
 }

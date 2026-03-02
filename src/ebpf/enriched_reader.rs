@@ -4,15 +4,13 @@
 ///
 /// Combines eBPF map reading with Kubernetes identity resolution
 /// to provide contextual information for intelligence modules.
-
 use anyhow::Result;
 use std::sync::Arc;
 
-use super::{
-    ConntrackEntry, DropReason, IPCacheEntry,
-    LoadBalancerEntry, MapReader, PolicyDecision,
-};
 use super::bpf_reader::CiliumMapReader;
+use super::{
+    ConntrackEntry, DropReason, IPCacheEntry, LoadBalancerEntry, MapReader, PolicyDecision,
+};
 use crate::kubernetes::K8sIdentityResolver;
 
 /// Enriched Map Reader with Kubernetes context
@@ -96,7 +94,9 @@ impl EnrichedMapReader {
     }
 
     /// Get enriched connections (batch operation)
-    pub fn read_enriched_connections(&self) -> Result<Vec<(ConntrackEntry, EnrichedConnectionInfo)>> {
+    pub fn read_enriched_connections(
+        &self,
+    ) -> Result<Vec<(ConntrackEntry, EnrichedConnectionInfo)>> {
         let connections = self.read_conntrack_map()?;
         let enriched = connections
             .into_iter()

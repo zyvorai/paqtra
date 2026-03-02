@@ -1,7 +1,7 @@
 use anyhow::Result;
 
-use crate::kubernetes::K8sClient;
 use crate::cilium::CiliumManager;
+use crate::kubernetes::K8sClient;
 use crate::policies::PolicyManager;
 
 pub struct BootstrapManager {
@@ -23,7 +23,11 @@ impl BootstrapManager {
         self.run_bootstrap_with_options(false, false).await
     }
 
-    pub async fn run_bootstrap_with_options(&self, auto_install: bool, auto_upgrade: bool) -> Result<BootstrapResult> {
+    pub async fn run_bootstrap_with_options(
+        &self,
+        auto_install: bool,
+        auto_upgrade: bool,
+    ) -> Result<BootstrapResult> {
         println!("🚀 Bootstrapping Cilium-TUI...");
 
         // Step 1: Detect cluster

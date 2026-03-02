@@ -4,8 +4,8 @@ use anyhow::Result;
 use chrono::Timelike;
 use serde::{Deserialize, Serialize};
 
-use super::{Algorithm, AnomalyType, Metric};
 use super::baseline::{BaselineLearner, BaselineStats};
+use super::{Algorithm, AnomalyType, Metric};
 
 /// Multi-algorithm anomaly scorer
 pub struct AnomalyScorer {
@@ -180,7 +180,11 @@ impl AnomalyScorer {
     }
 
     /// Simplified Isolation Forest: Measures how "isolated" a point is
-    fn isolation_forest(&self, metric: &Metric, baseline: &super::baseline::MetricBaseline) -> Result<f64> {
+    fn isolation_forest(
+        &self,
+        metric: &Metric,
+        baseline: &super::baseline::MetricBaseline,
+    ) -> Result<f64> {
         // Simplified version: compare against percentiles
         let value = metric.value;
         let stats = &baseline.stats;
@@ -195,7 +199,11 @@ impl AnomalyScorer {
     }
 
     /// LSTM-inspired: Pattern matching against historical sequences
-    fn lstm_score(&self, metric: &Metric, baseline: &super::baseline::MetricBaseline) -> Result<f64> {
+    fn lstm_score(
+        &self,
+        metric: &Metric,
+        baseline: &super::baseline::MetricBaseline,
+    ) -> Result<f64> {
         // Simplified: Check if recent trend matches historical patterns
         let recent_data: Vec<f64> = baseline
             .data_points
@@ -216,7 +224,11 @@ impl AnomalyScorer {
     }
 
     /// MACD: Moving Average Convergence Divergence
-    fn macd_score(&self, metric: &Metric, baseline: &super::baseline::MetricBaseline) -> Result<f64> {
+    fn macd_score(
+        &self,
+        metric: &Metric,
+        baseline: &super::baseline::MetricBaseline,
+    ) -> Result<f64> {
         // Calculate short and long moving averages
         let short_window = 12;
         let long_window = 26;
@@ -254,7 +266,11 @@ impl AnomalyScorer {
     }
 
     /// Seasonal Hybrid ESD: Accounts for seasonal patterns
-    fn seasonal_esd(&self, metric: &Metric, baseline: &super::baseline::MetricBaseline) -> Result<f64> {
+    fn seasonal_esd(
+        &self,
+        metric: &Metric,
+        baseline: &super::baseline::MetricBaseline,
+    ) -> Result<f64> {
         let hour = metric.timestamp.hour();
         let expected = baseline
             .seasonal_patterns
@@ -280,7 +296,12 @@ impl AnomalyScorer {
         base_threshold * (1.0 - self.sensitivity * 0.3)
     }
 
-    fn classify_anomaly(&self, metric: &Metric, stats: &BaselineStats, deviation: f64) -> AnomalyType {
+    fn classify_anomaly(
+        &self,
+        metric: &Metric,
+        stats: &BaselineStats,
+        deviation: f64,
+    ) -> AnomalyType {
         use super::MetricType;
 
         match metric.metric_type {
@@ -292,7 +313,9 @@ impl AnomalyScorer {
             MetricType::UniqueDestinations if metric.value > stats.percentile_95 * 1.5 => {
                 AnomalyType::PortScan
             }
-            MetricType::DNSQueryRate if metric.value > stats.mean * 3.0 => AnomalyType::DNSTunneling,
+            MetricType::DNSQueryRate if metric.value > stats.mean * 3.0 => {
+                AnomalyType::DNSTunneling
+            }
             MetricType::BytesTransferred if metric.value > stats.percentile_99 * 2.0 => {
                 AnomalyType::DataExfiltration
             }
@@ -346,7 +369,7 @@ impl AnomalyScorer {
 mod tests {
     use super::*;
     use crate::modules::anomaly_detection::baseline::{BaselineLearner, BaselineStats};
-    use crate::modules::anomaly_detection::{MetricType, Metric};
+    use crate::modules::anomaly_detection::{Metric, MetricType};
 
     fn make_metric(value: f64) -> Metric {
         Metric {
@@ -384,7 +407,10 @@ mod tests {
         };
         let metric = make_metric(100.0);
         let score = scorer.z_score(&metric, &stats).unwrap();
-        assert_eq!(score, 0.0, "Same value as mean with zero variance should score 0");
+        assert_eq!(
+            score, 0.0,
+            "Same value as mean with zero variance should score 0"
+        );
     }
 
     #[test]
@@ -402,7 +428,10 @@ mod tests {
         };
         let metric = make_metric(200.0);
         let score = scorer.z_score(&metric, &stats).unwrap();
-        assert_eq!(score, 1.0, "Any deviation with zero variance should score 1.0");
+        assert_eq!(
+            score, 1.0,
+            "Any deviation with zero variance should score 1.0"
+        );
     }
 
     #[test]
@@ -438,7 +467,11 @@ mod tests {
         };
         let metric = make_metric(200.0); // 10 std devs
         let score = scorer.z_score(&metric, &stats).unwrap();
-        assert!(score > 0.5, "Extreme value should score high, got {}", score);
+        assert!(
+            score > 0.5,
+            "Extreme value should score high, got {}",
+            score
+        );
     }
 
     #[test]

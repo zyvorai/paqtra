@@ -172,7 +172,9 @@ fn test_dns_policy_has_required_k8s_fields() {
 
 #[test]
 fn test_best_practice_policy_has_required_k8s_fields() {
-    assert_has_k8s_fields(&gen_best_practice_policy("prod", "frontend", "backend", 8080));
+    assert_has_k8s_fields(&gen_best_practice_policy(
+        "prod", "frontend", "backend", 8080,
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -208,10 +210,7 @@ fn test_dns_policy_has_egress_rules() {
 
     // Verify port 53 appears in the egress rules
     let yaml_str = serde_yaml::to_string(&spec).unwrap();
-    assert!(
-        yaml_str.contains("53"),
-        "DNS policy must reference port 53"
-    );
+    assert!(yaml_str.contains("53"), "DNS policy must reference port 53");
 }
 
 #[test]
@@ -241,10 +240,7 @@ fn test_policy_namespace_propagates_correctly() {
         let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
         let metadata = doc.get("metadata").unwrap();
         let namespace = metadata.get("namespace").unwrap().as_str().unwrap();
-        assert_eq!(
-            namespace, *ns,
-            "Namespace in metadata must match input"
-        );
+        assert_eq!(namespace, *ns, "Namespace in metadata must match input");
     }
 }
 

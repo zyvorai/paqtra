@@ -91,9 +91,7 @@ impl RemediationEngine {
             action_type: RemediationType::ScaleUp,
             description: format!(
                 "Scale up {} replicas (latency {:.0}ms vs baseline {:.0}ms)",
-                anomaly.context.service,
-                anomaly.observed_value,
-                anomaly.baseline_value
+                anomaly.context.service, anomaly.observed_value, anomaly.baseline_value
             ),
             confidence: 0.8,
             auto_applicable: self.auto_apply,
@@ -250,9 +248,7 @@ spec:
         - matchPattern: "*.cluster.local"
         - matchPattern: "*.svc"
 "#,
-            anomaly.context.service,
-            anomaly.context.namespace,
-            anomaly.context.service
+            anomaly.context.service, anomaly.context.namespace, anomaly.context.service
         )
     }
 
@@ -286,8 +282,8 @@ spec:
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::{AnomalyContext, MetricType};
+    use super::*;
     use chrono::Utc;
 
     fn make_anomaly(anomaly_type: AnomalyType, severity: Severity) -> Anomaly {

@@ -2,11 +2,11 @@
 // AI/ML-Powered Anomaly Detection Module
 // Experimental: Uses time-series analysis and ML for intelligent anomaly detection
 
-pub mod detector;
-pub mod baseline;
-pub mod scoring;
 pub mod alerting;
+pub mod baseline;
+pub mod detector;
 pub mod remediation;
+pub mod scoring;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -257,7 +257,11 @@ impl AnomalyDetector {
     }
 
     /// Export anomalies for analysis
-    pub fn export_anomalies(&self, start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Vec<Anomaly>> {
+    pub fn export_anomalies(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Vec<Anomaly>> {
         self.alerting.get_anomalies_in_range(start, end)
     }
 }
@@ -375,7 +379,10 @@ mod tests {
         }
 
         let stats = detector.get_baseline_stats();
-        assert!(!stats.is_empty(), "Baseline should have entries after processing metrics");
+        assert!(
+            !stats.is_empty(),
+            "Baseline should have entries after processing metrics"
+        );
     }
 
     #[tokio::test]
@@ -392,7 +399,10 @@ mod tests {
         // Inject extreme anomaly
         let anomalous_metric = make_metric(1000.0);
         let anomalies = detector.process_metrics(&[anomalous_metric]).await.unwrap();
-        assert!(!anomalies.is_empty(), "Should detect anomaly with 10x spike");
+        assert!(
+            !anomalies.is_empty(),
+            "Should detect anomaly with 10x spike"
+        );
     }
 
     #[test]

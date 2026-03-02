@@ -2,7 +2,6 @@
 /// Traffic Pattern Analyzer
 ///
 /// Analyzes learned traffic patterns to provide insights
-
 use super::*;
 
 pub struct TrafficAnalyzer;
@@ -19,8 +18,14 @@ impl TrafficAnalyzer {
 
         for obs in observations.values() {
             // Add source node
-            let src_id = format!("{}/{}", obs.pattern.src_namespace,
-                obs.pattern.src_labels.get("app").unwrap_or(&"unknown".to_string()));
+            let src_id = format!(
+                "{}/{}",
+                obs.pattern.src_namespace,
+                obs.pattern
+                    .src_labels
+                    .get("app")
+                    .unwrap_or(&"unknown".to_string())
+            );
             graph.nodes.entry(src_id.clone()).or_insert_with(|| Node {
                 id: src_id.clone(),
                 namespace: obs.pattern.src_namespace.clone(),
@@ -28,8 +33,14 @@ impl TrafficAnalyzer {
             });
 
             // Add destination node
-            let dst_id = format!("{}/{}", obs.pattern.dst_namespace,
-                obs.pattern.dst_labels.get("app").unwrap_or(&"unknown".to_string()));
+            let dst_id = format!(
+                "{}/{}",
+                obs.pattern.dst_namespace,
+                obs.pattern
+                    .dst_labels
+                    .get("app")
+                    .unwrap_or(&"unknown".to_string())
+            );
             graph.nodes.entry(dst_id.clone()).or_insert_with(|| Node {
                 id: dst_id.clone(),
                 namespace: obs.pattern.dst_namespace.clone(),
@@ -191,19 +202,9 @@ pub struct Edge {
 
 #[derive(Debug, Clone)]
 pub enum SecurityIssue {
-    CrossNamespace {
-        from: String,
-        to: String,
-        port: u16,
-    },
-    PrivilegedPort {
-        namespace: String,
-        port: u16,
-    },
-    SuspiciousPort {
-        namespace: String,
-        port: u16,
-    },
+    CrossNamespace { from: String, to: String, port: u16 },
+    PrivilegedPort { namespace: String, port: u16 },
+    SuspiciousPort { namespace: String, port: u16 },
 }
 
 #[derive(Debug, Clone)]

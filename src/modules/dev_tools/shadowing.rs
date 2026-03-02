@@ -62,7 +62,10 @@ impl TrafficShadowing {
             },
         };
 
-        self.active_shadows.write().await.insert(shadow_id.clone(), shadow);
+        self.active_shadows
+            .write()
+            .await
+            .insert(shadow_id.clone(), shadow);
 
         Ok(shadow_id)
     }

@@ -1,4 +1,4 @@
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use k8s_openapi::api::core::v1::{ConfigMap, ServiceAccount};
 use k8s_openapi::api::rbac::v1::{ClusterRoleBinding, RoleRef, Subject};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
@@ -25,7 +25,8 @@ impl CiliumManager {
     }
 
     pub async fn is_installed(&self) -> Result<bool> {
-        let pods = self.k8s_client
+        let pods = self
+            .k8s_client
             .get_pods_by_label("kube-system", "k8s-app=cilium")
             .await?;
 
@@ -47,7 +48,8 @@ impl CiliumManager {
         let version = self.get_cilium_version().ok();
 
         // Check if Hubble is enabled by looking for hubble-relay
-        let hubble_pods = self.k8s_client
+        let hubble_pods = self
+            .k8s_client
             .get_pods_by_label("kube-system", "k8s-app=hubble-relay")
             .await
             .unwrap_or_default();
@@ -202,7 +204,12 @@ impl CiliumManager {
         }
 
         let checksum_output = Command::new("curl")
-            .args(["-L", "-o", &format!("{}.sha256sum", binary_name), checksum_url])
+            .args([
+                "-L",
+                "-o",
+                &format!("{}.sha256sum", binary_name),
+                checksum_url,
+            ])
             .current_dir("/tmp")
             .status()
             .context("Failed to download checksum file")?;
@@ -282,7 +289,9 @@ impl CiliumManager {
 
         // Verify installation
         if !self.is_cilium_cli_available() {
-            anyhow::bail!("Cilium CLI installed but not found in PATH. You may need to restart your shell.");
+            anyhow::bail!(
+                "Cilium CLI installed but not found in PATH. You may need to restart your shell."
+            );
         }
 
         Ok(())

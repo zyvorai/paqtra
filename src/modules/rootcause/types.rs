@@ -228,10 +228,7 @@ pub enum SuggestedFix {
     },
 
     /// Manual investigation needed
-    ManualInvestigation {
-        reason: String,
-        steps: Vec<String>,
-    },
+    ManualInvestigation { reason: String, steps: Vec<String> },
 }
 
 /// Drop pattern for historical analysis
@@ -333,13 +330,28 @@ mod tests {
         assert_eq!(DropReason::PolicyDenied.to_string(), "Policy Denied");
         assert_eq!(DropReason::InvalidSourceIP.to_string(), "Invalid Source IP");
         assert_eq!(DropReason::InvalidPacket.to_string(), "Invalid Packet");
-        assert_eq!(DropReason::CTStateMismatch.to_string(), "Connection Tracking State Mismatch");
+        assert_eq!(
+            DropReason::CTStateMismatch.to_string(),
+            "Connection Tracking State Mismatch"
+        );
         assert_eq!(DropReason::PortNotAllowed.to_string(), "Port Not Allowed");
-        assert_eq!(DropReason::UnknownL3Protocol.to_string(), "Unknown L3 Protocol");
-        assert_eq!(DropReason::UnknownL4Protocol.to_string(), "Unknown L4 Protocol");
-        assert_eq!(DropReason::UnsupportedL3Protocol.to_string(), "Unsupported L3 Protocol");
+        assert_eq!(
+            DropReason::UnknownL3Protocol.to_string(),
+            "Unknown L3 Protocol"
+        );
+        assert_eq!(
+            DropReason::UnknownL4Protocol.to_string(),
+            "Unknown L4 Protocol"
+        );
+        assert_eq!(
+            DropReason::UnsupportedL3Protocol.to_string(),
+            "Unsupported L3 Protocol"
+        );
         assert_eq!(DropReason::NoMapping.to_string(), "No Mapping");
-        assert_eq!(DropReason::UnknownDestination.to_string(), "Unknown Destination");
+        assert_eq!(
+            DropReason::UnknownDestination.to_string(),
+            "Unknown Destination"
+        );
         assert_eq!(DropReason::LBError.to_string(), "Load Balancer Error");
         assert_eq!(DropReason::ServiceNotFound.to_string(), "Service Not Found");
         assert_eq!(DropReason::NoBackend.to_string(), "No Healthy Backend");
@@ -365,7 +377,10 @@ mod tests {
         };
 
         if let SuggestedFix::AddPolicyRule {
-            namespace, port, protocol, ..
+            namespace,
+            port,
+            protocol,
+            ..
         } = &fix
         {
             assert_eq!(namespace, "default");

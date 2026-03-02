@@ -23,7 +23,12 @@ impl TuiApp {
                 Showing mock data mode.",
             )
             .style(Style::default().fg(WARNING_COLOR))
-            .block(Block::default().borders(Borders::ALL).title("⚡ Enriched Connections").border_style(Style::default().fg(BORDER_COLOR)));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("⚡ Enriched Connections")
+                    .border_style(Style::default().fg(BORDER_COLOR)),
+            );
             f.render_widget(content, area);
             return;
         }
@@ -91,8 +96,7 @@ impl TuiApp {
             format!("Enriched Connections ({})", self.enriched_connections.len())
         };
 
-        let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(stats_text));
+        let list = List::new(items).block(Block::default().borders(Borders::ALL).title(stats_text));
         f.render_widget(list, area);
     }
 
@@ -132,13 +136,12 @@ impl TuiApp {
             "STATUS", "NAMESPACE", "NAME", "IP", "APP"
         );
 
-        let list = List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(format!("Endpoints ({}) - {}", self.endpoints.len(), header))
-                    .border_style(Style::default().fg(BORDER_COLOR)),
-            );
+        let list = List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Endpoints ({}) - {}", self.endpoints.len(), header))
+                .border_style(Style::default().fg(BORDER_COLOR)),
+        );
         f.render_widget(list, area);
     }
 
@@ -150,7 +153,12 @@ impl TuiApp {
             ✓ allow-hubble (kube-system)",
         )
         .style(Style::default().fg(TEXT_COLOR))
-        .block(Block::default().borders(Borders::ALL).title("Network Policies").border_style(Style::default().fg(BORDER_COLOR)));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Network Policies")
+                .border_style(Style::default().fg(BORDER_COLOR)),
+        );
         f.render_widget(content, area);
     }
 
@@ -180,7 +188,8 @@ impl TuiApp {
             Identity Cache:     N/A\n\
             IP Mappings:        N/A\n\
             Pod Mappings:       N/A\n\
-            Cache Age:          N/A\n".to_string()
+            Cache Age:          N/A\n"
+                .to_string()
         };
 
         let content = Paragraph::new(format!(
@@ -199,7 +208,12 @@ impl TuiApp {
             identity_stats
         ))
         .style(Style::default().fg(TEXT_COLOR))
-        .block(Block::default().borders(Borders::ALL).title("Platform Metrics").border_style(Style::default().fg(BORDER_COLOR)));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Platform Metrics")
+                .border_style(Style::default().fg(BORDER_COLOR)),
+        );
         f.render_widget(content, area);
     }
 }

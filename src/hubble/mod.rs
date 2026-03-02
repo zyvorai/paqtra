@@ -58,13 +58,20 @@ pub async fn start_port_forward() -> Result<u16> {
     tokio::spawn(async move {
         // Wait for a shutdown signal or the process to exit
         tokio::signal::ctrl_c().await.ok();
-        tracing::info!("Cleaning up port-forward process (pid: {})", pid_for_cleanup);
+        tracing::info!(
+            "Cleaning up port-forward process (pid: {})",
+            pid_for_cleanup
+        );
         #[cfg(unix)]
         {
             unsafe {
                 let ret = libc::kill(pid_for_cleanup as i32, libc::SIGTERM);
                 if ret != 0 {
-                    tracing::warn!("Failed to send SIGTERM to pid {}: errno {}", pid_for_cleanup, std::io::Error::last_os_error());
+                    tracing::warn!(
+                        "Failed to send SIGTERM to pid {}: errno {}",
+                        pid_for_cleanup,
+                        std::io::Error::last_os_error()
+                    );
                 }
             }
         }
@@ -82,16 +89,28 @@ pub async fn start_port_forward() -> Result<u16> {
                 return Ok(port);
             }
             Err(_) if attempt < max_retries => {
-                tracing::debug!("Port-forward not ready yet (attempt {}/{})", attempt, max_retries);
+                tracing::debug!(
+                    "Port-forward not ready yet (attempt {}/{})",
+                    attempt,
+                    max_retries
+                );
             }
             Err(e) => {
-                tracing::error!("Port-forward failed to start after {} attempts: {}", max_retries, e);
+                tracing::error!(
+                    "Port-forward failed to start after {} attempts: {}",
+                    max_retries,
+                    e
+                );
                 // Kill the process since it's not working
                 #[cfg(unix)]
                 unsafe {
                     let ret = libc::kill(pid as i32, libc::SIGTERM);
                     if ret != 0 {
-                        tracing::warn!("Failed to send SIGTERM to pid {}: errno {}", pid, std::io::Error::last_os_error());
+                        tracing::warn!(
+                            "Failed to send SIGTERM to pid {}: errno {}",
+                            pid,
+                            std::io::Error::last_os_error()
+                        );
                     }
                 }
                 anyhow::bail!(

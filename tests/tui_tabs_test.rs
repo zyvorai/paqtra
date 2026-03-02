@@ -157,11 +157,7 @@ fn test_tab_count_matches_expected() {
 fn test_tab_names_are_unique() {
     let mut seen = std::collections::HashSet::new();
     for name in TAB_NAMES {
-        assert!(
-            seen.insert(name),
-            "Duplicate tab name found: '{}'",
-            name
-        );
+        assert!(seen.insert(name), "Duplicate tab name found: '{}'", name);
     }
 }
 
@@ -367,13 +363,13 @@ fn test_full_left_cycle_returns_to_start() {
 #[test]
 fn test_known_tab_positions() {
     // These match the indices used in src/tui/mod.rs for key handling
-    assert_eq!(TAB_NAMES[0], "Flows");          // tab 0: flow list, packet explainer
-    assert_eq!(TAB_NAMES[5], "Healer");         // tab 5: self-healer
-    assert_eq!(TAB_NAMES[6], "AutoPolicy");     // tab 6: policy learning
-    assert_eq!(TAB_NAMES[7], "RootCause");      // tab 7: root-cause analysis
-    assert_eq!(TAB_NAMES[8], "Simulator");       // tab 8: what-if simulator
-    assert_eq!(TAB_NAMES[9], "Replay");          // tab 9: traffic replay
-    assert_eq!(TAB_NAMES[10], "Chaos");          // tab 10: chaos engineering
-    assert_eq!(TAB_NAMES[11], "Canary");         // tab 11: canary deployments
-    assert_eq!(TAB_NAMES[12], "MultiCluster");   // tab 12: multi-cluster
+    assert_eq!(TAB_NAMES[0], "Flows"); // tab 0: flow list, packet explainer
+    assert_eq!(TAB_NAMES[5], "Healer"); // tab 5: self-healer
+    assert_eq!(TAB_NAMES[6], "AutoPolicy"); // tab 6: policy learning
+    assert_eq!(TAB_NAMES[7], "RootCause"); // tab 7: root-cause analysis
+    assert_eq!(TAB_NAMES[8], "Simulator"); // tab 8: what-if simulator
+    assert_eq!(TAB_NAMES[9], "Replay"); // tab 9: traffic replay
+    assert_eq!(TAB_NAMES[10], "Chaos"); // tab 10: chaos engineering
+    assert_eq!(TAB_NAMES[11], "Canary"); // tab 11: canary deployments
+    assert_eq!(TAB_NAMES[12], "MultiCluster"); // tab 12: multi-cluster
 }

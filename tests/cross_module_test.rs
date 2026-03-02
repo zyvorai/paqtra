@@ -4,15 +4,14 @@
 /// mock infrastructure and that their data structures interoperate
 /// correctly. Tests interactions between RootCause, Healer, AutoPolicy,
 /// Simulator, and Replay modules.
-
-use cilium_tui::ebpf::{
-    DropReasonType, MapReader, MockMapReader, PolicyVerdict,
-};
+use cilium_tui::ebpf::{DropReasonType, MapReader, MockMapReader, PolicyVerdict};
 use cilium_tui::kubernetes::K8sClient;
 use cilium_tui::modules::autopolicy::{AutoPolicy, AutoPolicyConfig, LearningState};
 use cilium_tui::modules::healer::{HealerConfig, SelfHealer};
 use cilium_tui::modules::replay::{ReplayConfig, ReplayEngine};
-use cilium_tui::modules::rootcause::{DropReason as RootCauseDropReason, RootCauseConfig, RootCauseEngine};
+use cilium_tui::modules::rootcause::{
+    DropReason as RootCauseDropReason, RootCauseConfig, RootCauseEngine,
+};
 use cilium_tui::modules::simulator::{RiskLevel, Simulator, SimulatorConfig};
 
 // ---------------------------------------------------------------------------
@@ -192,7 +191,10 @@ async fn test_simulator_and_replay_run_independently() {
     assert_eq!(loaded, 0);
 
     // Start replay recording
-    let rec_id = replay.start_recording("cross-test".to_string()).await.unwrap();
+    let rec_id = replay
+        .start_recording("cross-test".to_string())
+        .await
+        .unwrap();
     assert!(!rec_id.is_empty());
 
     // Both modules operate independently
@@ -204,7 +206,8 @@ async fn test_simulator_and_replay_run_independently() {
 async fn test_rootcause_and_autopolicy_independent() {
     let k8s = mock_k8s_client();
 
-    let mut rootcause = RootCauseEngine::new(RootCauseConfig::default(), MockMapReader, k8s.clone());
+    let mut rootcause =
+        RootCauseEngine::new(RootCauseConfig::default(), MockMapReader, k8s.clone());
     let mut autopolicy = AutoPolicy::new(AutoPolicyConfig::default(), MockMapReader, k8s);
 
     // Analyze drops via rootcause
@@ -364,7 +367,10 @@ async fn test_replay_to_rootcause_lifecycle() {
 
     // Step 1: Start a recording
     let mut replay = ReplayEngine::new(ReplayConfig::default(), MockMapReader, k8s.clone());
-    let rec_id = replay.start_recording("lifecycle-test".to_string()).await.unwrap();
+    let rec_id = replay
+        .start_recording("lifecycle-test".to_string())
+        .await
+        .unwrap();
     assert!(!rec_id.is_empty());
 
     // Step 2: Capture (no data from mock)
@@ -392,7 +398,8 @@ async fn test_all_five_modules_coexist() {
 
     let mut healer = SelfHealer::new(HealerConfig::default(), MockMapReader, k8s.clone());
     let mut autopolicy = AutoPolicy::new(AutoPolicyConfig::default(), MockMapReader, k8s.clone());
-    let mut rootcause = RootCauseEngine::new(RootCauseConfig::default(), MockMapReader, k8s.clone());
+    let mut rootcause =
+        RootCauseEngine::new(RootCauseConfig::default(), MockMapReader, k8s.clone());
     let mut simulator = Simulator::new(SimulatorConfig::default(), MockMapReader, k8s.clone());
     let mut replay = ReplayEngine::new(ReplayConfig::default(), MockMapReader, k8s);
 
@@ -402,7 +409,10 @@ async fn test_all_five_modules_coexist() {
     let _learning_stats = autopolicy.update().await.unwrap();
     let analyses = rootcause.analyze_drops().await.unwrap();
     let loaded = simulator.load_history().await.unwrap();
-    let rec_id = replay.start_recording("all-modules-test".to_string()).await.unwrap();
+    let rec_id = replay
+        .start_recording("all-modules-test".to_string())
+        .await
+        .unwrap();
 
     // Verify all are in expected states
     assert_eq!(healer_stats.problems_detected, 0);

@@ -3,12 +3,10 @@
 /// Tests the simulator's scenario preparation, risk scoring, and
 /// impact analysis using MockMapReader for eBPF data and
 /// K8sClient::mock() for Kubernetes interactions.
-
 use cilium_tui::ebpf::MockMapReader;
 use cilium_tui::kubernetes::K8sClient;
 use cilium_tui::modules::simulator::{
-    DependencyCriticality, ImpactType, RiskLevel, SimulationScenario,
-    Simulator, SimulatorConfig,
+    DependencyCriticality, ImpactType, RiskLevel, SimulationScenario, Simulator, SimulatorConfig,
 };
 use std::collections::HashMap;
 
@@ -59,10 +57,7 @@ async fn test_simulator_stats_reflects_config() {
 fn test_simulator_config_defaults() {
     let config = SimulatorConfig::default();
     assert!(config.enabled);
-    assert!(
-        config.replay_flow_count > 0,
-        "Must replay at least 1 flow"
-    );
+    assert!(config.replay_flow_count > 0, "Must replay at least 1 flow");
     assert!(config.track_dependencies);
     assert!(config.risk_scoring);
     assert!(
@@ -154,10 +149,22 @@ fn test_impact_type_inequality() {
 
 #[test]
 fn test_dependency_criticality_equality() {
-    assert_eq!(DependencyCriticality::Critical, DependencyCriticality::Critical);
-    assert_eq!(DependencyCriticality::Important, DependencyCriticality::Important);
-    assert_eq!(DependencyCriticality::Optional, DependencyCriticality::Optional);
-    assert_ne!(DependencyCriticality::Critical, DependencyCriticality::Optional);
+    assert_eq!(
+        DependencyCriticality::Critical,
+        DependencyCriticality::Critical
+    );
+    assert_eq!(
+        DependencyCriticality::Important,
+        DependencyCriticality::Important
+    );
+    assert_eq!(
+        DependencyCriticality::Optional,
+        DependencyCriticality::Optional
+    );
+    assert_ne!(
+        DependencyCriticality::Critical,
+        DependencyCriticality::Optional
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -347,7 +354,10 @@ async fn test_simulator_simulate_default_deny() {
 
     // Recommendations should mention default-deny for this scenario type
     assert!(
-        result.recommendations.iter().any(|r| r.contains("default-deny") || r.contains("safe")),
+        result
+            .recommendations
+            .iter()
+            .any(|r| r.contains("default-deny") || r.contains("safe")),
         "Recommendations should provide guidance: {:?}",
         result.recommendations
     );

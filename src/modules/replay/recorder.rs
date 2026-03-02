@@ -2,7 +2,6 @@
 /// Traffic Recorder
 ///
 /// Helper utilities for recording traffic
-
 use super::*;
 use anyhow::Result;
 
@@ -10,39 +9,33 @@ pub struct TrafficRecorder;
 
 impl TrafficRecorder {
     /// Create a snapshot of current traffic
-    pub fn snapshot_traffic<M: MapReader>(
-        ebpf_reader: &M,
-    ) -> Result<Vec<ConntrackEntry>> {
+    pub fn snapshot_traffic<M: MapReader>(ebpf_reader: &M) -> Result<Vec<ConntrackEntry>> {
         ebpf_reader.read_conntrack_map()
     }
 
     /// Filter flows by criteria
-    pub fn filter_flows(
-        flows: Vec<RecordedFlow>,
-        filter: &ReplayFilter,
-    ) -> Vec<RecordedFlow> {
+    pub fn filter_flows(flows: Vec<RecordedFlow>, filter: &ReplayFilter) -> Vec<RecordedFlow> {
         let mut filtered = flows;
 
         if let Some(namespaces) = &filter.namespaces {
             filtered.retain(|f| {
-                namespaces.contains(&f.src_namespace)
-                    || namespaces.contains(&f.dst_namespace)
+                namespaces.contains(&f.src_namespace) || namespaces.contains(&f.dst_namespace)
             });
         }
 
         if let Some(src_labels) = &filter.src_labels {
             filtered.retain(|f| {
-                src_labels.iter().all(|(k, v)| {
-                    f.src_labels.get(k).map(|fv| fv == v).unwrap_or(false)
-                })
+                src_labels
+                    .iter()
+                    .all(|(k, v)| f.src_labels.get(k).map(|fv| fv == v).unwrap_or(false))
             });
         }
 
         if let Some(dst_labels) = &filter.dst_labels {
             filtered.retain(|f| {
-                dst_labels.iter().all(|(k, v)| {
-                    f.dst_labels.get(k).map(|fv| fv == v).unwrap_or(false)
-                })
+                dst_labels
+                    .iter()
+                    .all(|(k, v)| f.dst_labels.get(k).map(|fv| fv == v).unwrap_or(false))
             });
         }
 
@@ -95,7 +88,8 @@ impl TrafficRecorder {
             return flows;
         }
 
-        flows.into_iter()
+        flows
+            .into_iter()
             .enumerate()
             .filter(|(i, _)| i % sample_rate == 0)
             .map(|(_, f)| f)
@@ -119,11 +113,13 @@ impl TrafficRecorder {
             *by_namespace.entry(flow.src_namespace.clone()).or_insert(0) += 1;
         }
 
-        let allowed = flows.iter()
+        let allowed = flows
+            .iter()
             .filter(|f| f.verdict == PolicyVerdict::Allow)
             .count();
 
-        let denied = flows.iter()
+        let denied = flows
+            .iter()
             .filter(|f| f.verdict == PolicyVerdict::Deny)
             .count();
 

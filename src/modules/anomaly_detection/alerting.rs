@@ -97,17 +97,11 @@ impl AlertManager {
                 // In production: Slack, email
             }
             Severity::Medium => {
-                tracing::warn!(
-                    "[MEDIUM] {:?} detected",
-                    anomaly.anomaly_type
-                );
+                tracing::warn!("[MEDIUM] {:?} detected", anomaly.anomaly_type);
                 // In production: Slack notification
             }
             Severity::Low | Severity::Info => {
-                tracing::info!(
-                    "[INFO] {:?} observed",
-                    anomaly.anomaly_type
-                );
+                tracing::info!("[INFO] {:?} observed", anomaly.anomaly_type);
                 // In production: Log aggregation only
             }
         }
@@ -150,8 +144,8 @@ impl AlertManager {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{AnomalyContext, AnomalyType, MetricType};
     use super::*;
-    use super::super::{AnomalyType, AnomalyContext, MetricType};
     use chrono::Utc;
 
     fn make_anomaly(anomaly_type: AnomalyType, namespace: &str, service: &str) -> Anomaly {

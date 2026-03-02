@@ -2,10 +2,10 @@
 // Security & Compliance Module - Zero-trust, compliance frameworks, threat intelligence
 // Experimental: Enterprise-grade security and compliance features
 
-pub mod zero_trust;
 pub mod compliance;
-pub mod threat_intel;
 pub mod posture;
+pub mod threat_intel;
+pub mod zero_trust;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -264,18 +264,27 @@ mod tests {
     #[tokio::test]
     async fn test_generate_zero_trust_policies() {
         let mut manager = SecurityComplianceManager::new().unwrap();
-        let policies = manager.generate_zero_trust_policies("test-ns").await.unwrap();
+        let policies = manager
+            .generate_zero_trust_policies("test-ns")
+            .await
+            .unwrap();
         assert!(!policies.is_empty(), "Should generate at least one policy");
         // All policies should be valid YAML-like strings containing the namespace
         for policy in &policies {
-            assert!(policy.contains("test-ns"), "Policy should reference the namespace");
+            assert!(
+                policy.contains("test-ns"),
+                "Policy should reference the namespace"
+            );
         }
     }
 
     #[tokio::test]
     async fn test_compliance_audit_pci_dss() {
         let mut manager = SecurityComplianceManager::new().unwrap();
-        let report = manager.run_compliance_audit(ComplianceFramework::PCIDSS).await.unwrap();
+        let report = manager
+            .run_compliance_audit(ComplianceFramework::PCIDSS)
+            .await
+            .unwrap();
         assert_eq!(report.framework, ComplianceFramework::PCIDSS);
         assert!(!report.controls.is_empty());
         // Score should be 0.0 since all controls are NotChecked
@@ -296,7 +305,10 @@ mod tests {
     async fn test_get_recommendations() {
         let mut manager = SecurityComplianceManager::new().unwrap();
         let recommendations = manager.get_recommendations().await.unwrap();
-        assert!(!recommendations.is_empty(), "Should return at least one recommendation");
+        assert!(
+            !recommendations.is_empty(),
+            "Should return at least one recommendation"
+        );
         // Recommendations should be sorted by priority (descending)
         for window in recommendations.windows(2) {
             assert!(window[0].priority >= window[1].priority);

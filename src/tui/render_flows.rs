@@ -30,7 +30,11 @@ impl TuiApp {
                     _ => UNKNOWN_TRAFFIC_COLOR,
                 };
 
-                let prefix = if idx == self.selected_flow_index { "▶ " } else { "  " };
+                let prefix = if idx == self.selected_flow_index {
+                    "▶ "
+                } else {
+                    "  "
+                };
                 let content = format!(
                     "{}{} {} {}/{} -> {}/{} {}",
                     prefix,
@@ -44,7 +48,9 @@ impl TuiApp {
                 );
 
                 let style = if idx == self.selected_flow_index {
-                    Style::default().fg(verdict_color).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(verdict_color)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(verdict_color)
                 };
@@ -53,17 +59,29 @@ impl TuiApp {
             })
             .collect();
 
-        let title = format!("Live Flows ({}) [↑/↓: Select | e: Explain]", self.flows.len());
-        let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(title).border_style(Style::default().fg(BORDER_COLOR)));
+        let title = format!(
+            "Live Flows ({}) [↑/↓: Select | e: Explain]",
+            self.flows.len()
+        );
+        let list = List::new(items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(Style::default().fg(BORDER_COLOR)),
+        );
         f.render_widget(list, area);
     }
 
     pub(crate) fn render_packet_explanation(&self, f: &mut Frame, area: ratatui::layout::Rect) {
         if self.flows.is_empty() || self.selected_flow_index >= self.flows.len() {
-            let no_flows = Paragraph::new("No flow selected for explanation.\n\nPress Esc to return.")
-                .style(Style::default().fg(WARNING_COLOR))
-                .block(Block::default().borders(Borders::ALL).title("Packet Explanation"));
+            let no_flows =
+                Paragraph::new("No flow selected for explanation.\n\nPress Esc to return.")
+                    .style(Style::default().fg(WARNING_COLOR))
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title("Packet Explanation"),
+                    );
             f.render_widget(no_flows, area);
             return;
         }
@@ -71,7 +89,10 @@ impl TuiApp {
         let flow = &self.flows[self.selected_flow_index];
 
         // Parse port from type or use 0
-        let port = flow.r#type.split(':').nth(1)
+        let port = flow
+            .r#type
+            .split(':')
+            .nth(1)
             .and_then(|s| s.parse::<u16>().ok())
             .unwrap_or(0);
 
@@ -87,9 +108,10 @@ impl TuiApp {
         ) {
             Ok(exp) => exp,
             Err(_) => {
-                let error = Paragraph::new("Failed to generate explanation.\n\nPress Esc to return.")
-                    .style(Style::default().fg(ERROR_COLOR))
-                    .block(Block::default().borders(Borders::ALL).title("Error"));
+                let error =
+                    Paragraph::new("Failed to generate explanation.\n\nPress Esc to return.")
+                        .style(Style::default().fg(ERROR_COLOR))
+                        .block(Block::default().borders(Borders::ALL).title("Error"));
                 f.render_widget(error, area);
                 return;
             }
@@ -99,9 +121,9 @@ impl TuiApp {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(8),  // Header
-                Constraint::Min(10),    // Analysis
-                Constraint::Length(8),  // Troubleshooting
+                Constraint::Length(8), // Header
+                Constraint::Min(10),   // Analysis
+                Constraint::Length(8), // Troubleshooting
             ])
             .split(area);
 
@@ -122,7 +144,12 @@ impl TuiApp {
 
         let header = Paragraph::new(header_text)
             .style(Style::default().fg(INFO_COLOR))
-            .block(Block::default().borders(Borders::ALL).title("Packet Info").border_style(Style::default().fg(BORDER_COLOR)));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Packet Info")
+                    .border_style(Style::default().fg(BORDER_COLOR)),
+            );
         f.render_widget(header, chunks[0]);
 
         // Analysis
@@ -145,7 +172,12 @@ impl TuiApp {
 
         let analysis = Paragraph::new(analysis_text)
             .style(Style::default().fg(analysis_color))
-            .block(Block::default().borders(Borders::ALL).title("Analysis").border_style(Style::default().fg(BORDER_COLOR)))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Analysis")
+                    .border_style(Style::default().fg(BORDER_COLOR)),
+            )
             .wrap(ratatui::widgets::Wrap { trim: false });
         f.render_widget(analysis, chunks[1]);
 
@@ -157,7 +189,12 @@ impl TuiApp {
 
         let tips = Paragraph::new(tips_text)
             .style(Style::default().fg(TEXT_COLOR))
-            .block(Block::default().borders(Borders::ALL).title("Tips [Esc: Exit]").border_style(Style::default().fg(BORDER_COLOR)))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Tips [Esc: Exit]")
+                    .border_style(Style::default().fg(BORDER_COLOR)),
+            )
             .wrap(ratatui::widgets::Wrap { trim: false });
         f.render_widget(tips, chunks[2]);
     }

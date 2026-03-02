@@ -3,12 +3,9 @@
 /// Tests the healer's problem detection and fix generation workflow
 /// using MockMapReader for eBPF data and K8sClient::mock() for
 /// Kubernetes interactions. Only exercises the public API.
-
 use cilium_tui::ebpf::MockMapReader;
 use cilium_tui::kubernetes::K8sClient;
-use cilium_tui::modules::healer::{
-    FixAction, HealerConfig, HealerStats, Problem, SelfHealer,
-};
+use cilium_tui::modules::healer::{FixAction, HealerConfig, HealerStats, Problem, SelfHealer};
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -41,7 +38,10 @@ async fn test_healer_initial_state_is_empty() {
 fn test_healer_config_safe_defaults() {
     let config = HealerConfig::default();
     assert!(config.enabled, "Healer should be enabled by default");
-    assert!(!config.auto_apply, "auto_apply should be off by default for safety");
+    assert!(
+        !config.auto_apply,
+        "auto_apply should be off by default for safety"
+    );
     assert!(config.dry_run, "dry_run should be on by default for safety");
     assert!(
         config.check_interval_secs > 0,
@@ -52,7 +52,10 @@ fn test_healer_config_safe_defaults() {
 #[test]
 fn test_healer_config_check_interval_value() {
     let config = HealerConfig::default();
-    assert_eq!(config.check_interval_secs, 30, "Default check interval should be 30 seconds");
+    assert_eq!(
+        config.check_interval_secs, 30,
+        "Default check interval should be 30 seconds"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +122,10 @@ async fn test_healer_dry_run_does_not_apply_fixes() {
 
     let mut healer = SelfHealer::new(config, reader, k8s);
     let stats = healer.run().await.unwrap();
-    assert_eq!(stats.fixes_applied, 0, "dry_run should prevent fixes from being applied");
+    assert_eq!(
+        stats.fixes_applied, 0,
+        "dry_run should prevent fixes from being applied"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -5,10 +5,10 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{TuiApp, ModuleContainer};
+use super::app::{ModuleContainer, TuiApp};
 use super::canary_view;
-use super::theme::*;
 use super::help_overlay;
+use super::theme::*;
 
 impl TuiApp {
     pub(crate) fn ui(&self, f: &mut Frame) {
@@ -23,9 +23,20 @@ impl TuiApp {
             .split(f.area());
 
         // Title
-        let title = Paragraph::new(format!("🚀 Cilium Vision - Intelligence Platform - {}", self.context))
-            .style(Style::default().fg(TITLE_COLOR).add_modifier(Modifier::BOLD))
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(BORDER_COLOR)));
+        let title = Paragraph::new(format!(
+            "🚀 Cilium Vision - Intelligence Platform - {}",
+            self.context
+        ))
+        .style(
+            Style::default()
+                .fg(TITLE_COLOR)
+                .add_modifier(Modifier::BOLD),
+        )
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(BORDER_COLOR)),
+        );
         f.render_widget(title, chunks[0]);
 
         // Tabs
@@ -42,10 +53,15 @@ impl TuiApp {
             "Replay",
             "Chaos",
             "Canary",
-            "MultiCluster"
+            "MultiCluster",
         ];
         let tabs = Tabs::new(titles)
-            .block(Block::default().borders(Borders::ALL).title("Intelligence Modules").border_style(Style::default().fg(BORDER_COLOR)))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Intelligence Modules")
+                    .border_style(Style::default().fg(BORDER_COLOR)),
+            )
             .select(self.selected_tab)
             .style(Style::default().fg(TAB_NORMAL_COLOR))
             .highlight_style(
@@ -83,12 +99,20 @@ impl TuiApp {
             7 => {
                 // RootCause view
                 match &self.modules {
-                    ModuleContainer::Enriched { rootcause, .. } => {
-                        self.rootcause_view.render(f, chunks[2], Some(rootcause), self.selected_fix_index, self.fix_apply_confirmation)
-                    }
-                    ModuleContainer::Mock { rootcause, .. } => {
-                        self.rootcause_view.render(f, chunks[2], Some(rootcause), self.selected_fix_index, self.fix_apply_confirmation)
-                    }
+                    ModuleContainer::Enriched { rootcause, .. } => self.rootcause_view.render(
+                        f,
+                        chunks[2],
+                        Some(rootcause),
+                        self.selected_fix_index,
+                        self.fix_apply_confirmation,
+                    ),
+                    ModuleContainer::Mock { rootcause, .. } => self.rootcause_view.render(
+                        f,
+                        chunks[2],
+                        Some(rootcause),
+                        self.selected_fix_index,
+                        self.fix_apply_confirmation,
+                    ),
                 }
             }
             8 => {
@@ -141,18 +165,28 @@ impl TuiApp {
             self.get_footer_text_for_tab()
         };
 
-        let footer_style = if self.policy_apply_confirmation || self.policy_rollback_confirmation || self.policy_batch_apply_confirmation || self.policy_batch_rollback_confirmation || self.fix_apply_confirmation {
+        let footer_style = if self.policy_apply_confirmation
+            || self.policy_rollback_confirmation
+            || self.policy_batch_apply_confirmation
+            || self.policy_batch_rollback_confirmation
+            || self.fix_apply_confirmation
+        {
             // Confirmation prompt - use red for warning
-            Style::default().fg(ERROR_COLOR).add_modifier(Modifier::BOLD)
-        } else if self.status_message.is_some() && self.status_message_time.elapsed().as_secs() < 5 {
+            Style::default()
+                .fg(ERROR_COLOR)
+                .add_modifier(Modifier::BOLD)
+        } else if self.status_message.is_some() && self.status_message_time.elapsed().as_secs() < 5
+        {
             Style::default().fg(WARNING_COLOR)
         } else {
             Style::default().fg(TEXT_COLOR)
         };
 
-        let footer = Paragraph::new(footer_text)
-            .style(footer_style)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(BORDER_COLOR)));
+        let footer = Paragraph::new(footer_text).style(footer_style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(BORDER_COLOR)),
+        );
         f.render_widget(footer, chunks[3]);
 
         // Render help overlay on top if active
@@ -163,66 +197,87 @@ impl TuiApp {
 
     fn get_footer_text_for_tab(&self) -> String {
         match self.selected_tab {
-            0 => if self.show_packet_explanation {
-                "?: Help | q: Quit | Esc: Exit Explanation".to_string()
-            } else {
-                "?: Help | q: Quit | ↑/↓: Select Flow | e: Explain Packet".to_string()
-            },
+            0 => {
+                if self.show_packet_explanation {
+                    "?: Help | q: Quit | Esc: Exit Explanation".to_string()
+                } else {
+                    "?: Help | q: Quit | ↑/↓: Select Flow | e: Explain Packet".to_string()
+                }
+            }
             5 => "?: Help | q: Quit | Tab: Next | d: Detect Problems".to_string(),
-            6 => if self.policy_apply_confirmation {
-                "⚠️ CONFIRM: y: Apply Policy | n: Cancel | Esc: Cancel".to_string()
-            } else if self.policy_rollback_confirmation {
-                "⚠️ CONFIRM: y: Rollback Policy | n: Cancel | Esc: Cancel".to_string()
-            } else if self.policy_batch_apply_confirmation {
-                "⚠️ CONFIRM: y: Apply All | n: Cancel | Esc: Cancel".to_string()
-            } else if self.policy_batch_rollback_confirmation {
-                "⚠️ CONFIRM: y: Rollback All | n: Cancel | Esc: Cancel".to_string()
-            } else if self.policy_detail_mode {
-                // Show different options based on policy applied status
-                let policies = match &self.modules {
-                    ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
-                    ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
-                };
-                if !policies.is_empty() && self.applied_policies.contains(&policies[self.selected_policy_index].name) {
-                    "?: Help | q: Quit | Esc: Exit | ↑/↓: Navigate | r: Rollback".to_string()
+            6 => {
+                if self.policy_apply_confirmation {
+                    "⚠️ CONFIRM: y: Apply Policy | n: Cancel | Esc: Cancel".to_string()
+                } else if self.policy_rollback_confirmation {
+                    "⚠️ CONFIRM: y: Rollback Policy | n: Cancel | Esc: Cancel".to_string()
+                } else if self.policy_batch_apply_confirmation {
+                    "⚠️ CONFIRM: y: Apply All | n: Cancel | Esc: Cancel".to_string()
+                } else if self.policy_batch_rollback_confirmation {
+                    "⚠️ CONFIRM: y: Rollback All | n: Cancel | Esc: Cancel".to_string()
+                } else if self.policy_detail_mode {
+                    // Show different options based on policy applied status
+                    let policies = match &self.modules {
+                        ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
+                        ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
+                    };
+                    if !policies.is_empty()
+                        && self
+                            .applied_policies
+                            .contains(&policies[self.selected_policy_index].name)
+                    {
+                        "?: Help | q: Quit | Esc: Exit | ↑/↓: Navigate | r: Rollback".to_string()
+                    } else {
+                        "?: Help | q: Quit | Esc: Exit | ↑/↓: Navigate | a: Apply".to_string()
+                    }
                 } else {
-                    "?: Help | q: Quit | Esc: Exit | ↑/↓: Navigate | a: Apply".to_string()
+                    "?: Help | q: Quit | u: Update | g: Generate | v: View | A: Apply All | R: Rollback All".to_string()
                 }
-            } else {
-                "?: Help | q: Quit | u: Update | g: Generate | v: View | A: Apply All | R: Rollback All".to_string()
-            },
-            7 => if self.fix_apply_confirmation {
-                "⚠️ CONFIRM: y: Apply Fix | n: Cancel | Esc: Cancel".to_string()
-            } else {
-                "?: Help | q: Quit | ↑/↓: Select Fix | a: Apply Fix".to_string()
-            },
-            8 => if self.simulator_view.last_simulation.is_some() {
-                "?: Help | q: Quit | c: Clear Results | Esc: Back".to_string()
-            } else {
-                "?: Help | q: Quit | ↑/↓: Select | s: Simulate | c: Clear".to_string()
-            },
-            9 => if self.replay_view.time_travel_mode {
-                if self.replay_view.is_playing {
-                    "?: Help | Space: Pause | ←/→: Step | [/]: Jump Events | +/-: Speed | Esc: Exit".to_string()
+            }
+            7 => {
+                if self.fix_apply_confirmation {
+                    "⚠️ CONFIRM: y: Apply Fix | n: Cancel | Esc: Cancel".to_string()
                 } else {
-                    "?: Help | Space: Play | ←/→: Step | [/]: Jump Events | +/-: Speed | Esc: Exit".to_string()
+                    "?: Help | q: Quit | ↑/↓: Select Fix | a: Apply Fix".to_string()
                 }
-            } else {
-                "?: Help | q: Quit | ↑/↓: Select | t: Time-Travel | r: Refresh".to_string()
-            },
-            10 => if self.chaos_view.confirmation_mode {
-                "⚠️ CONFIRM: y: Run Experiment | n: Cancel".to_string()
-            } else if self.chaos_view.show_presets {
-                "?: Help | ↑/↓: Select | Enter: Run | v: View Active | b: Circuit Breaker".to_string()
-            } else {
-                "?: Help | ↑/↓: Select | s: Stop | S: Stop All | v: View Presets".to_string()
-            },
-            11 => if self.canary_view.confirmation_mode != canary_view::ConfirmationType::None {
-                "⚠️ CONFIRM: y: Execute | n: Cancel".to_string()
-            } else {
-                "?: Help | ↑/↓: Select | p: Promote | r: Rollback | +: Progress | d: Details".to_string()
-            },
-            12 => "?: Help | ↑/↓: Select | v: Cycle View (Clusters/Topology/Syncs/Placements)".to_string(),
+            }
+            8 => {
+                if self.simulator_view.last_simulation.is_some() {
+                    "?: Help | q: Quit | c: Clear Results | Esc: Back".to_string()
+                } else {
+                    "?: Help | q: Quit | ↑/↓: Select | s: Simulate | c: Clear".to_string()
+                }
+            }
+            9 => {
+                if self.replay_view.time_travel_mode {
+                    if self.replay_view.is_playing {
+                        "?: Help | Space: Pause | ←/→: Step | [/]: Jump Events | +/-: Speed | Esc: Exit".to_string()
+                    } else {
+                        "?: Help | Space: Play | ←/→: Step | [/]: Jump Events | +/-: Speed | Esc: Exit".to_string()
+                    }
+                } else {
+                    "?: Help | q: Quit | ↑/↓: Select | t: Time-Travel | r: Refresh".to_string()
+                }
+            }
+            10 => {
+                if self.chaos_view.confirmation_mode {
+                    "⚠️ CONFIRM: y: Run Experiment | n: Cancel".to_string()
+                } else if self.chaos_view.show_presets {
+                    "?: Help | ↑/↓: Select | Enter: Run | v: View Active | b: Circuit Breaker"
+                        .to_string()
+                } else {
+                    "?: Help | ↑/↓: Select | s: Stop | S: Stop All | v: View Presets".to_string()
+                }
+            }
+            11 => {
+                if self.canary_view.confirmation_mode != canary_view::ConfirmationType::None {
+                    "⚠️ CONFIRM: y: Execute | n: Cancel".to_string()
+                } else {
+                    "?: Help | ↑/↓: Select | p: Promote | r: Rollback | +: Progress | d: Details"
+                        .to_string()
+                }
+            }
+            12 => "?: Help | ↑/↓: Select | v: Cycle View (Clusters/Topology/Syncs/Placements)"
+                .to_string(),
             _ => "?: Help | q: Quit | Tab: Next | Shift+Tab: Previous".to_string(),
         }
     }

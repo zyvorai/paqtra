@@ -1,9 +1,8 @@
+use super::*;
 /// eBPF Map Data Parsers
 ///
 /// Parses binary data from eBPF maps into Rust structures
-
 use anyhow::Result;
-use super::*;
 
 /// Parse raw policy map data
 #[allow(dead_code)]

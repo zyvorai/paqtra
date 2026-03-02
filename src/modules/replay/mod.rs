@@ -10,7 +10,6 @@
 /// - Cross-cluster replay
 /// - Outcome comparison
 /// - Policy validation
-
 use anyhow::Result;
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -22,10 +21,10 @@ use crate::kubernetes::K8sClient;
 pub mod types;
 pub use types::*;
 
+pub mod comparator;
+pub mod player;
 pub mod recorder;
 pub mod storage;
-pub mod player;
-pub mod comparator;
 
 /// Traffic Replay Engine
 pub struct ReplayEngine<M: MapReader> {
@@ -48,11 +47,7 @@ struct RecordingSession {
 }
 
 impl<M: MapReader> ReplayEngine<M> {
-    pub fn new(
-        config: ReplayConfig,
-        ebpf_reader: M,
-        k8s_client: K8sClient,
-    ) -> Self {
+    pub fn new(config: ReplayConfig, ebpf_reader: M, k8s_client: K8sClient) -> Self {
         // Ensure recording directory exists
         if let Err(e) = std::fs::create_dir_all(&config.recording_dir) {
             eprintln!("Failed to create recording directory: {}", e);
@@ -73,18 +68,20 @@ impl<M: MapReader> ReplayEngine<M> {
             anyhow::bail!("Recording already in progress");
         }
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_secs();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
         let id = format!("rec-{}-{}", now, uuid::Uuid::new_v4());
 
         let recording = Recording {
             id: id.clone(),
             name,
-            source_cluster: self.k8s_client.get_current_context().await
-                .unwrap_or_else(|_| std::env::var("HOSTNAME")
-                    .unwrap_or_else(|_| "unknown".to_string())),
+            source_cluster: self
+                .k8s_client
+                .get_current_context()
+                .await
+                .unwrap_or_else(|_| {
+                    std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_string())
+                }),
             start_time: now,
             end_time: 0,
             flow_count: 0,
@@ -112,7 +109,9 @@ impl<M: MapReader> ReplayEngine<M> {
         let connections = self.ebpf_reader.read_conntrack_map()?;
 
         // Get session
-        let session = self.current_recording.as_mut()
+        let session = self
+            .current_recording
+            .as_mut()
             .ok_or_else(|| anyhow::anyhow!("No recording in progress"))?;
 
         let start_time = session.start_time;
@@ -140,23 +139,23 @@ impl<M: MapReader> ReplayEngine<M> {
 
     /// Stop recording and save
     pub async fn stop_recording(&mut self) -> Result<Recording> {
-        let mut session = self.current_recording.take()
+        let mut session = self
+            .current_recording
+            .take()
             .ok_or_else(|| anyhow::anyhow!("No recording in progress"))?;
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_secs();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
         session.recording.end_time = now;
         session.recording.flow_count = session.flows.len();
 
         // Calculate total bytes
-        session.recording.total_bytes = session.flows.iter()
-            .map(|f| f.bytes)
-            .sum();
+        session.recording.total_bytes = session.flows.iter().map(|f| f.bytes).sum();
 
         // Extract unique namespaces
-        let mut namespaces: Vec<_> = session.flows.iter()
+        let mut namespaces: Vec<_> = session
+            .flows
+            .iter()
             .flat_map(|f| vec![f.src_namespace.clone(), f.dst_namespace.clone()])
             .collect();
         namespaces.sort();
@@ -168,9 +167,10 @@ impl<M: MapReader> ReplayEngine<M> {
         let storage = RecordingStorage::new(self.config.recording_dir.clone());
         storage.save(&session.recording, &session.flows)?;
 
-        println!("⏹️  Recording stopped: {} ({} flows)",
-            session.recording.id,
-            session.recording.flow_count);
+        println!(
+            "⏹️  Recording stopped: {} ({} flows)",
+            session.recording.id, session.recording.flow_count
+        );
 
         let recording = session.recording.clone();
         self.recordings.push(recording.clone());
@@ -179,14 +179,19 @@ impl<M: MapReader> ReplayEngine<M> {
     }
 
     /// Resolve IP to identity and namespace from IPCache entries
-    fn resolve_ip_from_cache(ip: &str, ipcache: &[crate::ebpf::IPCacheEntry]) -> (u32, String, HashMap<String, String>) {
+    fn resolve_ip_from_cache(
+        ip: &str,
+        ipcache: &[crate::ebpf::IPCacheEntry],
+    ) -> (u32, String, HashMap<String, String>) {
         if let Some(entry) = ipcache.iter().find(|e| e.ip == ip) {
             let namespace = if entry.namespace.is_empty() {
                 "unknown".to_string()
             } else {
                 entry.namespace.clone()
             };
-            let labels: HashMap<String, String> = entry.labels.iter()
+            let labels: HashMap<String, String> = entry
+                .labels
+                .iter()
                 .filter_map(|l| {
                     let parts: Vec<&str> = l.splitn(2, '=').collect();
                     if parts.len() == 2 {
@@ -212,13 +217,19 @@ impl<M: MapReader> ReplayEngine<M> {
 
         let timestamp = now.duration_since(UNIX_EPOCH)?.as_secs();
 
-        let src_ip: IpAddr = conn.src_ip.parse()
+        let src_ip: IpAddr = conn
+            .src_ip
+            .parse()
             .unwrap_or_else(|_| IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)));
-        let dst_ip: IpAddr = conn.dst_ip.parse()
+        let dst_ip: IpAddr = conn
+            .dst_ip
+            .parse()
             .unwrap_or_else(|_| IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)));
 
-        let (src_identity, src_namespace, src_labels) = Self::resolve_ip_from_cache(&conn.src_ip, ipcache);
-        let (dst_identity, dst_namespace, dst_labels) = Self::resolve_ip_from_cache(&conn.dst_ip, ipcache);
+        let (src_identity, src_namespace, src_labels) =
+            Self::resolve_ip_from_cache(&conn.src_ip, ipcache);
+        let (dst_identity, dst_namespace, dst_labels) =
+            Self::resolve_ip_from_cache(&conn.dst_ip, ipcache);
 
         Ok(RecordedFlow {
             timestamp,
@@ -234,7 +245,7 @@ impl<M: MapReader> ReplayEngine<M> {
             dst_namespace,
             src_labels,
             dst_labels,
-            verdict: PolicyVerdict::Allow,  // Assume allowed if in conntrack
+            verdict: PolicyVerdict::Allow, // Assume allowed if in conntrack
             bytes: conn.bytes,
             packets: conn.packets,
             http_method: None,
@@ -249,13 +260,16 @@ impl<M: MapReader> ReplayEngine<M> {
         recording_id: &str,
         filter: Option<ReplayFilter>,
     ) -> Result<ReplayResult> {
-        use player::ReplayPlayer;
         use comparator::ReplayComparator;
+        use player::ReplayPlayer;
 
         // Load recording
         let recording = self.load_recording(recording_id)?;
 
-        println!("▶️  Replaying: {} ({} flows)", recording.name, recording.flow_count);
+        println!(
+            "▶️  Replaying: {} ({} flows)",
+            recording.name, recording.flow_count
+        );
 
         // Load flows
         use storage::RecordingStorage;
@@ -270,11 +284,8 @@ impl<M: MapReader> ReplayEngine<M> {
         let start = std::time::Instant::now();
 
         // Replay flows
-        let player = ReplayPlayer::new(
-            self.config.replay_rate,
-            &self.ebpf_reader,
-            &self.k8s_client,
-        );
+        let player =
+            ReplayPlayer::new(self.config.replay_rate, &self.ebpf_reader, &self.k8s_client);
 
         let replay_outcomes = player.replay(&flows).await?;
 
@@ -289,15 +300,12 @@ impl<M: MapReader> ReplayEngine<M> {
         };
 
         // Count successes/failures
-        let flows_successful = replay_outcomes.iter()
-            .filter(|o| o.success)
-            .count();
+        let flows_successful = replay_outcomes.iter().filter(|o| o.success).count();
 
-        let flows_failed = replay_outcomes.iter()
-            .filter(|o| !o.success)
-            .count();
+        let flows_failed = replay_outcomes.iter().filter(|o| !o.success).count();
 
-        let errors = replay_outcomes.iter()
+        let errors = replay_outcomes
+            .iter()
             .filter_map(|o| o.error.clone())
             .collect();
 
@@ -306,7 +314,10 @@ impl<M: MapReader> ReplayEngine<M> {
             // Remote cluster replay is not yet supported; we resolve the local
             // cluster name from the current K8s context so the result accurately
             // reflects where the replay executed.
-            target_cluster: self.k8s_client.get_current_context().await
+            target_cluster: self
+                .k8s_client
+                .get_current_context()
+                .await
                 .unwrap_or_else(|_| "local".to_string()),
             flows_attempted: flows.len(),
             flows_successful,

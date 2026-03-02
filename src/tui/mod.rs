@@ -14,21 +14,21 @@ use std::time::Duration;
 mod app;
 mod events;
 mod handlers;
-mod tabs;
 mod render;
 mod render_flows;
 mod render_infra;
 mod render_modules;
+mod tabs;
 
-mod simulator_view;
-mod replay_view;
 mod autopolicy_view;
-mod rootcause_view;
-mod chaos_view;
 mod canary_view;
-mod multicluster_view;
-mod theme;
+mod chaos_view;
 mod help_overlay;
+mod multicluster_view;
+mod replay_view;
+mod rootcause_view;
+mod simulator_view;
+mod theme;
 
 pub use app::TuiApp;
 #[allow(unused_imports)]

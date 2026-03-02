@@ -211,14 +211,19 @@ mod tests {
         let mut loader = HotLoader::new().unwrap();
         let result = loader.load_program(vec![]).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("bytecode is empty"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("bytecode is empty"));
     }
 
     #[tokio::test]
     async fn test_load_program_non_elf_still_loads() {
         let mut loader = HotLoader::new().unwrap();
         // Non-ELF bytecode: the loader warns but does not reject
-        let result = loader.load_program(vec![0x00, 0x01, 0x02, 0x03, 0x04]).await;
+        let result = loader
+            .load_program(vec![0x00, 0x01, 0x02, 0x03, 0x04])
+            .await;
         // The stub loader still accepts it with a warning
         assert!(result.is_ok());
     }

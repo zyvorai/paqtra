@@ -1,22 +1,22 @@
-use anyhow::Result;
-use crate::ebpf::{MockMapReader, EnrichedMapReader, CiliumMapReader};
+use crate::ebpf::{CiliumMapReader, EnrichedMapReader, MockMapReader};
 use crate::endpoints::{Endpoint, EndpointManager};
 use crate::hubble::{Flow, HubbleClient};
+use crate::integration::{EnrichedConnection, IntegratedDataProvider};
 use crate::kubernetes::K8sClient;
 use crate::modules::autopolicy::{AutoPolicy, AutoPolicyConfig};
-use crate::modules::healer::{SelfHealer, HealerConfig};
-use crate::modules::rootcause::{RootCauseEngine, RootCauseConfig};
+use crate::modules::healer::{HealerConfig, SelfHealer};
+use crate::modules::replay::{ReplayConfig, ReplayEngine};
+use crate::modules::rootcause::{RootCauseConfig, RootCauseEngine};
 use crate::modules::simulator::{Simulator, SimulatorConfig};
-use crate::modules::replay::{ReplayEngine, ReplayConfig};
-use crate::integration::{IntegratedDataProvider, EnrichedConnection};
+use anyhow::Result;
 
-use super::simulator_view::SimulatorView;
-use super::replay_view::ReplayView;
-use super::chaos_view::ChaosView;
-use super::canary_view::CanaryView;
-use super::multicluster_view::MultiClusterView;
 use super::autopolicy_view::AutoPolicyView;
+use super::canary_view::CanaryView;
+use super::chaos_view::ChaosView;
+use super::multicluster_view::MultiClusterView;
+use super::replay_view::ReplayView;
 use super::rootcause_view::RootCauseView;
+use super::simulator_view::SimulatorView;
 
 /// Module container that can use either enriched or mock data
 pub(crate) enum ModuleContainer {
@@ -101,7 +101,8 @@ pub struct TuiApp {
     // Packet Explainer state
     pub(crate) selected_flow_index: usize,
     pub(crate) show_packet_explanation: bool,
-    pub(crate) packet_explainer: std::cell::RefCell<crate::modules::packet_explainer::PacketExplainer>,
+    pub(crate) packet_explainer:
+        std::cell::RefCell<crate::modules::packet_explainer::PacketExplainer>,
 
     // UX enhancements
     pub(crate) show_help: bool,
@@ -116,7 +117,10 @@ impl TuiApp {
         let integrated_provider = match IntegratedDataProvider::new(k8s_client.clone()).await {
             Ok(provider) => Some(provider),
             Err(e) => {
-                tracing::warn!("Failed to initialize IntegratedDataProvider: {}. Using mock data.", e);
+                tracing::warn!(
+                    "Failed to initialize IntegratedDataProvider: {}. Using mock data.",
+                    e
+                );
                 None
             }
         };
@@ -126,10 +130,8 @@ impl TuiApp {
             // Try to create EnrichedMapReader
             match CiliumMapReader::new() {
                 Ok(cilium_reader) => {
-                    let enriched_reader = EnrichedMapReader::new(
-                        cilium_reader,
-                        provider.identity_resolver().clone(),
-                    );
+                    let enriched_reader =
+                        EnrichedMapReader::new(cilium_reader, provider.identity_resolver().clone());
 
                     tracing::info!("Initializing intelligence modules with enriched data");
 
@@ -165,11 +167,31 @@ impl TuiApp {
                     tracing::warn!("Failed to create CiliumMapReader: {}. Using mock data.", e);
                     let mock_reader = MockMapReader;
                     ModuleContainer::Mock {
-                        healer: SelfHealer::new(HealerConfig::default(), mock_reader, k8s_client.clone()),
-                        autopolicy: AutoPolicy::new(AutoPolicyConfig::default(), mock_reader, k8s_client.clone()),
-                        rootcause: RootCauseEngine::new(RootCauseConfig::default(), mock_reader, k8s_client.clone()),
-                        simulator: Simulator::new(SimulatorConfig::default(), mock_reader, k8s_client.clone()),
-                        replay: ReplayEngine::new(ReplayConfig::default(), mock_reader, k8s_client.clone()),
+                        healer: SelfHealer::new(
+                            HealerConfig::default(),
+                            mock_reader,
+                            k8s_client.clone(),
+                        ),
+                        autopolicy: AutoPolicy::new(
+                            AutoPolicyConfig::default(),
+                            mock_reader,
+                            k8s_client.clone(),
+                        ),
+                        rootcause: RootCauseEngine::new(
+                            RootCauseConfig::default(),
+                            mock_reader,
+                            k8s_client.clone(),
+                        ),
+                        simulator: Simulator::new(
+                            SimulatorConfig::default(),
+                            mock_reader,
+                            k8s_client.clone(),
+                        ),
+                        replay: ReplayEngine::new(
+                            ReplayConfig::default(),
+                            mock_reader,
+                            k8s_client.clone(),
+                        ),
                     }
                 }
             }
@@ -179,11 +201,7 @@ impl TuiApp {
             let mock_reader = MockMapReader;
 
             ModuleContainer::Mock {
-                healer: SelfHealer::new(
-                    HealerConfig::default(),
-                    mock_reader,
-                    k8s_client.clone(),
-                ),
+                healer: SelfHealer::new(HealerConfig::default(), mock_reader, k8s_client.clone()),
                 autopolicy: AutoPolicy::new(
                     AutoPolicyConfig::default(),
                     mock_reader,
@@ -199,11 +217,7 @@ impl TuiApp {
                     mock_reader,
                     k8s_client.clone(),
                 ),
-                replay: ReplayEngine::new(
-                    ReplayConfig::default(),
-                    mock_reader,
-                    k8s_client.clone(),
-                ),
+                replay: ReplayEngine::new(ReplayConfig::default(), mock_reader, k8s_client.clone()),
             }
         };
 
@@ -240,7 +254,9 @@ impl TuiApp {
             fix_apply_confirmation: false,
             selected_flow_index: 0,
             show_packet_explanation: false,
-            packet_explainer: std::cell::RefCell::new(crate::modules::packet_explainer::PacketExplainer::new()),
+            packet_explainer: std::cell::RefCell::new(
+                crate::modules::packet_explainer::PacketExplainer::new(),
+            ),
             show_help: false,
         })
     }
@@ -250,7 +266,10 @@ impl TuiApp {
         self.status_message_time = std::time::Instant::now();
     }
 
-    pub(crate) fn save_policies(&self, policies: &[crate::modules::autopolicy::GeneratedPolicy]) -> Result<usize> {
+    pub(crate) fn save_policies(
+        &self,
+        policies: &[crate::modules::autopolicy::GeneratedPolicy],
+    ) -> Result<usize> {
         use std::fs;
         use std::io::Write;
 
@@ -299,7 +318,13 @@ impl TuiApp {
 
         // Delete the CiliumNetworkPolicy using kubectl
         let output = Command::new("kubectl")
-            .args(["delete", "ciliumnetworkpolicy", policy_name, "-n", namespace])
+            .args([
+                "delete",
+                "ciliumnetworkpolicy",
+                policy_name,
+                "-n",
+                namespace,
+            ])
             .output()?;
 
         if output.status.success() {
@@ -336,7 +361,8 @@ spec:
     toPorts:
     - ports:
       - port: "8080"
-        protocol: TCP"#.to_string();
+        protocol: TCP"#
+                    .to_string();
                 (policy_name, policy_yaml)
             }
             1 => {
@@ -366,7 +392,8 @@ spec:
     toPorts:
     - ports:
       - port: "53"
-        protocol: UDP"#.to_string();
+        protocol: UDP"#
+                    .to_string();
                 (policy_name, policy_yaml)
             }
             2 => {
@@ -389,7 +416,8 @@ metadata:
 spec:
   endpointSelector: {}
   egress:
-  - {}  # Allow all (this is just a placeholder)"#.to_string();
+  - {}  # Allow all (this is just a placeholder)"#
+                    .to_string();
                 (policy_name, policy_yaml)
             }
             3 => {
@@ -411,12 +439,11 @@ spec:
     toPorts:
     - ports:
       - port: "5432"
-        protocol: TCP"#.to_string();
+        protocol: TCP"#
+                    .to_string();
                 (policy_name, policy_yaml)
             }
-            _ => {
-                ("unknown-fix".to_string(), "# Unknown fix".to_string())
-            }
+            _ => ("unknown-fix".to_string(), "# Unknown fix".to_string()),
         }
     }
 }

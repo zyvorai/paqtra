@@ -10,7 +10,6 @@
 /// - Human-readable explanations
 /// - Actionable fix suggestions
 /// - Historical pattern analysis
-
 use anyhow::Result;
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -24,8 +23,8 @@ pub mod types;
 pub use types::*;
 
 pub mod analyzer;
-pub mod explainer;
 pub mod correlator;
+pub mod explainer;
 
 /// Root-Cause Engine
 pub struct RootCauseEngine<M: MapReader> {
@@ -42,11 +41,7 @@ pub struct RootCauseEngine<M: MapReader> {
 }
 
 impl<M: MapReader> RootCauseEngine<M> {
-    pub fn new(
-        config: RootCauseConfig,
-        ebpf_reader: M,
-        k8s_client: K8sClient,
-    ) -> Self {
+    pub fn new(config: RootCauseConfig, ebpf_reader: M, k8s_client: K8sClient) -> Self {
         let policy_manager = PolicyManager::new(k8s_client.clone());
 
         Self {
@@ -95,7 +90,9 @@ impl<M: MapReader> RootCauseEngine<M> {
     fn resolve_labels_for_identity(&self, identity: u32) -> HashMap<String, String> {
         if let Ok(entries) = self.ebpf_reader.read_ipcache_map() {
             if let Some(entry) = entries.iter().find(|e| e.identity == identity) {
-                let labels: HashMap<String, String> = entry.labels.iter()
+                let labels: HashMap<String, String> = entry
+                    .labels
+                    .iter()
                     .filter_map(|l| l.split_once('='))
                     .map(|(k, v)| (k.to_string(), v.to_string()))
                     .collect();
@@ -104,9 +101,7 @@ impl<M: MapReader> RootCauseEngine<M> {
                 }
             }
         }
-        HashMap::from([
-            ("security.identity".to_string(), identity.to_string()),
-        ])
+        HashMap::from([("security.identity".to_string(), identity.to_string())])
     }
 
     /// Resolve an IP address to identity and namespace via IPCache
@@ -127,9 +122,13 @@ impl<M: MapReader> RootCauseEngine<M> {
     /// Convert eBPF drop to drop event
     async fn ebpf_drop_to_event(&self, ebpf_drop: &EbpfDropReason) -> Result<DropEvent> {
         // Parse IP addresses
-        let src_ip: IpAddr = ebpf_drop.src_ip.parse()
+        let src_ip: IpAddr = ebpf_drop
+            .src_ip
+            .parse()
             .unwrap_or_else(|_| IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)));
-        let dst_ip: IpAddr = ebpf_drop.dst_ip.parse()
+        let dst_ip: IpAddr = ebpf_drop
+            .dst_ip
+            .parse()
             .unwrap_or_else(|_| IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)));
 
         // Resolve IPs to pod info via IPCache
@@ -204,18 +203,15 @@ impl<M: MapReader> RootCauseEngine<M> {
 
     /// Analyze a single drop event
     async fn analyze_single_drop(&self, event: &DropEvent) -> Result<RootCauseAnalysis> {
-        use explainer::DropExplainer;
         use correlator::PolicyCorrelator;
+        use explainer::DropExplainer;
 
         // Get human-readable explanation
         let explanation = DropExplainer::explain(event);
 
         // Correlate with policies if enabled
         let (related_policy, policy_context) = if self.config.auto_correlate {
-            PolicyCorrelator::correlate_with_policy(
-                event,
-                &self.ebpf_reader,
-            ).await?
+            PolicyCorrelator::correlate_with_policy(event, &self.ebpf_reader).await?
         } else {
             (None, Vec::new())
         };
@@ -256,9 +252,7 @@ impl<M: MapReader> RootCauseEngine<M> {
             DropReason::CTStateMismatch => {
                 "Connection tracking table is out of sync or full".to_string()
             }
-            DropReason::NoBackend => {
-                "Service has no healthy backend pods".to_string()
-            }
+            DropReason::NoBackend => "Service has no healthy backend pods".to_string(),
             DropReason::ServiceNotFound => {
                 "Service does not exist or is not registered".to_string()
             }
@@ -289,18 +283,23 @@ impl<M: MapReader> RootCauseEngine<M> {
                     _ => "UNKNOWN",
                 };
 
-                let namespace = event.namespace.clone().unwrap_or_else(|| "default".to_string());
+                let namespace = event
+                    .namespace
+                    .clone()
+                    .unwrap_or_else(|| "default".to_string());
 
                 // Resolve labels from IPCache; fall back to identity-based labels
                 let from_labels = self.resolve_labels_for_identity(event.identity_src);
                 let to_labels = self.resolve_labels_for_identity(event.identity_dst);
 
                 // Build label selectors for the YAML from resolved labels
-                let from_label_yaml: String = from_labels.iter()
+                let from_label_yaml: String = from_labels
+                    .iter()
                     .map(|(k, v)| format!("      {}: \"{}\"", k, v))
                     .collect::<Vec<_>>()
                     .join("\n");
-                let to_label_yaml: String = to_labels.iter()
+                let to_label_yaml: String = to_labels
+                    .iter()
                     .map(|(k, v)| format!("        {}: \"{}\"", k, v))
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -324,11 +323,7 @@ spec:
       - port: "{}"
         protocol: {}
 "#,
-                    namespace,
-                    from_label_yaml,
-                    to_label_yaml,
-                    event.dst_port,
-                    protocol
+                    namespace, from_label_yaml, to_label_yaml, event.dst_port, protocol
                 );
 
                 Ok(SuggestedFix::AddPolicyRule {
@@ -341,27 +336,26 @@ spec:
                 })
             }
 
-            DropReason::FragNeeded => {
-                Ok(SuggestedFix::UpdateMTU {
-                    interface: "cilium_host".to_string(),
-                    current_mtu: 1500,
-                    suggested_mtu: 1450,
-                    command: "ip link set cilium_host mtu 1450".to_string(),
-                })
-            }
+            DropReason::FragNeeded => Ok(SuggestedFix::UpdateMTU {
+                interface: "cilium_host".to_string(),
+                current_mtu: 1500,
+                suggested_mtu: 1450,
+                command: "ip link set cilium_host mtu 1450".to_string(),
+            }),
 
-            DropReason::CTStateMismatch => {
-                Ok(SuggestedFix::CheckConntrack {
-                    issue: "Connection tracking state mismatch".to_string(),
-                    commands: vec![
-                        "cilium bpf ct list global".to_string(),
-                        "cilium bpf ct flush".to_string(),
-                    ],
-                })
-            }
+            DropReason::CTStateMismatch => Ok(SuggestedFix::CheckConntrack {
+                issue: "Connection tracking state mismatch".to_string(),
+                commands: vec![
+                    "cilium bpf ct list global".to_string(),
+                    "cilium bpf ct flush".to_string(),
+                ],
+            }),
 
             DropReason::NoBackend => {
-                let service = event.namespace.clone().unwrap_or_else(|| "unknown".to_string());
+                let service = event
+                    .namespace
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string());
                 Ok(SuggestedFix::AddServiceEndpoint {
                     service: format!("service-on-port-{}", event.dst_port),
                     namespace: service,
@@ -370,7 +364,10 @@ spec:
             }
 
             DropReason::ServiceNotFound => {
-                let service = event.namespace.clone().unwrap_or_else(|| "unknown".to_string());
+                let service = event
+                    .namespace
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string());
                 Ok(SuggestedFix::FixLoadBalancer {
                     service: format!("service-on-port-{}", event.dst_port),
                     namespace: service,
@@ -378,16 +375,14 @@ spec:
                 })
             }
 
-            _ => {
-                Ok(SuggestedFix::ManualInvestigation {
-                    reason: format!("Uncommon drop reason: {}", event.reason.to_string()),
-                    steps: vec![
-                        "Check cilium monitor output".to_string(),
-                        "Review Hubble flows".to_string(),
-                        "Inspect eBPF maps directly".to_string(),
-                    ],
-                })
-            }
+            _ => Ok(SuggestedFix::ManualInvestigation {
+                reason: format!("Uncommon drop reason: {}", event.reason.to_string()),
+                steps: vec![
+                    "Check cilium monitor output".to_string(),
+                    "Review Hubble flows".to_string(),
+                    "Inspect eBPF maps directly".to_string(),
+                ],
+            }),
         }
     }
 
@@ -434,7 +429,9 @@ spec:
             }
         }
 
-        let mut top_patterns: Vec<_> = self.pattern_counts.iter()
+        let mut top_patterns: Vec<_> = self
+            .pattern_counts
+            .iter()
             .map(|(p, c)| (p.clone(), *c))
             .collect();
         top_patterns.sort_by(|a, b| b.1.cmp(&a.1));

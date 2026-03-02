@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 /// Policy-specific healing logic
-
 use super::*;
 
 pub struct PolicyHealer;
@@ -25,12 +24,7 @@ impl PolicyHealer {
         problems
     }
 
-    pub fn suggest_policy(
-        src: &str,
-        dst: &str,
-        port: u16,
-        protocol: &str,
-    ) -> String {
+    pub fn suggest_policy(src: &str, dst: &str, port: u16, protocol: &str) -> String {
         format!(
             r#"
 apiVersion: cilium.io/v2
@@ -92,7 +86,13 @@ mod tests {
         let problems = PolicyHealer::detect_policy_gaps(&drops);
         assert_eq!(problems.len(), 1);
         match &problems[0] {
-            Problem::PolicyGap { src_pod, dst_pod, port, protocol, .. } => {
+            Problem::PolicyGap {
+                src_pod,
+                dst_pod,
+                port,
+                protocol,
+                ..
+            } => {
                 assert_eq!(src_pod, "10.0.0.1");
                 assert_eq!(dst_pod, "10.0.0.2");
                 assert_eq!(*port, 80);

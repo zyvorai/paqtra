@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 /// DNS-specific healing logic
-
 use super::*;
 
 pub struct DNSHealer;
@@ -14,9 +13,7 @@ impl DNSHealer {
 
         for drop in drops {
             if drop.port == 53 {
-                *dns_drops_by_source
-                    .entry(drop.src_ip.clone())
-                    .or_insert(0) += 1;
+                *dns_drops_by_source.entry(drop.src_ip.clone()).or_insert(0) += 1;
             }
         }
 
@@ -83,10 +80,7 @@ mod tests {
     #[test]
     fn test_dns_drops_below_threshold() {
         // Only 2 drops from same source - below threshold of 3
-        let drops = vec![
-            make_dns_drop("10.0.0.1"),
-            make_dns_drop("10.0.0.1"),
-        ];
+        let drops = vec![make_dns_drop("10.0.0.1"), make_dns_drop("10.0.0.1")];
         let problems = DNSHealer::detect_dns_issues(&drops);
         assert!(problems.is_empty());
     }
@@ -164,9 +158,12 @@ mod tests {
     #[test]
     fn test_generate_dns_fix() {
         let fix = DNSHealer::generate_dns_fix("production");
-        assert_eq!(fix.action, FixAction::CreateDNSPolicy {
-            namespace: "production".to_string(),
-        });
+        assert_eq!(
+            fix.action,
+            FixAction::CreateDNSPolicy {
+                namespace: "production".to_string(),
+            }
+        );
         assert!(!fix.applied);
         match &fix.problem {
             Problem::DNSDrops { namespace, .. } => {

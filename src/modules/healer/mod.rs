@@ -10,11 +10,10 @@
 /// - Load balancer timeouts
 /// - Policy gaps
 /// - Connection tracking issues
-
 use anyhow::Result;
 use std::collections::HashMap;
 
-use crate::ebpf::{DropReason, DropReasonType, MapReader, EnrichedMapReader};
+use crate::ebpf::{DropReason, DropReasonType, EnrichedMapReader, MapReader};
 use crate::kubernetes::K8sClient;
 use crate::policies::PolicyManager;
 
@@ -85,11 +84,27 @@ pub struct Fix {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FixAction {
-    CreateDNSPolicy { namespace: String },
-    AdjustMTU { namespace: String, pod: String, new_mtu: u16 },
-    CreateAllowPolicy { src: String, dst: String, port: u16 },
-    RebalanceBackend { service: String, backend: String },
-    TuneConntrack { node: String, new_timeout: u32 },
+    CreateDNSPolicy {
+        namespace: String,
+    },
+    AdjustMTU {
+        namespace: String,
+        pod: String,
+        new_mtu: u16,
+    },
+    CreateAllowPolicy {
+        src: String,
+        dst: String,
+        port: u16,
+    },
+    RebalanceBackend {
+        service: String,
+        backend: String,
+    },
+    TuneConntrack {
+        node: String,
+        new_timeout: u32,
+    },
 }
 
 pub struct SelfHealer<M: MapReader> {
@@ -102,11 +117,7 @@ pub struct SelfHealer<M: MapReader> {
 }
 
 impl<M: MapReader> SelfHealer<M> {
-    pub fn new(
-        config: HealerConfig,
-        ebpf_reader: M,
-        k8s_client: K8sClient,
-    ) -> Self {
+    pub fn new(config: HealerConfig, ebpf_reader: M, k8s_client: K8sClient) -> Self {
         let policy_manager = PolicyManager::new(k8s_client.clone());
 
         Self {
@@ -130,7 +141,10 @@ impl<M: MapReader> SelfHealer<M> {
         // Detect problems from eBPF data
         self.detect_problems().await?;
         stats.problems_detected = self.detected_problems.len();
-        tracing::info!(problem_count = self.detected_problems.len(), "Healer problem detection completed");
+        tracing::info!(
+            problem_count = self.detected_problems.len(),
+            "Healer problem detection completed"
+        );
 
         // Generate fixes
         let fixes = self.generate_fixes().await?;
@@ -288,7 +302,9 @@ spec:
               protocol: TCP
 "#
                 );
-                self.k8s_client.apply_custom_resource(Some(src), &policy_yaml).await?;
+                self.k8s_client
+                    .apply_custom_resource(Some(src), &policy_yaml)
+                    .await?;
                 println!("Applied allow policy: {} -> {}:{}", src, dst, port);
             }
             _ => {
@@ -304,11 +320,7 @@ spec:
         HealerStats {
             problems_detected: self.detected_problems.len(),
             fixes_proposed: self.applied_fixes.len(),
-            fixes_applied: self
-                .applied_fixes
-                .iter()
-                .filter(|f| f.applied)
-                .count(),
+            fixes_applied: self.applied_fixes.iter().filter(|f| f.applied).count(),
         }
     }
 
@@ -344,14 +356,19 @@ impl SelfHealer<EnrichedMapReader> {
     }
 
     /// Analyze DNS-related drops with enriched pod information
-    fn analyze_dns_drops_enriched(&self, drops: &[(DropReason, crate::ebpf::EnrichedDropInfo)]) -> Vec<Problem> {
+    fn analyze_dns_drops_enriched(
+        &self,
+        drops: &[(DropReason, crate::ebpf::EnrichedDropInfo)],
+    ) -> Vec<Problem> {
         let mut dns_problems = Vec::new();
         let mut dns_drop_count: HashMap<(String, String), u64> = HashMap::new();
 
         for (drop, info) in drops {
             if drop.port == 53 && drop.reason == DropReasonType::PolicyDenied {
                 let key = (
-                    info.src_namespace.clone().unwrap_or_else(|| UNKNOWN.to_string()),
+                    info.src_namespace
+                        .clone()
+                        .unwrap_or_else(|| UNKNOWN.to_string()),
                     info.src_pod.clone().unwrap_or_else(|| drop.src_ip.clone()),
                 );
                 *dns_drop_count.entry(key).or_insert(0) += 1;
@@ -372,15 +389,24 @@ impl SelfHealer<EnrichedMapReader> {
     }
 
     /// Analyze policy-related drops with enriched pod information
-    fn analyze_policy_gaps_enriched(&self, drops: &[(DropReason, crate::ebpf::EnrichedDropInfo)]) -> Vec<Problem> {
+    fn analyze_policy_gaps_enriched(
+        &self,
+        drops: &[(DropReason, crate::ebpf::EnrichedDropInfo)],
+    ) -> Vec<Problem> {
         let mut problems = Vec::new();
 
         for (drop, info) in drops {
             if drop.reason == DropReasonType::PolicyDenied {
                 problems.push(Problem::PolicyGap {
-                    src_namespace: info.src_namespace.clone().unwrap_or_else(|| UNKNOWN.to_string()),
+                    src_namespace: info
+                        .src_namespace
+                        .clone()
+                        .unwrap_or_else(|| UNKNOWN.to_string()),
                     src_pod: info.src_pod.clone().unwrap_or_else(|| drop.src_ip.clone()),
-                    dst_namespace: info.dst_namespace.clone().unwrap_or_else(|| UNKNOWN.to_string()),
+                    dst_namespace: info
+                        .dst_namespace
+                        .clone()
+                        .unwrap_or_else(|| UNKNOWN.to_string()),
                     dst_pod: info.dst_pod.clone().unwrap_or_else(|| drop.dst_ip.clone()),
                     port: drop.port,
                     protocol: if drop.protocol == 6 {
@@ -476,27 +502,31 @@ mod tests {
         let healer = SelfHealer::new(config, reader, k8s_client);
 
         // 5 DNS drops from same IP - at threshold (> 5 needed)
-        let drops: Vec<DropReason> = (0..5).map(|_| DropReason {
-            src_ip: "10.0.0.1".to_string(),
-            dst_ip: "10.96.0.10".to_string(),
-            port: 53,
-            protocol: 17,
-            reason: DropReasonType::PolicyDenied,
-            timestamp: 0,
-        }).collect();
+        let drops: Vec<DropReason> = (0..5)
+            .map(|_| DropReason {
+                src_ip: "10.0.0.1".to_string(),
+                dst_ip: "10.96.0.10".to_string(),
+                port: 53,
+                protocol: 17,
+                reason: DropReasonType::PolicyDenied,
+                timestamp: 0,
+            })
+            .collect();
 
         let problems = healer.analyze_dns_drops(&drops);
         assert!(problems.is_empty()); // 5 is not > 5
 
         // 6 DNS drops - above threshold
-        let drops: Vec<DropReason> = (0..6).map(|_| DropReason {
-            src_ip: "10.0.0.1".to_string(),
-            dst_ip: "10.96.0.10".to_string(),
-            port: 53,
-            protocol: 17,
-            reason: DropReasonType::PolicyDenied,
-            timestamp: 0,
-        }).collect();
+        let drops: Vec<DropReason> = (0..6)
+            .map(|_| DropReason {
+                src_ip: "10.0.0.1".to_string(),
+                dst_ip: "10.96.0.10".to_string(),
+                port: 53,
+                protocol: 17,
+                reason: DropReasonType::PolicyDenied,
+                timestamp: 0,
+            })
+            .collect();
 
         let problems = healer.analyze_dns_drops(&drops);
         assert_eq!(problems.len(), 1);
@@ -510,14 +540,16 @@ mod tests {
         let healer = SelfHealer::new(config, reader, k8s_client);
 
         // Drops on port 80, not DNS
-        let drops: Vec<DropReason> = (0..10).map(|_| DropReason {
-            src_ip: "10.0.0.1".to_string(),
-            dst_ip: "10.0.0.2".to_string(),
-            port: 80,
-            protocol: 6,
-            reason: DropReasonType::PolicyDenied,
-            timestamp: 0,
-        }).collect();
+        let drops: Vec<DropReason> = (0..10)
+            .map(|_| DropReason {
+                src_ip: "10.0.0.1".to_string(),
+                dst_ip: "10.0.0.2".to_string(),
+                port: 80,
+                protocol: 6,
+                reason: DropReasonType::PolicyDenied,
+                timestamp: 0,
+            })
+            .collect();
 
         let problems = healer.analyze_dns_drops(&drops);
         assert!(problems.is_empty());
@@ -553,7 +585,13 @@ mod tests {
         assert_eq!(problems.len(), 2);
 
         match &problems[0] {
-            Problem::PolicyGap { src_pod, dst_pod, port, protocol, .. } => {
+            Problem::PolicyGap {
+                src_pod,
+                dst_pod,
+                port,
+                protocol,
+                ..
+            } => {
                 assert_eq!(src_pod, "10.0.0.1");
                 assert_eq!(dst_pod, "10.0.0.2");
                 assert_eq!(*port, 80);
@@ -570,16 +608,14 @@ mod tests {
         let k8s_client = K8sClient::mock();
         let healer = SelfHealer::new(config, reader, k8s_client);
 
-        let drops = vec![
-            DropReason {
-                src_ip: "10.0.0.1".to_string(),
-                dst_ip: "10.0.0.2".to_string(),
-                port: 80,
-                protocol: 6,
-                reason: DropReasonType::FragmentationNeeded,
-                timestamp: 0,
-            },
-        ];
+        let drops = vec![DropReason {
+            src_ip: "10.0.0.1".to_string(),
+            dst_ip: "10.0.0.2".to_string(),
+            port: 80,
+            protocol: 6,
+            reason: DropReasonType::FragmentationNeeded,
+            timestamp: 0,
+        }];
 
         let problems = healer.analyze_policy_gaps(&drops);
         assert!(problems.is_empty());
@@ -592,16 +628,14 @@ mod tests {
         let k8s_client = K8sClient::mock();
         let healer = SelfHealer::new(config, reader, k8s_client);
 
-        let drops = vec![
-            DropReason {
-                src_ip: "10.0.0.1".to_string(),
-                dst_ip: "10.0.0.2".to_string(),
-                port: 53,
-                protocol: 17,
-                reason: DropReasonType::PolicyDenied,
-                timestamp: 0,
-            },
-        ];
+        let drops = vec![DropReason {
+            src_ip: "10.0.0.1".to_string(),
+            dst_ip: "10.0.0.2".to_string(),
+            port: 53,
+            protocol: 17,
+            reason: DropReasonType::PolicyDenied,
+            timestamp: 0,
+        }];
 
         let problems = healer.analyze_policy_gaps(&drops);
         assert_eq!(problems.len(), 1);
@@ -654,8 +688,12 @@ mod tests {
 
     #[test]
     fn test_fix_action_equality() {
-        let a1 = FixAction::CreateDNSPolicy { namespace: "default".to_string() };
-        let a2 = FixAction::CreateDNSPolicy { namespace: "default".to_string() };
+        let a1 = FixAction::CreateDNSPolicy {
+            namespace: "default".to_string(),
+        };
+        let a2 = FixAction::CreateDNSPolicy {
+            namespace: "default".to_string(),
+        };
         assert_eq!(a1, a2);
 
         let a3 = FixAction::AdjustMTU {
@@ -663,7 +701,9 @@ mod tests {
             pod: "web".to_string(),
             new_mtu: 1450,
         };
-        let a4 = FixAction::CreateDNSPolicy { namespace: "prod".to_string() };
+        let a4 = FixAction::CreateDNSPolicy {
+            namespace: "prod".to_string(),
+        };
         assert_ne!(a3, a4);
     }
 

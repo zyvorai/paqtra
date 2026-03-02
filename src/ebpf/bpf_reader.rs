@@ -3,15 +3,14 @@
 /// Real Cilium BPF Map Reader
 ///
 /// Reads data directly from Cilium's pinned BPF maps in /sys/fs/bpf/
-
 use anyhow::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::bpf_syscall::BpfToolReader;
 use super::{
     ConntrackEntry, DropReason, IPCacheEntry, LoadBalancerEntry, MapReader, PolicyDecision,
 };
-use super::bpf_syscall::BpfToolReader;
 
 /// Cilium BPF Map Paths
 const BPF_FS_PATH: &str = "/sys/fs/bpf";
@@ -183,7 +182,7 @@ impl MapReader for CiliumMapReader {
                 // Create a drop reason entry for each type with count > 0
                 if count > 0 {
                     drops.push(DropReason {
-                        src_ip: "0.0.0.0".to_string(),  // Metrics map doesn't have flow info
+                        src_ip: "0.0.0.0".to_string(), // Metrics map doesn't have flow info
                         dst_ip: "0.0.0.0".to_string(),
                         port: 0,
                         protocol: 0,

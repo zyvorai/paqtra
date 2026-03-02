@@ -2,13 +2,12 @@
 /// Kubernetes Identity Resolution
 ///
 /// Maps Cilium security identities to Kubernetes pod information
-
 use anyhow::Result;
 use k8s_openapi::api::core::v1::Pod;
 use kube::{api::ListParams, Api, Client};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use tokio::time::{Duration, interval};
+use tokio::time::{interval, Duration};
 
 use crate::ebpf::IdentityInfo;
 
@@ -57,7 +56,9 @@ impl K8sIdentityResolver {
 
         let pod_list = pods.list(&lp).await?;
 
-        let mut cache = self.cache.write()
+        let mut cache = self
+            .cache
+            .write()
             .map_err(|e| anyhow::anyhow!("Identity cache lock poisoned: {}", e))?;
 
         // Clear stale entries before repopulating
@@ -75,13 +76,13 @@ impl K8sIdentityResolver {
                 cache.identities.insert(identity, info.clone());
 
                 // Update IP mapping
-                if let Some(pod_ip) = pod.status.as_ref()
-                    .and_then(|s| s.pod_ip.as_ref()) {
+                if let Some(pod_ip) = pod.status.as_ref().and_then(|s| s.pod_ip.as_ref()) {
                     cache.ip_to_identity.insert(pod_ip.clone(), identity);
                 }
 
                 // Update pod name mapping
-                let pod_key = format!("{}/{}",
+                let pod_key = format!(
+                    "{}/{}",
                     pod.metadata.namespace.as_deref().unwrap_or("default"),
                     pod.metadata.name.as_deref().unwrap_or("unknown")
                 );
@@ -98,23 +99,35 @@ impl K8sIdentityResolver {
 
     /// Extract Cilium identity from pod labels
     fn extract_identity(pod: &Pod) -> Option<u32> {
-        pod.metadata.labels.as_ref()
+        pod.metadata
+            .labels
+            .as_ref()
             .and_then(|labels| labels.get("security.cilium.io/identity"))
             .and_then(|s| s.parse::<u32>().ok())
     }
 
     /// Convert Pod to IdentityInfo
     fn pod_to_identity_info(pod: &Pod, identity: u32) -> IdentityInfo {
-        let namespace = pod.metadata.namespace.clone()
+        let namespace = pod
+            .metadata
+            .namespace
+            .clone()
             .unwrap_or_else(|| "default".to_string());
 
-        let pod_name = pod.metadata.name.clone()
+        let pod_name = pod
+            .metadata
+            .name
+            .clone()
             .unwrap_or_else(|| "unknown".to_string());
 
         // Extract labels
-        let labels = pod.metadata.labels.as_ref()
+        let labels = pod
+            .metadata
+            .labels
+            .as_ref()
             .map(|labels_map| {
-                labels_map.iter()
+                labels_map
+                    .iter()
                     .map(|(k, v)| format!("{}={}", k, v))
                     .collect::<Vec<_>>()
             })
@@ -130,35 +143,42 @@ impl K8sIdentityResolver {
 
     /// Resolve identity to pod information
     pub fn resolve_identity(&self, identity: u32) -> Option<IdentityInfo> {
-        self.cache.read()
+        self.cache
+            .read()
             .map_err(|e| tracing::warn!("Identity cache read lock poisoned: {}", e))
             .ok()?
-            .identities.get(&identity)
+            .identities
+            .get(&identity)
             .cloned()
     }
 
     /// Resolve IP to identity
     pub fn resolve_ip(&self, ip: &str) -> Option<u32> {
-        self.cache.read()
+        self.cache
+            .read()
             .map_err(|e| tracing::warn!("Identity cache read lock poisoned: {}", e))
             .ok()?
-            .ip_to_identity.get(ip)
+            .ip_to_identity
+            .get(ip)
             .copied()
     }
 
     /// Resolve pod name to identity
     pub fn resolve_pod(&self, namespace: &str, pod_name: &str) -> Option<u32> {
         let key = format!("{}/{}", namespace, pod_name);
-        self.cache.read()
+        self.cache
+            .read()
             .map_err(|e| tracing::warn!("Identity cache read lock poisoned: {}", e))
             .ok()?
-            .pod_to_identity.get(&key)
+            .pod_to_identity
+            .get(&key)
             .copied()
     }
 
     /// Get all identities
     pub fn get_all_identities(&self) -> Vec<IdentityInfo> {
-        self.cache.read()
+        self.cache
+            .read()
             .map_err(|e| tracing::warn!("Identity cache read lock poisoned: {}", e))
             .ok()
             .map(|cache| cache.identities.values().cloned().collect())
@@ -185,7 +205,8 @@ impl K8sIdentityResolver {
 
     /// Check if cache is stale and needs refresh
     pub fn is_cache_stale(&self) -> bool {
-        self.cache.read()
+        self.cache
+            .read()
             .map(|cache| cache.last_update.elapsed().as_secs() > CACHE_TTL_SECS)
             .unwrap_or(true)
     }
@@ -251,7 +272,13 @@ pub fn extract_common_labels(pod: &Pod) -> HashMap<String, String> {
 
     if let Some(pod_labels) = &pod.metadata.labels {
         // Extract common label keys
-        for key in &["app", "app.kubernetes.io/name", "component", "tier", "version"] {
+        for key in &[
+            "app",
+            "app.kubernetes.io/name",
+            "component",
+            "tier",
+            "version",
+        ] {
             if let Some(value) = pod_labels.get(*key) {
                 labels.insert(key.to_string(), value.clone());
             }
@@ -263,9 +290,12 @@ pub fn extract_common_labels(pod: &Pod) -> HashMap<String, String> {
 
 /// Helper: Derive service name from pod
 pub fn derive_service_name(pod: &Pod) -> String {
-    pod.metadata.labels.as_ref()
+    pod.metadata
+        .labels
+        .as_ref()
         .and_then(|labels| {
-            labels.get("app")
+            labels
+                .get("app")
                 .or_else(|| labels.get("app.kubernetes.io/name"))
         })
         .cloned()

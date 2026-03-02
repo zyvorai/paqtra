@@ -1,7 +1,7 @@
-use crossterm::event::KeyCode;
-use super::app::{TuiApp, ModuleContainer};
+use super::app::{ModuleContainer, TuiApp};
 use super::canary_view;
 use super::handlers;
+use crossterm::event::KeyCode;
 
 /// Possible result from handling a key event.
 pub(crate) enum KeyAction {
@@ -42,47 +42,69 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
         KeyCode::Char('r') if !app.show_help && app.selected_tab == 9 => {
             // Refresh recordings list (placeholder)
         }
-        KeyCode::Char('t') if !app.show_help && app.selected_tab == 9 && !app.replay_view.time_travel_mode => {
+        KeyCode::Char('t')
+            if !app.show_help && app.selected_tab == 9 && !app.replay_view.time_travel_mode =>
+        {
             // Enter time-travel mode
             app.replay_view.enter_time_travel();
         }
-        KeyCode::Esc if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode => {
+        KeyCode::Esc
+            if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode =>
+        {
             // Exit time-travel mode
             app.replay_view.exit_time_travel();
         }
-        KeyCode::Left if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode => {
+        KeyCode::Left
+            if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode =>
+        {
             // Step backward in timeline
             app.replay_view.step_backward();
         }
-        KeyCode::Right if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode => {
+        KeyCode::Right
+            if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode =>
+        {
             // Step forward in timeline
             app.replay_view.step_forward();
         }
-        KeyCode::Char(' ') if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode => {
+        KeyCode::Char(' ')
+            if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode =>
+        {
             // Toggle playback
             app.replay_view.toggle_playback();
         }
-        KeyCode::Char('[') if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode => {
+        KeyCode::Char('[')
+            if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode =>
+        {
             // Jump to previous event
             app.replay_view.jump_to_prev_event();
         }
-        KeyCode::Char(']') if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode => {
+        KeyCode::Char(']')
+            if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode =>
+        {
             // Jump to next event
             app.replay_view.jump_to_next_event();
         }
-        KeyCode::Char('+') if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode => {
+        KeyCode::Char('+')
+            if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode =>
+        {
             // Increase playback speed
             app.replay_view.adjust_speed(true);
         }
-        KeyCode::Char('-') if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode => {
+        KeyCode::Char('-')
+            if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode =>
+        {
             // Decrease playback speed
             app.replay_view.adjust_speed(false);
         }
-        KeyCode::Up if !app.show_help && app.selected_tab == 9 && !app.replay_view.time_travel_mode => {
+        KeyCode::Up
+            if !app.show_help && app.selected_tab == 9 && !app.replay_view.time_travel_mode =>
+        {
             // Navigate recordings up
             app.replay_view.move_selection_up();
         }
-        KeyCode::Down if !app.show_help && app.selected_tab == 9 && !app.replay_view.time_travel_mode => {
+        KeyCode::Down
+            if !app.show_help && app.selected_tab == 9 && !app.replay_view.time_travel_mode =>
+        {
             // Navigate recordings down (max 4 recordings in demo)
             app.replay_view.move_selection_down(4);
         }
@@ -99,29 +121,46 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
             let max = if app.chaos_view.show_presets { 7 } else { 2 };
             app.chaos_view.move_selection_down(max);
         }
-        KeyCode::Enter if !app.show_help && app.selected_tab == 10 && app.chaos_view.show_presets && !app.chaos_view.confirmation_mode => {
+        KeyCode::Enter
+            if !app.show_help
+                && app.selected_tab == 10
+                && app.chaos_view.show_presets
+                && !app.chaos_view.confirmation_mode =>
+        {
             // Run chaos experiment
             app.chaos_view.trigger_confirmation();
         }
-        KeyCode::Char('y') if !app.show_help && app.selected_tab == 10 && app.chaos_view.confirmation_mode => {
+        KeyCode::Char('y')
+            if !app.show_help && app.selected_tab == 10 && app.chaos_view.confirmation_mode =>
+        {
             // Confirm chaos experiment
             app.chaos_view.cancel_confirmation();
             app.set_status_message("Chaos experiment started!");
         }
-        KeyCode::Char('n') if !app.show_help && app.selected_tab == 10 && app.chaos_view.confirmation_mode => {
+        KeyCode::Char('n')
+            if !app.show_help && app.selected_tab == 10 && app.chaos_view.confirmation_mode =>
+        {
             // Cancel chaos experiment
             app.chaos_view.cancel_confirmation();
             app.set_status_message("Chaos experiment cancelled");
         }
-        KeyCode::Char('s') if !app.show_help && app.selected_tab == 10 && !app.chaos_view.show_presets => {
+        KeyCode::Char('s')
+            if !app.show_help && app.selected_tab == 10 && !app.chaos_view.show_presets =>
+        {
             // Stop selected experiment
             app.set_status_message("Chaos experiment stopped");
         }
-        KeyCode::Char('S') if !app.show_help && app.selected_tab == 10 && !app.chaos_view.show_presets => {
+        KeyCode::Char('S')
+            if !app.show_help && app.selected_tab == 10 && !app.chaos_view.show_presets =>
+        {
             // Stop all experiments
             app.set_status_message("All chaos experiments stopped");
         }
-        KeyCode::Char('b') if !app.show_help && app.selected_tab == 10 && !app.chaos_view.circuit_breaker_confirm => {
+        KeyCode::Char('b')
+            if !app.show_help
+                && app.selected_tab == 10
+                && !app.chaos_view.circuit_breaker_confirm =>
+        {
             // Trigger circuit breaker
             app.chaos_view.circuit_breaker_confirm = true;
         }
@@ -133,10 +172,12 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
             app.canary_view.move_selection_down(2); // 2 active canaries
         }
         KeyCode::Char('p') if !app.show_help && app.selected_tab == 11 => {
-            app.canary_view.trigger_confirmation(canary_view::ConfirmationType::Promote);
+            app.canary_view
+                .trigger_confirmation(canary_view::ConfirmationType::Promote);
         }
         KeyCode::Char('r') if !app.show_help && app.selected_tab == 11 => {
-            app.canary_view.trigger_confirmation(canary_view::ConfirmationType::Rollback);
+            app.canary_view
+                .trigger_confirmation(canary_view::ConfirmationType::Rollback);
         }
         KeyCode::Char('+') if !app.show_help && app.selected_tab == 11 => {
             app.set_status_message("Canary traffic increased by 10%");
@@ -144,11 +185,19 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
         KeyCode::Char('d') if !app.show_help && app.selected_tab == 11 => {
             app.canary_view.toggle_details();
         }
-        KeyCode::Char('y') if !app.show_help && app.selected_tab == 11 && app.canary_view.confirmation_mode != canary_view::ConfirmationType::None => {
+        KeyCode::Char('y')
+            if !app.show_help
+                && app.selected_tab == 11
+                && app.canary_view.confirmation_mode != canary_view::ConfirmationType::None =>
+        {
             app.canary_view.cancel_confirmation();
             app.set_status_message("Canary action confirmed");
         }
-        KeyCode::Char('n') if !app.show_help && app.selected_tab == 11 && app.canary_view.confirmation_mode != canary_view::ConfirmationType::None => {
+        KeyCode::Char('n')
+            if !app.show_help
+                && app.selected_tab == 11
+                && app.canary_view.confirmation_mode != canary_view::ConfirmationType::None =>
+        {
             app.canary_view.cancel_confirmation();
             app.set_status_message("Canary action cancelled");
         }
@@ -170,11 +219,19 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
             // Clear simulation results
             app.simulator_view.clear_simulation();
         }
-        KeyCode::Up if !app.show_help && app.selected_tab == 8 && app.simulator_view.last_simulation.is_none() => {
+        KeyCode::Up
+            if !app.show_help
+                && app.selected_tab == 8
+                && app.simulator_view.last_simulation.is_none() =>
+        {
             // Navigate scenarios up
             app.simulator_view.move_selection_up();
         }
-        KeyCode::Down if !app.show_help && app.selected_tab == 8 && app.simulator_view.last_simulation.is_none() => {
+        KeyCode::Down
+            if !app.show_help
+                && app.selected_tab == 8
+                && app.simulator_view.last_simulation.is_none() =>
+        {
             // Navigate scenarios down (max 7 scenarios)
             app.simulator_view.move_selection_down(7);
         }
@@ -189,7 +246,9 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
                 app.selected_flow_index -= 1;
             }
         }
-        KeyCode::Down if !app.show_help && app.selected_tab == 0 && !app.show_packet_explanation => {
+        KeyCode::Down
+            if !app.show_help && app.selected_tab == 0 && !app.show_packet_explanation =>
+        {
             // Navigate flows down
             if app.selected_flow_index < app.flows.len().saturating_sub(1).min(49) {
                 app.selected_flow_index += 1;

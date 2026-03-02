@@ -7,9 +7,9 @@ use ratatui::{
     Frame,
 };
 
+use super::theme::*;
 use crate::ebpf::MapReader;
 use crate::modules::autopolicy::AutoPolicy;
-use super::theme::*;
 
 pub struct AutoPolicyView;
 
@@ -92,12 +92,16 @@ impl AutoPolicyView {
                 .take(10)
                 .map(|(pattern, obs)| {
                     // Get source labels
-                    let src_label = pattern.src_labels.get("app")
+                    let src_label = pattern
+                        .src_labels
+                        .get("app")
                         .map(|s| s.as_str())
                         .unwrap_or("unknown");
 
                     // Get dest labels
-                    let dst_label = pattern.dst_labels.get("app")
+                    let dst_label = pattern
+                        .dst_labels
+                        .get("app")
                         .map(|s| s.as_str())
                         .unwrap_or("unknown");
 
@@ -105,10 +109,18 @@ impl AutoPolicyView {
                     let pattern_str = format!(
                         "{}/{}[app={}] → {}/{}[app={}]",
                         pattern.src_namespace,
-                        if src_label != "unknown" { src_label } else { "?" },
+                        if src_label != "unknown" {
+                            src_label
+                        } else {
+                            "?"
+                        },
                         src_label,
                         pattern.dst_namespace,
-                        if dst_label != "unknown" { dst_label } else { "?" },
+                        if dst_label != "unknown" {
+                            dst_label
+                        } else {
+                            "?"
+                        },
                         dst_label
                     );
 
@@ -138,7 +150,10 @@ impl AutoPolicyView {
         };
 
         let title = if let Some(engine) = autopolicy {
-            format!("Communication Patterns ({} unique)", engine.observations().len())
+            format!(
+                "Communication Patterns ({} unique)",
+                engine.observations().len()
+            )
         } else {
             "Communication Patterns".to_string()
         };
@@ -166,7 +181,8 @@ impl AutoPolicyView {
                 "📋 Generated Policies:\n\n\
                 No policies generated yet.\n\
                 Waiting for sufficient observations...\n\n\
-                Press 'g' to generate policies from learned patterns.".to_string()
+                Press 'g' to generate policies from learned patterns."
+                    .to_string()
             } else {
                 let mut text = "📋 Generated Policies (ML-Enhanced):\n\n".to_string();
                 for (idx, policy) in policies.iter().take(5).enumerate() {

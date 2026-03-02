@@ -3,30 +3,21 @@
 /// Tests that the major modules work correctly independently and with
 /// mock data: AutoPolicy, RootCause, Simulator, Replay, Chaos,
 /// Canary, MultiCluster, and PacketExplainer.
-
 use cilium_tui::ebpf::MockMapReader;
+use cilium_tui::kubernetes::K8sClient;
 use cilium_tui::modules::autopolicy::{
     AutoPolicy, AutoPolicyConfig, LabelSet, LearningState, Protocol,
 };
-use cilium_tui::modules::canary::{
-    CanaryConfig, CanaryEngine, CanaryMetrics, TrafficSplit,
-};
-use cilium_tui::modules::chaos::{
-    ChaosConfig, ChaosEngine, ChaosExperiment, ChaosSeverity,
-};
+use cilium_tui::modules::canary::{CanaryConfig, CanaryEngine, CanaryMetrics, TrafficSplit};
+use cilium_tui::modules::chaos::{ChaosConfig, ChaosEngine, ChaosExperiment, ChaosSeverity};
 use cilium_tui::modules::multicluster::{
-    CloudProvider, ClusterHealth, ClusterResources, ClusterState,
-    MultiClusterAutopilot, MultiClusterConfig,
+    CloudProvider, ClusterHealth, ClusterResources, ClusterState, MultiClusterAutopilot,
+    MultiClusterConfig,
 };
 use cilium_tui::modules::packet_explainer::PacketExplainer;
 use cilium_tui::modules::replay::{ReplayConfig, ReplayEngine, ReplayFilter};
-use cilium_tui::modules::rootcause::{
-    DropReason, RootCauseConfig, RootCauseEngine,
-};
-use cilium_tui::modules::simulator::{
-    ImpactType, RiskLevel, Simulator, SimulatorConfig,
-};
-use cilium_tui::kubernetes::K8sClient;
+use cilium_tui::modules::rootcause::{DropReason, RootCauseConfig, RootCauseEngine};
+use cilium_tui::modules::simulator::{ImpactType, RiskLevel, Simulator, SimulatorConfig};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -99,7 +90,10 @@ fn test_autopolicy_config_defaults() {
     assert!(config.enabled);
     assert!(config.audit_mode, "Default should be audit mode for safety");
     assert!(!config.auto_apply, "Auto-apply should be off by default");
-    assert!(!config.auto_generate, "Auto-generate should be off by default");
+    assert!(
+        !config.auto_generate,
+        "Auto-generate should be off by default"
+    );
     assert!(
         config.min_observations >= 1,
         "Must require at least 1 observation"
@@ -159,7 +153,10 @@ fn test_label_set_equality() {
 
     let ls1 = LabelSet::new(labels1);
     let ls2 = LabelSet::new(labels2);
-    assert_eq!(ls1, ls2, "LabelSets with same entries should be equal regardless of insertion order");
+    assert_eq!(
+        ls1, ls2,
+        "LabelSets with same entries should be equal regardless of insertion order"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -285,10 +282,7 @@ async fn test_simulator_initial_state() {
 fn test_simulator_config_defaults() {
     let config = SimulatorConfig::default();
     assert!(config.enabled);
-    assert!(
-        config.replay_flow_count > 0,
-        "Must replay at least 1 flow"
-    );
+    assert!(config.replay_flow_count > 0, "Must replay at least 1 flow");
     assert!(config.track_dependencies);
     assert!(config.risk_scoring);
     assert!(
@@ -356,7 +350,10 @@ fn test_replay_config_defaults() {
     let config = ReplayConfig::default();
     assert!(config.enabled);
     assert!(config.compress);
-    assert_eq!(config.replay_rate, 1.0, "Default replay rate should be real-time");
+    assert_eq!(
+        config.replay_rate, 1.0,
+        "Default replay rate should be real-time"
+    );
     assert!(config.max_recording_size > 0);
     assert!(config.max_recording_duration > 0);
     assert!(config.detailed_comparison);
@@ -444,12 +441,19 @@ fn test_chaos_experiment_severity_levels() {
 fn test_chaos_experiment_names_nonempty() {
     let experiments = vec![
         ChaosExperiment::PacketDrop { drop_rate: 0.1 },
-        ChaosExperiment::Latency { delay_ms: 100, jitter_ms: 10 },
+        ChaosExperiment::Latency {
+            delay_ms: 100,
+            jitter_ms: 10,
+        },
         ChaosExperiment::Bandwidth { limit_mbps: 100 },
         ChaosExperiment::ConnectionKill { kill_rate: 0.1 },
         ChaosExperiment::DNSFailure { failure_rate: 0.1 },
-        ChaosExperiment::PacketCorruption { corruption_rate: 0.01 },
-        ChaosExperiment::PacketDuplication { duplication_rate: 0.05 },
+        ChaosExperiment::PacketCorruption {
+            corruption_rate: 0.01,
+        },
+        ChaosExperiment::PacketDuplication {
+            duplication_rate: 0.05,
+        },
     ];
 
     for exp in experiments {
@@ -473,10 +477,7 @@ fn test_chaos_config_safety_limits() {
         config.max_drop_rate <= 1.0 && config.max_drop_rate > 0.0,
         "Max drop rate must be between 0 and 1"
     );
-    assert!(
-        config.max_latency_ms > 0,
-        "Max latency must be positive"
-    );
+    assert!(config.max_latency_ms > 0, "Max latency must be positive");
     assert!(
         config.require_confirmation,
         "Default should require confirmation for safety"
@@ -571,7 +572,10 @@ async fn test_canary_engine_initial_state() {
 fn test_canary_config_defaults() {
     let config = CanaryConfig::default();
     assert!(config.enabled);
-    assert!(config.initial_traffic_pct > 0, "Must start with some canary traffic");
+    assert!(
+        config.initial_traffic_pct > 0,
+        "Must start with some canary traffic"
+    );
     assert!(config.initial_traffic_pct <= 100);
     assert!(config.traffic_step_pct > 0);
     assert!(
@@ -731,7 +735,10 @@ fn test_packet_explainer_dropped_packet_analysis() {
         "Dropped packets should be described as blocked"
     );
     assert!(!explanation.troubleshooting_tips.is_empty());
-    assert_eq!(explanation.severity, "Critical", "Port 80 drops are critical");
+    assert_eq!(
+        explanation.severity, "Critical",
+        "Port 80 drops are critical"
+    );
 }
 
 #[test]

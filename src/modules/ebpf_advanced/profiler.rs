@@ -182,7 +182,11 @@ impl PerformanceProfiler {
             })
             .collect();
 
-        hot_spots.sort_by(|a, b| b.percentage.partial_cmp(&a.percentage).unwrap_or(std::cmp::Ordering::Equal));
+        hot_spots.sort_by(|a, b| {
+            b.percentage
+                .partial_cmp(&a.percentage)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         hot_spots.truncate(10); // Top 10
 
         hot_spots

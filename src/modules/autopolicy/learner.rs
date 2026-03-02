@@ -4,7 +4,6 @@
 /// Traffic Learning Engine
 ///
 /// Learns traffic patterns over time by observing connections
-
 use super::*;
 use std::collections::HashMap;
 
@@ -96,10 +95,7 @@ impl TrafficLearner {
 
         for obs in self.observations.values() {
             if let Some(app) = obs.pattern.src_labels.get("app") {
-                by_app
-                    .entry(app.clone())
-                    .or_insert_with(Vec::new)
-                    .push(obs);
+                by_app.entry(app.clone()).or_insert_with(Vec::new).push(obs);
             }
         }
 

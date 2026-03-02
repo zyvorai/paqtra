@@ -1,3 +1,6 @@
+pub mod autopolicy;
+pub mod canary;
+pub mod chaos;
 /// Intelligent modules for cilium-vision
 ///
 /// Each module provides a specific capability:
@@ -14,19 +17,15 @@
 /// - ebpf_advanced: Advanced eBPF capabilities (experimental)
 /// - security_compliance: Zero-trust and compliance frameworks (experimental)
 /// - dev_tools: Developer experience tools (experimental)
-
 pub mod healer;
-pub mod autopolicy;
+pub mod multicluster;
+pub mod packet_explainer;
+pub mod replay;
 pub mod rootcause;
 pub mod simulator;
-pub mod replay;
-pub mod packet_explainer;
-pub mod chaos;
-pub mod canary;
-pub mod multicluster;
 
 // Experimental cutting-edge features
 pub mod anomaly_detection;
+pub mod dev_tools;
 pub mod ebpf_advanced;
 pub mod security_compliance;
-pub mod dev_tools;
