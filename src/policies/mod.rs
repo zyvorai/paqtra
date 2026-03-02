@@ -1,9 +1,17 @@
 use anyhow::{bail, Result};
 use crate::kubernetes::K8sClient;
 use regex::Regex;
+use std::sync::LazyLock;
 
 #[cfg(test)]
 mod tests;
+
+/// Pre-compiled regex for RFC 1123 label validation.
+/// Using `LazyLock` avoids recompiling on every call and removes the
+/// runtime `unwrap()` that could theoretically panic in production.
+static NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$").expect("valid regex literal")
+});
 
 pub struct PolicyManager {
     k8s_client: K8sClient,
@@ -18,8 +26,7 @@ fn validate_k8s_name(name: &str, field: &str) -> Result<()> {
     if name.len() > 63 {
         bail!("{} must be at most 63 characters", field);
     }
-    let re = Regex::new(r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$").unwrap();
-    if !re.is_match(name) {
+    if !NAME_REGEX.is_match(name) {
         bail!(
             "{} '{}' is invalid: must be lowercase alphanumeric or '-', \
              and must start and end with an alphanumeric character",

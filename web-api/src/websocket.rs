@@ -36,12 +36,12 @@ fn handle_ws_message(msg: Option<Result<Message, axum::Error>>, label: &str) -> 
 
 pub async fn flows_websocket(
     ws: WebSocketUpgrade,
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Response {
-    ws.on_upgrade(handle_flows_socket)
+    ws.on_upgrade(move |socket| handle_flows_socket(socket, state))
 }
 
-async fn handle_flows_socket(mut socket: WebSocket) {
+async fn handle_flows_socket(mut socket: WebSocket, state: Arc<AppState>) {
     tracing::info!("WebSocket connection established for flows");
 
     // Send initial message
@@ -55,9 +55,26 @@ async fn handle_flows_socket(mut socket: WebSocket) {
     let mut ping_interval = tokio::time::interval(
         tokio::time::Duration::from_secs(PING_INTERVAL_SECS)
     );
+    let mut flow_interval = tokio::time::interval(
+        tokio::time::Duration::from_secs(5)
+    );
 
     loop {
         tokio::select! {
+            _ = flow_interval.tick() => {
+                let m = state.metrics.read().await;
+                let summary = serde_json::json!({
+                    "type": "flow_summary",
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "flows_fetched": m.flows_fetched,
+                    "hubble_queries": m.hubble_queries,
+                });
+                drop(m);
+                if socket.send(Message::Text(summary.to_string().into())).await.is_err() {
+                    tracing::debug!("Flow WebSocket client disconnected");
+                    break;
+                }
+            }
             _ = ping_interval.tick() => {
                 if !ws_ping(&mut socket, "Flow").await { break; }
             }
@@ -70,12 +87,12 @@ async fn handle_flows_socket(mut socket: WebSocket) {
 
 pub async fn metrics_websocket(
     ws: WebSocketUpgrade,
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Response {
-    ws.on_upgrade(handle_metrics_socket)
+    ws.on_upgrade(move |socket| handle_metrics_socket(socket, state))
 }
 
-async fn handle_metrics_socket(mut socket: WebSocket) {
+async fn handle_metrics_socket(mut socket: WebSocket, state: Arc<AppState>) {
     tracing::info!("WebSocket connection established for metrics");
 
     let mut metrics_interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
@@ -86,13 +103,18 @@ async fn handle_metrics_socket(mut socket: WebSocket) {
     loop {
         tokio::select! {
             _ = metrics_interval.tick() => {
+                let m = state.metrics.read().await;
                 let metrics = serde_json::json!({
                     "timestamp": chrono::Utc::now().to_rfc3339(),
-                    "requests_per_sec": 0,
-                    "avg_latency_ms": 0,
-                    "error_rate": 0.0,
-                    "note": "Connect to Hubble for real metrics"
+                    "total_requests": m.total_requests,
+                    "total_errors": m.total_errors,
+                    "flows_fetched": m.flows_fetched,
+                    "cache_hits": m.cache_hits,
+                    "cache_misses": m.cache_misses,
+                    "hubble_queries": m.hubble_queries,
+                    "k8s_queries": m.k8s_queries,
                 });
+                drop(m);
 
                 if socket.send(Message::Text(metrics.to_string().into())).await.is_err() {
                     tracing::debug!("Metrics WebSocket client disconnected");

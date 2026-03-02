@@ -1,3 +1,5 @@
+//! Intelligence module rendering (healer, policy detail)
+
 use ratatui::{
     style::{Color, Style},
     widgets::{Block, Borders, Paragraph},

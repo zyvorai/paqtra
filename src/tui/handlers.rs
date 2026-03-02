@@ -1,3 +1,5 @@
+//! Per-tab key event handlers extracted from events.rs
+
 use crossterm::event::KeyCode;
 use super::app::{TuiApp, ModuleContainer};
 

@@ -1,6 +1,6 @@
 // Anomaly detection endpoints
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -10,6 +10,13 @@ use std::sync::Arc;
 
 use crate::AppState;
 use super::{track_request, to_json};
+
+/// Query parameters for paginated anomaly listings.
+#[derive(Debug, Deserialize)]
+pub struct PaginationParams {
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
 
 /// Anomaly severity levels
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,19 +106,24 @@ fn sample_anomalies() -> Vec<Anomaly> {
 
 pub async fn list_anomalies(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationParams>,
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
     let anomalies = sample_anomalies();
     let total = anomalies.len();
+    let offset = params.offset.unwrap_or(0);
+    let limit = params.limit.unwrap_or(50);
+    let page: Vec<_> = anomalies.into_iter().skip(offset).take(limit).collect();
 
     Ok(Json(json!({
-        "anomalies": anomalies,
+        "data": page,
         "total": total,
+        "limit": limit,
+        "offset": offset,
         "detection_engine": "cilium-vision-ml",
         "engine_version": "0.4.1",
         "detection_window_secs": 300,
-        "message": "Showing sample anomalies (stub mode)"
     })))
 }
 

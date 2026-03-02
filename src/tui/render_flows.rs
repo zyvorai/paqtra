@@ -1,3 +1,5 @@
+//! Flow and packet explanation rendering
+
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},

@@ -129,8 +129,8 @@ const Policies: React.FC = () => {
       let spec: unknown;
       try {
         spec = JSON.parse(newSpec);
-      } catch {
-        setError('Invalid JSON in spec field');
+      } catch (e) {
+        setError('Invalid JSON in policy spec: ' + (e as Error).message);
         setCreating(false);
         return;
       }
@@ -192,8 +192,8 @@ const Policies: React.FC = () => {
       let spec: unknown;
       try {
         spec = JSON.parse(newSpec);
-      } catch {
-        setError('Invalid JSON in spec field');
+      } catch (e) {
+        setError('Invalid JSON in policy spec: ' + (e as Error).message);
         setSimulating(false);
         return;
       }

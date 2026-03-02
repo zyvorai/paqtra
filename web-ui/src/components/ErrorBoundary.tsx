@@ -25,19 +25,37 @@ class ErrorBoundary extends Component<Props, State> {
     console.error('ErrorBoundary caught:', error, errorInfo);
   }
 
+  handleRetry = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
   render() {
     if (this.state.hasError) {
+      const isChunkLoadError =
+        this.state.error?.name === 'ChunkLoadError' ||
+        this.state.error?.message?.includes('Loading chunk') ||
+        this.state.error?.message?.includes('Failed to fetch dynamically imported module');
+
       return (
         <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh', p: 3 }}>
           <Paper sx={{ p: 4, maxWidth: 500, textAlign: 'center' }}>
             <ErrorOutline color="error" sx={{ fontSize: 64, mb: 2 }} />
-            <Typography variant="h5" gutterBottom>Something went wrong</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              {this.state.error?.message || 'An unexpected error occurred.'}
+            <Typography variant="h5" gutterBottom>
+              {isChunkLoadError ? 'Failed to load page' : 'Something went wrong'}
             </Typography>
-            <Button variant="contained" onClick={() => window.location.reload()}>
-              Reload Page
-            </Button>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              {isChunkLoadError
+                ? 'A newer version may be available, or there was a network issue. Try again or reload the page.'
+                : (this.state.error?.message || 'An unexpected error occurred.')}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+              <Button variant="outlined" onClick={this.handleRetry}>
+                Try Again
+              </Button>
+              <Button variant="contained" onClick={() => window.location.reload()}>
+                Reload Page
+              </Button>
+            </Box>
           </Paper>
         </Box>
       );

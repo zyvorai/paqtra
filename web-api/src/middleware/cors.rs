@@ -5,10 +5,14 @@ use tower_http::cors::CorsLayer;
 /// Build a restrictive CORS layer.
 /// In production, ALLOWED_ORIGINS should be set to the actual frontend origin(s).
 pub fn cors_layer() -> CorsLayer {
-    let allowed_origins = std::env::var("ALLOWED_ORIGINS")
+    let origins_str = std::env::var("ALLOWED_ORIGINS")
         .unwrap_or_else(|_| "http://localhost:3000,http://localhost:3001".to_string());
 
-    let origins: Vec<HeaderValue> = allowed_origins
+    if origins_str.contains("localhost") {
+        tracing::warn!("CORS configured with localhost origins - not suitable for production. Set ALLOWED_ORIGINS env var.");
+    }
+
+    let origins: Vec<HeaderValue> = origins_str
         .split(',')
         .filter_map(|o| o.trim().parse().ok())
         .collect();

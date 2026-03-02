@@ -124,13 +124,25 @@ const Settings: React.FC = () => {
     setSaved(false);
   };
 
+  // Track timeout for cleanup on unmount
+  const savedTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimerRef.current) {
+        clearTimeout(savedTimerRef.current);
+      }
+    };
+  }, []);
+
   const handleSave = () => {
     try {
       saveSettings(settings);
       setSaved(true);
       setError(null);
-      // Auto-dismiss success message
-      setTimeout(() => setSaved(false), 3000);
+      // Auto-dismiss success message; cleared on unmount via ref
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       setError('Failed to save settings');
     }

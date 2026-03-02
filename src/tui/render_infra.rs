@@ -1,3 +1,5 @@
+//! Infrastructure tab rendering (connections, endpoints, policies, metrics)
+
 use ratatui::{
     style::Style,
     text::{Line, Span},

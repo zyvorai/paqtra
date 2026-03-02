@@ -7,6 +7,17 @@ use std::sync::Arc;
 use crate::AppState;
 use super::{track_request, to_json};
 
+/// Typed request for the compliance audit endpoint.
+#[derive(Debug, Deserialize)]
+pub struct RunAuditRequest {
+    #[serde(default = "default_framework")]
+    pub framework: String,
+}
+
+fn default_framework() -> String {
+    "pci-dss-4.0".to_string()
+}
+
 /// A compliance framework definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComplianceFramework {
@@ -226,14 +237,11 @@ fn sample_findings(framework: &str) -> Vec<AuditFinding> {
 
 pub async fn run_audit(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<Value>,
+    Json(req): Json<RunAuditRequest>,
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
-    let framework = req
-        .get("framework")
-        .and_then(|v| v.as_str())
-        .unwrap_or("pci-dss-4.0");
+    let framework = &req.framework;
 
     let findings = sample_findings(framework);
     let total_controls = findings.len() as u32;

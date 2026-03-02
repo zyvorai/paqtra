@@ -11,6 +11,46 @@ use std::sync::Arc;
 use crate::AppState;
 use super::{track_request, to_json};
 
+/// Typed request for the autopolicy generation endpoint.
+#[derive(Debug, Deserialize)]
+pub struct GenerateAutopolicyRequest {
+    #[serde(default = "default_namespace")]
+    pub namespace: String,
+}
+
+fn default_namespace() -> String {
+    "production".to_string()
+}
+
+/// Typed request for the chaos experiment endpoint.
+#[derive(Debug, Deserialize)]
+pub struct RunChaosRequest {
+    #[serde(default = "default_chaos_name")]
+    pub name: String,
+    #[serde(default = "default_experiment_type")]
+    pub experiment_type: String,
+    #[serde(default = "default_target_namespace")]
+    pub target_namespace: String,
+    #[serde(default = "default_duration")]
+    pub duration_secs: u64,
+}
+
+fn default_chaos_name() -> String {
+    "ad-hoc-network-partition".to_string()
+}
+
+fn default_experiment_type() -> String {
+    "network-partition".to_string()
+}
+
+fn default_target_namespace() -> String {
+    "staging".to_string()
+}
+
+fn default_duration() -> u64 {
+    120
+}
+
 /// Auto-generated policy suggestion
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoPolicyResult {
@@ -74,14 +114,11 @@ pub struct CanaryMetrics {
 
 pub async fn generate_autopolicy(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<Value>,
+    Json(req): Json<GenerateAutopolicyRequest>,
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
-    let namespace = req
-        .get("namespace")
-        .and_then(|v| v.as_str())
-        .unwrap_or("production");
+    let namespace = &req.namespace;
 
     let result = AutoPolicyResult {
         request_id: uuid::Uuid::new_v4().to_string(),
@@ -230,36 +267,19 @@ pub async fn list_chaos_experiments(
 
 pub async fn run_chaos_experiment(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<Value>,
+    Json(req): Json<RunChaosRequest>,
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
-
-    let name = req
-        .get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("ad-hoc-network-partition");
-    let experiment_type = req
-        .get("experiment_type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("network-partition");
-    let target_namespace = req
-        .get("target_namespace")
-        .and_then(|v| v.as_str())
-        .unwrap_or("staging");
-    let duration_secs = req
-        .get("duration_secs")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(120);
 
     // Simulate an experiment that has already completed with results
     let experiment = ChaosExperiment {
         id: uuid::Uuid::new_v4().to_string(),
-        name: name.to_string(),
-        experiment_type: experiment_type.to_string(),
+        name: req.name.clone(),
+        experiment_type: req.experiment_type.clone(),
         status: "completed".to_string(),
-        target_namespace: target_namespace.to_string(),
+        target_namespace: req.target_namespace.clone(),
         created_at: chrono::Utc::now().to_rfc3339(),
-        duration_secs,
+        duration_secs: req.duration_secs,
         results: Some(ChaosResults {
             packets_dropped: 8432,
             connections_failed: 23,

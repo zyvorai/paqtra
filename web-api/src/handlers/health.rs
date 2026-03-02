@@ -24,7 +24,13 @@ pub async fn health_check(
     let hubble_ok = state.hubble.is_healthy().await;
     let k8s_ok = state.k8s.is_healthy().await;
 
-    let overall = if redis_ok { "healthy" } else { "degraded" };
+    let overall = if redis_ok && hubble_ok && k8s_ok {
+        "healthy"
+    } else if redis_ok {
+        "degraded"
+    } else {
+        "unhealthy"
+    };
     let code = if redis_ok {
         StatusCode::OK
     } else {

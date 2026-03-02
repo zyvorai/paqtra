@@ -40,7 +40,7 @@ const api = axios.create({
 // --- Request interceptor ---------------------------------------------------
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   // Attach JWT token if available
-  const token = localStorage.getItem('cilium-vision-token');
+  const token = sessionStorage.getItem('cilium-vision-token');
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -53,7 +53,8 @@ api.interceptors.response.use(
   (error: AxiosError) => {
     if (error.response?.status === 401) {
       // Token expired or invalid – clear and let the UI handle it
-      localStorage.removeItem('cilium-vision-token');
+      sessionStorage.removeItem('cilium-vision-token');
+      // In production, send to observability service (e.g., Sentry, Datadog)
       console.warn('[api] Unauthorized – token cleared');
     }
     return Promise.reject(error);
