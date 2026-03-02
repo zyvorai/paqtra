@@ -242,8 +242,8 @@ const Anomalies: React.FC = () => {
             <TableHead>
               <TableRow>
                 <TableCell>Severity</TableCell>
-                <TableCell>Title</TableCell>
-                <TableCell>Category</TableCell>
+                <TableCell>Description</TableCell>
+                <TableCell>Type</TableCell>
                 <TableCell>Source</TableCell>
                 <TableCell>Detected</TableCell>
                 <TableCell>Status</TableCell>
@@ -279,19 +279,21 @@ const Anomalies: React.FC = () => {
                         />
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                          {anomaly.title}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', maxWidth: 300 }} noWrap>
+                        <Typography variant="body2" sx={{ fontWeight: 500, maxWidth: 350 }} noWrap>
                           {anomaly.description}
                         </Typography>
+                        {anomaly.remediation && (
+                          <Typography variant="caption" color="success.main" sx={{ display: 'block' }} noWrap>
+                            {anomaly.remediation}
+                          </Typography>
+                        )}
                       </TableCell>
                       <TableCell>
-                        <Chip label={anomaly.category} size="small" variant="outlined" />
+                        <Chip label={anomaly.anomaly_type.replace(/_/g, ' ')} size="small" variant="outlined" />
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2">
-                          {anomaly.source_namespace}/{anomaly.source_pod}
+                          {anomaly.source_namespace}/{anomaly.source_pod ?? '—'}
                         </Typography>
                       </TableCell>
                       <TableCell>

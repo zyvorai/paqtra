@@ -128,15 +128,16 @@ export const simulatePolicy = (body: {
 // Anomalies
 export interface Anomaly {
   id: string;
-  title: string;
-  description: string;
-  severity: string;
-  category: string;
-  source: string;
-  source_namespace: string;
-  source_pod: string;
   detected_at: string;
+  severity: string;
+  anomaly_type: string;
+  description: string;
+  source_namespace: string;
+  source_pod: string | null;
+  destination_namespace: string | null;
+  destination_pod: string | null;
   status: string;
+  remediation: string | null;
 }
 
 export const fetchAnomalies = () =>
