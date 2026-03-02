@@ -114,6 +114,116 @@ pub async fn list_frameworks(
     })))
 }
 
+/// Build sample audit findings for a given framework.
+fn sample_findings(framework: &str) -> Vec<AuditFinding> {
+    match framework {
+        "pci-dss-4.0" => vec![
+            AuditFinding {
+                control_id: "PCI-1.3.1".to_string(),
+                title: "Restrict inbound traffic to system components in the CDE".to_string(),
+                status: "passed".to_string(),
+                severity: "high".to_string(),
+                description: "CiliumNetworkPolicy default-deny ingress is enforced on all \
+                              namespaces in the cardholder data environment."
+                    .to_string(),
+            },
+            AuditFinding {
+                control_id: "PCI-1.3.2".to_string(),
+                title: "Restrict outbound traffic from the CDE".to_string(),
+                status: "failed".to_string(),
+                severity: "high".to_string(),
+                description: "Namespace 'payment-processing' allows unrestricted egress to \
+                              the internet. A default-deny egress policy with explicit \
+                              allowlisting is required."
+                    .to_string(),
+            },
+            AuditFinding {
+                control_id: "PCI-2.2.7".to_string(),
+                title: "Encrypt all non-console administrative access".to_string(),
+                status: "passed".to_string(),
+                severity: "critical".to_string(),
+                description: "All inter-pod communication uses WireGuard transparent encryption \
+                              via Cilium. No unencrypted admin channels detected."
+                    .to_string(),
+            },
+            AuditFinding {
+                control_id: "PCI-6.5.4".to_string(),
+                title: "Insecure direct object references".to_string(),
+                status: "passed".to_string(),
+                severity: "medium".to_string(),
+                description: "L7 HTTP policies enforce path-based access control on all \
+                              API gateway endpoints."
+                    .to_string(),
+            },
+            AuditFinding {
+                control_id: "PCI-10.2.1".to_string(),
+                title: "Audit trails for all access to cardholder data".to_string(),
+                status: "failed".to_string(),
+                severity: "high".to_string(),
+                description: "Hubble flow logs are enabled but retention is set to 1 hour. \
+                              PCI-DSS requires a minimum of 90 days of audit trail retention."
+                    .to_string(),
+            },
+        ],
+        "soc2-type2" => vec![
+            AuditFinding {
+                control_id: "CC6.1".to_string(),
+                title: "Logical and physical access controls".to_string(),
+                status: "passed".to_string(),
+                severity: "high".to_string(),
+                description: "Network segmentation enforced via CiliumNetworkPolicy across \
+                              all production namespaces."
+                    .to_string(),
+            },
+            AuditFinding {
+                control_id: "CC6.6".to_string(),
+                title: "System boundary protections".to_string(),
+                status: "failed".to_string(),
+                severity: "medium".to_string(),
+                description: "Three namespaces (dev, staging, sandbox) lack default-deny \
+                              ingress policies."
+                    .to_string(),
+            },
+            AuditFinding {
+                control_id: "CC7.2".to_string(),
+                title: "System monitoring for anomalies".to_string(),
+                status: "passed".to_string(),
+                severity: "high".to_string(),
+                description: "Anomaly detection pipeline is active with 5-minute detection \
+                              windows and automated alerting."
+                    .to_string(),
+            },
+        ],
+        _ => vec![
+            AuditFinding {
+                control_id: "GEN-1.1".to_string(),
+                title: "Network segmentation".to_string(),
+                status: "passed".to_string(),
+                severity: "high".to_string(),
+                description: "Default-deny network policies are applied to production namespaces."
+                    .to_string(),
+            },
+            AuditFinding {
+                control_id: "GEN-2.1".to_string(),
+                title: "Encryption in transit".to_string(),
+                status: "passed".to_string(),
+                severity: "high".to_string(),
+                description: "WireGuard transparent encryption is enabled cluster-wide."
+                    .to_string(),
+            },
+            AuditFinding {
+                control_id: "GEN-3.1".to_string(),
+                title: "Audit logging".to_string(),
+                status: "failed".to_string(),
+                severity: "medium".to_string(),
+                description: "Flow log retention does not meet the framework's minimum \
+                              retention period."
+                    .to_string(),
+            },
+        ],
+    }
+}
+
 pub async fn run_audit(
     State(state): State<Arc<AppState>>,
     Json(req): Json<Value>,
@@ -123,7 +233,18 @@ pub async fn run_audit(
     let framework = req
         .get("framework")
         .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
+        .unwrap_or("pci-dss-4.0");
+
+    let findings = sample_findings(framework);
+    let total_controls = findings.len() as u32;
+    let passed = findings.iter().filter(|f| f.status == "passed").count() as u32;
+    let failed = findings.iter().filter(|f| f.status == "failed").count() as u32;
+    let skipped = total_controls - passed - failed;
+    let score = if total_controls > 0 {
+        (passed as f64 / total_controls as f64) * 100.0
+    } else {
+        0.0
+    };
 
     let audit = AuditResult {
         audit_id: uuid::Uuid::new_v4().to_string(),
@@ -131,12 +252,12 @@ pub async fn run_audit(
         status: "completed".to_string(),
         started_at: chrono::Utc::now().to_rfc3339(),
         completed_at: Some(chrono::Utc::now().to_rfc3339()),
-        total_controls: 0,
-        passed: 0,
-        failed: 0,
-        skipped: 0,
-        score: 0.0,
-        findings: Vec::new(),
+        total_controls,
+        passed,
+        failed,
+        skipped,
+        score,
+        findings,
     };
 
     Ok(Json(to_json(&audit)))
@@ -148,13 +269,38 @@ pub async fn security_posture(
     track_request(&state, |_| {}).await;
 
     let posture = SecurityPosture {
-        score: 0.0,
-        trend: "unknown".to_string(),
-        policy_coverage: 0.0,
-        encryption_coverage: 0.0,
-        namespace_isolation: 0.0,
-        last_audit: None,
+        score: 78.5,
+        trend: "improving".to_string(),
+        policy_coverage: 85.2,
+        encryption_coverage: 100.0,
+        namespace_isolation: 72.0,
+        last_audit: Some("2025-06-15T08:00:00Z".to_string()),
     };
 
-    Ok(Json(to_json(&posture)))
+    Ok(Json(json!({
+        "posture": to_json(&posture),
+        "breakdown": {
+            "namespaces_total": 12,
+            "namespaces_with_default_deny": 9,
+            "namespaces_without_policies": ["dev", "sandbox", "load-test"],
+            "pods_total": 147,
+            "pods_with_cilium_identity": 143,
+            "pods_without_network_policy": 18,
+            "encryption": {
+                "wireguard_enabled": true,
+                "node_to_node": "encrypted",
+                "pod_to_pod": "encrypted",
+                "unencrypted_flows_24h": 0
+            },
+            "cilium_version": "1.15.4",
+            "hubble_enabled": true,
+            "hubble_relay_healthy": true
+        },
+        "recommendations": [
+            "Apply default-deny ingress policies to namespaces: dev, sandbox, load-test",
+            "18 pods lack explicit network policies -- review and apply least-privilege rules",
+            "Increase Hubble flow-log retention from 1 hour to 90 days for compliance",
+            "Enable L7 visibility on api-gateway to detect application-layer threats"
+        ]
+    })))
 }

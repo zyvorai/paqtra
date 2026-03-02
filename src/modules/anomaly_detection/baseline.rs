@@ -243,3 +243,150 @@ impl Default for SeasonalPatterns {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::anomaly_detection::MetricType;
+
+    fn make_metric(value: f64) -> Metric {
+        Metric {
+            timestamp: chrono::Utc::now(),
+            metric_type: MetricType::RequestRate,
+            value,
+            namespace: "default".to_string(),
+            pod: "test-pod".to_string(),
+            service: "test-svc".to_string(),
+            destination: None,
+            protocol: "TCP".to_string(),
+            port: 8080,
+        }
+    }
+
+    #[test]
+    fn test_baseline_learner_creation() {
+        let learner = BaselineLearner::new(168);
+        assert!(learner.get_stats().is_empty());
+    }
+
+    #[test]
+    fn test_update_creates_baseline() {
+        let mut learner = BaselineLearner::new(168);
+        let metric = make_metric(100.0);
+        learner.update(&metric).unwrap();
+
+        let stats = learner.get_stats();
+        assert_eq!(stats.len(), 1);
+    }
+
+    #[test]
+    fn test_get_baseline_after_update() {
+        let mut learner = BaselineLearner::new(168);
+        let metric = make_metric(50.0);
+        learner.update(&metric).unwrap();
+
+        let baseline = learner.get_baseline(&metric);
+        assert!(baseline.is_some());
+        assert_eq!(baseline.unwrap().stats.sample_count, 1);
+    }
+
+    #[test]
+    fn test_stats_calculation_mean() {
+        let mut learner = BaselineLearner::new(168);
+        for v in [10.0, 20.0, 30.0] {
+            let metric = make_metric(v);
+            learner.update(&metric).unwrap();
+        }
+
+        let metric = make_metric(0.0); // just for key lookup
+        let baseline = learner.get_baseline(&metric).unwrap();
+        assert!((baseline.stats.mean - 20.0).abs() < 0.001);
+        assert_eq!(baseline.stats.sample_count, 3);
+    }
+
+    #[test]
+    fn test_stats_calculation_std_dev() {
+        let mut learner = BaselineLearner::new(168);
+        // All same values -> std_dev should be 0
+        for _ in 0..10 {
+            let metric = make_metric(100.0);
+            learner.update(&metric).unwrap();
+        }
+
+        let metric = make_metric(0.0);
+        let baseline = learner.get_baseline(&metric).unwrap();
+        assert_eq!(baseline.stats.std_dev, 0.0);
+        assert_eq!(baseline.stats.mean, 100.0);
+    }
+
+    #[test]
+    fn test_stats_min_max() {
+        let mut learner = BaselineLearner::new(168);
+        for v in [5.0, 10.0, 15.0, 20.0, 25.0] {
+            let metric = make_metric(v);
+            learner.update(&metric).unwrap();
+        }
+
+        let metric = make_metric(0.0);
+        let baseline = learner.get_baseline(&metric).unwrap();
+        assert_eq!(baseline.stats.min, 5.0);
+        assert_eq!(baseline.stats.max, 25.0);
+    }
+
+    #[test]
+    fn test_stats_median_odd() {
+        let mut learner = BaselineLearner::new(168);
+        for v in [1.0, 3.0, 5.0, 7.0, 9.0] {
+            let metric = make_metric(v);
+            learner.update(&metric).unwrap();
+        }
+
+        let metric = make_metric(0.0);
+        let baseline = learner.get_baseline(&metric).unwrap();
+        assert_eq!(baseline.stats.median, 5.0);
+    }
+
+    #[test]
+    fn test_stats_median_even() {
+        let mut learner = BaselineLearner::new(168);
+        for v in [1.0, 3.0, 5.0, 7.0] {
+            let metric = make_metric(v);
+            learner.update(&metric).unwrap();
+        }
+
+        let metric = make_metric(0.0);
+        let baseline = learner.get_baseline(&metric).unwrap();
+        // Median of [1, 3, 5, 7] = (3 + 5) / 2 = 4.0
+        assert_eq!(baseline.stats.median, 4.0);
+    }
+
+    #[test]
+    fn test_empty_data_points_default_stats() {
+        let data_points = std::collections::VecDeque::new();
+        let stats = BaselineLearner::calculate_stats_static(&data_points);
+        assert_eq!(stats.sample_count, 0);
+        assert_eq!(stats.mean, 0.0);
+    }
+
+    #[test]
+    fn test_seasonal_patterns_populated() {
+        let mut learner = BaselineLearner::new(168);
+        for _ in 0..5 {
+            let metric = make_metric(100.0);
+            learner.update(&metric).unwrap();
+        }
+
+        let metric = make_metric(0.0);
+        let baseline = learner.get_baseline(&metric).unwrap();
+        // Should have at least one hourly pattern entry for the current hour
+        assert!(!baseline.seasonal_patterns.hourly_patterns.is_empty());
+    }
+
+    #[test]
+    fn test_baseline_stats_default() {
+        let stats = BaselineStats::default();
+        assert_eq!(stats.mean, 0.0);
+        assert_eq!(stats.std_dev, 0.0);
+        assert_eq!(stats.sample_count, 0);
+    }
+}

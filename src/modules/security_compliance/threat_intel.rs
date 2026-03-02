@@ -76,3 +76,60 @@ impl Default for ThreatIntelligence {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_threat_intelligence_creation() {
+        let ti = ThreatIntelligence::new();
+        assert!(ti.is_ok());
+    }
+
+    #[test]
+    fn test_threat_intelligence_default() {
+        let ti = ThreatIntelligence::default();
+        assert!(!ti.feeds_enabled);
+    }
+
+    #[tokio::test]
+    async fn test_assess_returns_clean_without_feeds() {
+        let ti = ThreatIntelligence::new().unwrap();
+        let assessment = ti.assess("192.168.1.1").await.unwrap();
+        assert_eq!(assessment.indicator, "192.168.1.1");
+        assert_eq!(assessment.threat_level, ThreatLevel::Clean);
+        assert_eq!(assessment.confidence, 0.0);
+        assert!(assessment.categories.is_empty());
+        assert!(assessment.first_seen.is_none());
+        assert!(assessment.last_seen.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_assess_domain_indicator() {
+        let ti = ThreatIntelligence::new().unwrap();
+        let assessment = ti.assess("malicious.example.com").await.unwrap();
+        assert_eq!(assessment.indicator, "malicious.example.com");
+        assert_eq!(assessment.threat_level, ThreatLevel::Clean);
+    }
+
+    #[tokio::test]
+    async fn test_assess_sources_indicate_not_assessed() {
+        let ti = ThreatIntelligence::new().unwrap();
+        let assessment = ti.assess("10.0.0.1").await.unwrap();
+        assert!(!assessment.sources.is_empty());
+        assert!(
+            assessment.sources[0].contains("not_assessed"),
+            "Source should indicate feeds are not configured"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_recommendations() {
+        let ti = ThreatIntelligence::new().unwrap();
+        let recs = ti.get_recommendations().await.unwrap();
+        assert!(!recs.is_empty());
+        assert_eq!(recs[0].category, RecommendationCategory::ThreatMitigation);
+        assert_eq!(recs[0].priority, Priority::P3Medium);
+    }
+}

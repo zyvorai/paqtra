@@ -263,8 +263,27 @@ impl<M: MapReader> SelfHealer<M> {
                 println!("✔ Applied DNS policy fix for namespace: {}", namespace);
             }
             FixAction::CreateAllowPolicy { src, dst, port } => {
-                // TODO: Create specific allow policy
-                println!("✔ Would create allow policy: {} -> {}:{}", src, dst, port);
+                let policy_yaml = format!(
+                    r#"
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: auto-allow-{port}
+  namespace: {src}
+spec:
+  endpointSelector: {{}}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.ip: "{dst}"
+      toPorts:
+        - ports:
+            - port: "{port}"
+              protocol: TCP
+"#
+                );
+                self.k8s_client.apply_custom_resource(Some(src), &policy_yaml).await?;
+                println!("Applied allow policy: {} -> {}:{}", src, dst, port);
             }
             _ => {
                 println!("⚠ Fix action not yet implemented: {:?}", fix.action);

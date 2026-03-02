@@ -243,10 +243,76 @@ impl Default for SecurityComplianceManager {
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_manager_creation() {
+        let manager = SecurityComplianceManager::new();
+        assert!(manager.is_ok());
+    }
+
+    #[test]
+    fn test_manager_default() {
+        let _manager = SecurityComplianceManager::default();
+    }
+
     #[tokio::test]
     async fn test_security_posture_calculation() {
         let mut manager = SecurityComplianceManager::new().unwrap();
         let score = manager.calculate_security_posture().await.unwrap();
         assert!(score.overall_score >= 0.0 && score.overall_score <= 100.0);
+    }
+
+    #[tokio::test]
+    async fn test_generate_zero_trust_policies() {
+        let mut manager = SecurityComplianceManager::new().unwrap();
+        let policies = manager.generate_zero_trust_policies("test-ns").await.unwrap();
+        assert!(!policies.is_empty(), "Should generate at least one policy");
+        // All policies should be valid YAML-like strings containing the namespace
+        for policy in &policies {
+            assert!(policy.contains("test-ns"), "Policy should reference the namespace");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_compliance_audit_pci_dss() {
+        let mut manager = SecurityComplianceManager::new().unwrap();
+        let report = manager.run_compliance_audit(ComplianceFramework::PCIDSS).await.unwrap();
+        assert_eq!(report.framework, ComplianceFramework::PCIDSS);
+        assert!(!report.controls.is_empty());
+        // Score should be 0.0 since all controls are NotChecked
+        assert_eq!(report.overall_score, 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_check_threat_intel() {
+        let mut manager = SecurityComplianceManager::new().unwrap();
+        let assessment = manager.check_threat_intel("192.168.1.1").await.unwrap();
+        assert_eq!(assessment.indicator, "192.168.1.1");
+        assert_eq!(assessment.threat_level, ThreatLevel::Clean);
+        // No feeds configured, so confidence should be 0.0
+        assert_eq!(assessment.confidence, 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_get_recommendations() {
+        let mut manager = SecurityComplianceManager::new().unwrap();
+        let recommendations = manager.get_recommendations().await.unwrap();
+        assert!(!recommendations.is_empty(), "Should return at least one recommendation");
+        // Recommendations should be sorted by priority (descending)
+        for window in recommendations.windows(2) {
+            assert!(window[0].priority >= window[1].priority);
+        }
+    }
+
+    #[test]
+    fn test_compliance_framework_equality() {
+        assert_eq!(ComplianceFramework::PCIDSS, ComplianceFramework::PCIDSS);
+        assert_ne!(ComplianceFramework::SOC2, ComplianceFramework::HIPAA);
+    }
+
+    #[test]
+    fn test_threat_level_ordering() {
+        assert!(ThreatLevel::Critical > ThreatLevel::Malicious);
+        assert!(ThreatLevel::Malicious > ThreatLevel::Suspicious);
+        assert!(ThreatLevel::Suspicious > ThreatLevel::Clean);
     }
 }

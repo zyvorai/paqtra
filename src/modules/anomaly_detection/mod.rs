@@ -279,41 +279,133 @@ pub struct Metric {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_anomaly_detection() {
-        let config = DetectionConfig::default();
-        let mut detector = AnomalyDetector::new(config).unwrap();
-
-        // Simulate normal traffic
-        for i in 0..1000 {
-            let metric = Metric {
-                timestamp: Utc::now(),
-                metric_type: MetricType::RequestRate,
-                value: 100.0 + (i as f64 % 10.0),
-                namespace: "default".to_string(),
-                pod: "test-pod".to_string(),
-                service: "test-svc".to_string(),
-                destination: None,
-                protocol: "TCP".to_string(),
-                port: 8080,
-            };
-            detector.process_metrics(&[metric]).await.unwrap();
-        }
-
-        // Inject anomaly
-        let anomalous_metric = Metric {
+    fn make_metric(value: f64) -> Metric {
+        Metric {
             timestamp: Utc::now(),
             metric_type: MetricType::RequestRate,
-            value: 1000.0, // 10x normal
+            value,
             namespace: "default".to_string(),
             pod: "test-pod".to_string(),
             service: "test-svc".to_string(),
             destination: None,
             protocol: "TCP".to_string(),
             port: 8080,
-        };
+        }
+    }
 
+    #[test]
+    fn test_anomaly_detector_creation() {
+        let config = DetectionConfig::default();
+        let detector = AnomalyDetector::new(config);
+        assert!(detector.is_ok());
+    }
+
+    #[test]
+    fn test_detection_config_defaults() {
+        let config = DetectionConfig::default();
+        assert_eq!(config.sensitivity, 0.7);
+        assert_eq!(config.learning_period_hours, 168);
+        assert_eq!(config.confidence_threshold, 0.8);
+        assert!(!config.auto_remediation);
+        assert!(config.algorithms.contains(&Algorithm::ZScore));
+        assert!(config.algorithms.contains(&Algorithm::IsolationForest));
+    }
+
+    #[test]
+    fn test_calculate_severity_critical() {
+        let config = DetectionConfig::default();
+        let detector = AnomalyDetector::new(config).unwrap();
+        // confidence * deviation > 8.0
+        let severity = detector.calculate_severity(1.0, 9.0);
+        assert_eq!(severity, Severity::Critical);
+    }
+
+    #[test]
+    fn test_calculate_severity_high() {
+        let config = DetectionConfig::default();
+        let detector = AnomalyDetector::new(config).unwrap();
+        // confidence * deviation > 5.0 but <= 8.0
+        let severity = detector.calculate_severity(1.0, 6.0);
+        assert_eq!(severity, Severity::High);
+    }
+
+    #[test]
+    fn test_calculate_severity_medium() {
+        let config = DetectionConfig::default();
+        let detector = AnomalyDetector::new(config).unwrap();
+        // confidence * deviation > 3.0 but <= 5.0
+        let severity = detector.calculate_severity(1.0, 4.0);
+        assert_eq!(severity, Severity::Medium);
+    }
+
+    #[test]
+    fn test_calculate_severity_low() {
+        let config = DetectionConfig::default();
+        let detector = AnomalyDetector::new(config).unwrap();
+        // confidence * deviation > 1.5 but <= 3.0
+        let severity = detector.calculate_severity(1.0, 2.0);
+        assert_eq!(severity, Severity::Low);
+    }
+
+    #[test]
+    fn test_calculate_severity_info() {
+        let config = DetectionConfig::default();
+        let detector = AnomalyDetector::new(config).unwrap();
+        // confidence * deviation <= 1.5
+        let severity = detector.calculate_severity(0.5, 1.0);
+        assert_eq!(severity, Severity::Info);
+    }
+
+    #[test]
+    fn test_get_baseline_stats_initially_empty() {
+        let config = DetectionConfig::default();
+        let detector = AnomalyDetector::new(config).unwrap();
+        let stats = detector.get_baseline_stats();
+        assert!(stats.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_process_metrics_builds_baseline() {
+        let config = DetectionConfig::default();
+        let mut detector = AnomalyDetector::new(config).unwrap();
+
+        for i in 0..50 {
+            let metric = make_metric(100.0 + (i as f64 % 10.0));
+            detector.process_metrics(&[metric]).await.unwrap();
+        }
+
+        let stats = detector.get_baseline_stats();
+        assert!(!stats.is_empty(), "Baseline should have entries after processing metrics");
+    }
+
+    #[tokio::test]
+    async fn test_anomaly_detection_with_spike() {
+        let config = DetectionConfig::default();
+        let mut detector = AnomalyDetector::new(config).unwrap();
+
+        // Build baseline with 1000 normal metrics
+        for i in 0..1000 {
+            let metric = make_metric(100.0 + (i as f64 % 10.0));
+            detector.process_metrics(&[metric]).await.unwrap();
+        }
+
+        // Inject extreme anomaly
+        let anomalous_metric = make_metric(1000.0);
         let anomalies = detector.process_metrics(&[anomalous_metric]).await.unwrap();
-        assert!(!anomalies.is_empty(), "Should detect anomaly");
+        assert!(!anomalies.is_empty(), "Should detect anomaly with 10x spike");
+    }
+
+    #[test]
+    fn test_severity_ordering() {
+        assert!(Severity::Critical > Severity::High);
+        assert!(Severity::High > Severity::Medium);
+        assert!(Severity::Medium > Severity::Low);
+        assert!(Severity::Low > Severity::Info);
+    }
+
+    #[test]
+    fn test_algorithm_equality() {
+        assert_eq!(Algorithm::ZScore, Algorithm::ZScore);
+        assert_ne!(Algorithm::ZScore, Algorithm::LSTM);
     }
 }

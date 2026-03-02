@@ -1,3 +1,4 @@
+// Many items used only with real eBPF hardware
 #![allow(dead_code)]
 /// Real Cilium BPF Map Reader
 ///

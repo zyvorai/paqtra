@@ -101,3 +101,76 @@ impl Default for SecurityPosture {
         Self {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_security_posture_creation() {
+        let posture = SecurityPosture::new();
+        assert!(posture.is_ok());
+    }
+
+    #[test]
+    fn test_security_posture_default() {
+        let _posture = SecurityPosture::default();
+    }
+
+    #[tokio::test]
+    async fn test_calculate_score_returns_valid_score() {
+        let posture = SecurityPosture::new().unwrap();
+        let score = posture.calculate_score().await.unwrap();
+        assert!(score.overall_score >= 0.0 && score.overall_score <= 100.0);
+    }
+
+    #[tokio::test]
+    async fn test_score_dimensions_present() {
+        let posture = SecurityPosture::new().unwrap();
+        let score = posture.calculate_score().await.unwrap();
+        assert!(score.dimensions.contains_key("Network Segmentation"));
+        assert!(score.dimensions.contains_key("Access Control"));
+        assert!(score.dimensions.contains_key("Encryption"));
+        assert!(score.dimensions.contains_key("Monitoring & Logging"));
+        assert!(score.dimensions.contains_key("Compliance"));
+    }
+
+    #[tokio::test]
+    async fn test_dimension_weights_sum_to_one() {
+        let posture = SecurityPosture::new().unwrap();
+        let score = posture.calculate_score().await.unwrap();
+        let total_weight: f64 = score.dimensions.values().map(|d| d.weight).sum();
+        assert!(
+            (total_weight - 1.0).abs() < 0.001,
+            "Dimension weights should sum to 1.0, got {}",
+            total_weight
+        );
+    }
+
+    #[tokio::test]
+    async fn test_all_dimensions_pending() {
+        let posture = SecurityPosture::new().unwrap();
+        let score = posture.calculate_score().await.unwrap();
+        // All scores should be 0.0 (pending assessment)
+        for (name, dim) in &score.dimensions {
+            assert_eq!(dim.score, 0.0, "Dimension '{}' should be 0.0 (pending)", name);
+        }
+        // Overall score should also be 0.0
+        assert_eq!(score.overall_score, 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_score_trend_is_stable() {
+        let posture = SecurityPosture::new().unwrap();
+        let score = posture.calculate_score().await.unwrap();
+        assert_eq!(score.trend, ScoreTrend::Stable);
+    }
+
+    #[tokio::test]
+    async fn test_get_recommendations() {
+        let posture = SecurityPosture::new().unwrap();
+        let recs = posture.get_recommendations().await.unwrap();
+        assert!(!recs.is_empty());
+        assert_eq!(recs[0].category, RecommendationCategory::BestPractice);
+    }
+}

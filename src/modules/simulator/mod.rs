@@ -446,7 +446,7 @@ impl<M: MapReader> Simulator<M> {
         }
 
         // Analyze impact
-        let analyzer = ImpactAnalyzer::new(&self.k8s_client);
+        let analyzer = ImpactAnalyzer::new(&self.k8s_client, &self.ebpf_reader);
         let impact = analyzer.analyze(&flow_results).await?;
         let affected = analyzer.find_affected_resources(&flow_results).await?;
 

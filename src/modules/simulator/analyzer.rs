@@ -7,13 +7,59 @@ use super::*;
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 
-pub struct ImpactAnalyzer<'a> {
+pub struct ImpactAnalyzer<'a, M: MapReader> {
     k8s_client: &'a K8sClient,
+    reader: &'a M,
 }
 
-impl<'a> ImpactAnalyzer<'a> {
-    pub fn new(k8s_client: &'a K8sClient) -> Self {
-        Self { k8s_client }
+impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
+    pub fn new(k8s_client: &'a K8sClient, reader: &'a M) -> Self {
+        Self { k8s_client, reader }
+    }
+
+    /// Resolve identity information from IPCache.
+    /// Returns (service_name, namespace, labels) for a given identity.
+    fn resolve_identity_info(&self, identity: u32) -> (String, String, HashMap<String, String>) {
+        if let Ok(entries) = self.reader.read_ipcache_map() {
+            if let Some(entry) = entries.iter().find(|e| e.identity == identity) {
+                let namespace = if entry.namespace.is_empty() {
+                    "default".to_string()
+                } else {
+                    entry.namespace.clone()
+                };
+                let name = entry.labels.iter()
+                    .find(|l| l.starts_with("app="))
+                    .map(|l| l.trim_start_matches("app=").to_string())
+                    .unwrap_or_else(|| format!("service-{}", identity));
+                let labels: HashMap<String, String> = entry.labels.iter()
+                    .filter_map(|l| l.split_once('='))
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect();
+                return (name, namespace, labels);
+            }
+        }
+        (format!("service-{}", identity), "default".to_string(), HashMap::new())
+    }
+
+    /// Collect unique namespaces from IPCache for a set of identities.
+    fn resolve_namespaces_from_identities(&self, identities: &[u32]) -> Vec<String> {
+        let mut namespaces = HashSet::new();
+        if let Ok(entries) = self.reader.read_ipcache_map() {
+            for identity in identities {
+                if let Some(entry) = entries.iter().find(|e| e.identity == *identity) {
+                    let ns = if entry.namespace.is_empty() {
+                        "default".to_string()
+                    } else {
+                        entry.namespace.clone()
+                    };
+                    namespaces.insert(ns);
+                }
+            }
+        }
+        if namespaces.is_empty() {
+            namespaces.insert("default".to_string());
+        }
+        namespaces.into_iter().collect()
     }
 
     /// Analyze impact from flow simulation results
@@ -68,8 +114,8 @@ impl<'a> ImpactAnalyzer<'a> {
             .into_iter()
             .collect();
 
-        // Group by namespace (placeholder - would need IPCache)
-        let namespaces = vec!["default".to_string()]; // TODO: Resolve from identities
+        // Resolve namespaces from IPCache entries matching the flow identities
+        let namespaces = self.resolve_namespaces_from_identities(&pod_identities);
 
         // Find affected services
         let services = self.find_affected_services(flow_results).await?;
@@ -102,8 +148,8 @@ impl<'a> ImpactAnalyzer<'a> {
         // For each affected destination, identify service
         for (identity, flows) in by_dst {
             if flows.iter().any(|f| f.after == PolicyVerdict::Deny) {
-                // TODO: Resolve identity to service name via K8s API
-                services.insert(format!("service-{}", identity));
+                let (name, namespace, _labels) = self.resolve_identity_info(identity);
+                services.insert(format!("{}/{}", namespace, name));
             }
         }
 
@@ -180,9 +226,10 @@ impl<'a> ImpactAnalyzer<'a> {
                 .collect::<HashSet<_>>()
                 .len();
 
+            let (resolved_name, resolved_namespace, _labels) = self.resolve_identity_info(identity);
             services.push(ServiceImpact {
-                name: format!("service-{}", identity), // TODO: Resolve real name
-                namespace: "default".to_string(),       // TODO: Resolve real namespace
+                name: resolved_name,
+                namespace: resolved_namespace,
                 impact_type,
                 affected_ports,
                 client_count,
@@ -224,12 +271,13 @@ impl<'a> ImpactAnalyzer<'a> {
                 continue;
             }
 
+            let (_name, resolved_namespace, resolved_labels) = self.resolve_identity_info(identity);
             endpoints.push(EndpointImpact {
                 identity,
-                namespace: "default".to_string(), // TODO: Resolve
-                labels: HashMap::new(),            // TODO: Resolve from IPCache
+                namespace: resolved_namespace,
+                labels: resolved_labels,
                 blocked_egress,
-                blocked_ingress: Vec::new(), // TODO: Analyze ingress
+                blocked_ingress: Vec::new(), // Ingress analysis requires tracking inbound flows separately; not yet implemented
             });
         }
 
@@ -255,9 +303,11 @@ impl<'a> ImpactAnalyzer<'a> {
                 // Determine criticality based on port
                 let criticality = Self::determine_criticality(result.port, protocol);
 
+                let (src_name, src_ns, _) = self.resolve_identity_info(result.src_identity);
+                let (dst_name, dst_ns, _) = self.resolve_identity_info(result.dst_identity);
                 dependencies.push(Dependency {
-                    from_service: format!("service-{}", result.src_identity),
-                    to_service: format!("service-{}", result.dst_identity),
+                    from_service: format!("{}/{}", src_ns, src_name),
+                    to_service: format!("{}/{}", dst_ns, dst_name),
                     port: result.port,
                     protocol: protocol.to_string(),
                     criticality,
@@ -342,31 +392,30 @@ pub struct CommunicationEdge {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ebpf::MockMapReader;
 
     #[test]
     fn test_determine_criticality() {
         assert_eq!(
-            ImpactAnalyzer::determine_criticality(53, "UDP"),
+            ImpactAnalyzer::<MockMapReader>::determine_criticality(53, "UDP"),
             DependencyCriticality::Critical
         );
         assert_eq!(
-            ImpactAnalyzer::determine_criticality(443, "TCP"),
+            ImpactAnalyzer::<MockMapReader>::determine_criticality(443, "TCP"),
             DependencyCriticality::Critical
         );
         assert_eq!(
-            ImpactAnalyzer::determine_criticality(80, "TCP"),
+            ImpactAnalyzer::<MockMapReader>::determine_criticality(80, "TCP"),
             DependencyCriticality::Important
         );
         assert_eq!(
-            ImpactAnalyzer::determine_criticality(12345, "TCP"),
+            ImpactAnalyzer::<MockMapReader>::determine_criticality(12345, "TCP"),
             DependencyCriticality::Optional
         );
     }
 
     #[test]
     fn test_identify_critical_services() {
-        let k8s_client = K8sClient::new();
-        // Can't actually await in sync test, but we can test the logic
         let services = vec![
             "web-service".to_string(),
             "db-service".to_string(),
@@ -374,8 +423,7 @@ mod tests {
             "cache-service".to_string(),
         ];
 
-        // We can't call the async method directly in sync test
-        // But we can verify the pattern matching logic would work
+        // Verify the pattern matching logic would work
         assert!(services.iter().any(|s| s.contains("db")));
         assert!(services.iter().any(|s| s.contains("api")));
     }

@@ -41,4 +41,16 @@ pub mod modules {
 
     #[path = "../modules/multicluster/mod.rs"]
     pub mod multicluster;
+
+    #[path = "../modules/dev_tools/mod.rs"]
+    pub mod dev_tools;
+
+    #[path = "../modules/ebpf_advanced/mod.rs"]
+    pub mod ebpf_advanced;
+
+    #[path = "../modules/security_compliance/mod.rs"]
+    pub mod security_compliance;
+
+    #[path = "../modules/anomaly_detection/mod.rs"]
+    pub mod anomaly_detection;
 }

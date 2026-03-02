@@ -227,8 +227,21 @@ impl Default for DevToolsManager {
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_dev_tools_manager_creation() {
+        let manager = DevToolsManager::new();
+        assert!(manager.is_ok(), "DevToolsManager::new() should succeed");
+    }
+
+    #[test]
+    fn test_dev_tools_manager_default() {
+        let manager = DevToolsManager::default();
+        // Default should produce a valid instance without panicking
+        let _ = &manager;
+    }
+
     #[tokio::test]
-    async fn test_shadow_creation() {
+    async fn test_shadow_start_stop_lifecycle() {
         let mut manager = DevToolsManager::new().unwrap();
 
         let config = ShadowConfig {
@@ -243,5 +256,61 @@ mod tests {
 
         let shadow_id = manager.start_shadow(config).await.unwrap();
         assert!(!shadow_id.is_empty());
+
+        // Stop should succeed for a valid shadow_id
+        let stop_result = manager.stop_shadow(&shadow_id).await;
+        assert!(stop_result.is_ok(), "Stopping a valid shadow should succeed");
+
+        // Stopping again should fail (already removed)
+        let stop_again = manager.stop_shadow(&shadow_id).await;
+        assert!(stop_again.is_err(), "Stopping a non-existent shadow should fail");
+    }
+
+    #[tokio::test]
+    async fn test_shadow_stats_retrieval() {
+        let mut manager = DevToolsManager::new().unwrap();
+
+        let config = ShadowConfig {
+            name: "stats-test".to_string(),
+            source_service: "svc-a".to_string(),
+            target_service: "svc-b".to_string(),
+            namespace: "default".to_string(),
+            sampling_rate: 1.0,
+            filters: vec![],
+            compare_responses: false,
+        };
+
+        let shadow_id = manager.start_shadow(config).await.unwrap();
+        let stats = manager.get_shadow_stats(&shadow_id).await.unwrap();
+        assert_eq!(stats.total_requests, 0);
+        assert_eq!(stats.shadowed_requests, 0);
+    }
+
+    #[test]
+    fn test_shadow_config_serialization() {
+        let config = ShadowConfig {
+            name: "ser-test".to_string(),
+            source_service: "src".to_string(),
+            target_service: "tgt".to_string(),
+            namespace: "ns".to_string(),
+            sampling_rate: 0.5,
+            filters: vec![TrafficFilter {
+                filter_type: FilterType::Path,
+                pattern: "/api/*".to_string(),
+            }],
+            compare_responses: true,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: ShadowConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "ser-test");
+        assert_eq!(deserialized.filters.len(), 1);
+        assert_eq!(deserialized.filters[0].filter_type, FilterType::Path);
+    }
+
+    #[test]
+    fn test_filter_type_variants() {
+        assert_eq!(FilterType::Path, FilterType::Path);
+        assert_ne!(FilterType::Path, FilterType::Method);
+        assert_ne!(FilterType::Header, FilterType::StatusCode);
     }
 }

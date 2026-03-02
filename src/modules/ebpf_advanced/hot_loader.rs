@@ -178,3 +178,92 @@ impl Drop for HotLoader {
         // In real implementation: unload all programs
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hot_loader_creation() {
+        let loader = HotLoader::new();
+        assert!(loader.is_ok());
+    }
+
+    #[test]
+    fn test_hot_loader_default() {
+        let _loader = HotLoader::default();
+        // Should not panic
+    }
+
+    #[tokio::test]
+    async fn test_load_program_with_valid_elf_bytecode() {
+        let mut loader = HotLoader::new().unwrap();
+        // Valid ELF magic number prefix
+        let elf_bytecode = vec![0x7f, b'E', b'L', b'F', 0x00, 0x01, 0x02];
+        let result = loader.load_program(elf_bytecode).await;
+        assert!(result.is_ok());
+        let program_id = result.unwrap();
+        assert!(!program_id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_load_program_empty_bytecode_fails() {
+        let mut loader = HotLoader::new().unwrap();
+        let result = loader.load_program(vec![]).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("bytecode is empty"));
+    }
+
+    #[tokio::test]
+    async fn test_load_program_non_elf_still_loads() {
+        let mut loader = HotLoader::new().unwrap();
+        // Non-ELF bytecode: the loader warns but does not reject
+        let result = loader.load_program(vec![0x00, 0x01, 0x02, 0x03, 0x04]).await;
+        // The stub loader still accepts it with a warning
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_unload_existing_program() {
+        let mut loader = HotLoader::new().unwrap();
+        let bytecode = vec![0x7f, b'E', b'L', b'F', 0x00];
+        let program_id = loader.load_program(bytecode).await.unwrap();
+
+        let result = loader.unload_program(&program_id).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_unload_nonexistent_program_fails() {
+        let mut loader = HotLoader::new().unwrap();
+        let result = loader.unload_program("nonexistent-id").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_load_unload_lifecycle() {
+        let mut loader = HotLoader::new().unwrap();
+        let bytecode = vec![0x7f, b'E', b'L', b'F', 0x00];
+        let program_id = loader.load_program(bytecode).await.unwrap();
+
+        // Unload
+        assert!(loader.unload_program(&program_id).await.is_ok());
+
+        // Unload again should fail
+        assert!(loader.unload_program(&program_id).await.is_err());
+    }
+
+    #[test]
+    fn test_list_programs_empty() {
+        let loader = HotLoader::new().unwrap();
+        let programs = loader.list_programs();
+        assert!(programs.is_empty());
+    }
+
+    #[test]
+    fn test_get_stats_nonexistent() {
+        let loader = HotLoader::new().unwrap();
+        assert!(loader.get_stats("anything").is_none());
+    }
+}

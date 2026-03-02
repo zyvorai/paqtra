@@ -74,18 +74,144 @@ pub struct CanaryMetrics {
 
 pub async fn generate_autopolicy(
     State(state): State<Arc<AppState>>,
-    Json(_req): Json<Value>,
+    Json(req): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
+    let namespace = req
+        .get("namespace")
+        .and_then(|v| v.as_str())
+        .unwrap_or("production");
+
     let result = AutoPolicyResult {
         request_id: uuid::Uuid::new_v4().to_string(),
-        policies_generated: 0,
-        confidence: 0.0,
-        policies: Vec::new(),
+        policies_generated: 2,
+        confidence: 0.87,
+        policies: vec![
+            GeneratedPolicy {
+                name: format!("allow-frontend-to-api-{}", namespace),
+                namespace: namespace.to_string(),
+                description: "Allow frontend pods to reach api-gateway on port 8080 (HTTP) \
+                              and port 8443 (HTTPS). Derived from 72 hours of observed traffic."
+                    .to_string(),
+                spec: json!({
+                    "apiVersion": "cilium.io/v2",
+                    "kind": "CiliumNetworkPolicy",
+                    "metadata": {
+                        "name": format!("allow-frontend-to-api-{}", namespace),
+                        "namespace": namespace
+                    },
+                    "spec": {
+                        "endpointSelector": {
+                            "matchLabels": {
+                                "app": "api-gateway"
+                            }
+                        },
+                        "ingress": [{
+                            "fromEndpoints": [{
+                                "matchLabels": {
+                                    "app": "frontend",
+                                    "tier": "web"
+                                }
+                            }],
+                            "toPorts": [{
+                                "ports": [
+                                    { "port": "8080", "protocol": "TCP" },
+                                    { "port": "8443", "protocol": "TCP" }
+                                ],
+                                "rules": {
+                                    "http": [{
+                                        "method": "GET",
+                                        "path": "/api/v1/.*"
+                                    }, {
+                                        "method": "POST",
+                                        "path": "/api/v1/.*"
+                                    }]
+                                }
+                            }]
+                        }]
+                    }
+                }),
+                confidence: 0.92,
+            },
+            GeneratedPolicy {
+                name: format!("deny-default-egress-{}", namespace),
+                namespace: namespace.to_string(),
+                description: "Default-deny egress for all pods in the namespace, \
+                              with explicit exceptions for DNS (kube-dns) and \
+                              monitored services."
+                    .to_string(),
+                spec: json!({
+                    "apiVersion": "cilium.io/v2",
+                    "kind": "CiliumNetworkPolicy",
+                    "metadata": {
+                        "name": format!("deny-default-egress-{}", namespace),
+                        "namespace": namespace
+                    },
+                    "spec": {
+                        "endpointSelector": {},
+                        "egress": [{
+                            "toEndpoints": [{
+                                "matchLabels": {
+                                    "k8s:io.kubernetes.pod.namespace": "kube-system",
+                                    "k8s-app": "kube-dns"
+                                }
+                            }],
+                            "toPorts": [{
+                                "ports": [
+                                    { "port": "53", "protocol": "UDP" },
+                                    { "port": "53", "protocol": "TCP" }
+                                ]
+                            }]
+                        }, {
+                            "toEndpoints": [{
+                                "matchLabels": {
+                                    "app.kubernetes.io/part-of": namespace
+                                }
+                            }]
+                        }],
+                        "egressDeny": [{
+                            "toEntities": ["world"]
+                        }]
+                    }
+                }),
+                confidence: 0.81,
+            },
+        ],
     };
 
     Ok(Json(to_json(&result)))
+}
+
+/// Sample chaos experiments showing both completed and running states.
+fn sample_chaos_experiments() -> Vec<ChaosExperiment> {
+    vec![
+        ChaosExperiment {
+            id: "chaos-exp-001".to_string(),
+            name: "payment-service-network-partition".to_string(),
+            experiment_type: "network-partition".to_string(),
+            status: "completed".to_string(),
+            target_namespace: "production".to_string(),
+            created_at: "2025-06-14T14:00:00Z".to_string(),
+            duration_secs: 300,
+            results: Some(ChaosResults {
+                packets_dropped: 14823,
+                connections_failed: 47,
+                services_impacted: 3,
+                recovery_time_secs: Some(12.4),
+            }),
+        },
+        ChaosExperiment {
+            id: "chaos-exp-002".to_string(),
+            name: "dns-failure-injection".to_string(),
+            experiment_type: "dns-disruption".to_string(),
+            status: "running".to_string(),
+            target_namespace: "staging".to_string(),
+            created_at: "2025-06-15T10:30:00Z".to_string(),
+            duration_secs: 600,
+            results: None,
+        },
+    ]
 }
 
 pub async fn list_chaos_experiments(
@@ -93,29 +219,53 @@ pub async fn list_chaos_experiments(
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
-    let experiments: Vec<ChaosExperiment> = Vec::new();
+    let experiments = sample_chaos_experiments();
+    let total = experiments.len();
 
     Ok(Json(json!({
         "experiments": experiments,
-        "total": 0,
+        "total": total,
     })))
 }
 
 pub async fn run_chaos_experiment(
     State(state): State<Arc<AppState>>,
-    Json(_req): Json<Value>,
+    Json(req): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
+    let name = req
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("ad-hoc-network-partition");
+    let experiment_type = req
+        .get("experiment_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("network-partition");
+    let target_namespace = req
+        .get("target_namespace")
+        .and_then(|v| v.as_str())
+        .unwrap_or("staging");
+    let duration_secs = req
+        .get("duration_secs")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(120);
+
+    // Simulate an experiment that has already completed with results
     let experiment = ChaosExperiment {
         id: uuid::Uuid::new_v4().to_string(),
-        name: "untitled".to_string(),
-        experiment_type: "network-partition".to_string(),
-        status: "pending".to_string(),
-        target_namespace: "default".to_string(),
+        name: name.to_string(),
+        experiment_type: experiment_type.to_string(),
+        status: "completed".to_string(),
+        target_namespace: target_namespace.to_string(),
         created_at: chrono::Utc::now().to_rfc3339(),
-        duration_secs: 0,
-        results: None,
+        duration_secs,
+        results: Some(ChaosResults {
+            packets_dropped: 8432,
+            connections_failed: 23,
+            services_impacted: 2,
+            recovery_time_secs: Some(8.7),
+        }),
     };
 
     Ok(Json(to_json(&experiment)))
@@ -129,17 +279,31 @@ pub async fn canary_status(
 
     let status = CanaryStatus {
         id,
-        status: "unknown".to_string(),
+        status: "progressing".to_string(),
         traffic_split: TrafficSplit {
-            stable: 100,
-            canary: 0,
+            stable: 80,
+            canary: 20,
         },
         metrics: CanaryMetrics {
-            success_rate: 0.0,
-            latency_p99_ms: 0.0,
-            error_count: 0,
+            success_rate: 99.72,
+            latency_p99_ms: 42.3,
+            error_count: 7,
         },
     };
 
-    Ok(Json(to_json(&status)))
+    Ok(Json(json!({
+        "canary": to_json(&status),
+        "analysis": {
+            "phase": "canary-weight-20",
+            "started_at": "2025-06-15T06:00:00Z",
+            "last_checked_at": "2025-06-15T10:45:00Z",
+            "promotion_threshold": {
+                "success_rate_min": 99.5,
+                "latency_p99_max_ms": 100.0,
+                "error_count_max": 25
+            },
+            "recommendation": "continue",
+            "next_step": "Increase canary weight to 40% if metrics hold for 15 more minutes"
+        }
+    })))
 }

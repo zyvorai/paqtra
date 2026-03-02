@@ -273,8 +273,20 @@ impl Default for AdvancedEBPFManager {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_program_validation() {
+    #[test]
+    fn test_manager_creation() {
+        let manager = AdvancedEBPFManager::new();
+        assert!(manager.is_ok());
+    }
+
+    #[test]
+    fn test_manager_default() {
+        let _manager = AdvancedEBPFManager::default();
+        // Should not panic
+    }
+
+    #[test]
+    fn test_validate_valid_program() {
         let manager = AdvancedEBPFManager::new().unwrap();
 
         let program = EBPFProgram {
@@ -291,5 +303,92 @@ mod tests {
         };
 
         assert!(manager.validate_program(&program).is_ok());
+    }
+
+    #[test]
+    fn test_validate_empty_name_fails() {
+        let manager = AdvancedEBPFManager::new().unwrap();
+
+        let program = EBPFProgram {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: String::new(),
+            program_type: ProgramType::TC,
+            source_code: "// code".to_string(),
+            compiled_bytecode: None,
+            attach_point: AttachPoint::KernelFunction {
+                function: "tcp_connect".to_string(),
+            },
+            co_re_enabled: false,
+        };
+
+        let result = manager.validate_program(&program);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("name cannot be empty"));
+    }
+
+    #[test]
+    fn test_validate_no_source_or_bytecode_fails() {
+        let manager = AdvancedEBPFManager::new().unwrap();
+
+        let program = EBPFProgram {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "empty_program".to_string(),
+            program_type: ProgramType::SocketFilter,
+            source_code: String::new(),
+            compiled_bytecode: None,
+            attach_point: AttachPoint::Socket { fd: 0 },
+            co_re_enabled: false,
+        };
+
+        let result = manager.validate_program(&program);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("source code or compiled bytecode"));
+    }
+
+    #[test]
+    fn test_validate_program_with_bytecode_only() {
+        let manager = AdvancedEBPFManager::new().unwrap();
+
+        let program = EBPFProgram {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "bytecode_only".to_string(),
+            program_type: ProgramType::Kprobe,
+            source_code: String::new(),
+            compiled_bytecode: Some(vec![0x7f, 0x45, 0x4c, 0x46]),
+            attach_point: AttachPoint::KernelFunction {
+                function: "sys_open".to_string(),
+            },
+            co_re_enabled: false,
+        };
+
+        assert!(manager.validate_program(&program).is_ok());
+    }
+
+    #[test]
+    fn test_list_programs_initially_empty() {
+        let manager = AdvancedEBPFManager::new().unwrap();
+        let programs = manager.list_programs();
+        assert!(programs.is_empty());
+    }
+
+    #[test]
+    fn test_get_program_stats_nonexistent() {
+        let manager = AdvancedEBPFManager::new().unwrap();
+        let stats = manager.get_program_stats("nonexistent");
+        assert!(stats.is_none());
+    }
+
+    #[test]
+    fn test_program_type_equality() {
+        assert_eq!(ProgramType::XDP, ProgramType::XDP);
+        assert_ne!(ProgramType::TC, ProgramType::XDP);
+        assert_ne!(ProgramType::Kprobe, ProgramType::Tracepoint);
+    }
+
+    #[test]
+    fn test_direction_equality() {
+        assert_eq!(Direction::Ingress, Direction::Ingress);
+        assert_ne!(Direction::Ingress, Direction::Egress);
+        assert_ne!(Direction::Egress, Direction::Both);
     }
 }

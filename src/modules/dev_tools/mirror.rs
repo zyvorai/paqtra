@@ -45,3 +45,89 @@ impl Default for EnvironmentMirror {
         Self {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::dev_tools::{MirrorConfig, MirrorType};
+
+    #[test]
+    fn test_environment_mirror_creation() {
+        let mirror = EnvironmentMirror::new();
+        assert!(mirror.is_ok());
+    }
+
+    #[test]
+    fn test_environment_mirror_default() {
+        let _mirror = EnvironmentMirror::default();
+        // Should not panic
+    }
+
+    #[tokio::test]
+    async fn test_create_mirror_empty_source_namespace() {
+        let mirror = EnvironmentMirror::new().unwrap();
+        let config = MirrorConfig {
+            name: "test".to_string(),
+            source_namespace: String::new(),
+            target_namespace: "staging".to_string(),
+            services: vec![],
+            mirror_type: MirrorType::Full,
+        };
+        let result = mirror.create_mirror(config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("source_namespace"));
+    }
+
+    #[tokio::test]
+    async fn test_create_mirror_empty_target_namespace() {
+        let mirror = EnvironmentMirror::new().unwrap();
+        let config = MirrorConfig {
+            name: "test".to_string(),
+            source_namespace: "production".to_string(),
+            target_namespace: String::new(),
+            services: vec![],
+            mirror_type: MirrorType::Full,
+        };
+        let result = mirror.create_mirror(config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("target_namespace"));
+    }
+
+    #[tokio::test]
+    async fn test_create_mirror_same_namespaces_rejected() {
+        let mirror = EnvironmentMirror::new().unwrap();
+        let config = MirrorConfig {
+            name: "test".to_string(),
+            source_namespace: "production".to_string(),
+            target_namespace: "production".to_string(),
+            services: vec![],
+            mirror_type: MirrorType::Full,
+        };
+        let result = mirror.create_mirror(config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must differ"));
+    }
+
+    #[tokio::test]
+    async fn test_create_mirror_valid_config_returns_not_implemented() {
+        let mirror = EnvironmentMirror::new().unwrap();
+        let config = MirrorConfig {
+            name: "test".to_string(),
+            source_namespace: "production".to_string(),
+            target_namespace: "staging".to_string(),
+            services: vec!["svc-a".to_string()],
+            mirror_type: MirrorType::Selective,
+        };
+        // Valid config but feature is not implemented, so it should bail
+        let result = mirror.create_mirror(config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not yet implemented"));
+    }
+
+    #[test]
+    fn test_mirror_type_equality() {
+        assert_eq!(MirrorType::Full, MirrorType::Full);
+        assert_ne!(MirrorType::Full, MirrorType::Selective);
+        assert_ne!(MirrorType::Selective, MirrorType::LocalDev);
+    }
+}

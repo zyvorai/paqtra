@@ -207,3 +207,143 @@ impl Default for AdvancedPacketFilter {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_filter_spec(name: &str, action: FilterAction) -> PacketFilterSpec {
+        PacketFilterSpec {
+            name: name.to_string(),
+            protocol: None,
+            src_ip: None,
+            dst_ip: None,
+            src_port: None,
+            dst_port: None,
+            action,
+            advanced_rules: vec![],
+        }
+    }
+
+    #[test]
+    fn test_packet_filter_creation() {
+        let filter = AdvancedPacketFilter::new();
+        assert!(filter.is_ok());
+    }
+
+    #[test]
+    fn test_packet_filter_default() {
+        let _filter = AdvancedPacketFilter::default();
+    }
+
+    #[tokio::test]
+    async fn test_create_filter_returns_id() {
+        let mut filter = AdvancedPacketFilter::new().unwrap();
+        let spec = make_filter_spec("test-filter", FilterAction::Allow);
+        let result = filter.create_filter(spec).await;
+        assert!(result.is_ok());
+        let filter_id = result.unwrap();
+        assert!(!filter_id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_filters_after_creation() {
+        let mut filter = AdvancedPacketFilter::new().unwrap();
+
+        // Initially empty
+        assert!(filter.list_filters().await.is_empty());
+
+        // Create one
+        let spec = make_filter_spec("filter-1", FilterAction::Drop);
+        let id = filter.create_filter(spec).await.unwrap();
+
+        let list = filter.list_filters().await;
+        assert_eq!(list.len(), 1);
+        assert!(list.contains(&id));
+    }
+
+    #[tokio::test]
+    async fn test_remove_filter() {
+        let mut filter = AdvancedPacketFilter::new().unwrap();
+        let spec = make_filter_spec("to-remove", FilterAction::Allow);
+        let id = filter.create_filter(spec).await.unwrap();
+
+        let result = filter.remove_filter(&id).await;
+        assert!(result.is_ok());
+
+        // Filter should be gone
+        assert!(filter.list_filters().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_remove_nonexistent_filter_fails() {
+        let mut filter = AdvancedPacketFilter::new().unwrap();
+        let result = filter.remove_filter("nonexistent").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_protocol_to_number() {
+        let filter = AdvancedPacketFilter::new().unwrap();
+        assert_eq!(filter.protocol_to_number("TCP"), 6);
+        assert_eq!(filter.protocol_to_number("tcp"), 6);
+        assert_eq!(filter.protocol_to_number("UDP"), 17);
+        assert_eq!(filter.protocol_to_number("udp"), 17);
+        assert_eq!(filter.protocol_to_number("ICMP"), 1);
+        assert_eq!(filter.protocol_to_number("icmp"), 1);
+        assert_eq!(filter.protocol_to_number("unknown"), 0);
+    }
+
+    #[test]
+    fn test_ip_to_u32_valid() {
+        let filter = AdvancedPacketFilter::new().unwrap();
+        // 192.168.1.1 in network byte order
+        let result = filter.ip_to_u32("192.168.1.1");
+        assert_ne!(result, 0);
+        // Verify round-trip: convert back
+        let expected = u32::from(std::net::Ipv4Addr::new(192, 168, 1, 1)).to_be();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_ip_to_u32_invalid() {
+        let filter = AdvancedPacketFilter::new().unwrap();
+        let result = filter.ip_to_u32("not-an-ip");
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_ip_to_u32_localhost() {
+        let filter = AdvancedPacketFilter::new().unwrap();
+        let result = filter.ip_to_u32("127.0.0.1");
+        let expected = u32::from(std::net::Ipv4Addr::new(127, 0, 0, 1)).to_be();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_generate_filter_program_with_protocol() {
+        let filter = AdvancedPacketFilter::new().unwrap();
+        let spec = PacketFilterSpec {
+            name: "tcp-filter".to_string(),
+            protocol: Some("TCP".to_string()),
+            src_ip: None,
+            dst_ip: None,
+            src_port: None,
+            dst_port: None,
+            action: FilterAction::Drop,
+            advanced_rules: vec![],
+        };
+        let program = filter.generate_filter_program(&spec).unwrap();
+        assert!(program.contains("ip->protocol != 6"));
+        assert!(program.contains("XDP_DROP"));
+    }
+
+    #[test]
+    fn test_generate_filter_program_allow_action() {
+        let filter = AdvancedPacketFilter::new().unwrap();
+        let spec = make_filter_spec("allow-all", FilterAction::Allow);
+        let program = filter.generate_filter_program(&spec).unwrap();
+        assert!(program.contains("XDP_PASS"));
+    }
+}

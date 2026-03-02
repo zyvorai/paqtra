@@ -341,3 +341,178 @@ impl AnomalyScorer {
         factors
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::anomaly_detection::baseline::{BaselineLearner, BaselineStats};
+    use crate::modules::anomaly_detection::{MetricType, Metric};
+
+    fn make_metric(value: f64) -> Metric {
+        Metric {
+            timestamp: chrono::Utc::now(),
+            metric_type: MetricType::RequestRate,
+            value,
+            namespace: "default".to_string(),
+            pod: "test-pod".to_string(),
+            service: "test-svc".to_string(),
+            destination: None,
+            protocol: "TCP".to_string(),
+            port: 8080,
+        }
+    }
+
+    #[test]
+    fn test_anomaly_scorer_creation() {
+        let scorer = AnomalyScorer::new(0.7, vec![Algorithm::ZScore]);
+        assert_eq!(scorer.sensitivity, 0.7);
+        assert_eq!(scorer.algorithms.len(), 1);
+    }
+
+    #[test]
+    fn test_z_score_no_variance_same_value() {
+        let scorer = AnomalyScorer::new(0.7, vec![Algorithm::ZScore]);
+        let stats = BaselineStats {
+            mean: 100.0,
+            median: 100.0,
+            std_dev: 0.0,
+            min: 100.0,
+            max: 100.0,
+            percentile_95: 100.0,
+            percentile_99: 100.0,
+            sample_count: 100,
+        };
+        let metric = make_metric(100.0);
+        let score = scorer.z_score(&metric, &stats).unwrap();
+        assert_eq!(score, 0.0, "Same value as mean with zero variance should score 0");
+    }
+
+    #[test]
+    fn test_z_score_no_variance_different_value() {
+        let scorer = AnomalyScorer::new(0.7, vec![Algorithm::ZScore]);
+        let stats = BaselineStats {
+            mean: 100.0,
+            median: 100.0,
+            std_dev: 0.0,
+            min: 100.0,
+            max: 100.0,
+            percentile_95: 100.0,
+            percentile_99: 100.0,
+            sample_count: 100,
+        };
+        let metric = make_metric(200.0);
+        let score = scorer.z_score(&metric, &stats).unwrap();
+        assert_eq!(score, 1.0, "Any deviation with zero variance should score 1.0");
+    }
+
+    #[test]
+    fn test_z_score_within_normal_range() {
+        let scorer = AnomalyScorer::new(0.7, vec![Algorithm::ZScore]);
+        let stats = BaselineStats {
+            mean: 100.0,
+            median: 100.0,
+            std_dev: 10.0,
+            min: 80.0,
+            max: 120.0,
+            percentile_95: 115.0,
+            percentile_99: 118.0,
+            sample_count: 100,
+        };
+        let metric = make_metric(105.0); // 0.5 std devs
+        let score = scorer.z_score(&metric, &stats).unwrap();
+        assert_eq!(score, 0.0, "Value within 1 std dev should score 0");
+    }
+
+    #[test]
+    fn test_z_score_extreme_value() {
+        let scorer = AnomalyScorer::new(0.7, vec![Algorithm::ZScore]);
+        let stats = BaselineStats {
+            mean: 100.0,
+            median: 100.0,
+            std_dev: 10.0,
+            min: 80.0,
+            max: 120.0,
+            percentile_95: 115.0,
+            percentile_99: 118.0,
+            sample_count: 100,
+        };
+        let metric = make_metric(200.0); // 10 std devs
+        let score = scorer.z_score(&metric, &stats).unwrap();
+        assert!(score > 0.5, "Extreme value should score high, got {}", score);
+    }
+
+    #[test]
+    fn test_score_returns_none_without_baseline() {
+        let scorer = AnomalyScorer::new(0.7, vec![Algorithm::ZScore]);
+        let learner = BaselineLearner::new(168);
+        let metric = make_metric(100.0);
+        let result = scorer.score(&metric, &learner).unwrap();
+        assert!(result.is_none(), "No baseline yet should return None");
+    }
+
+    #[test]
+    fn test_score_returns_none_with_insufficient_samples() {
+        let scorer = AnomalyScorer::new(0.7, vec![Algorithm::ZScore]);
+        let mut learner = BaselineLearner::new(168);
+
+        // Add only 50 samples (below 100 minimum)
+        for i in 0..50 {
+            let metric = make_metric(100.0 + (i as f64));
+            learner.update(&metric).unwrap();
+        }
+
+        let metric = make_metric(500.0);
+        let result = scorer.score(&metric, &learner).unwrap();
+        assert!(result.is_none(), "Insufficient samples should return None");
+    }
+
+    #[test]
+    fn test_classify_anomaly_traffic_spike() {
+        let scorer = AnomalyScorer::new(0.7, vec![Algorithm::ZScore]);
+        let stats = BaselineStats {
+            mean: 100.0,
+            median: 100.0,
+            std_dev: 10.0,
+            min: 80.0,
+            max: 120.0,
+            percentile_95: 115.0,
+            percentile_99: 118.0,
+            sample_count: 1000,
+        };
+        let metric = make_metric(250.0); // > 2x mean
+        let anomaly_type = scorer.classify_anomaly(&metric, &stats, 15.0);
+        assert_eq!(anomaly_type, AnomalyType::TrafficSpike);
+    }
+
+    #[test]
+    fn test_classify_anomaly_traffic_drop() {
+        let scorer = AnomalyScorer::new(0.7, vec![Algorithm::ZScore]);
+        let stats = BaselineStats {
+            mean: 100.0,
+            median: 100.0,
+            std_dev: 10.0,
+            min: 80.0,
+            max: 120.0,
+            percentile_95: 115.0,
+            percentile_99: 118.0,
+            sample_count: 1000,
+        };
+        let metric = make_metric(30.0); // < 0.5x mean
+        let anomaly_type = scorer.classify_anomaly(&metric, &stats, 7.0);
+        assert_eq!(anomaly_type, AnomalyType::TrafficDrop);
+    }
+
+    #[test]
+    fn test_get_threshold_scales_with_sensitivity() {
+        let low_sens = AnomalyScorer::new(0.0, vec![Algorithm::ZScore]);
+        let high_sens = AnomalyScorer::new(1.0, vec![Algorithm::ZScore]);
+
+        let low_thresh = low_sens.get_threshold(&Algorithm::ZScore);
+        let high_thresh = high_sens.get_threshold(&Algorithm::ZScore);
+
+        assert!(
+            high_thresh < low_thresh,
+            "Higher sensitivity should lower the threshold"
+        );
+    }
+}

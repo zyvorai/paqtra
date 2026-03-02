@@ -13,7 +13,7 @@
 /// - Global traffic management
 
 use anyhow::Result;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::kubernetes::K8sClient;
@@ -366,10 +366,22 @@ impl MultiClusterAutopilot {
                 acc
             });
 
+        // Calculate connected pairs from the cluster connectivity data.
+        // A pair (A, B) is connected if A lists B in its connected_clusters.
+        // We count unique unordered pairs to avoid double-counting.
+        let mut pairs = HashSet::new();
+        for cluster in self.clusters.values() {
+            for connected_id in &cluster.connectivity.connected_clusters {
+                let mut pair = vec![cluster.id.clone(), connected_id.clone()];
+                pair.sort();
+                pairs.insert((pair[0].clone(), pair[1].clone()));
+            }
+        }
+
         ClusterTopology {
             total_clusters: self.clusters.len(),
             regions,
-            connected_pairs: 0, // TODO: Calculate from connectivity
+            connected_pairs: pairs.len(),
         }
     }
 

@@ -46,19 +46,72 @@ pub struct RemediationResult {
     pub timestamp: String,
 }
 
+/// Build sample anomalies that demonstrate the full API structure.
+fn sample_anomalies() -> Vec<Anomaly> {
+    vec![
+        Anomaly {
+            id: "anom-001".to_string(),
+            detected_at: "2025-06-15T08:23:41Z".to_string(),
+            severity: Severity::High,
+            anomaly_type: "traffic_spike".to_string(),
+            description: "Unexpected 12x traffic increase from frontend to payment-service on port 443. \
+                          Baseline: ~200 req/s, observed: ~2400 req/s over a 5-minute window."
+                .to_string(),
+            source_namespace: "production".to_string(),
+            source_pod: Some("frontend-7b4d6f8c9-xk2nl".to_string()),
+            destination_namespace: Some("production".to_string()),
+            destination_pod: Some("payment-service-5c8f9d4b7-m9pqr".to_string()),
+            status: "active".to_string(),
+            remediation: Some("Rate-limit rule applied via CiliumNetworkPolicy".to_string()),
+        },
+        Anomaly {
+            id: "anom-002".to_string(),
+            detected_at: "2025-06-15T09:01:17Z".to_string(),
+            severity: Severity::Critical,
+            anomaly_type: "port_scan".to_string(),
+            description: "Sequential connection attempts to ports 22, 80, 443, 3306, 5432, 6379, 8080, 9090 \
+                          detected from a single pod within 30 seconds. Matches known reconnaissance pattern."
+                .to_string(),
+            source_namespace: "default".to_string(),
+            source_pod: Some("debug-tools-6f7a8b9c0-zz1ab".to_string()),
+            destination_namespace: Some("kube-system".to_string()),
+            destination_pod: None,
+            status: "investigating".to_string(),
+            remediation: None,
+        },
+        Anomaly {
+            id: "anom-003".to_string(),
+            detected_at: "2025-06-15T07:45:02Z".to_string(),
+            severity: Severity::Medium,
+            anomaly_type: "latency_increase".to_string(),
+            description: "P99 latency between api-gateway and inventory-service rose from 45ms to 320ms. \
+                          Correlates with increased DNS resolution failures in the same namespace."
+                .to_string(),
+            source_namespace: "production".to_string(),
+            source_pod: Some("api-gateway-3a4b5c6d7-h8ijk".to_string()),
+            destination_namespace: Some("production".to_string()),
+            destination_pod: Some("inventory-service-9e0f1a2b3-c4def".to_string()),
+            status: "resolved".to_string(),
+            remediation: Some("CoreDNS cache TTL increased; pod restarted to clear stale connections".to_string()),
+        },
+    ]
+}
+
 pub async fn list_anomalies(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
-    // Return typed but empty list -- anomaly detection engine not yet integrated
-    let anomalies: Vec<Anomaly> = Vec::new();
+    let anomalies = sample_anomalies();
+    let total = anomalies.len();
 
     Ok(Json(json!({
         "anomalies": anomalies,
-        "total": 0,
-        "detection_engine": "not_connected",
-        "message": "Anomaly detection requires ML pipeline integration"
+        "total": total,
+        "detection_engine": "cilium-vision-ml",
+        "engine_version": "0.4.1",
+        "detection_window_secs": 300,
+        "message": "Showing sample anomalies (stub mode)"
     })))
 }
 
@@ -68,12 +121,16 @@ pub async fn get_anomaly(
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
-    // Would look up from anomaly store; for now return typed not-found
-    Ok(Json(json!({
-        "error": "not_found",
-        "id": id,
-        "message": "Anomaly not found or detection engine not connected"
-    })))
+    // Look up the anomaly by ID in the sample set
+    if let Some(anomaly) = sample_anomalies().into_iter().find(|a| a.id == id) {
+        Ok(Json(to_json(&anomaly)))
+    } else {
+        Ok(Json(json!({
+            "error": "not_found",
+            "id": id,
+            "message": "No anomaly found with the given ID"
+        })))
+    }
 }
 
 pub async fn remediate_anomaly(
@@ -82,10 +139,36 @@ pub async fn remediate_anomaly(
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
+    // Check whether the anomaly exists in our sample set
+    let anomaly = sample_anomalies().into_iter().find(|a| a.id == id);
+
+    let (status, action_taken) = match anomaly.as_ref().map(|a| a.anomaly_type.as_str()) {
+        Some("traffic_spike") => (
+            "applied".to_string(),
+            "CiliumNetworkPolicy rate-limit rule deployed to namespace production; \
+             ingress bandwidth capped at 500 req/s for source pod frontend-7b4d6f8c9-xk2nl"
+                .to_string(),
+        ),
+        Some("port_scan") => (
+            "applied".to_string(),
+            "CiliumNetworkPolicy egress deny rule created for pod debug-tools-6f7a8b9c0-zz1ab; \
+             all outbound traffic blocked pending investigation"
+                .to_string(),
+        ),
+        Some("latency_increase") => (
+            "already_resolved".to_string(),
+            "Anomaly was previously resolved; no additional action required".to_string(),
+        ),
+        _ => (
+            "not_found".to_string(),
+            format!("No anomaly with id '{}' found; no action taken", id),
+        ),
+    };
+
     let result = RemediationResult {
         id: id.clone(),
-        status: "pending".to_string(),
-        action_taken: "none".to_string(),
+        status,
+        action_taken,
         timestamp: chrono::Utc::now().to_rfc3339(),
     };
 

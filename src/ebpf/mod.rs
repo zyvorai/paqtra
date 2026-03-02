@@ -22,18 +22,6 @@ pub use bpf_reader::CiliumMapReader;
 pub use bpf_syscall::IdentityInfo;
 pub use enriched_reader::{EnrichedMapReader, EnrichedConnectionInfo, EnrichedDropInfo};
 
-/// Cilium eBPF Map Types
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub enum CiliumMap {
-    Policy,
-    Conntrack,
-    LoadBalancer,
-    IPCache,
-    Metrics,
-    DropReason,
-}
-
 /// Policy decision from eBPF map
 #[derive(Debug, Clone)]
 pub struct PolicyDecision {
@@ -63,22 +51,19 @@ pub struct ConntrackEntry {
     pub state: ConntrackState,
     pub packets: u64,
     pub bytes: u64,
-    #[allow(dead_code)]
     pub last_seen: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum ConntrackState {
     New,
     Established,
-    #[allow(dead_code)]
     Related,
-    #[allow(dead_code)]
     Invalid,
 }
 
 /// Load balancer entry
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct LoadBalancerEntry {
     pub service_ip: String,
@@ -90,7 +75,6 @@ pub struct LoadBalancerEntry {
 }
 
 /// IP cache entry (identity to IP mapping)
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct IPCacheEntry {
     pub ip: String,
@@ -107,7 +91,6 @@ pub struct DropReason {
     pub port: u16,
     pub protocol: u8,
     pub reason: DropReasonType,
-    #[allow(dead_code)]
     pub timestamp: u64,
 }
 

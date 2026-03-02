@@ -187,3 +187,161 @@ impl Default for ComplianceEngine {
         Self {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compliance_engine_creation() {
+        let engine = ComplianceEngine::new();
+        assert!(engine.is_ok());
+    }
+
+    #[test]
+    fn test_compliance_engine_default() {
+        let _engine = ComplianceEngine::default();
+    }
+
+    #[tokio::test]
+    async fn test_audit_pci_dss() {
+        let engine = ComplianceEngine::new().unwrap();
+        let report = engine.audit(ComplianceFramework::PCIDSS).await.unwrap();
+        assert_eq!(report.framework, ComplianceFramework::PCIDSS);
+        assert!(!report.controls.is_empty());
+        assert!(report.controls.iter().all(|c| c.status == ControlState::NotChecked));
+    }
+
+    #[tokio::test]
+    async fn test_audit_soc2() {
+        let engine = ComplianceEngine::new().unwrap();
+        let report = engine.audit(ComplianceFramework::SOC2).await.unwrap();
+        assert_eq!(report.framework, ComplianceFramework::SOC2);
+        assert!(!report.controls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_audit_hipaa() {
+        let engine = ComplianceEngine::new().unwrap();
+        let report = engine.audit(ComplianceFramework::HIPAA).await.unwrap();
+        assert_eq!(report.framework, ComplianceFramework::HIPAA);
+        assert!(!report.controls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_audit_gdpr() {
+        let engine = ComplianceEngine::new().unwrap();
+        let report = engine.audit(ComplianceFramework::GDPR).await.unwrap();
+        assert_eq!(report.framework, ComplianceFramework::GDPR);
+        assert!(!report.controls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_audit_iso27001() {
+        let engine = ComplianceEngine::new().unwrap();
+        let report = engine.audit(ComplianceFramework::ISO27001).await.unwrap();
+        assert_eq!(report.framework, ComplianceFramework::ISO27001);
+    }
+
+    #[tokio::test]
+    async fn test_audit_nist() {
+        let engine = ComplianceEngine::new().unwrap();
+        let report = engine.audit(ComplianceFramework::NIST).await.unwrap();
+        assert_eq!(report.framework, ComplianceFramework::NIST);
+    }
+
+    #[test]
+    fn test_calculate_score_all_not_checked() {
+        let engine = ComplianceEngine::new().unwrap();
+        let controls = vec![
+            ControlStatus {
+                control_id: "C1".to_string(),
+                name: "Control 1".to_string(),
+                status: ControlState::NotChecked,
+                evidence: vec![],
+            },
+        ];
+        let score = engine.calculate_score(&controls);
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_calculate_score_all_compliant() {
+        let engine = ComplianceEngine::new().unwrap();
+        let controls = vec![
+            ControlStatus {
+                control_id: "C1".to_string(),
+                name: "Control 1".to_string(),
+                status: ControlState::Compliant,
+                evidence: vec![],
+            },
+            ControlStatus {
+                control_id: "C2".to_string(),
+                name: "Control 2".to_string(),
+                status: ControlState::Compliant,
+                evidence: vec![],
+            },
+        ];
+        let score = engine.calculate_score(&controls);
+        assert_eq!(score, 100.0);
+    }
+
+    #[test]
+    fn test_calculate_score_mixed() {
+        let engine = ComplianceEngine::new().unwrap();
+        let controls = vec![
+            ControlStatus {
+                control_id: "C1".to_string(),
+                name: "Control 1".to_string(),
+                status: ControlState::Compliant,
+                evidence: vec![],
+            },
+            ControlStatus {
+                control_id: "C2".to_string(),
+                name: "Control 2".to_string(),
+                status: ControlState::NonCompliant,
+                evidence: vec![],
+            },
+        ];
+        let score = engine.calculate_score(&controls);
+        assert_eq!(score, 50.0);
+    }
+
+    #[test]
+    fn test_calculate_score_empty() {
+        let engine = ComplianceEngine::new().unwrap();
+        let score = engine.calculate_score(&[]);
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_find_violations_only_noncompliant() {
+        let engine = ComplianceEngine::new().unwrap();
+        let controls = vec![
+            ControlStatus {
+                control_id: "C1".to_string(),
+                name: "Compliant".to_string(),
+                status: ControlState::Compliant,
+                evidence: vec![],
+            },
+            ControlStatus {
+                control_id: "C2".to_string(),
+                name: "Non-compliant".to_string(),
+                status: ControlState::NonCompliant,
+                evidence: vec![],
+            },
+        ];
+        let violations = engine.find_violations(&controls);
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].control_id, "C2");
+        assert_eq!(violations[0].severity, ViolationSeverity::High);
+    }
+
+    #[tokio::test]
+    async fn test_get_recommendations() {
+        let engine = ComplianceEngine::new().unwrap();
+        let recs = engine.get_recommendations().await.unwrap();
+        assert!(!recs.is_empty());
+        assert_eq!(recs[0].category, RecommendationCategory::Compliance);
+    }
+}

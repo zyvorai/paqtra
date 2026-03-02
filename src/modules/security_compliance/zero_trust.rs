@@ -211,3 +211,85 @@ impl Default for ZeroTrustEngine {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_zero_trust_engine_creation() {
+        let engine = ZeroTrustEngine::new();
+        assert!(engine.is_ok());
+    }
+
+    #[test]
+    fn test_zero_trust_engine_default() {
+        let engine = ZeroTrustEngine::default();
+        assert!(engine.default_deny_all);
+        assert!(engine.micro_segmentation);
+        assert!(engine.identity_based);
+    }
+
+    #[tokio::test]
+    async fn test_generate_policies_for_namespace() {
+        let engine = ZeroTrustEngine::new().unwrap();
+        let policies = engine.generate_policies("my-namespace").await.unwrap();
+        // Should generate at least: default-deny, allow-dns, allow-k8s-api,
+        // micro-segmentation, identity-based
+        assert!(policies.len() >= 5);
+    }
+
+    #[tokio::test]
+    async fn test_policies_contain_namespace() {
+        let engine = ZeroTrustEngine::new().unwrap();
+        let namespace = "test-ns-123";
+        let policies = engine.generate_policies(namespace).await.unwrap();
+        for policy in &policies {
+            assert!(
+                policy.contains(namespace),
+                "Policy should contain the namespace '{}', got:\n{}",
+                namespace,
+                policy
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_policies_are_valid_yaml_structure() {
+        let engine = ZeroTrustEngine::new().unwrap();
+        let policies = engine.generate_policies("default").await.unwrap();
+        for policy in &policies {
+            assert!(policy.contains("apiVersion:"), "Policy should have apiVersion");
+            assert!(policy.contains("kind:"), "Policy should have kind");
+            assert!(policy.contains("metadata:"), "Policy should have metadata");
+            assert!(policy.contains("spec:"), "Policy should have spec");
+        }
+    }
+
+    #[test]
+    fn test_generate_default_deny_policy() {
+        let engine = ZeroTrustEngine::new().unwrap();
+        let policy = engine.generate_default_deny("prod");
+        assert!(policy.contains("default-deny-all"));
+        assert!(policy.contains("prod"));
+        assert!(policy.contains("CiliumNetworkPolicy"));
+    }
+
+    #[test]
+    fn test_generate_allow_dns_policy() {
+        let engine = ZeroTrustEngine::new().unwrap();
+        let policy = engine.generate_allow_dns("staging");
+        assert!(policy.contains("allow-dns"));
+        assert!(policy.contains("staging"));
+        assert!(policy.contains("port: \"53\""));
+        assert!(policy.contains("UDP"));
+    }
+
+    #[tokio::test]
+    async fn test_get_recommendations() {
+        let engine = ZeroTrustEngine::new().unwrap();
+        let recs = engine.get_recommendations().await.unwrap();
+        assert!(!recs.is_empty());
+        assert!(recs.iter().all(|r| r.category == RecommendationCategory::ZeroTrust));
+    }
+}

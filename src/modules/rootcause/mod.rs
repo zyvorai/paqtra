@@ -16,263 +16,16 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::ebpf::{DropReason as EbpfDropReason, DropReasonType, MapReader, PolicyDecision};
+use crate::ebpf::{DropReason as EbpfDropReason, MapReader, PolicyDecision};
 use crate::kubernetes::K8sClient;
 use crate::policies::PolicyManager;
+
+pub mod types;
+pub use types::*;
 
 pub mod analyzer;
 pub mod explainer;
 pub mod correlator;
-
-/// Root-cause engine configuration
-#[derive(Debug, Clone)]
-pub struct RootCauseConfig {
-    /// Enable root-cause analysis
-    pub enabled: bool,
-
-    /// Analyze only recent drops (seconds)
-    pub analysis_window_secs: u64,
-
-    /// Minimum drop count to trigger analysis
-    pub min_drop_count: u64,
-
-    /// Enable automatic correlation with policies
-    pub auto_correlate: bool,
-
-    /// Enable historical pattern analysis
-    pub pattern_analysis: bool,
-}
-
-impl Default for RootCauseConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            analysis_window_secs: 300, // 5 minutes
-            min_drop_count: 5,
-            auto_correlate: true,
-            pattern_analysis: true,
-        }
-    }
-}
-
-/// Drop event from eBPF
-#[derive(Debug, Clone)]
-pub struct DropEvent {
-    pub timestamp: u64,
-    pub src_ip: IpAddr,
-    pub dst_ip: IpAddr,
-    pub src_port: u16,
-    pub dst_port: u16,
-    pub protocol: u8,
-    pub reason: DropReason,
-    pub identity_src: u32,
-    pub identity_dst: u32,
-    pub namespace: Option<String>,
-    pub pod_name: Option<String>,
-}
-
-/// Drop reason (enhanced from eBPF)
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum DropReason {
-    /// Policy denied the packet
-    PolicyDenied,
-
-    /// Invalid source IP
-    InvalidSourceIP,
-
-    /// Invalid packet (malformed)
-    InvalidPacket,
-
-    /// Connection tracking state mismatch
-    CTStateMismatch,
-
-    /// Port not allowed by policy
-    PortNotAllowed,
-
-    /// Unknown L3 protocol
-    UnknownL3Protocol,
-
-    /// Unknown L4 protocol
-    UnknownL4Protocol,
-
-    /// Unsupported L3 protocol
-    UnsupportedL3Protocol,
-
-    /// No mapping for destination
-    NoMapping,
-
-    /// Destination identity unknown
-    UnknownDestination,
-
-    /// Load balancer error
-    LBError,
-
-    /// Service not found
-    ServiceNotFound,
-
-    /// No healthy backend
-    NoBackend,
-
-    /// Fragment needed (MTU issue)
-    FragNeeded,
-
-    /// TTL exceeded
-    TTLExceeded,
-
-    /// Other reason
-    Other(u8),
-}
-
-impl DropReason {
-    pub fn from_ebpf(reason: &DropReasonType) -> Self {
-        match reason {
-            DropReasonType::PolicyDenied => DropReason::PolicyDenied,
-            DropReasonType::InvalidPacket => DropReason::InvalidPacket,
-            DropReasonType::NoRoute => DropReason::NoMapping,
-            DropReasonType::UnknownL4Protocol => DropReason::UnknownL4Protocol,
-            DropReasonType::FragmentationNeeded => DropReason::FragNeeded,
-            DropReasonType::CTMapFull => DropReason::CTStateMismatch,
-            DropReasonType::NATMapFull => DropReason::LBError,
-            DropReasonType::InvalidSourceIP => DropReason::InvalidSourceIP,
-            DropReasonType::InvalidDestIP => DropReason::UnknownDestination,
-            DropReasonType::UnsupportedL3Protocol => DropReason::UnsupportedL3Protocol,
-            DropReasonType::MissedTailCall => DropReason::Other(133),
-            DropReasonType::ErrorWritingToPacket => DropReason::Other(134),
-            DropReasonType::UnknownL4ICMPType => DropReason::Other(135),
-            DropReasonType::UnknownICMPv6Type => DropReason::Other(136),
-            DropReasonType::UnknownICMPv6Code => DropReason::Other(137),
-            DropReasonType::ServiceBackendNotFound => DropReason::NoBackend,
-            DropReasonType::NoTunnelEndpoint => DropReason::NoMapping,
-            DropReasonType::HostUnreachable => DropReason::UnknownDestination,
-            DropReasonType::StaleOrUnroutable => DropReason::NoMapping,
-            DropReasonType::ConnectionTrackingInvalid => DropReason::CTStateMismatch,
-            DropReasonType::AuthRequired => DropReason::PolicyDenied,
-            DropReasonType::NATNotNeeded => DropReason::Other(184),
-            DropReasonType::IsClusterIP => DropReason::Other(185),
-            DropReasonType::Other(code) => DropReason::Other(*code as u8),
-        }
-    }
-
-    pub fn to_string(&self) -> &'static str {
-        match self {
-            DropReason::PolicyDenied => "Policy Denied",
-            DropReason::InvalidSourceIP => "Invalid Source IP",
-            DropReason::InvalidPacket => "Invalid Packet",
-            DropReason::CTStateMismatch => "Connection Tracking State Mismatch",
-            DropReason::PortNotAllowed => "Port Not Allowed",
-            DropReason::UnknownL3Protocol => "Unknown L3 Protocol",
-            DropReason::UnknownL4Protocol => "Unknown L4 Protocol",
-            DropReason::UnsupportedL3Protocol => "Unsupported L3 Protocol",
-            DropReason::NoMapping => "No Mapping",
-            DropReason::UnknownDestination => "Unknown Destination",
-            DropReason::LBError => "Load Balancer Error",
-            DropReason::ServiceNotFound => "Service Not Found",
-            DropReason::NoBackend => "No Healthy Backend",
-            DropReason::FragNeeded => "Fragment Needed (MTU)",
-            DropReason::TTLExceeded => "TTL Exceeded",
-            DropReason::Other(_) => "Other",
-        }
-    }
-}
-
-/// Root-cause analysis result
-#[derive(Debug, Clone)]
-pub struct RootCauseAnalysis {
-    /// The drop event being analyzed
-    pub event: DropEvent,
-
-    /// Human-readable explanation
-    pub explanation: String,
-
-    /// Likely root cause
-    pub likely_cause: String,
-
-    /// Suggested fix
-    pub suggested_fix: SuggestedFix,
-
-    /// Confidence score (0.0 to 1.0)
-    pub confidence: f32,
-
-    /// Related policy (if applicable)
-    pub related_policy: Option<String>,
-
-    /// Additional context
-    pub context: Vec<String>,
-}
-
-/// Suggested fix for the drop
-#[derive(Debug, Clone)]
-pub enum SuggestedFix {
-    /// Add a policy rule
-    AddPolicyRule {
-        namespace: String,
-        from_labels: HashMap<String, String>,
-        to_labels: HashMap<String, String>,
-        port: u16,
-        protocol: String,
-        yaml: String,
-    },
-
-    /// Update MTU settings
-    UpdateMTU {
-        interface: String,
-        current_mtu: u16,
-        suggested_mtu: u16,
-        command: String,
-    },
-
-    /// Fix DNS configuration
-    FixDNS {
-        namespace: String,
-        issue: String,
-        command: String,
-    },
-
-    /// Check connection tracking
-    CheckConntrack {
-        issue: String,
-        commands: Vec<String>,
-    },
-
-    /// Add service endpoint
-    AddServiceEndpoint {
-        service: String,
-        namespace: String,
-        reason: String,
-    },
-
-    /// Fix load balancer
-    FixLoadBalancer {
-        service: String,
-        namespace: String,
-        issue: String,
-    },
-
-    /// Manual investigation needed
-    ManualInvestigation {
-        reason: String,
-        steps: Vec<String>,
-    },
-}
-
-/// Drop pattern for historical analysis
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct DropPattern {
-    pub reason: DropReason,
-    pub src_identity: u32,
-    pub dst_identity: u32,
-    pub dst_port: u16,
-    pub protocol: u8,
-}
-
-/// Drop statistics
-#[derive(Debug, Clone)]
-pub struct DropStats {
-    pub total_drops: u64,
-    pub by_reason: HashMap<DropReason, u64>,
-    pub by_namespace: HashMap<String, u64>,
-    pub top_patterns: Vec<(DropPattern, u64)>,
-}
 
 /// Root-Cause Engine
 pub struct RootCauseEngine<M: MapReader> {
@@ -335,6 +88,25 @@ impl<M: MapReader> RootCauseEngine<M> {
         }
 
         Ok(analyses)
+    }
+
+    /// Resolve labels for a security identity via IPCache.
+    /// Falls back to a single "security.identity" label if not found.
+    fn resolve_labels_for_identity(&self, identity: u32) -> HashMap<String, String> {
+        if let Ok(entries) = self.ebpf_reader.read_ipcache_map() {
+            if let Some(entry) = entries.iter().find(|e| e.identity == identity) {
+                let labels: HashMap<String, String> = entry.labels.iter()
+                    .filter_map(|l| l.split_once('='))
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect();
+                if !labels.is_empty() {
+                    return labels;
+                }
+            }
+        }
+        HashMap::from([
+            ("security.identity".to_string(), identity.to_string()),
+        ])
     }
 
     /// Resolve an IP address to identity and namespace via IPCache
@@ -519,13 +291,19 @@ impl<M: MapReader> RootCauseEngine<M> {
 
                 let namespace = event.namespace.clone().unwrap_or_else(|| "default".to_string());
 
-                // TODO: Resolve labels from identities
-                let from_labels = HashMap::from([
-                    ("security.identity".to_string(), event.identity_src.to_string()),
-                ]);
-                let to_labels = HashMap::from([
-                    ("security.identity".to_string(), event.identity_dst.to_string()),
-                ]);
+                // Resolve labels from IPCache; fall back to identity-based labels
+                let from_labels = self.resolve_labels_for_identity(event.identity_src);
+                let to_labels = self.resolve_labels_for_identity(event.identity_dst);
+
+                // Build label selectors for the YAML from resolved labels
+                let from_label_yaml: String = from_labels.iter()
+                    .map(|(k, v)| format!("      {}: \"{}\"", k, v))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let to_label_yaml: String = to_labels.iter()
+                    .map(|(k, v)| format!("        {}: \"{}\"", k, v))
+                    .collect::<Vec<_>>()
+                    .join("\n");
 
                 let yaml = format!(
                     r#"apiVersion: cilium.io/v2
@@ -536,19 +314,19 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      security.identity: "{}"
+{}
   egress:
   - toEndpoints:
     - matchLabels:
-        security.identity: "{}"
+{}
     toPorts:
     - ports:
       - port: "{}"
         protocol: {}
 "#,
                     namespace,
-                    event.identity_src,
-                    event.identity_dst,
+                    from_label_yaml,
+                    to_label_yaml,
                     event.dst_port,
                     protocol
                 );

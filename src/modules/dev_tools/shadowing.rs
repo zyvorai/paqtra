@@ -92,3 +92,122 @@ impl Default for TrafficShadowing {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::dev_tools::{ShadowConfig, TrafficFilter, FilterType};
+
+    fn make_valid_config() -> ShadowConfig {
+        ShadowConfig {
+            name: "test".to_string(),
+            source_service: "source-svc".to_string(),
+            target_service: "target-svc".to_string(),
+            namespace: "default".to_string(),
+            sampling_rate: 0.5,
+            filters: vec![],
+            compare_responses: false,
+        }
+    }
+
+    #[test]
+    fn test_traffic_shadowing_creation() {
+        let ts = TrafficShadowing::new();
+        assert!(ts.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_start_with_valid_config() {
+        let mut ts = TrafficShadowing::new().unwrap();
+        let config = make_valid_config();
+        let result = ts.start(config).await;
+        assert!(result.is_ok());
+        let shadow_id = result.unwrap();
+        assert!(!shadow_id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_start_fails_empty_source() {
+        let mut ts = TrafficShadowing::new().unwrap();
+        let mut config = make_valid_config();
+        config.source_service = String::new();
+        let result = ts.start(config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("source_service"));
+    }
+
+    #[tokio::test]
+    async fn test_start_fails_empty_target() {
+        let mut ts = TrafficShadowing::new().unwrap();
+        let mut config = make_valid_config();
+        config.target_service = String::new();
+        let result = ts.start(config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("target_service"));
+    }
+
+    #[tokio::test]
+    async fn test_sampling_rate_zero_rejected() {
+        let mut ts = TrafficShadowing::new().unwrap();
+        let mut config = make_valid_config();
+        config.sampling_rate = 0.0;
+        let result = ts.start(config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("sampling_rate"));
+    }
+
+    #[tokio::test]
+    async fn test_sampling_rate_negative_rejected() {
+        let mut ts = TrafficShadowing::new().unwrap();
+        let mut config = make_valid_config();
+        config.sampling_rate = -0.1;
+        let result = ts.start(config).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_sampling_rate_above_one_rejected() {
+        let mut ts = TrafficShadowing::new().unwrap();
+        let mut config = make_valid_config();
+        config.sampling_rate = 1.5;
+        let result = ts.start(config).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_sampling_rate_one_accepted() {
+        let mut ts = TrafficShadowing::new().unwrap();
+        let mut config = make_valid_config();
+        config.sampling_rate = 1.0;
+        let result = ts.start(config).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_stop_nonexistent_shadow_fails() {
+        let mut ts = TrafficShadowing::new().unwrap();
+        let result = ts.stop("nonexistent-id").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_get_stats_for_active_shadow() {
+        let mut ts = TrafficShadowing::new().unwrap();
+        let config = make_valid_config();
+        let shadow_id = ts.start(config).await.unwrap();
+
+        let stats = ts.get_stats(&shadow_id).await;
+        assert!(stats.is_ok());
+        let stats = stats.unwrap();
+        assert_eq!(stats.total_requests, 0);
+        assert_eq!(stats.shadowed_requests, 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_stats_for_missing_shadow_fails() {
+        let ts = TrafficShadowing::new().unwrap();
+        let result = ts.get_stats("missing").await;
+        assert!(result.is_err());
+    }
+}

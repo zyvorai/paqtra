@@ -2,15 +2,47 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde_json::{json, Value};
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::AppState;
 
-pub async fn health_check() -> (StatusCode, Json<Value>) {
+/// Tracks when the process started, used to compute uptime in health checks.
+static START_TIME: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
+/// Return the process start time, initialising it on first call.
+fn process_start() -> Instant {
+    *START_TIME.get_or_init(Instant::now)
+}
+
+pub async fn health_check(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, Json<Value>) {
+    let uptime = process_start().elapsed();
+
+    // Probe each subsystem so the liveness endpoint reflects real status
+    let redis_ok = state.cache.is_healthy().await;
+    let hubble_ok = state.hubble.is_healthy().await;
+    let k8s_ok = state.k8s.is_healthy().await;
+
+    let overall = if redis_ok { "healthy" } else { "degraded" };
+    let code = if redis_ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
     (
-        StatusCode::OK,
+        code,
         Json(json!({
-            "status": "healthy",
+            "status": overall,
+            "version": env!("CARGO_PKG_VERSION"),
+            "uptime_secs": uptime.as_secs(),
             "timestamp": chrono::Utc::now().to_rfc3339(),
+            "subsystems": {
+                "redis": if redis_ok { "ok" } else { "error" },
+                "hubble_relay": if hubble_ok { "ok" } else { "unavailable" },
+                "kubernetes": if k8s_ok { "ok" } else { "unavailable" },
+            }
         })),
     )
 }
@@ -65,10 +97,14 @@ pub async fn readiness_check(
         "not_ready"
     };
 
+    let uptime = process_start().elapsed();
+
     (
         status,
         Json(json!({
             "status": overall,
+            "version": env!("CARGO_PKG_VERSION"),
+            "uptime_secs": uptime.as_secs(),
             "checks": checks,
             "timestamp": chrono::Utc::now().to_rfc3339(),
         })),

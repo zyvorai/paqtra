@@ -256,3 +256,127 @@ impl Default for PerformanceProfiler {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_cpu_target() -> super::super::ProfilingTarget {
+        super::super::ProfilingTarget {
+            target_type: super::super::ProfilingType::CPU,
+            duration_seconds: 30,
+            sample_frequency_hz: 99,
+            filter: None,
+        }
+    }
+
+    #[test]
+    fn test_profiler_creation() {
+        let profiler = PerformanceProfiler::new();
+        assert!(profiler.is_ok());
+    }
+
+    #[test]
+    fn test_profiler_default() {
+        let _profiler = PerformanceProfiler::default();
+    }
+
+    #[tokio::test]
+    async fn test_start_profiling_returns_session_id() {
+        let mut profiler = PerformanceProfiler::new().unwrap();
+        let target = make_cpu_target();
+        let result = profiler.start_profiling(target).await;
+        assert!(result.is_ok());
+        let session_id = result.unwrap();
+        assert!(!session_id.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_stop_profiling_returns_results() {
+        let mut profiler = PerformanceProfiler::new().unwrap();
+        let target = make_cpu_target();
+        let session_id = profiler.start_profiling(target).await.unwrap();
+
+        let result = profiler.stop_profiling(&session_id).await;
+        assert!(result.is_ok());
+        let results = result.unwrap();
+        assert_eq!(results.session_id, session_id);
+        assert_eq!(results.samples_collected, 0); // no samples in stub
+    }
+
+    #[tokio::test]
+    async fn test_stop_nonexistent_session_fails() {
+        let mut profiler = PerformanceProfiler::new().unwrap();
+        let result = profiler.stop_profiling("nonexistent").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_stop_same_session_twice_fails() {
+        let mut profiler = PerformanceProfiler::new().unwrap();
+        let target = make_cpu_target();
+        let session_id = profiler.start_profiling(target).await.unwrap();
+
+        assert!(profiler.stop_profiling(&session_id).await.is_ok());
+        assert!(profiler.stop_profiling(&session_id).await.is_err());
+    }
+
+    #[test]
+    fn test_identify_hot_spots_empty_samples() {
+        let profiler = PerformanceProfiler::new().unwrap();
+        let hot_spots = profiler.identify_hot_spots(&[]);
+        assert!(hot_spots.is_empty());
+    }
+
+    #[test]
+    fn test_identify_hot_spots_with_samples() {
+        let profiler = PerformanceProfiler::new().unwrap();
+        let samples = vec![
+            Sample {
+                timestamp: chrono::Utc::now(),
+                function: "func_a".to_string(),
+                stack_trace: vec![],
+                cpu: 0,
+            },
+            Sample {
+                timestamp: chrono::Utc::now(),
+                function: "func_a".to_string(),
+                stack_trace: vec![],
+                cpu: 1,
+            },
+            Sample {
+                timestamp: chrono::Utc::now(),
+                function: "func_b".to_string(),
+                stack_trace: vec![],
+                cpu: 0,
+            },
+        ];
+        let hot_spots = profiler.identify_hot_spots(&samples);
+        assert!(!hot_spots.is_empty());
+        // func_a should be the top hot spot (2 out of 3 samples)
+        assert_eq!(hot_spots[0].function, "func_a");
+        assert!((hot_spots[0].percentage - 66.66).abs() < 1.0);
+        assert_eq!(hot_spots[0].samples, 2);
+    }
+
+    #[test]
+    fn test_generate_summary_with_dominant_function() {
+        let profiler = PerformanceProfiler::new().unwrap();
+        let samples = vec![
+            Sample {
+                timestamp: chrono::Utc::now(),
+                function: "hot_func".to_string(),
+                stack_trace: vec![],
+                cpu: 0,
+            };
+            10
+        ];
+        let hot_spots = profiler.identify_hot_spots(&samples);
+        let summary = profiler.generate_summary(&samples, &hot_spots);
+        assert_eq!(summary.total_samples, 10);
+        assert!(!summary.top_functions.is_empty());
+        // 100% > 50%, so a recommendation should be generated
+        assert!(!summary.recommendations.is_empty());
+    }
+}

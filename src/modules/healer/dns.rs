@@ -24,8 +24,11 @@ impl DNSHealer {
         for (src_ip, count) in dns_drops_by_source {
             if count >= 3 {
                 // Threshold
+                // Namespace cannot be resolved here because DNSHealer operates on raw
+                // DropReason data without access to IPCache. Use the enriched variant
+                // (SelfHealer::detect_problems_enriched) when pod context is needed.
                 problems.push(Problem::DNSDrops {
-                    namespace: "default".to_string(), // TODO: lookup actual namespace
+                    namespace: "unknown".to_string(),
                     pod: src_ip,
                     count,
                 });

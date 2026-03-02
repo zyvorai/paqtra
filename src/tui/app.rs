@@ -45,15 +45,6 @@ impl ModuleContainer {
         }
     }
 
-    /// Get autopolicy stats
-    #[allow(dead_code)]
-    pub(crate) fn autopolicy_stats(&self) -> crate::modules::autopolicy::AutoPolicyStats {
-        match self {
-            ModuleContainer::Enriched { autopolicy, .. } => autopolicy.stats(),
-            ModuleContainer::Mock { autopolicy, .. } => autopolicy.stats(),
-        }
-    }
-
     /// Check if using enriched data
     pub(crate) fn is_enriched(&self) -> bool {
         matches!(self, ModuleContainer::Enriched { .. })
@@ -114,10 +105,6 @@ pub struct TuiApp {
 
     // UX enhancements
     pub(crate) show_help: bool,
-    #[allow(dead_code)]
-    pub(crate) operation_in_progress: bool,
-    #[allow(dead_code)]
-    pub(crate) operation_message: String,
 }
 
 impl TuiApp {
@@ -255,8 +242,6 @@ impl TuiApp {
             show_packet_explanation: false,
             packet_explainer: std::cell::RefCell::new(crate::modules::packet_explainer::PacketExplainer::new()),
             show_help: false,
-            operation_in_progress: false,
-            operation_message: String::new(),
         })
     }
 

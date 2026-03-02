@@ -131,3 +131,59 @@ impl Default for COREHandler {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_core_handler_creation() {
+        let handler = COREHandler::new();
+        assert!(handler.is_ok());
+    }
+
+    #[test]
+    fn test_core_handler_default() {
+        let handler = COREHandler::default();
+        // Default sets btf_available to false
+        assert!(!handler.btf_available);
+    }
+
+    #[test]
+    fn test_kernel_version_detection() {
+        let version = COREHandler::get_kernel_version();
+        // On Linux, this should return a version string, not "unknown"
+        // On other platforms or in CI, it might return "unknown"
+        assert!(!version.is_empty());
+    }
+
+    #[test]
+    fn test_btf_info_without_btf() {
+        let handler = COREHandler::default(); // btf_available = false
+        let result = handler.get_btf_info();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("BTF not available"));
+    }
+
+    #[tokio::test]
+    async fn test_compile_with_core_no_btf_falls_back() {
+        let handler = COREHandler::default(); // btf_available = false
+        let program = super::super::EBPFProgram {
+            id: "test-id".to_string(),
+            name: "test-prog".to_string(),
+            program_type: super::super::ProgramType::XDP,
+            source_code: "// test".to_string(),
+            compiled_bytecode: None,
+            attach_point: super::super::AttachPoint::NetInterface {
+                interface: "eth0".to_string(),
+                direction: super::super::Direction::Ingress,
+            },
+            co_re_enabled: true,
+        };
+        // Without BTF, compile_with_core falls back to compile_without_core
+        let result = handler.compile_with_core(&program).await;
+        assert!(result.is_ok());
+        // Returns empty stub bytecode
+        assert!(result.unwrap().is_empty());
+    }
+}
