@@ -96,7 +96,7 @@ impl Default for TrafficShadowing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modules::dev_tools::{ShadowConfig, TrafficFilter, FilterType};
+    use crate::modules::dev_tools::ShadowConfig;
 
     fn make_valid_config() -> ShadowConfig {
         ShadowConfig {

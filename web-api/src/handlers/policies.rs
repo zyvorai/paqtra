@@ -34,7 +34,7 @@ pub async fn list_policies(
             let limit = params.limit.unwrap_or(50);
             let page: Vec<_> = policies.into_iter().skip(offset).take(limit).collect();
             Ok(Json(json!({
-                "data": page,
+                "policies": page,
                 "total": total,
                 "limit": limit,
                 "offset": offset,
@@ -87,10 +87,7 @@ pub async fn get_policy(
                 Some(policy) => {
                     Ok(Json(to_json(&policy)))
                 }
-                None => Ok(Json(json!({
-                    "error": "not_found",
-                    "id": id,
-                }))),
+                None => Err(StatusCode::NOT_FOUND),
             }
         }
         Err(e) => {

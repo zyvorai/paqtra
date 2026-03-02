@@ -142,12 +142,7 @@ pub async fn get_flow(
             Ok(Json(to_json(&flow)))
         }
         None => {
-            track_error(&state).await;
-            Ok(Json(json!({
-                "error": "not_found",
-                "id": id,
-                "message": "Flow not found. It may have expired from Hubble's buffer."
-            })))
+            Err(StatusCode::NOT_FOUND)
         }
     }
 }

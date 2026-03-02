@@ -318,7 +318,7 @@ mod tests {
         };
 
         let reader = MockMapReader;
-        let (policy, context) = PolicyCorrelator::correlate_with_policy(&event, &reader)
+        let (_policy, context) = PolicyCorrelator::correlate_with_policy(&event, &reader)
             .await
             .unwrap();
 

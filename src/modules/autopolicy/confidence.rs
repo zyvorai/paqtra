@@ -286,7 +286,6 @@ impl ConfidenceScorer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[test]
     fn test_confidence_scorer_creation() {

@@ -375,7 +375,7 @@ mod tests {
 
     #[test]
     fn test_comparator_creation() {
-        let comparator = ReplayComparator::new();
+        let _comparator = ReplayComparator::new();
         // Just verify it can be created
     }
 

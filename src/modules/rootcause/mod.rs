@@ -459,7 +459,6 @@ spec:
 mod tests {
     use super::*;
     use crate::ebpf::MockMapReader;
-    use std::net::Ipv4Addr;
 
     #[tokio::test]
     async fn test_rootcause_creation() {

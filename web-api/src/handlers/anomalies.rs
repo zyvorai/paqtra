@@ -117,7 +117,7 @@ pub async fn list_anomalies(
     let page: Vec<_> = anomalies.into_iter().skip(offset).take(limit).collect();
 
     Ok(Json(json!({
-        "data": page,
+        "anomalies": page,
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -137,11 +137,7 @@ pub async fn get_anomaly(
     if let Some(anomaly) = sample_anomalies().into_iter().find(|a| a.id == id) {
         Ok(Json(to_json(&anomaly)))
     } else {
-        Ok(Json(json!({
-            "error": "not_found",
-            "id": id,
-            "message": "No anomaly found with the given ID"
-        })))
+        Err(StatusCode::NOT_FOUND)
     }
 }
 

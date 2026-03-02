@@ -98,7 +98,7 @@ mod tests {
                 assert_eq!(*port, 80);
                 assert_eq!(protocol, "TCP");
             }
-            _ => panic!("Expected PolicyGap problem"),
+            other => unreachable!("Expected PolicyGap, got {:?}", other),
         }
     }
 
@@ -112,7 +112,7 @@ mod tests {
                 assert_eq!(*port, 53);
                 assert_eq!(protocol, "UDP");
             }
-            _ => panic!("Expected PolicyGap problem"),
+            other => unreachable!("Expected PolicyGap, got {:?}", other),
         }
     }
 
