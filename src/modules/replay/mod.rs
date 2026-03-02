@@ -303,7 +303,11 @@ impl<M: MapReader> ReplayEngine<M> {
 
         Ok(ReplayResult {
             recording,
-            target_cluster: "local".to_string(),  // TODO: Support remote clusters
+            // Remote cluster replay is not yet supported; we resolve the local
+            // cluster name from the current K8s context so the result accurately
+            // reflects where the replay executed.
+            target_cluster: self.k8s_client.get_current_context().await
+                .unwrap_or_else(|_| "local".to_string()),
             flows_attempted: flows.len(),
             flows_successful,
             flows_failed,

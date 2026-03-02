@@ -24,7 +24,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
-    curl \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -46,7 +46,7 @@ EXPOSE 9191
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-9191}/health || exit 1
+    CMD wget --quiet --tries=1 --spider http://localhost:9191/health || exit 1
 
 # Run
 CMD ["./cilium-vision-api"]

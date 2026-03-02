@@ -13,8 +13,12 @@ use std::time::Duration;
 
 mod app;
 mod events;
+mod handlers;
 mod tabs;
 mod render;
+mod render_flows;
+mod render_infra;
+mod render_modules;
 
 mod simulator_view;
 mod replay_view;

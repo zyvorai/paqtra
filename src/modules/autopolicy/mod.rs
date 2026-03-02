@@ -1,3 +1,5 @@
+// allow(dead_code): AutoPolicy types and engine methods are consumed by the TUI
+// and module orchestration layer but appear unused in library-only builds.
 #![allow(dead_code)]
 /// AutoPolicy Module - Zero-Trust Policy Learning
 ///
@@ -166,19 +168,21 @@ impl<M: MapReader> AutoPolicy<M> {
             .unwrap()
             .as_secs();
 
-        self.observations
-            .entry(pattern.clone())
-            .and_modify(|obs| {
-                obs.count += 1;
-                obs.last_seen = now;
-            })
-            .or_insert(TrafficObservation {
-                pattern,
-                count: 1,
-                first_seen: now,
-                last_seen: now,
-                bytes_transferred: 0,
-            });
+        if let Some(obs) = self.observations.get_mut(&pattern) {
+            obs.count += 1;
+            obs.last_seen = now;
+        } else {
+            self.observations.insert(
+                pattern.clone(),
+                TrafficObservation {
+                    pattern,
+                    count: 1,
+                    first_seen: now,
+                    last_seen: now,
+                    bytes_transferred: 0,
+                },
+            );
+        }
     }
 
     /// Update learning progress

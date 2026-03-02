@@ -1,3 +1,7 @@
+// allow(dead_code): Simulator types and engine methods are consumed by the TUI
+// for what-if analysis rendering but appear unused in library-only builds.
+// Suppressed at module level because the numerous structs, enums, and their
+// fields would each trigger individual warnings.
 #![allow(dead_code)]
 /// What-If Simulator Module
 ///
@@ -461,6 +465,15 @@ impl<M: MapReader> Simulator<M> {
         let confidence = self.calculate_confidence(&flow_results);
 
         let simulation_time_ms = start.elapsed().as_millis() as u64;
+
+        tracing::info!(
+            total_flows = impact.total_flows,
+            changed_flows = impact.changed_flows,
+            blocked_flows = impact.blocked_flows,
+            risk_score = risk.score,
+            simulation_time_ms,
+            "Simulation completed"
+        );
 
         Ok(SimulationResult {
             scenario,

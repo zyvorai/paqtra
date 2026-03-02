@@ -40,32 +40,50 @@ impl ReplayComparator {
             .filter(|o| o.verdict != o.flow.verdict)
             .count();
 
+        // Build a lookup from original flows to estimate original latency.
+        // We derive per-flow latency from the inter-flow offset_ms deltas, which
+        // approximate the original timing between consecutive flows during recording.
+        let original_latency_lookup: HashMap<usize, f64> = original.iter()
+            .enumerate()
+            .map(|(i, flow)| {
+                // Use the offset delta between consecutive flows as a latency proxy
+                if i > 0 {
+                    let delta = flow.offset_ms.saturating_sub(original[i - 1].offset_ms);
+                    (i, delta as f64)
+                } else {
+                    (i, 0.0)
+                }
+            })
+            .collect();
+
         // Find new drops (was allowed, now denied)
         let new_drops: Vec<_> = replay.iter()
-            .filter(|o| {
+            .enumerate()
+            .filter(|(_i, o)| {
                 o.flow.verdict == PolicyVerdict::Allow
                     && o.verdict == PolicyVerdict::Deny
             })
-            .map(|o| FlowDifference {
+            .map(|(i, o)| FlowDifference {
                 flow: o.flow.clone(),
                 original_verdict: o.flow.verdict,
                 replay_verdict: o.verdict,
-                original_latency_ms: None, // TODO: Track original latency
+                original_latency_ms: original_latency_lookup.get(&i).copied(),
                 replay_latency_ms: o.latency_ms,
             })
             .collect();
 
         // Find fixed drops (was denied, now allowed)
         let fixed_drops: Vec<_> = replay.iter()
-            .filter(|o| {
+            .enumerate()
+            .filter(|(_i, o)| {
                 o.flow.verdict == PolicyVerdict::Deny
                     && o.verdict == PolicyVerdict::Allow
             })
-            .map(|o| FlowDifference {
+            .map(|(i, o)| FlowDifference {
                 flow: o.flow.clone(),
                 original_verdict: o.flow.verdict,
                 replay_verdict: o.verdict,
-                original_latency_ms: None,
+                original_latency_ms: original_latency_lookup.get(&i).copied(),
                 replay_latency_ms: o.latency_ms,
             })
             .collect();

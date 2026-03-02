@@ -283,3 +283,129 @@ spec:
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::{AnomalyContext, MetricType};
+    use chrono::Utc;
+
+    fn make_anomaly(anomaly_type: AnomalyType, severity: Severity) -> Anomaly {
+        Anomaly {
+            id: "test-anomaly-1".to_string(),
+            timestamp: Utc::now(),
+            anomaly_type,
+            severity,
+            confidence: 0.9,
+            metric: MetricType::RequestRate,
+            baseline_value: 100.0,
+            observed_value: 500.0,
+            deviation: 4.0,
+            context: AnomalyContext {
+                namespace: "default".to_string(),
+                pod: "web-abc123".to_string(),
+                service: "web".to_string(),
+                destination: None,
+                protocol: "TCP".to_string(),
+                port: 8080,
+                contributing_factors: vec![],
+                historical_occurrences: 0,
+            },
+            remediation: None,
+        }
+    }
+
+    #[test]
+    fn test_remediation_engine_creation() {
+        let engine = RemediationEngine::new(true);
+        assert!(engine.auto_apply);
+
+        let engine2 = RemediationEngine::new(false);
+        assert!(!engine2.auto_apply);
+    }
+
+    #[test]
+    fn test_handle_traffic_spike_returns_rate_limit() {
+        let engine = RemediationEngine::new(false);
+        let anomaly = make_anomaly(AnomalyType::TrafficSpike, Severity::High);
+        let action = engine.handle_traffic_spike(&anomaly);
+
+        assert_eq!(action.action_type, RemediationType::RateLimit);
+        assert!(action.policy_yaml.is_some());
+        assert!(action.description.contains("rate limiting"));
+    }
+
+    #[test]
+    fn test_handle_port_scan_returns_block_destination() {
+        let engine = RemediationEngine::new(false);
+        let anomaly = make_anomaly(AnomalyType::PortScan, Severity::High);
+        let action = engine.handle_port_scan(&anomaly);
+
+        assert_eq!(action.action_type, RemediationType::BlockDestination);
+        assert_eq!(action.confidence, 0.95);
+        assert!(action.description.contains("port scan"));
+    }
+
+    #[test]
+    fn test_handle_dns_tunneling_returns_apply_network_policy() {
+        let engine = RemediationEngine::new(true);
+        let anomaly = make_anomaly(AnomalyType::DNSTunneling, Severity::High);
+        let action = engine.handle_dns_tunneling(&anomaly);
+
+        assert_eq!(action.action_type, RemediationType::ApplyNetworkPolicy);
+        assert!(!action.auto_applicable); // DNS tunneling never auto-applies
+        let yaml = action.policy_yaml.unwrap();
+        assert!(yaml.contains("CiliumNetworkPolicy"));
+        assert!(yaml.contains("dns-restrict"));
+    }
+
+    #[test]
+    fn test_handle_data_exfiltration_returns_isolate_pod() {
+        let engine = RemediationEngine::new(true);
+        let anomaly = make_anomaly(AnomalyType::DataExfiltration, Severity::Critical);
+        let action = engine.handle_data_exfiltration(&anomaly);
+
+        assert_eq!(action.action_type, RemediationType::IsolatePod);
+        assert_eq!(action.confidence, 0.9);
+        assert!(action.auto_applicable); // auto_apply=true and severity=Critical
+        assert!(action.description.contains("URGENT"));
+    }
+
+    #[test]
+    fn test_confidence_values_within_range() {
+        let engine = RemediationEngine::new(false);
+        let anomaly = make_anomaly(AnomalyType::TrafficSpike, Severity::Low);
+
+        let actions = vec![
+            engine.handle_traffic_spike(&anomaly),
+            engine.handle_error_spike(&anomaly),
+            engine.handle_latency(&anomaly),
+            engine.handle_port_scan(&anomaly),
+            engine.handle_dns_tunneling(&anomaly),
+            engine.handle_data_exfiltration(&anomaly),
+            engine.handle_unusual_pattern(&anomaly),
+            engine.default_remediation(&anomaly),
+        ];
+
+        for action in &actions {
+            assert!(
+                action.confidence >= 0.0 && action.confidence <= 1.0,
+                "Confidence {} out of range for {:?}",
+                action.confidence,
+                action.action_type
+            );
+        }
+    }
+
+    #[test]
+    fn test_suggest_remediation_populates_remediation_field() {
+        let engine = RemediationEngine::new(false);
+        let anomaly = make_anomaly(AnomalyType::PortScan, Severity::High);
+        assert!(anomaly.remediation.is_none());
+
+        let result = engine.suggest_remediation(anomaly).unwrap();
+        assert!(result.remediation.is_some());
+        let remediation = result.remediation.unwrap();
+        assert_eq!(remediation.action_type, RemediationType::BlockDestination);
+    }
+}

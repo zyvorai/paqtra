@@ -15,6 +15,8 @@ use super::{track_request, track_error, to_json};
 const FLOWS_CACHE_PREFIX: &str = "flows";
 /// Cache TTL for flow lists (seconds)
 const FLOWS_CACHE_TTL: u64 = 10;
+/// Maximum allowed limit to prevent excessively large responses
+const MAX_LIMIT: usize = 1000;
 
 pub async fn list_flows(
     State(state): State<Arc<AppState>>,
@@ -24,7 +26,8 @@ pub async fn list_flows(
 
     track_request(&state, |m| m.hubble_queries += 1).await;
 
-    let limit = params.limit.unwrap_or(100);
+    let limit = params.limit.unwrap_or(100).min(MAX_LIMIT);
+    // offset is usize, so it is guaranteed to be non-negative
     let offset = params.offset.unwrap_or(0);
     let cache_key = format!(
         "{}:ns={:?}:v={:?}:l={}",
@@ -56,10 +59,14 @@ pub async fn list_flows(
             })));
         }
         Ok(None) => {
+            tracing::info!(limit = limit, offset = offset, "Cache miss for flows, fetching from Hubble");
             let mut m = state.metrics.write().await;
             m.cache_misses += 1;
         }
         Err(e) => {
+            // Cache deserialization or connection errors are non-fatal; we fall
+            // through to fetch fresh data from Hubble. The warning is logged so
+            // operators can investigate recurring cache failures.
             tracing::warn!("Cache read error: {}", e);
         }
     }

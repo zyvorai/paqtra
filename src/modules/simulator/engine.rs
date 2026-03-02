@@ -365,10 +365,27 @@ impl SimulationEngine {
         let added = self.simulated_policies.len().saturating_sub(self.policies.len());
         let removed = self.policies.len().saturating_sub(self.simulated_policies.len());
 
+        // Count modifications: policies that share the same (src_identity, dst_identity)
+        // tuple but have different (port, protocol, verdict).
+        let mut modified = 0;
+        for original in &self.policies {
+            for simulated in &self.simulated_policies {
+                if original.src_identity == simulated.src_identity
+                    && original.dst_identity == simulated.dst_identity
+                    && (original.port != simulated.port
+                        || original.protocol != simulated.protocol
+                        || original.verdict != simulated.verdict)
+                {
+                    modified += 1;
+                    break; // Count each original policy at most once
+                }
+            }
+        }
+
         PolicyChanges {
             added,
             removed,
-            modified: 0, // TODO: Calculate actual modifications
+            modified,
             total_before: self.policies.len(),
             total_after: self.simulated_policies.len(),
         }

@@ -156,18 +156,53 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
         Ok(services.into_iter().collect())
     }
 
-    /// Identify critical services
+    /// Identify critical services by checking pod labels/annotations and
+    /// well-known service name patterns (db, payment, auth, gateway, etc.).
     fn identify_critical_services(&self, impacted_services: &[String]) -> Vec<String> {
-        // TODO: Get service criticality from labels/annotations
-        // For now, identify by common critical service patterns
+        let critical_name_patterns = [
+            "db", "database", "postgres", "mysql", "mongo",
+            "payment", "billing", "checkout",
+            "auth", "oauth", "identity", "login",
+            "gateway", "ingress", "proxy", "envoy",
+            "redis", "cache", "memcache",
+            "kafka", "rabbitmq", "nats", "mq",
+            "dns", "api", "core",
+        ];
+
+        // Build a set of identities that carry a criticality annotation
+        let mut annotated_critical: HashSet<String> = HashSet::new();
+        if let Ok(entries) = self.reader.read_ipcache_map() {
+            for entry in &entries {
+                let is_critical_by_label = entry.labels.iter().any(|l| {
+                    l == "criticality=high"
+                        || l == "tier=critical"
+                        || l == "priority=critical"
+                });
+                if is_critical_by_label {
+                    let namespace = if entry.namespace.is_empty() {
+                        "default".to_string()
+                    } else {
+                        entry.namespace.clone()
+                    };
+                    let name = entry.labels.iter()
+                        .find(|l| l.starts_with("app="))
+                        .map(|l| l.trim_start_matches("app=").to_string())
+                        .unwrap_or_else(|| format!("service-{}", entry.identity));
+                    annotated_critical.insert(format!("{}/{}", namespace, name));
+                }
+            }
+        }
+
         impacted_services
             .iter()
             .filter(|s| {
-                s.contains("db")
-                    || s.contains("database")
-                    || s.contains("api")
-                    || s.contains("auth")
-                    || s.contains("dns")
+                // Match if the service name contains any critical pattern
+                let name_match = critical_name_patterns
+                    .iter()
+                    .any(|pat| s.to_lowercase().contains(pat));
+                // Or if the service was annotated as critical in IPCache labels
+                let annotation_match = annotated_critical.contains(s.as_str());
+                name_match || annotation_match
             })
             .cloned()
             .collect()
@@ -256,14 +291,19 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
         }
 
         for (identity, flows) in by_endpoint {
-            let blocked_egress: Vec<_> = flows
-                .iter()
-                .filter(|f| f.changed && f.after == PolicyVerdict::Deny)
-                .map(|f| EgressBlocked {
-                    to_identity: f.dst_identity,
-                    port: f.port,
-                    protocol: f.protocol,
-                    flow_count: 1, // TODO: Count actual occurrences
+            // Group blocked flows by (dst_identity, port, protocol) and count occurrences
+            let mut egress_counts: HashMap<(u32, u16, u8), usize> = HashMap::new();
+            for f in flows.iter().filter(|f| f.changed && f.after == PolicyVerdict::Deny) {
+                *egress_counts.entry((f.dst_identity, f.port, f.protocol)).or_insert(0) += 1;
+            }
+
+            let blocked_egress: Vec<_> = egress_counts
+                .into_iter()
+                .map(|((to_identity, port, protocol), count)| EgressBlocked {
+                    to_identity,
+                    port,
+                    protocol,
+                    flow_count: count,
                 })
                 .collect();
 

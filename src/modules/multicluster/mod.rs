@@ -1,3 +1,7 @@
+// allow(dead_code): Multi-cluster types and autopilot methods are used by the
+// TUI and module orchestration but appear unused in library-only builds.
+// Suppressed at module level due to the large number of structs and enum
+// variants that would each require individual annotations.
 #![allow(dead_code)]
 /// Multi-Cluster Autopilot Module
 ///

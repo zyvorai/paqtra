@@ -147,3 +147,103 @@ impl AlertManager {
         Ok(Vec::new())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::{AnomalyType, AnomalyContext, MetricType};
+    use chrono::Utc;
+
+    fn make_anomaly(anomaly_type: AnomalyType, namespace: &str, service: &str) -> Anomaly {
+        Anomaly {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: Utc::now(),
+            anomaly_type,
+            severity: Severity::High,
+            confidence: 0.9,
+            metric: MetricType::RequestRate,
+            baseline_value: 100.0,
+            observed_value: 500.0,
+            deviation: 4.0,
+            context: AnomalyContext {
+                namespace: namespace.to_string(),
+                pod: "test-pod".to_string(),
+                service: service.to_string(),
+                destination: None,
+                protocol: "TCP".to_string(),
+                port: 8080,
+                contributing_factors: vec![],
+                historical_occurrences: 0,
+            },
+            remediation: None,
+        }
+    }
+
+    #[test]
+    fn test_alert_manager_creation_with_threshold() {
+        let manager = AlertManager::new(0.85);
+        assert_eq!(manager.confidence_threshold, 0.85);
+        assert!(manager.suppression_rules.contains_key("traffic_spike"));
+        assert!(manager.suppression_rules.contains_key("default"));
+    }
+
+    #[test]
+    fn test_should_suppress_same_anomaly_within_window() {
+        let manager = AlertManager::new(0.8);
+        let anomaly = make_anomaly(AnomalyType::TrafficSpike, "default", "web");
+
+        // Fill history with enough similar anomalies to trigger suppression
+        // The "default" rule allows max_alerts=5, but "traffic_spike" is matched
+        // via Debug format "TrafficSpike" -- however, the key lookup uses
+        // format!("{:?}", anomaly.anomaly_type) which yields "TrafficSpike",
+        // not "traffic_spike". So it falls back to "default" with max_alerts=5.
+        let history: Vec<Anomaly> = (0..5)
+            .map(|_| make_anomaly(AnomalyType::TrafficSpike, "default", "web"))
+            .collect();
+
+        assert!(manager.should_suppress(&anomaly, &history));
+    }
+
+    #[test]
+    fn test_should_suppress_returns_false_for_different_anomaly_types() {
+        let manager = AlertManager::new(0.8);
+        let anomaly = make_anomaly(AnomalyType::PortScan, "default", "web");
+
+        // History has TrafficSpike anomalies, not PortScan
+        let history: Vec<Anomaly> = (0..10)
+            .map(|_| make_anomaly(AnomalyType::TrafficSpike, "default", "web"))
+            .collect();
+
+        assert!(!manager.should_suppress(&anomaly, &history));
+    }
+
+    #[test]
+    fn test_should_suppress_returns_false_with_empty_history() {
+        let manager = AlertManager::new(0.8);
+        let anomaly = make_anomaly(AnomalyType::TrafficSpike, "default", "web");
+
+        assert!(!manager.should_suppress(&anomaly, &[]));
+    }
+
+    #[test]
+    fn test_get_anomalies_in_range_returns_empty() {
+        let manager = AlertManager::new(0.8);
+        let start = Utc::now() - Duration::hours(1);
+        let end = Utc::now();
+        let result = manager.get_anomalies_in_range(start, end).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_should_suppress_returns_false_for_different_namespace() {
+        let manager = AlertManager::new(0.8);
+        let anomaly = make_anomaly(AnomalyType::TrafficSpike, "production", "web");
+
+        // History has anomalies in "default" namespace, not "production"
+        let history: Vec<Anomaly> = (0..10)
+            .map(|_| make_anomaly(AnomalyType::TrafficSpike, "default", "web"))
+            .collect();
+
+        assert!(!manager.should_suppress(&anomaly, &history));
+    }
+}

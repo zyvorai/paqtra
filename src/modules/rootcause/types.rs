@@ -252,3 +252,197 @@ pub struct DropStats {
     pub by_namespace: HashMap<String, u64>,
     pub top_patterns: Vec<(DropPattern, u64)>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    #[test]
+    fn test_root_cause_config_defaults() {
+        let config = RootCauseConfig::default();
+        assert!(config.enabled);
+        assert_eq!(config.analysis_window_secs, 300);
+        assert_eq!(config.min_drop_count, 5);
+        assert!(config.auto_correlate);
+        assert!(config.pattern_analysis);
+    }
+
+    #[test]
+    fn test_drop_reason_from_ebpf_conversions() {
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::PolicyDenied),
+            DropReason::PolicyDenied
+        );
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::InvalidPacket),
+            DropReason::InvalidPacket
+        );
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::NoRoute),
+            DropReason::NoMapping
+        );
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::UnknownL4Protocol),
+            DropReason::UnknownL4Protocol
+        );
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::FragmentationNeeded),
+            DropReason::FragNeeded
+        );
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::CTMapFull),
+            DropReason::CTStateMismatch
+        );
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::NATMapFull),
+            DropReason::LBError
+        );
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::InvalidSourceIP),
+            DropReason::InvalidSourceIP
+        );
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::InvalidDestIP),
+            DropReason::UnknownDestination
+        );
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::UnsupportedL3Protocol),
+            DropReason::UnsupportedL3Protocol
+        );
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::ServiceBackendNotFound),
+            DropReason::NoBackend
+        );
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::AuthRequired),
+            DropReason::PolicyDenied
+        );
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::ConnectionTrackingInvalid),
+            DropReason::CTStateMismatch
+        );
+        assert_eq!(
+            DropReason::from_ebpf(&DropReasonType::Other(999)),
+            DropReason::Other(999u32 as u8)
+        );
+    }
+
+    #[test]
+    fn test_drop_reason_to_string_all_variants() {
+        assert_eq!(DropReason::PolicyDenied.to_string(), "Policy Denied");
+        assert_eq!(DropReason::InvalidSourceIP.to_string(), "Invalid Source IP");
+        assert_eq!(DropReason::InvalidPacket.to_string(), "Invalid Packet");
+        assert_eq!(DropReason::CTStateMismatch.to_string(), "Connection Tracking State Mismatch");
+        assert_eq!(DropReason::PortNotAllowed.to_string(), "Port Not Allowed");
+        assert_eq!(DropReason::UnknownL3Protocol.to_string(), "Unknown L3 Protocol");
+        assert_eq!(DropReason::UnknownL4Protocol.to_string(), "Unknown L4 Protocol");
+        assert_eq!(DropReason::UnsupportedL3Protocol.to_string(), "Unsupported L3 Protocol");
+        assert_eq!(DropReason::NoMapping.to_string(), "No Mapping");
+        assert_eq!(DropReason::UnknownDestination.to_string(), "Unknown Destination");
+        assert_eq!(DropReason::LBError.to_string(), "Load Balancer Error");
+        assert_eq!(DropReason::ServiceNotFound.to_string(), "Service Not Found");
+        assert_eq!(DropReason::NoBackend.to_string(), "No Healthy Backend");
+        assert_eq!(DropReason::FragNeeded.to_string(), "Fragment Needed (MTU)");
+        assert_eq!(DropReason::TTLExceeded.to_string(), "TTL Exceeded");
+        assert_eq!(DropReason::Other(42).to_string(), "Other");
+    }
+
+    #[test]
+    fn test_suggested_fix_add_policy_rule() {
+        let mut from_labels = HashMap::new();
+        from_labels.insert("app".to_string(), "frontend".to_string());
+        let mut to_labels = HashMap::new();
+        to_labels.insert("app".to_string(), "backend".to_string());
+
+        let fix = SuggestedFix::AddPolicyRule {
+            namespace: "default".to_string(),
+            from_labels,
+            to_labels,
+            port: 8080,
+            protocol: "TCP".to_string(),
+            yaml: "apiVersion: cilium.io/v2".to_string(),
+        };
+
+        if let SuggestedFix::AddPolicyRule {
+            namespace, port, protocol, ..
+        } = &fix
+        {
+            assert_eq!(namespace, "default");
+            assert_eq!(*port, 8080);
+            assert_eq!(protocol, "TCP");
+        } else {
+            panic!("Expected AddPolicyRule variant");
+        }
+    }
+
+    #[test]
+    fn test_suggested_fix_manual_investigation() {
+        let fix = SuggestedFix::ManualInvestigation {
+            reason: "Unknown pattern".to_string(),
+            steps: vec![
+                "Check logs".to_string(),
+                "Inspect network policies".to_string(),
+            ],
+        };
+
+        if let SuggestedFix::ManualInvestigation { reason, steps } = &fix {
+            assert_eq!(reason, "Unknown pattern");
+            assert_eq!(steps.len(), 2);
+        } else {
+            panic!("Expected ManualInvestigation variant");
+        }
+    }
+
+    #[test]
+    fn test_drop_pattern_creation_and_equality() {
+        let pattern1 = DropPattern {
+            reason: DropReason::PolicyDenied,
+            src_identity: 100,
+            dst_identity: 200,
+            dst_port: 80,
+            protocol: 6,
+        };
+
+        let pattern2 = DropPattern {
+            reason: DropReason::PolicyDenied,
+            src_identity: 100,
+            dst_identity: 200,
+            dst_port: 80,
+            protocol: 6,
+        };
+
+        assert_eq!(pattern1, pattern2);
+
+        let pattern3 = DropPattern {
+            reason: DropReason::NoBackend,
+            src_identity: 100,
+            dst_identity: 200,
+            dst_port: 80,
+            protocol: 6,
+        };
+
+        assert_ne!(pattern1, pattern3);
+    }
+
+    #[test]
+    fn test_drop_event_creation() {
+        let event = DropEvent {
+            timestamp: 1234567890,
+            src_ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+            dst_ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
+            src_port: 45000,
+            dst_port: 80,
+            protocol: 6,
+            reason: DropReason::PolicyDenied,
+            identity_src: 100,
+            identity_dst: 200,
+            namespace: Some("default".to_string()),
+            pod_name: Some("web-abc123".to_string()),
+        };
+
+        assert_eq!(event.dst_port, 80);
+        assert_eq!(event.reason, DropReason::PolicyDenied);
+        assert_eq!(event.namespace.as_deref(), Some("default"));
+    }
+}

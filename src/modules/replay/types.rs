@@ -263,3 +263,135 @@ pub struct ReplayStats {
     pub recording_in_progress: bool,
     pub total_flows_recorded: usize,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    #[test]
+    fn test_replay_config_defaults() {
+        let config = ReplayConfig::default();
+        assert!(config.enabled);
+        assert_eq!(config.recording_dir, PathBuf::from("/tmp/cilium-vision/recordings"));
+        assert_eq!(config.max_recording_size, 100 * 1024 * 1024);
+        assert_eq!(config.max_recording_duration, 300);
+        assert!(config.compress);
+        assert!((config.replay_rate - 1.0).abs() < f32::EPSILON);
+        assert!(config.detailed_comparison);
+    }
+
+    #[test]
+    fn test_recorded_flow_creation() {
+        let flow = RecordedFlow {
+            timestamp: 1234567890,
+            offset_ms: 500,
+            src_ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+            dst_ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
+            src_port: 45000,
+            dst_port: 80,
+            protocol: 6,
+            src_identity: 100,
+            dst_identity: 200,
+            src_namespace: "default".to_string(),
+            dst_namespace: "backend".to_string(),
+            src_labels: HashMap::new(),
+            dst_labels: HashMap::new(),
+            verdict: PolicyVerdict::Allow,
+            bytes: 1024,
+            packets: 10,
+            http_method: Some("GET".to_string()),
+            http_path: Some("/api/v1/health".to_string()),
+            http_status: Some(200),
+        };
+
+        assert_eq!(flow.timestamp, 1234567890);
+        assert_eq!(flow.offset_ms, 500);
+        assert_eq!(flow.dst_port, 80);
+        assert_eq!(flow.protocol, 6);
+        assert_eq!(flow.verdict, PolicyVerdict::Allow);
+        assert_eq!(flow.http_method.as_deref(), Some("GET"));
+        assert_eq!(flow.http_status, Some(200));
+    }
+
+    #[test]
+    fn test_replay_filter_default_all_none() {
+        let filter = ReplayFilter::default();
+        assert!(filter.namespaces.is_none());
+        assert!(filter.src_labels.is_none());
+        assert!(filter.dst_labels.is_none());
+        assert!(filter.ports.is_none());
+        assert!(filter.protocols.is_none());
+        assert!(filter.verdicts.is_none());
+        assert!(filter.limit.is_none());
+    }
+
+    #[test]
+    fn test_recording_creation() {
+        let recording = Recording {
+            id: "rec-001".to_string(),
+            name: "Production traffic capture".to_string(),
+            source_cluster: "prod-us-east-1".to_string(),
+            start_time: 1000,
+            end_time: 2000,
+            flow_count: 5000,
+            total_bytes: 1_048_576,
+            namespaces: vec!["default".to_string(), "kube-system".to_string()],
+            services: vec!["web".to_string(), "api".to_string()],
+            file_path: PathBuf::from("/tmp/cilium-vision/recordings/rec-001.bin"),
+            compressed: true,
+        };
+
+        assert_eq!(recording.id, "rec-001");
+        assert_eq!(recording.name, "Production traffic capture");
+        assert_eq!(recording.source_cluster, "prod-us-east-1");
+        assert_eq!(recording.end_time - recording.start_time, 1000);
+        assert_eq!(recording.flow_count, 5000);
+        assert_eq!(recording.namespaces.len(), 2);
+        assert_eq!(recording.services.len(), 2);
+        assert!(recording.compressed);
+    }
+
+    #[test]
+    fn test_replay_stats_creation() {
+        let stats = ReplayStats {
+            total_recordings: 3,
+            recording_in_progress: false,
+            total_flows_recorded: 15000,
+        };
+
+        assert_eq!(stats.total_recordings, 3);
+        assert!(!stats.recording_in_progress);
+        assert_eq!(stats.total_flows_recorded, 15000);
+    }
+
+    #[test]
+    fn test_recorded_flow_without_http_fields() {
+        let flow = RecordedFlow {
+            timestamp: 1000,
+            offset_ms: 0,
+            src_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)),
+            dst_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)),
+            src_port: 50000,
+            dst_port: 53,
+            protocol: 17, // UDP
+            src_identity: 1,
+            dst_identity: 2,
+            src_namespace: "default".to_string(),
+            dst_namespace: "kube-system".to_string(),
+            src_labels: HashMap::new(),
+            dst_labels: HashMap::new(),
+            verdict: PolicyVerdict::Allow,
+            bytes: 64,
+            packets: 1,
+            http_method: None,
+            http_path: None,
+            http_status: None,
+        };
+
+        assert_eq!(flow.protocol, 17);
+        assert!(flow.http_method.is_none());
+        assert!(flow.http_path.is_none());
+        assert!(flow.http_status.is_none());
+    }
+}

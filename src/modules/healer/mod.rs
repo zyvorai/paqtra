@@ -1,3 +1,6 @@
+// allow(dead_code): Healer types and methods are used by the TUI for display
+// but appear unused in library-only builds. Suppressed at module level because
+// most structs, enums, and their fields would trigger warnings.
 #![allow(dead_code)]
 /// Self-Healer Module
 ///
@@ -14,6 +17,8 @@ use std::collections::HashMap;
 use crate::ebpf::{DropReason, DropReasonType, MapReader, EnrichedMapReader};
 use crate::kubernetes::K8sClient;
 use crate::policies::PolicyManager;
+
+const UNKNOWN: &str = "unknown";
 
 pub mod dns;
 pub mod mtu;
@@ -125,6 +130,7 @@ impl<M: MapReader> SelfHealer<M> {
         // Detect problems from eBPF data
         self.detect_problems().await?;
         stats.problems_detected = self.detected_problems.len();
+        tracing::info!(problem_count = self.detected_problems.len(), "Healer problem detection completed");
 
         // Generate fixes
         let fixes = self.generate_fixes().await?;
@@ -175,7 +181,7 @@ impl<M: MapReader> SelfHealer<M> {
             if count > 5 {
                 // Threshold: more than 5 DNS drops
                 dns_problems.push(Problem::DNSDrops {
-                    namespace: "unknown".to_string(), // Will be resolved if using EnrichedMapReader
+                    namespace: UNKNOWN.to_string(), // Will be resolved if using EnrichedMapReader
                     pod: ip,
                     count,
                 });
@@ -192,9 +198,9 @@ impl<M: MapReader> SelfHealer<M> {
         for drop in drops {
             if drop.reason == DropReasonType::PolicyDenied {
                 problems.push(Problem::PolicyGap {
-                    src_namespace: "unknown".to_string(),
+                    src_namespace: UNKNOWN.to_string(),
                     src_pod: drop.src_ip.clone(),
-                    dst_namespace: "unknown".to_string(),
+                    dst_namespace: UNKNOWN.to_string(),
                     dst_pod: drop.dst_ip.clone(),
                     port: drop.port,
                     protocol: if drop.protocol == 6 {
@@ -345,7 +351,7 @@ impl SelfHealer<EnrichedMapReader> {
         for (drop, info) in drops {
             if drop.port == 53 && drop.reason == DropReasonType::PolicyDenied {
                 let key = (
-                    info.src_namespace.clone().unwrap_or_else(|| "unknown".to_string()),
+                    info.src_namespace.clone().unwrap_or_else(|| UNKNOWN.to_string()),
                     info.src_pod.clone().unwrap_or_else(|| drop.src_ip.clone()),
                 );
                 *dns_drop_count.entry(key).or_insert(0) += 1;
@@ -372,9 +378,9 @@ impl SelfHealer<EnrichedMapReader> {
         for (drop, info) in drops {
             if drop.reason == DropReasonType::PolicyDenied {
                 problems.push(Problem::PolicyGap {
-                    src_namespace: info.src_namespace.clone().unwrap_or_else(|| "unknown".to_string()),
+                    src_namespace: info.src_namespace.clone().unwrap_or_else(|| UNKNOWN.to_string()),
                     src_pod: info.src_pod.clone().unwrap_or_else(|| drop.src_ip.clone()),
-                    dst_namespace: info.dst_namespace.clone().unwrap_or_else(|| "unknown".to_string()),
+                    dst_namespace: info.dst_namespace.clone().unwrap_or_else(|| UNKNOWN.to_string()),
                     dst_pod: info.dst_pod.clone().unwrap_or_else(|| drop.dst_ip.clone()),
                     port: drop.port,
                     protocol: if drop.protocol == 6 {

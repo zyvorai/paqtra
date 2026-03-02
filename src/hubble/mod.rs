@@ -62,7 +62,10 @@ pub async fn start_port_forward() -> Result<u16> {
         #[cfg(unix)]
         {
             unsafe {
-                libc::kill(pid_for_cleanup as i32, libc::SIGTERM);
+                let ret = libc::kill(pid_for_cleanup as i32, libc::SIGTERM);
+                if ret != 0 {
+                    tracing::warn!("Failed to send SIGTERM to pid {}: errno {}", pid_for_cleanup, std::io::Error::last_os_error());
+                }
             }
         }
     });
@@ -86,7 +89,10 @@ pub async fn start_port_forward() -> Result<u16> {
                 // Kill the process since it's not working
                 #[cfg(unix)]
                 unsafe {
-                    libc::kill(pid as i32, libc::SIGTERM);
+                    let ret = libc::kill(pid as i32, libc::SIGTERM);
+                    if ret != 0 {
+                        tracing::warn!("Failed to send SIGTERM to pid {}: errno {}", pid, std::io::Error::last_os_error());
+                    }
                 }
                 anyhow::bail!(
                     "Hubble port-forward failed to start on port {}. \

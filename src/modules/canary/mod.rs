@@ -1,3 +1,7 @@
+// allow(dead_code): Canary deployment types and engine methods are consumed by
+// the TUI rendering layer but appear unused in library-only builds. Suppressed
+// at module level because the majority of structs, fields, and enum variants
+// would each trigger individual warnings.
 #![allow(dead_code)]
 /// Sidecarless Canary Deployment Module
 ///
