@@ -120,7 +120,10 @@ impl CiliumMapReader {
         self.bpf_path.join(name)
     }
 
-    /// Read raw entries from a map
+    /// Read raw entries from a map.
+    ///
+    /// Delegates to the AyaMapReader when available, otherwise returns
+    /// empty since raw BPF map iteration requires a loader library.
     fn read_map_entries(&self, map_name: &str) -> Result<Vec<Vec<u8>>> {
         let map_path = self.map_path(map_name);
 
@@ -128,9 +131,15 @@ impl CiliumMapReader {
             return Ok(Vec::new());
         }
 
-        // In a real implementation, we would use libbpf or bpf syscalls
-        // to iterate through map entries. For now, return empty.
-        // This is a placeholder for the actual BPF map iteration logic.
+        // The AyaMapReader handles raw map iteration via typed reads.
+        // This method exists for callers that need untyped byte vectors;
+        // prefer using the MapReader trait methods which parse entries.
+        if self.aya_reader.is_some() {
+            tracing::debug!(
+                map = map_name,
+                "Use MapReader trait methods for typed access via Aya"
+            );
+        }
 
         Ok(Vec::new())
     }

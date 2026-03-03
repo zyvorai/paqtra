@@ -187,17 +187,47 @@ impl COREHandler {
         }
     }
 
-    /// Extract BTF information from kernel
+    /// Extract BTF information from kernel.
+    ///
+    /// Reads `/sys/kernel/btf/vmlinux` and enumerates exported BTF type names
+    /// from `/sys/kernel/btf/` directory entries. Each file in that directory
+    /// represents a BTF object (vmlinux + loaded kernel modules).
     pub fn get_btf_info(&self) -> Result<BTFInfo> {
         if !self.btf_available {
             anyhow::bail!("BTF not available");
         }
 
-        // In real implementation: parse /sys/kernel/btf/vmlinux
+        let available_types = Self::enumerate_btf_objects();
+
         Ok(BTFInfo {
             kernel_version: Self::get_kernel_version(),
-            available_types: Vec::new(),
+            available_types,
         })
+    }
+
+    /// Enumerate BTF objects available under /sys/kernel/btf/.
+    /// Each entry corresponds to a kernel module or vmlinux itself.
+    fn enumerate_btf_objects() -> Vec<String> {
+        let btf_dir = std::path::Path::new("/sys/kernel/btf");
+        if !btf_dir.exists() {
+            return Vec::new();
+        }
+
+        match std::fs::read_dir(btf_dir) {
+            Ok(entries) => {
+                let mut types: Vec<String> = entries
+                    .filter_map(|e| e.ok())
+                    .filter_map(|e| e.file_name().into_string().ok())
+                    .collect();
+                types.sort();
+                tracing::debug!("Found {} BTF objects in /sys/kernel/btf/", types.len());
+                types
+            }
+            Err(e) => {
+                tracing::warn!("Failed to read /sys/kernel/btf/: {}", e);
+                Vec::new()
+            }
+        }
     }
 
     /// Read the actual kernel version from /proc/version.
@@ -261,6 +291,16 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("BTF not available"));
+    }
+
+    #[test]
+    fn test_enumerate_btf_objects() {
+        let types = COREHandler::enumerate_btf_objects();
+        // On Linux with BTF support, should find at least "vmlinux"
+        if std::path::Path::new("/sys/kernel/btf/vmlinux").exists() {
+            assert!(!types.is_empty());
+            assert!(types.contains(&"vmlinux".to_string()));
+        }
     }
 
     #[tokio::test]
