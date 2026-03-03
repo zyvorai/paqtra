@@ -60,9 +60,16 @@ impl BootstrapManager {
             }
         }
 
-        // Step 3: Enable required Cilium features
+        // Step 3: Enable required Cilium features (configmap)
         self.enable_cilium_features().await?;
-        println!("✔ Hubble enabled");
+
+        // Step 3b: Ensure Hubble relay is actually deployed
+        if !cilium_mgr.is_hubble_relay_running().await {
+            println!("⚠ Hubble relay not found, installing...");
+            cilium_mgr.enable_hubble().await?;
+        } else {
+            println!("✔ Hubble enabled");
+        }
 
         // Step 4: Auto-create Cilium policies
         self.apply_default_policies().await?;

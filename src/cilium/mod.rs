@@ -323,6 +323,78 @@ impl CiliumManager {
         Ok(())
     }
 
+    /// Check if hubble-relay pods are running in the cluster.
+    pub async fn is_hubble_relay_running(&self) -> bool {
+        self.k8s_client
+            .get_pods_by_label("kube-system", "k8s-app=hubble-relay")
+            .await
+            .map(|pods| !pods.is_empty())
+            .unwrap_or(false)
+    }
+
+    /// Enable Hubble via the cilium CLI, which deploys hubble-relay.
+    pub async fn enable_hubble(&self) -> Result<()> {
+        if !self.is_cilium_cli_available() {
+            anyhow::bail!(
+                "Cilium CLI is required to enable Hubble. Please install cilium-cli first."
+            );
+        }
+
+        println!("📡 Enabling Hubble relay...");
+
+        let output = Command::new("cilium")
+            .args(["hubble", "enable"])
+            .status()
+            .context("Failed to execute 'cilium hubble enable'")?;
+
+        if !output.success() {
+            anyhow::bail!(
+                "Failed to enable Hubble. Please run 'cilium hubble enable' manually."
+            );
+        }
+
+        // Wait for hubble-relay pods to become ready
+        println!("⏳ Waiting for Hubble relay to be ready...");
+
+        let max_wait = 60; // seconds
+        for i in 0..max_wait {
+            if self.is_hubble_relay_running().await {
+                // Check if the pod is actually ready (not just existing)
+                let ready = Command::new("kubectl")
+                    .args([
+                        "wait",
+                        "--for=condition=ready",
+                        "pod",
+                        "-l",
+                        "k8s-app=hubble-relay",
+                        "-n",
+                        "kube-system",
+                        "--timeout=5s",
+                    ])
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+
+                if ready {
+                    println!("✔ Hubble relay is ready");
+                    return Ok(());
+                }
+            }
+
+            if i % 10 == 0 && i > 0 {
+                println!("  Still waiting for Hubble relay... ({}/{}s)", i, max_wait);
+            }
+
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+
+        anyhow::bail!(
+            "Hubble relay did not become ready within {}s. \
+             Check 'kubectl get pods -n kube-system -l k8s-app=hubble-relay' for details.",
+            max_wait
+        );
+    }
+
     pub async fn create_tui_service_account(&self) -> Result<()> {
         // Create ServiceAccount
         let sa = ServiceAccount {
