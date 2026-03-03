@@ -40,7 +40,19 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
             };
         }
         KeyCode::Char('r') if !app.show_help && app.selected_tab == 9 => {
-            // Refresh recordings list (placeholder)
+            // Refresh recordings from disk storage
+            let count = match &mut app.modules {
+                ModuleContainer::Enriched { replay, .. } => {
+                    replay.list_recordings().map(|r| r.len())
+                }
+                ModuleContainer::Mock { replay, .. } => {
+                    replay.list_recordings().map(|r| r.len())
+                }
+            };
+            match count {
+                Ok(n) => app.set_status_message(&format!("Refreshed: {} recordings found", n)),
+                Err(e) => app.set_status_message(&format!("Refresh failed: {}", e)),
+            }
         }
         KeyCode::Char('t')
             if !app.show_help && app.selected_tab == 9 && !app.replay_view.time_travel_mode =>

@@ -333,16 +333,61 @@ impl MultiClusterAutopilot {
         Ok(decision)
     }
 
-    /// Perform health check on all clusters
+    /// Perform health check on all clusters.
+    ///
+    /// Queries `kubectl get nodes` for each cluster to determine real node
+    /// health, updating node counts and cluster state accordingly.  Falls
+    /// back to the cached node-count comparison when kubectl is unavailable.
     pub async fn health_check_all(&mut self) -> Result<()> {
         for cluster in self.clusters.values_mut() {
-            // In real implementation, check cluster health via K8s API
-            cluster.health.healthy = cluster.health.healthy_nodes == cluster.health.node_count;
+            // Try to query real node health via kubectl
+            let check = std::process::Command::new("kubectl")
+                .args([
+                    "get", "nodes",
+                    "--context", &cluster.name,
+                    "-o", "jsonpath={range .items[*]}{.metadata.name},{.status.conditions[?(@.type==\"Ready\")].status}{\"\\n\"}{end}",
+                    "--request-timeout=5s",
+                ])
+                .output();
+
+            match check {
+                Ok(output) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let mut total = 0u32;
+                    let mut ready = 0u32;
+                    for line in stdout.lines() {
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+                        total += 1;
+                        if line.ends_with("True") {
+                            ready += 1;
+                        }
+                    }
+                    if total > 0 {
+                        cluster.health.node_count = total;
+                        cluster.health.healthy_nodes = ready;
+                    }
+                }
+                Ok(_) | Err(_) => {
+                    // kubectl failed or context unknown — keep existing cached values
+                    tracing::debug!(
+                        cluster = %cluster.name,
+                        "kubectl node check failed, using cached health data"
+                    );
+                }
+            }
+
+            // Derive cluster state from node readiness
+            cluster.health.healthy =
+                cluster.health.healthy_nodes == cluster.health.node_count;
 
             if cluster.health.healthy {
                 cluster.state = ClusterState::Active;
-            } else {
+            } else if cluster.health.healthy_nodes > 0 {
                 cluster.state = ClusterState::Degraded;
+            } else {
+                cluster.state = ClusterState::Unreachable;
             }
         }
 

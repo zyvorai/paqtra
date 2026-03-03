@@ -416,7 +416,7 @@ metadata:
 spec:
   endpointSelector: {}
   egress:
-  - {}  # Allow all (this is just a placeholder)"#
+  - {}  # Allow all egress — MTU issues affect all destinations"#
                     .to_string();
                 (policy_name, policy_yaml)
             }

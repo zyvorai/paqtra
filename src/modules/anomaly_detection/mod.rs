@@ -257,12 +257,12 @@ impl AnomalyDetector {
     }
 
     /// Export anomalies for analysis
-    pub fn export_anomalies(
+    pub async fn export_anomalies(
         &self,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<Anomaly>> {
-        self.alerting.get_anomalies_in_range(start, end)
+        self.alerting.get_anomalies_in_range(start, end).await
     }
 }
 

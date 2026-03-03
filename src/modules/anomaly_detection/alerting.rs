@@ -131,14 +131,22 @@ impl AlertManager {
         similar_alerts >= rule.max_alerts
     }
 
-    /// Get anomalies in a time range
-    pub fn get_anomalies_in_range(
+    /// Get anomalies in a time range from the in-memory alert history.
+    ///
+    /// Queries the alert history buffer (last 24 hours) for anomalies
+    /// whose timestamp falls within `[start, end]`.
+    pub async fn get_anomalies_in_range(
         &self,
-        _start: DateTime<Utc>,
-        _end: DateTime<Utc>,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
     ) -> Result<Vec<Anomaly>> {
-        // In real implementation, this would query a persistent store
-        Ok(Vec::new())
+        let history = self.alert_history.read().await;
+        let results: Vec<Anomaly> = history
+            .iter()
+            .filter(|a| a.timestamp >= start && a.timestamp <= end)
+            .cloned()
+            .collect();
+        Ok(results)
     }
 }
 
@@ -219,12 +227,41 @@ mod tests {
         assert!(!manager.should_suppress(&anomaly, &[]));
     }
 
-    #[test]
-    fn test_get_anomalies_in_range_returns_empty() {
+    #[tokio::test]
+    async fn test_get_anomalies_in_range_returns_empty_without_alerts() {
         let manager = AlertManager::new(0.8);
         let start = Utc::now() - Duration::hours(1);
         let end = Utc::now();
-        let result = manager.get_anomalies_in_range(start, end).unwrap();
+        let result = manager.get_anomalies_in_range(start, end).await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_anomalies_in_range_returns_matching_alerts() {
+        let manager = AlertManager::new(0.8);
+        let anomaly = make_anomaly(AnomalyType::TrafficSpike, "default", "web");
+
+        // Send an alert to populate history
+        manager.send_alerts(&[anomaly]).await.unwrap();
+
+        // Query a range that includes now
+        let start = Utc::now() - Duration::minutes(1);
+        let end = Utc::now() + Duration::minutes(1);
+        let result = manager.get_anomalies_in_range(start, end).await.unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].context.namespace, "default");
+    }
+
+    #[tokio::test]
+    async fn test_get_anomalies_in_range_excludes_out_of_range() {
+        let manager = AlertManager::new(0.8);
+        let anomaly = make_anomaly(AnomalyType::TrafficSpike, "default", "web");
+        manager.send_alerts(&[anomaly]).await.unwrap();
+
+        // Query a range in the past that won't include the alert
+        let start = Utc::now() - Duration::hours(2);
+        let end = Utc::now() - Duration::hours(1);
+        let result = manager.get_anomalies_in_range(start, end).await.unwrap();
         assert!(result.is_empty());
     }
 

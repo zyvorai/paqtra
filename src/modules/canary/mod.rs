@@ -307,13 +307,49 @@ impl CanaryEngine {
         canary.current_split = TrafficSplit::new_split(new_canary_pct);
 
         tracing::info!(
-            "📈 Progressing canary {}: {}% canary traffic",
+            "Progressing canary {}: {}% canary traffic",
             canary.name,
             new_canary_pct
         );
 
-        // In real implementation, update Cilium L7 policies here
-        // This would modify CiliumNetworkPolicy to adjust traffic weights
+        // Annotate the Kubernetes service with the desired traffic weight.
+        // Cilium's L7 load balancer reads the `cilium.io/canary-weight`
+        // annotation to split traffic between stable and canary backends.
+        let annotation = format!(
+            "cilium.io/canary-weight={},cilium.io/canary-version={}",
+            new_canary_pct, canary.canary_version
+        );
+        let svc = &canary.service_name;
+        let ns = &canary.namespace;
+
+        match std::process::Command::new("kubectl")
+            .args(["annotate", "service", svc, "-n", ns, &annotation, "--overwrite"])
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                tracing::info!(
+                    service = svc,
+                    namespace = ns,
+                    canary_pct = new_canary_pct,
+                    "Updated service annotation for canary traffic split"
+                );
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                tracing::warn!(
+                    service = svc,
+                    namespace = ns,
+                    error = %stderr,
+                    "kubectl annotate failed; canary split updated locally only"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "kubectl not available; canary split updated locally only"
+                );
+            }
+        }
 
         Ok(())
     }

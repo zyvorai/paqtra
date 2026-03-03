@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 // Zero-Trust Policy Engine - Never trust, always verify
 use anyhow::Result;
+use std::collections::{HashMap, HashSet};
 
 use super::{Effort, Priority, RecommendationCategory, SecurityRecommendation};
 
@@ -34,22 +35,221 @@ impl ZeroTrustEngine {
             policies.push(self.generate_default_deny(namespace));
         }
 
-        // 2. Explicit allow policies based on observed traffic
-        // In real implementation: query traffic patterns
+        // 2. Baseline allow policies (DNS + K8s API are always needed)
         policies.push(self.generate_allow_dns(namespace));
         policies.push(self.generate_allow_kubernetes_api(namespace));
 
-        // 3. Micro-segmentation policies
+        // 3. Discover observed traffic patterns and generate allow policies
+        let observed = self.discover_traffic_patterns(namespace);
+        for policy in observed {
+            policies.push(policy);
+        }
+
+        // 4. Micro-segmentation policies
         if self.micro_segmentation {
             policies.extend(self.generate_micro_segmentation(namespace)?);
         }
 
-        // 4. Identity-based policies
+        // 5. Identity-based policies
         if self.identity_based {
             policies.extend(self.generate_identity_policies(namespace)?);
         }
 
         Ok(policies)
+    }
+
+    /// Discover observed traffic patterns using `hubble observe` and generate
+    /// explicit allow policies for each unique src_label → dst_label:port flow.
+    ///
+    /// Falls back to `kubectl get pods` label enumeration if Hubble is unavailable.
+    fn discover_traffic_patterns(&self, namespace: &str) -> Vec<String> {
+        // Try Hubble first: observe recent flows in the namespace
+        if let Some(policies) = self.discover_via_hubble(namespace) {
+            if !policies.is_empty() {
+                return policies;
+            }
+        }
+
+        // Fallback: enumerate pod labels via kubectl to generate service-to-service policies
+        self.discover_via_kubectl(namespace)
+    }
+
+    /// Query `hubble observe` for recent flows and group by
+    /// (source app label → destination app label, dest port).
+    fn discover_via_hubble(&self, namespace: &str) -> Option<Vec<String>> {
+        let output = std::process::Command::new("hubble")
+            .args([
+                "observe",
+                "--namespace", namespace,
+                "--verdict", "FORWARDED",
+                "--last", "500",
+                "-o", "json",
+            ])
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // Collect unique (src_app, dst_app, dst_port, protocol) tuples
+        // Each line is a JSON flow object from Hubble
+        let mut edges: HashSet<(String, String, String, String)> = HashSet::new();
+
+        for line in stdout.lines() {
+            if let Ok(flow) = serde_json::from_str::<serde_json::Value>(line) {
+                let src_app = flow
+                    .pointer("/source/labels")
+                    .and_then(|l| l.as_array())
+                    .and_then(|labels| {
+                        labels.iter().find_map(|l| {
+                            l.as_str()
+                                .and_then(|s| s.strip_prefix("k8s:app="))
+                                .map(String::from)
+                        })
+                    });
+                let dst_app = flow
+                    .pointer("/destination/labels")
+                    .and_then(|l| l.as_array())
+                    .and_then(|labels| {
+                        labels.iter().find_map(|l| {
+                            l.as_str()
+                                .and_then(|s| s.strip_prefix("k8s:app="))
+                                .map(String::from)
+                        })
+                    });
+                let dst_port = flow
+                    .pointer("/l4/TCP/destination_port")
+                    .or_else(|| flow.pointer("/l4/UDP/destination_port"))
+                    .and_then(|p| p.as_u64())
+                    .map(|p| p.to_string());
+                let protocol = if flow.pointer("/l4/TCP").is_some() {
+                    "TCP"
+                } else {
+                    "UDP"
+                };
+
+                if let (Some(src), Some(dst), Some(port)) = (src_app, dst_app, dst_port) {
+                    edges.insert((src, dst, port, protocol.to_string()));
+                }
+            }
+        }
+
+        let policies: Vec<String> = edges
+            .iter()
+            .map(|(src, dst, port, proto)| {
+                format!(
+                    r#"apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-{src}-to-{dst}-{port}
+  namespace: {namespace}
+  annotations:
+    zero-trust.cilium-flow/discovered: "true"
+spec:
+  endpointSelector:
+    matchLabels:
+      app: {src}
+  egress:
+  - toEndpoints:
+    - matchLabels:
+        app: {dst}
+    toPorts:
+    - ports:
+      - port: "{port}"
+        protocol: {proto}
+"#
+                )
+            })
+            .collect();
+
+        Some(policies)
+    }
+
+    /// Fallback: enumerate unique `app` labels in the namespace via kubectl
+    /// and generate allow policies between all discovered services on common ports.
+    fn discover_via_kubectl(&self, namespace: &str) -> Vec<String> {
+        let output = match std::process::Command::new("kubectl")
+            .args([
+                "get", "pods", "-n", namespace,
+                "-o", "jsonpath={range .items[*]}{.metadata.labels.app}{\"\\n\"}{end}",
+                "--request-timeout=5s",
+            ])
+            .output()
+        {
+            Ok(o) if o.status.success() => o,
+            _ => return Vec::new(),
+        };
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let apps: Vec<String> = stdout
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(String::from)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        // For each pair of discovered apps, generate a bidirectional allow
+        // on common service ports (80, 443, 8080, 5432, 6379, 3306)
+        let common_ports = ["80", "443", "8080"];
+        let mut policies = Vec::new();
+
+        // Only generate inter-service policies (not self-to-self)
+        let mut seen: HashMap<String, bool> = HashMap::new();
+        for src in &apps {
+            for dst in &apps {
+                if src == dst {
+                    continue;
+                }
+                let key = format!("{}->{}", src, dst);
+                if seen.contains_key(&key) {
+                    continue;
+                }
+                seen.insert(key, true);
+
+                let ports_yaml: String = common_ports
+                    .iter()
+                    .map(|p| format!("      - port: \"{}\"\n        protocol: TCP", p))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                policies.push(format!(
+                    r#"apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-{src}-to-{dst}
+  namespace: {namespace}
+  annotations:
+    zero-trust.cilium-flow/discovered: "true"
+spec:
+  endpointSelector:
+    matchLabels:
+      app: {src}
+  egress:
+  - toEndpoints:
+    - matchLabels:
+        app: {dst}
+    toPorts:
+    - ports:
+{ports_yaml}
+"#
+                ));
+            }
+        }
+
+        if !policies.is_empty() {
+            tracing::info!(
+                namespace,
+                services = apps.len(),
+                policies = policies.len(),
+                "Generated zero-trust policies from kubectl pod discovery"
+            );
+        }
+
+        policies
     }
 
     fn generate_default_deny(&self, namespace: &str) -> String {

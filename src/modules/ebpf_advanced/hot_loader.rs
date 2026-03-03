@@ -108,10 +108,18 @@ impl HotLoader {
         let mut programs = self.loaded_programs.write().await;
 
         if let Some(program) = programs.remove(program_id) {
-            if let Some(_fd) = program.fd {
-                // Close file descriptor
-                // In real implementation: close eBPF program FD
-                tracing::debug!("Closing eBPF program file descriptor");
+            if let Some(fd) = program.fd {
+                if fd >= 0 {
+                    // Safety: fd was obtained from bpf() syscall or Aya and is
+                    // owned by this LoadedProgram. Closing it detaches the
+                    // program from the kernel.
+                    let ret = unsafe { libc::close(fd) };
+                    if ret != 0 {
+                        tracing::warn!(fd, "Failed to close eBPF program file descriptor");
+                    } else {
+                        tracing::debug!(fd, "Closed eBPF program file descriptor");
+                    }
+                }
             }
             tracing::info!("Unloaded program: {}", program_id);
             Ok(())
@@ -172,15 +180,14 @@ impl HotLoader {
             }
         }
 
-        // Stub fallback: log intent but cannot actually load programs
+        // No Aya feature: cannot perform real bpf() syscalls.
+        // Return -1 so callers know no kernel FD was obtained.
         tracing::warn!(
             program_type = ?program_type,
             bytecode_len = bytecode.len(),
-            "STUB: BPF program load requested but no real loader is available. \
+            "BPF program load requested but Aya is not enabled. \
              Build with --features aya-ebpf and run as root for real loading."
         );
-
-        // Return -1 to indicate no real FD was obtained
         Ok(-1)
     }
 
@@ -346,8 +353,24 @@ impl Default for HotLoader {
 
 impl Drop for HotLoader {
     fn drop(&mut self) {
-        tracing::info!("Cleaning up hot-loaded eBPF programs");
-        // In real implementation: unload all programs
+        // Try to close all eBPF program file descriptors.
+        // We use try_write() to avoid blocking in a destructor.
+        if let Ok(mut programs) = self.loaded_programs.try_write() {
+            let count = programs.len();
+            for (id, program) in programs.drain() {
+                if let Some(fd) = program.fd {
+                    if fd >= 0 {
+                        let ret = unsafe { libc::close(fd) };
+                        if ret != 0 {
+                            tracing::warn!(fd, program_id = %id, "Failed to close FD during cleanup");
+                        }
+                    }
+                }
+            }
+            tracing::info!(count, "Cleaned up hot-loaded eBPF programs");
+        } else {
+            tracing::warn!("Could not acquire lock during HotLoader cleanup; FDs may leak");
+        }
     }
 }
 

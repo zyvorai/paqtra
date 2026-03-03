@@ -187,7 +187,7 @@ int packet_filter(struct xdp_md *ctx) {
     return XDP_PASS;
 "#,
                     destination = destination,
-                    ifindex = Self::interface_name_to_placeholder_ifindex(destination),
+                    ifindex = Self::resolve_ifindex(destination),
                 ));
             }
             FilterAction::ModifyPacket { .. } => {
@@ -240,11 +240,11 @@ int packet_filter(struct xdp_md *ctx) {
             }
         }
 
-        // Stub fallback
+        // No Aya feature: register the filter without kernel loading
         tracing::info!(
             program_id = %program_id,
             source_len = program.len(),
-            "Filter program registered (stub — build with --features aya-ebpf for real loading)"
+            "Filter program registered (build with --features aya-ebpf for real XDP loading)"
         );
         Ok(program_id)
     }
@@ -299,18 +299,34 @@ int packet_filter(struct xdp_md *ctx) {
         Ok(())
     }
 
-    /// Derive a deterministic placeholder ifindex from the interface name.
-    /// In a real deployment the ifindex would be resolved at program load time
-    /// via IFNAMESIZE / if_nametoindex(); this hash provides a stable value
-    /// for generated source code.
-    fn interface_name_to_placeholder_ifindex(name: &str) -> u32 {
-        // Simple hash to produce a stable, non-zero ifindex placeholder
+    /// Resolve a network interface name to its kernel ifindex.
+    ///
+    /// Uses `libc::if_nametoindex()` for real resolution. Falls back to a
+    /// deterministic hash when the interface doesn't exist on the current
+    /// host (e.g. during code generation for a remote target).
+    fn resolve_ifindex(name: &str) -> u32 {
+        // Try real resolution first
+        if let Ok(c_name) = std::ffi::CString::new(name) {
+            let idx = unsafe { libc::if_nametoindex(c_name.as_ptr()) };
+            if idx > 0 {
+                tracing::debug!(interface = name, ifindex = idx, "Resolved interface index");
+                return idx;
+            }
+        }
+
+        // Fallback: deterministic hash for cross-compilation or
+        // when the interface doesn't exist on the build host
         let mut hash: u32 = 5381;
         for b in name.bytes() {
             hash = hash.wrapping_mul(33).wrapping_add(b as u32);
         }
-        // Ensure non-zero (valid ifindex range)
-        (hash % 65534) + 1
+        let fallback = (hash % 65534) + 1;
+        tracing::debug!(
+            interface = name,
+            ifindex = fallback,
+            "Interface not found locally, using hash-based placeholder"
+        );
+        fallback
     }
 
     fn protocol_to_number(&self, protocol: &str) -> u8 {

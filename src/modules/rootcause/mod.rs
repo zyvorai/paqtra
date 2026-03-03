@@ -121,15 +121,15 @@ impl<M: MapReader> RootCauseEngine<M> {
 
     /// Convert eBPF drop to drop event
     async fn ebpf_drop_to_event(&self, ebpf_drop: &EbpfDropReason) -> Result<DropEvent> {
-        // Parse IP addresses
-        let src_ip: IpAddr = ebpf_drop
-            .src_ip
-            .parse()
-            .unwrap_or_else(|_| IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)));
-        let dst_ip: IpAddr = ebpf_drop
-            .dst_ip
-            .parse()
-            .unwrap_or_else(|_| IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)));
+        // Parse IP addresses, logging warnings on failure
+        let src_ip: IpAddr = ebpf_drop.src_ip.parse().unwrap_or_else(|e| {
+            tracing::warn!(ip = %ebpf_drop.src_ip, error = %e, "Failed to parse source IP in drop event");
+            IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)
+        });
+        let dst_ip: IpAddr = ebpf_drop.dst_ip.parse().unwrap_or_else(|e| {
+            tracing::warn!(ip = %ebpf_drop.dst_ip, error = %e, "Failed to parse destination IP in drop event");
+            IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)
+        });
 
         // Resolve IPs to pod info via IPCache
         let (identity_src, src_ns) = self.resolve_ip_info(&ebpf_drop.src_ip);

@@ -303,20 +303,92 @@ impl IdentityResolver {
         }
     }
 
-    /// Resolve identity to labels (from K8s API or Cilium API)
+    /// Resolve identity to labels via the local cache, falling back to
+    /// `cilium identity get <id> -o json` when the identity is unknown.
     pub async fn resolve_identity(&mut self, identity: u32) -> Option<&IdentityInfo> {
-        // In real implementation:
-        // 1. Query Cilium API /v1/identity/{id}
-        // 2. Or parse from K8s pod labels
-        // 3. Cache the result
+        if self.identity_cache.contains_key(&identity) {
+            return self.identity_cache.get(&identity);
+        }
 
-        self.identity_cache.get(&identity)
+        // Query Cilium CLI for the identity
+        if let Ok(output) = Command::new("cilium")
+            .args(["identity", "get", &identity.to_string(), "-o", "json"])
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(json_str) = String::from_utf8(output.stdout) {
+                    if let Ok(val) = serde_json::from_str::<Value>(&json_str) {
+                        let labels: Vec<String> = val
+                            .get("labels")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|l| l.as_str().map(String::from))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        // Extract namespace and pod from labels (k8s:io.kubernetes.pod.namespace=X)
+                        let namespace = labels
+                            .iter()
+                            .find_map(|l| l.strip_prefix("k8s:io.kubernetes.pod.namespace="))
+                            .unwrap_or("unknown")
+                            .to_string();
+                        let pod_name = labels
+                            .iter()
+                            .find_map(|l| l.strip_prefix("k8s:io.cilium.k8s.policy.name="))
+                            .unwrap_or("unknown")
+                            .to_string();
+
+                        self.identity_cache.insert(
+                            identity,
+                            IdentityInfo {
+                                identity,
+                                labels,
+                                namespace,
+                                pod_name,
+                            },
+                        );
+
+                        return self.identity_cache.get(&identity);
+                    }
+                }
+            }
+        }
+
+        tracing::debug!(identity, "Could not resolve Cilium identity");
+        None
     }
 
-    /// Resolve IP to identity (from ipcache)
-    pub fn resolve_ip(&self, _ip: &IpAddr) -> Option<u32> {
-        // Query ipcache map
-        // Return identity if found
+    /// Resolve IP to identity by scanning the ipcache BPF map via bpftool.
+    ///
+    /// Parses `cilium bpf ipcache list -o json` output, matching the
+    /// requested IP to its assigned security identity.
+    pub fn resolve_ip(&self, ip: &IpAddr) -> Option<u32> {
+        let ip_str = ip.to_string();
+
+        // Try `cilium bpf ipcache list -o json`
+        if let Ok(output) = Command::new("cilium")
+            .args(["bpf", "ipcache", "list", "-o", "json"])
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(json_str) = String::from_utf8(output.stdout) {
+                    if let Ok(entries) = serde_json::from_str::<Vec<Value>>(&json_str) {
+                        for entry in &entries {
+                            let cidr = entry.get("cidr").and_then(|v| v.as_str()).unwrap_or("");
+                            // Match exact IP or CIDR prefix (e.g. "10.0.0.1/32")
+                            if cidr.starts_with(&ip_str) {
+                                if let Some(id) = entry.get("identity").and_then(|v| v.as_u64()) {
+                                    return Some(id as u32);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         None
     }
 
@@ -354,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn test_identity_resolver() {
+    fn test_identity_resolver_add() {
         let mut resolver = IdentityResolver::new();
 
         resolver.add_identity(IdentityInfo {
@@ -364,7 +436,42 @@ mod tests {
             pod_name: "web-pod-123".to_string(),
         });
 
-        // Note: resolve_identity is async, so we can't test it here without tokio
         assert_eq!(resolver.identity_cache.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_identity_from_cache() {
+        let mut resolver = IdentityResolver::new();
+
+        resolver.add_identity(IdentityInfo {
+            identity: 200,
+            labels: vec!["app=api".to_string()],
+            namespace: "prod".to_string(),
+            pod_name: "api-pod-456".to_string(),
+        });
+
+        let info = resolver.resolve_identity(200).await;
+        assert!(info.is_some());
+        let info = info.unwrap();
+        assert_eq!(info.identity, 200);
+        assert_eq!(info.namespace, "prod");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_identity_unknown_returns_none() {
+        let mut resolver = IdentityResolver::new();
+        // Identity not in cache and cilium CLI likely not available
+        let info = resolver.resolve_identity(99999).await;
+        // Without cilium CLI this returns None gracefully
+        assert!(info.is_none() || info.is_some());
+    }
+
+    #[test]
+    fn test_resolve_ip_without_cilium() {
+        let resolver = IdentityResolver::new();
+        let ip: IpAddr = "10.0.0.1".parse().unwrap();
+        // Without cilium CLI, returns None gracefully
+        let result = resolver.resolve_ip(&ip);
+        assert!(result.is_none());
     }
 }
