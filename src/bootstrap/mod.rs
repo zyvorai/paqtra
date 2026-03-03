@@ -103,7 +103,7 @@ impl BootstrapManager {
         let namespaces = self.k8s_client.list_namespaces().await?;
 
         for ns in &namespaces {
-            // Skip kube-system for now
+            // Skip kube-system to avoid interfering with system components
             if ns == "kube-system" {
                 continue;
             }

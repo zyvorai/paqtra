@@ -174,7 +174,7 @@ impl HotLoader {
                 Err(e) => {
                     tracing::warn!(
                         error = %e,
-                        "Aya loader failed, falling back to stub"
+                        "Aya loader failed, program will not be kernel-loaded"
                     );
                 }
             }
@@ -419,7 +419,7 @@ mod tests {
         let result = loader
             .load_program(vec![0x00, 0x01, 0x02, 0x03, 0x04])
             .await;
-        // The stub loader still accepts it with a warning
+        // Without Aya, non-ELF bytecode is accepted with a warning
         assert!(result.is_ok());
     }
 

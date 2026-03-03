@@ -88,11 +88,15 @@ impl TuiApp {
 
         let flow = &self.flows[self.selected_flow_index];
 
-        // Parse port from type or use 0
-        let port = flow
-            .r#type
-            .split(':')
-            .nth(1)
+        // Parse protocol and port from the flow type field (e.g. "TCP:80", "UDP:53")
+        let type_parts: Vec<&str> = flow.r#type.split(':').collect();
+        let protocol = type_parts
+            .first()
+            .copied()
+            .filter(|p| matches!(*p, "TCP" | "UDP" | "ICMP"))
+            .unwrap_or("TCP");
+        let port = type_parts
+            .get(1)
             .and_then(|s| s.parse::<u16>().ok())
             .unwrap_or(0);
 
@@ -103,7 +107,7 @@ impl TuiApp {
             &flow.destination.namespace,
             &flow.destination.pod_name,
             port,
-            "TCP", // Default to TCP for now
+            protocol,
             &flow.verdict,
         ) {
             Ok(exp) => exp,

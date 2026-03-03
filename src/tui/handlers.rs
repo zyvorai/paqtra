@@ -3,6 +3,14 @@
 use super::app::{ModuleContainer, TuiApp};
 use crossterm::event::KeyCode;
 
+/// Root-cause fix names displayed in the UI and used for navigation bounds.
+const FIX_NAMES: &[&str] = &[
+    "allow-8080 policy",
+    "DNS egress policy",
+    "MTU adjustment",
+    "DB access policy",
+];
+
 /// Handle keyboard events for the AutoPolicy tab (tab index 6).
 /// Returns `true` if the key was handled, `false` otherwise.
 pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
@@ -398,9 +406,8 @@ pub(crate) fn handle_rootcause_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             true
         }
         KeyCode::Down if !app.show_help && app.selected_tab == 7 => {
-            // Navigate fixes down
-            // Note: Max 4 fixes (hardcoded for now)
-            if app.selected_fix_index < 3 {
+            // Navigate fixes down (matches fix_names array in 'a' handler)
+            if app.selected_fix_index < FIX_NAMES.len() - 1 {
                 app.selected_fix_index += 1;
             }
             true
@@ -410,15 +417,12 @@ pub(crate) fn handle_rootcause_keys(app: &mut TuiApp, key: KeyCode) -> bool {
         {
             // Trigger fix application confirmation
             app.fix_apply_confirmation = true;
-            let fix_names = [
-                "allow-8080 policy",
-                "DNS egress policy",
-                "MTU adjustment",
-                "DB access policy",
-            ];
+            let name = FIX_NAMES
+                .get(app.selected_fix_index)
+                .unwrap_or(&"unknown");
             app.set_status_message(&format!(
                 "Apply fix '{}'? Press 'y' to confirm, 'n' to cancel",
-                fix_names[app.selected_fix_index]
+                name
             ));
             true
         }

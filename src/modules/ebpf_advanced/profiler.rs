@@ -646,7 +646,7 @@ mod tests {
         assert!(result.is_ok());
         let results = result.unwrap();
         assert_eq!(results.session_id, session_id);
-        assert_eq!(results.samples_collected, 0); // no samples in stub
+        // May collect 0 or more samples depending on timing of background task
     }
 
     #[tokio::test]

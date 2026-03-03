@@ -13,6 +13,10 @@ pub struct SimulationEngine {
     /// Simulated policy changes
     simulated_policies: Vec<PolicyDecision>,
 
+    /// Tracks which PolicyDecision entries were added by each named policy,
+    /// enabling removal by policy name.
+    policy_sources: HashMap<String, Vec<PolicyDecision>>,
+
     /// Execution trace for debugging
     trace: Vec<String>,
 }
@@ -22,6 +26,7 @@ impl SimulationEngine {
         Self {
             policies: current_policies.clone(),
             simulated_policies: current_policies,
+            policy_sources: HashMap::new(),
             trace: Vec::new(),
         }
     }
@@ -97,6 +102,16 @@ impl SimulationEngine {
 
         // Parse YAML to extract basic policy rules
         if let Ok(yaml_value) = serde_yaml::from_str::<serde_yaml::Value>(policy_yaml) {
+            // Extract policy name for tracking
+            let policy_name = yaml_value
+                .get("metadata")
+                .and_then(|m| m.get("name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or("unnamed");
+            let source_key = format!("{}/{}", namespace, policy_name);
+
+            let mut added = Vec::new();
+
             // Extract ingress/egress rules from CiliumNetworkPolicy
             if let Some(spec) = yaml_value.get("spec") {
                 // Process ingress rules
@@ -121,13 +136,15 @@ impl SimulationEngine {
                                                             |s| if s == "UDP" { 17u8 } else { 6u8 },
                                                         )
                                                         .unwrap_or(6);
-                                                    self.simulated_policies.push(PolicyDecision {
+                                                    let decision = PolicyDecision {
                                                         src_identity: 0,
                                                         dst_identity: 0,
                                                         port,
                                                         protocol,
                                                         verdict: PolicyVerdict::Allow,
-                                                    });
+                                                    };
+                                                    self.simulated_policies.push(decision.clone());
+                                                    added.push(decision);
                                                 }
                                             }
                                         }
@@ -138,20 +155,38 @@ impl SimulationEngine {
                     }
                 }
             }
+
+            if !added.is_empty() {
+                self.policy_sources.insert(source_key, added);
+            }
         }
 
         Ok(())
     }
 
-    /// Remove a policy
+    /// Remove a policy by name, undoing the entries it added.
     fn remove_policy(&mut self, policy_name: &str, namespace: &str) -> Result<()> {
+        let source_key = format!("{}/{}", namespace, policy_name);
         self.trace
-            .push(format!("Removing policy: {}/{}", namespace, policy_name));
+            .push(format!("Removing policy: {}", source_key));
 
-        // Remove policies that were added for this policy name
-        // Since we don't track policy names in PolicyDecision, remove by marking
         let before = self.simulated_policies.len();
-        self.simulated_policies.retain(|_| true); // Keep all for now - real impl would track by name
+
+        if let Some(to_remove) = self.policy_sources.remove(&source_key) {
+            // Remove matching entries from simulated_policies
+            for target in &to_remove {
+                if let Some(idx) = self.simulated_policies.iter().position(|p| {
+                    p.src_identity == target.src_identity
+                        && p.dst_identity == target.dst_identity
+                        && p.port == target.port
+                        && p.protocol == target.protocol
+                        && p.verdict == target.verdict
+                }) {
+                    self.simulated_policies.remove(idx);
+                }
+            }
+        }
+
         self.trace.push(format!(
             "Policies: {} → {}",
             before,

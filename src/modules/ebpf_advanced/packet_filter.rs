@@ -234,7 +234,7 @@ int packet_filter(struct xdp_md *ctx) {
                 Err(e) => {
                     tracing::warn!(
                         error = %e,
-                        "Aya XDP loading failed, using stub"
+                        "Aya XDP loading failed, filter registered without kernel loading"
                     );
                 }
             }
