@@ -49,6 +49,13 @@ dev: ## TUI development workflow: fmt + check + build
 
 all: fmt clippy test build ## Run all TUI checks and build
 
+# ─── Aya eBPF ─────────────────────────────────────────────────────────
+build-aya: ## Build with Aya eBPF support
+	cargo build --release --features aya-ebpf
+
+test-aya: ## Run tests including Aya feature
+	cargo test --features aya-ebpf
+
 # ─── Web API ───────────────────────────────────────────────────────────
 api-build: ## Build web-api release binary
 	cd web-api && cargo build --release

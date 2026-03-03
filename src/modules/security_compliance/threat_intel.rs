@@ -87,11 +87,7 @@ impl ThreatIntelligence {
                 }
 
                 // Check for known bogon/reserved ranges
-                if v4.is_broadcast()
-                    || v4.is_unspecified()
-                    || octets[0] == 0
-                    || octets[0] == 127
-                {
+                if v4.is_broadcast() || v4.is_unspecified() || octets[0] == 0 || octets[0] == 127 {
                     sources.push("reserved/bogon address".to_string());
                     return (ThreatLevel::Suspicious, vec![], sources, 0.7);
                 }
@@ -121,10 +117,7 @@ impl ThreatIntelligence {
     }
 
     /// Assess a domain for known threat patterns
-    fn assess_domain(
-        &self,
-        domain: &str,
-    ) -> (ThreatLevel, Vec<ThreatCategory>, Vec<String>, f64) {
+    fn assess_domain(&self, domain: &str) -> (ThreatLevel, Vec<ThreatCategory>, Vec<String>, f64) {
         let mut categories = Vec::new();
         let mut sources = Vec::new();
         let lower = domain.to_lowercase();
@@ -155,8 +148,10 @@ impl ThreatIntelligence {
         }
 
         // Check for homograph attack patterns (mixed script)
-        if lower.chars().any(|c| !c.is_ascii()) {
-            sources.push("Domain contains non-ASCII characters (possible homograph attack)".to_string());
+        if !lower.is_ascii() {
+            sources.push(
+                "Domain contains non-ASCII characters (possible homograph attack)".to_string(),
+            );
             categories.push(ThreatCategory::Phishing);
             return (ThreatLevel::Suspicious, categories, sources, 0.5);
         }
@@ -255,7 +250,10 @@ mod tests {
         assert!(!assessment.sources.is_empty());
         // Should mention local heuristic analysis
         assert!(
-            assessment.sources.iter().any(|s| s.contains("heuristic") || s.contains("RFC1918")),
+            assessment
+                .sources
+                .iter()
+                .any(|s| s.contains("heuristic") || s.contains("RFC1918")),
             "Sources should describe analysis method, got: {:?}",
             assessment.sources
         );

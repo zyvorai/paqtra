@@ -198,8 +198,8 @@ impl K8sClient {
         patch_json: &str,
     ) -> Result<()> {
         let api: Api<ConfigMap> = Api::namespaced(self.client.clone(), namespace);
-        let patch: serde_json::Value = serde_json::from_str(patch_json)
-            .context("Invalid JSON patch for configmap")?;
+        let patch: serde_json::Value =
+            serde_json::from_str(patch_json).context("Invalid JSON patch for configmap")?;
         api.patch(
             name,
             &kube::api::PatchParams::apply("cilium-flow"),

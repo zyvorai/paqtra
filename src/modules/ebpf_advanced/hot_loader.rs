@@ -158,18 +158,180 @@ impl HotLoader {
             );
         }
 
-        // In production: use bpf() syscall via libbpf-rs or aya crate.
-        // This stub logs intent but cannot actually load programs without
-        // CAP_BPF / CAP_SYS_ADMIN privileges and a real BPF loader.
+        // Try Aya loader first when feature is enabled
+        #[cfg(feature = "aya-ebpf")]
+        {
+            match self.load_with_aya(bytecode, program_type) {
+                Ok(fd) => return Ok(fd),
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "Aya loader failed, falling back to stub"
+                    );
+                }
+            }
+        }
+
+        // Stub fallback: log intent but cannot actually load programs
         tracing::warn!(
             program_type = ?program_type,
             bytecode_len = bytecode.len(),
             "STUB: BPF program load requested but no real loader is available. \
-             In production, use libbpf-rs or aya to perform the bpf() syscall."
+             Build with --features aya-ebpf and run as root for real loading."
         );
 
         // Return -1 to indicate no real FD was obtained
         Ok(-1)
+    }
+
+    /// Load a BPF program using the Aya crate.
+    ///
+    /// This performs real bpf() syscalls and requires CAP_BPF/root.
+    #[cfg(feature = "aya-ebpf")]
+    fn load_with_aya(&self, bytecode: &[u8], program_type: &super::ProgramType) -> Result<i32> {
+        use aya::programs::Program;
+        use aya::Ebpf;
+
+        let mut bpf = Ebpf::load(bytecode)?;
+
+        // Find a program matching the requested type, then load it via
+        // the concrete variant's `.load()` method.
+        let target_name = bpf
+            .programs()
+            .find(|(_, p)| {
+                matches!(
+                    (program_type, p),
+                    (super::ProgramType::XDP, Program::Xdp(_))
+                        | (super::ProgramType::TC, Program::SchedClassifier(_))
+                        | (super::ProgramType::Kprobe, Program::KProbe(_))
+                        | (super::ProgramType::Tracepoint, Program::TracePoint(_))
+                        | (super::ProgramType::PerfEvent, Program::PerfEvent(_))
+                )
+            })
+            .map(|(name, _)| name.to_string());
+
+        let name = target_name.ok_or_else(|| {
+            anyhow::anyhow!("No {:?} program section found in ELF object", program_type)
+        })?;
+
+        let prog = bpf
+            .program_mut(&name)
+            .ok_or_else(|| anyhow::anyhow!("Program '{}' not found after enumeration", name))?;
+
+        // Each variant has its own `.load()` method
+        match prog {
+            Program::Xdp(xdp) => {
+                xdp.load()?;
+                tracing::info!(program = %name, "XDP program loaded via Aya");
+            }
+            Program::SchedClassifier(tc) => {
+                tc.load()?;
+                tracing::info!(program = %name, "TC program loaded via Aya");
+            }
+            Program::KProbe(kprobe) => {
+                kprobe.load()?;
+                tracing::info!(program = %name, "Kprobe program loaded via Aya");
+            }
+            Program::TracePoint(tp) => {
+                tp.load()?;
+                tracing::info!(program = %name, "Tracepoint program loaded via Aya");
+            }
+            Program::PerfEvent(pe) => {
+                pe.load()?;
+                tracing::info!(program = %name, "PerfEvent program loaded via Aya");
+            }
+            _ => {
+                anyhow::bail!("Unsupported program type: {:?}", program_type);
+            }
+        }
+
+        Ok(0)
+    }
+
+    /// Attach a loaded program to its target.
+    ///
+    /// This handles the attachment logic for different program types
+    /// and attach points.
+    #[cfg(feature = "aya-ebpf")]
+    pub fn attach_program(
+        &self,
+        bpf: &mut aya::Ebpf,
+        program_name: &str,
+        attach_point: &super::AttachPoint,
+    ) -> Result<()> {
+        use aya::programs::{tc, Program, XdpFlags};
+
+        let program = bpf
+            .program_mut(program_name)
+            .ok_or_else(|| anyhow::anyhow!("Program '{}' not found", program_name))?;
+
+        match attach_point {
+            super::AttachPoint::NetInterface {
+                interface,
+                direction,
+            } => match program {
+                Program::Xdp(xdp) => {
+                    xdp.attach(interface, XdpFlags::default())?;
+                    tracing::info!(
+                        program = program_name,
+                        interface = %interface,
+                        "XDP program attached"
+                    );
+                }
+                Program::SchedClassifier(tc_prog) => {
+                    let _ = tc::qdisc_add_clsact(interface);
+                    let tc_direction = match direction {
+                        super::Direction::Egress => tc::TcAttachType::Egress,
+                        _ => tc::TcAttachType::Ingress,
+                    };
+                    tc_prog.attach(interface, tc_direction)?;
+                    tracing::info!(
+                        program = program_name,
+                        interface = %interface,
+                        direction = ?direction,
+                        "TC program attached"
+                    );
+                }
+                _ => anyhow::bail!(
+                    "Program type mismatch: expected XDP or TC for NetInterface attach point"
+                ),
+            },
+            super::AttachPoint::KernelFunction { function } => match program {
+                Program::KProbe(kprobe) => {
+                    kprobe.attach(function, 0)?;
+                    tracing::info!(
+                        program = program_name,
+                        function = %function,
+                        "Kprobe attached"
+                    );
+                }
+                _ => anyhow::bail!(
+                    "Program type mismatch: expected KProbe for KernelFunction attach point"
+                ),
+            },
+            super::AttachPoint::Tracepoint { category, name } => match program {
+                Program::TracePoint(tp) => {
+                    tp.attach(category, name)?;
+                    tracing::info!(
+                        program = program_name,
+                        category = %category,
+                        name = %name,
+                        "Tracepoint attached"
+                    );
+                }
+                _ => anyhow::bail!(
+                    "Program type mismatch: expected TracePoint for Tracepoint attach point"
+                ),
+            },
+            _ => {
+                tracing::warn!(
+                    attach_point = ?attach_point,
+                    "Attach point not yet supported for Aya"
+                );
+            }
+        }
+
+        Ok(())
     }
 }
 

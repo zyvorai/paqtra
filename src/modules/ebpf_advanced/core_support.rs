@@ -147,9 +147,7 @@ impl COREHandler {
             }
         }
 
-        anyhow::bail!(
-            "clang not found. Install clang (>= 11) for eBPF program compilation."
-        )
+        anyhow::bail!("clang not found. Install clang (>= 11) for eBPF program compilation.")
     }
 
     fn check_btf_support() -> Result<bool> {

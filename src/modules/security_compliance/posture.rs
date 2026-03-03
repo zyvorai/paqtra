@@ -77,8 +77,13 @@ impl SecurityPosture {
         }
 
         // Check for default-deny policies
-        let (ok, output) =
-            Self::kubectl_check(&["get", "ciliumnetworkpolicies", "--all-namespaces", "-o", "json"]);
+        let (ok, output) = Self::kubectl_check(&[
+            "get",
+            "ciliumnetworkpolicies",
+            "--all-namespaces",
+            "-o",
+            "json",
+        ]);
         if ok && output.contains("endpointSelector") {
             score += 30.0;
             findings.push("Endpoint-level segmentation policies found".to_string());
@@ -119,8 +124,7 @@ impl SecurityPosture {
         let mut findings = Vec::new();
 
         // Check RBAC roles
-        let (ok, output) =
-            Self::kubectl_check(&["get", "roles", "--all-namespaces", "-o", "name"]);
+        let (ok, output) = Self::kubectl_check(&["get", "roles", "--all-namespaces", "-o", "name"]);
         let role_count = if ok {
             output.lines().filter(|l| !l.is_empty()).count()
         } else {
@@ -141,7 +145,10 @@ impl SecurityPosture {
             "jsonpath={.items[?(@.roleRef.name=='cluster-admin')].subjects[*].name}",
         ]);
         if ok {
-            let admins: Vec<&str> = output.split_whitespace().filter(|s| !s.is_empty()).collect();
+            let admins: Vec<&str> = output
+                .split_whitespace()
+                .filter(|s| !s.is_empty())
+                .collect();
             if admins.len() <= 2 {
                 score += 40.0;
                 findings.push(format!(
@@ -411,10 +418,7 @@ impl SecurityPosture {
         dimensions.insert("Monitoring & Logging".to_string(), self.assess_monitoring());
         dimensions.insert("Compliance".to_string(), self.assess_compliance());
 
-        let overall_score = dimensions
-            .values()
-            .map(|d| d.score * d.weight)
-            .sum::<f64>();
+        let overall_score = dimensions.values().map(|d| d.score * d.weight).sum::<f64>();
 
         // Determine trend (would compare with stored previous score in production)
         let trend = if overall_score > 70.0 {
@@ -425,10 +429,7 @@ impl SecurityPosture {
             ScoreTrend::Declining
         };
 
-        tracing::info!(
-            "Security posture score: {:.1}/100",
-            overall_score
-        );
+        tracing::info!("Security posture score: {:.1}/100", overall_score);
 
         Ok(SecurityScore {
             overall_score,

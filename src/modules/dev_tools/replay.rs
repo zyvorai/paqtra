@@ -32,21 +32,14 @@ impl RequestReplay {
         // Load the recording file
         let recording_path = std::path::Path::new(&config.recording_file);
         if !recording_path.exists() {
-            anyhow::bail!(
-                "Recording file not found: {}",
-                config.recording_file
-            );
+            anyhow::bail!("Recording file not found: {}", config.recording_file);
         }
 
         let content = tokio::fs::read_to_string(&config.recording_file).await?;
 
         // Parse HAR format
-        let har: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to parse recording file as JSON: {}",
-                e
-            )
-        })?;
+        let har: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse recording file as JSON: {}", e))?;
 
         // Extract entries from HAR log
         let entries = har
@@ -75,7 +68,8 @@ impl RequestReplay {
         let mut replay_total_ms = 0.0f64;
 
         // Resolve target service address
-        let target_base = Self::resolve_service_url(&config.target_service, &config.namespace).await;
+        let target_base =
+            Self::resolve_service_url(&config.target_service, &config.namespace).await;
 
         for (idx, entry) in entries.iter().enumerate() {
             let request = match entry.get("request") {
@@ -87,10 +81,7 @@ impl RequestReplay {
                 .get("method")
                 .and_then(|m| m.as_str())
                 .unwrap_or("GET");
-            let url = request
-                .get("url")
-                .and_then(|u| u.as_str())
-                .unwrap_or("");
+            let url = request.get("url").and_then(|u| u.as_str()).unwrap_or("");
 
             // Extract path from original URL and build target URL
             let path = url
@@ -102,10 +93,7 @@ impl RequestReplay {
             let target_url = format!("{}{}", target_base, path);
 
             // Record original timing
-            let orig_time = entry
-                .get("time")
-                .and_then(|t| t.as_f64())
-                .unwrap_or(0.0);
+            let orig_time = entry.get("time").and_then(|t| t.as_f64()).unwrap_or(0.0);
             original_total_ms += orig_time;
 
             // Apply speed multiplier delay
@@ -140,7 +128,7 @@ impl RequestReplay {
                     let status_code = String::from_utf8_lossy(&output.stdout);
                     let status: u16 = status_code.trim().parse().unwrap_or(0);
 
-                    if status >= 200 && status < 400 {
+                    if (200..400).contains(&status) {
                         successful += 1;
                     } else {
                         failed += 1;
@@ -174,8 +162,7 @@ impl RequestReplay {
             Some(super::TimingComparison {
                 original_duration_ms: original_total_ms,
                 replay_duration_ms: replay_total_ms,
-                difference_percentage: ((replay_total_ms - original_total_ms)
-                    / original_total_ms)
+                difference_percentage: ((replay_total_ms - original_total_ms) / original_total_ms)
                     * 100.0,
             })
         } else {
@@ -287,10 +274,7 @@ mod tests {
         };
         let result = replay.replay(config).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("not found"));
+        assert!(result.unwrap_err().to_string().contains("not found"));
     }
 
     #[tokio::test]

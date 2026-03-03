@@ -152,7 +152,10 @@ async fn test_healer_stats_after_run() {
 
     // The healer's internal stats should match
     let internal_stats = healer.stats();
-    assert_eq!(internal_stats.problems_detected, run_stats.problems_detected);
+    assert_eq!(
+        internal_stats.problems_detected,
+        run_stats.problems_detected
+    );
 }
 
 #[tokio::test]

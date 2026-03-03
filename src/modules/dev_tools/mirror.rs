@@ -98,9 +98,7 @@ impl EnvironmentMirror {
 
             if output.status.success() {
                 let json_str = String::from_utf8_lossy(&output.stdout);
-                if let Ok(mut resources) =
-                    serde_json::from_str::<serde_json::Value>(&json_str)
-                {
+                if let Ok(mut resources) = serde_json::from_str::<serde_json::Value>(&json_str) {
                     // Modify namespace in each resource and apply to target
                     if let Some(items) = resources.get_mut("items").and_then(|i| i.as_array_mut()) {
                         for item in items {
@@ -238,11 +236,7 @@ mod tests {
         // When kubectl is not available, returns error about kubectl.
         match result {
             Ok(id) => assert!(!id.is_empty()),
-            Err(e) => assert!(
-                e.to_string().contains("kubectl"),
-                "Unexpected error: {}",
-                e
-            ),
+            Err(e) => assert!(e.to_string().contains("kubectl"), "Unexpected error: {}", e),
         }
     }
 

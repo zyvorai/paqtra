@@ -7,6 +7,7 @@ use anyhow::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::aya_reader::AyaMapReader;
 use super::bpf_syscall::BpfToolReader;
 use super::{
     ConntrackEntry, DropReason, IPCacheEntry, LoadBalancerEntry, MapReader, PolicyDecision,
@@ -21,13 +22,25 @@ pub struct CiliumMapReader {
     #[allow(dead_code)]
     bpf_path: PathBuf,
     available_maps: Vec<String>,
+    aya_reader: Option<AyaMapReader>,
     bpftool: Option<BpfToolReader>,
 }
 
 impl CiliumMapReader {
     /// Create a new Cilium map reader
+    ///
+    /// Attempts to initialize backends in order of preference:
+    /// 1. AyaMapReader (native, fastest — via `aya::maps`)
+    /// 2. BpfToolReader (CLI-based, spawns processes)
+    /// 3. Empty results (graceful degradation)
     pub fn new() -> Result<Self> {
         let bpf_path = PathBuf::from(BPF_FS_PATH).join(CILIUM_PATH);
+
+        // Try to initialize Aya reader (native map access)
+        let aya_reader = AyaMapReader::new().ok();
+        if aya_reader.is_some() {
+            tracing::info!("Aya map reader initialized — native BPF map access available");
+        }
 
         // Try to initialize bpftool reader
         let bpftool = BpfToolReader::new().ok();
@@ -46,9 +59,9 @@ impl CiliumMapReader {
             Vec::new()
         };
 
-        if available_maps.is_empty() && bpftool.is_none() {
+        if available_maps.is_empty() && bpftool.is_none() && aya_reader.is_none() {
             eprintln!(
-                "Warning: BPF filesystem not found at {:?} and bpftool not available. \
+                "Warning: BPF filesystem not found at {:?} and no BPF reader available. \
                  Some features will be limited.",
                 bpf_path
             );
@@ -57,6 +70,7 @@ impl CiliumMapReader {
         Ok(Self {
             bpf_path,
             available_maps,
+            aya_reader,
             bpftool,
         })
     }
@@ -69,9 +83,12 @@ impl CiliumMapReader {
             Vec::new()
         };
 
+        let aya_reader = AyaMapReader::with_path(bpf_path.clone()).ok();
+
         Ok(Self {
             bpf_path,
             available_maps,
+            aya_reader,
             bpftool: None,
         })
     }
@@ -131,58 +148,88 @@ impl CiliumMapReader {
 
 impl MapReader for CiliumMapReader {
     fn read_policy_map(&self) -> Result<Vec<PolicyDecision>> {
-        // Use bpftool if available (preferred method)
+        // Try Aya reader first (native, fastest)
+        if let Some(ref aya) = self.aya_reader {
+            if let Ok(entries) = aya.read_policy_map() {
+                if !entries.is_empty() {
+                    return Ok(entries);
+                }
+            }
+        }
+
+        // Fall back to bpftool
         if let Some(tool) = &self.bpftool {
             return tool.read_cilium_policy_map();
         }
 
-        // Fallback: Not implemented for direct filesystem access yet
-        // This would require parsing pinned maps directly
         Ok(Vec::new())
     }
 
     fn read_conntrack_map(&self) -> Result<Vec<ConntrackEntry>> {
-        // Use bpftool if available (preferred method)
+        if let Some(ref aya) = self.aya_reader {
+            if let Ok(entries) = aya.read_conntrack_map() {
+                if !entries.is_empty() {
+                    return Ok(entries);
+                }
+            }
+        }
+
         if let Some(tool) = &self.bpftool {
             return tool.read_cilium_ct_map();
         }
 
-        // Fallback: Not implemented for direct filesystem access yet
         Ok(Vec::new())
     }
 
     fn read_lb_map(&self) -> Result<Vec<LoadBalancerEntry>> {
-        // Use bpftool if available (preferred method)
+        if let Some(ref aya) = self.aya_reader {
+            if let Ok(entries) = aya.read_lb_map() {
+                if !entries.is_empty() {
+                    return Ok(entries);
+                }
+            }
+        }
+
         if let Some(tool) = &self.bpftool {
             return tool.read_cilium_lb_map();
         }
 
-        // Fallback: Not implemented for direct filesystem access yet
         Ok(Vec::new())
     }
 
     fn read_ipcache_map(&self) -> Result<Vec<IPCacheEntry>> {
-        // Use bpftool if available (preferred method)
+        if let Some(ref aya) = self.aya_reader {
+            if let Ok(entries) = aya.read_ipcache_map() {
+                if !entries.is_empty() {
+                    return Ok(entries);
+                }
+            }
+        }
+
         if let Some(tool) = &self.bpftool {
             return tool.read_cilium_ipcache();
         }
 
-        // Fallback: Not implemented for direct filesystem access yet
         Ok(Vec::new())
     }
 
     fn read_drop_map(&self) -> Result<Vec<DropReason>> {
-        // Use bpftool if available (preferred method)
+        if let Some(ref aya) = self.aya_reader {
+            if let Ok(entries) = aya.read_drop_map() {
+                if !entries.is_empty() {
+                    return Ok(entries);
+                }
+            }
+        }
+
         if let Some(tool) = &self.bpftool {
-            // Read metrics map and convert to drop reasons
             let metrics = tool.read_cilium_metrics()?;
 
             let mut drops = Vec::new();
             for (reason, count) in metrics {
-                // Create a drop reason entry for each type with count > 0
                 if count > 0 {
                     drops.push(DropReason {
-                        src_ip: "0.0.0.0".to_string(), // Metrics map doesn't have flow info
+                        src_ip: "0.0.0.0".to_string(),
                         dst_ip: "0.0.0.0".to_string(),
                         port: 0,
                         protocol: 0,
@@ -195,7 +242,6 @@ impl MapReader for CiliumMapReader {
             return Ok(drops);
         }
 
-        // Fallback: Not implemented for direct filesystem access yet
         Ok(Vec::new())
     }
 }

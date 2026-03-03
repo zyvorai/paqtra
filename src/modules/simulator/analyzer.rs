@@ -315,10 +315,9 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
 
             // Analyze ingress: find flows where this identity is the destination
             let mut ingress_counts: HashMap<(u32, u16, u8), usize> = HashMap::new();
-            for f in flow_results
-                .iter()
-                .filter(|f| f.dst_identity == identity && f.changed && f.after == PolicyVerdict::Deny)
-            {
+            for f in flow_results.iter().filter(|f| {
+                f.dst_identity == identity && f.changed && f.after == PolicyVerdict::Deny
+            }) {
                 *ingress_counts
                     .entry((f.src_identity, f.port, f.protocol))
                     .or_insert(0) += 1;

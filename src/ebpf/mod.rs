@@ -9,16 +9,28 @@
 /// - Drop reasons
 use anyhow::Result;
 
+pub mod aya_events;
+pub mod aya_reader;
+pub mod aya_writer;
 pub mod bpf_parser;
 pub mod bpf_reader;
 pub mod bpf_syscall;
+pub mod capabilities;
 pub mod enriched_reader;
 pub mod parser;
 pub mod reader;
 
 // Re-export for convenience
+#[allow(unused_imports)]
+pub use aya_events::{BpfEvent, BpfEventData, BpfEventStream, BpfEventType};
+#[allow(unused_imports)]
+pub use aya_reader::AyaMapReader;
+#[allow(unused_imports)]
+pub use aya_writer::AyaMapWriter;
 pub use bpf_reader::CiliumMapReader;
 pub use bpf_syscall::IdentityInfo;
+#[allow(unused_imports)]
+pub use capabilities::{BpfCapabilities, BpfCapability};
 pub use enriched_reader::{EnrichedConnectionInfo, EnrichedDropInfo, EnrichedMapReader};
 
 /// Policy decision from eBPF map
@@ -197,6 +209,51 @@ pub trait MapReader {
     fn read_drop_map(&self) -> Result<Vec<DropReason>>;
 }
 
+/// eBPF Map Writer trait for modifying Cilium BPF maps
+#[allow(dead_code)]
+pub trait MapWriter {
+    /// Write or update a policy entry
+    fn write_policy_entry(
+        &self,
+        src_identity: u32,
+        dst_port: u16,
+        protocol: u8,
+        allow: bool,
+    ) -> Result<()>;
+
+    /// Delete a policy entry
+    fn delete_policy_entry(&self, src_identity: u32, dst_port: u16, protocol: u8) -> Result<()>;
+
+    /// Write a load balancer service→backend mapping
+    fn write_lb_entry(
+        &self,
+        service_ip: std::net::Ipv4Addr,
+        service_port: u16,
+        backend_ip: std::net::Ipv4Addr,
+        backend_port: u16,
+        slot: u16,
+    ) -> Result<()>;
+
+    /// Delete a load balancer entry
+    fn delete_lb_entry(
+        &self,
+        service_ip: std::net::Ipv4Addr,
+        service_port: u16,
+        slot: u16,
+    ) -> Result<()>;
+
+    /// Write an IP cache entry (IP → identity mapping)
+    fn write_ipcache_entry(
+        &self,
+        ip: std::net::Ipv4Addr,
+        identity: u32,
+        prefix_len: u32,
+    ) -> Result<()>;
+
+    /// Zero all entries in the metrics/drop map
+    fn clear_metrics(&self) -> Result<()>;
+}
+
 /// Metrics from eBPF
 #[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
@@ -309,10 +366,7 @@ impl MapReader for MockMapReader {
                 ip: "10.0.0.3".to_string(),
                 identity: 300,
                 namespace: "kube-system".to_string(),
-                labels: vec![
-                    "app=coredns".to_string(),
-                    "k8s-app=kube-dns".to_string(),
-                ],
+                labels: vec!["app=coredns".to_string(), "k8s-app=kube-dns".to_string()],
             },
             IPCacheEntry {
                 ip: "10.0.0.4".to_string(),

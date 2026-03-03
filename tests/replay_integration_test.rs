@@ -119,10 +119,7 @@ async fn test_replay_capture_with_mock_data() {
 
     // MockMapReader returns realistic conntrack data
     let captured = engine.capture().await.unwrap();
-    assert!(
-        captured >= 0,
-        "Capture count should be non-negative"
-    );
+    assert!(captured >= 0, "Capture count should be non-negative");
 }
 
 #[tokio::test]
@@ -156,7 +153,10 @@ async fn test_replay_stop_recording_returns_metadata() {
     assert_eq!(recording.name, "test-capture");
     assert!(recording.start_time > 0);
     assert!(recording.end_time >= recording.start_time);
-    assert!(recording.flow_count >= 0, "Flow count should be non-negative");
+    assert!(
+        recording.flow_count >= 0,
+        "Flow count should be non-negative"
+    );
 }
 
 #[tokio::test]

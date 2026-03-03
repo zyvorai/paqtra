@@ -337,14 +337,8 @@ spec:
                     backend = %backend,
                     "Rebalancing backend by restarting pod"
                 );
-                let _ = self
-                    .k8s_client
-                    .restart_rollout(ns, pod_prefix)
-                    .await;
-                println!(
-                    "✔ Rebalanced backend {} for service {}",
-                    backend, service
-                );
+                let _ = self.k8s_client.restart_rollout(ns, pod_prefix).await;
+                println!("✔ Rebalanced backend {} for service {}", backend, service);
             }
             FixAction::TuneConntrack { node, new_timeout } => {
                 // Apply conntrack tuning via a configmap update or sysctl

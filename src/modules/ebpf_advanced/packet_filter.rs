@@ -217,10 +217,81 @@ int packet_filter(struct xdp_md *ctx) {
         Ok(program)
     }
 
-    async fn load_filter_program(&self, _program: &str) -> Result<String> {
-        // In real implementation: compile and load eBPF program
-        tracing::info!("Loading filter program");
-        Ok(uuid::Uuid::new_v4().to_string())
+    async fn load_filter_program(&self, program: &str) -> Result<String> {
+        let program_id = uuid::Uuid::new_v4().to_string();
+
+        #[cfg(feature = "aya-ebpf")]
+        {
+            // Try to compile and load via Aya
+            match self.compile_and_load_with_aya(program).await {
+                Ok(()) => {
+                    tracing::info!(
+                        program_id = %program_id,
+                        "Filter program compiled and loaded via Aya"
+                    );
+                    return Ok(program_id);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "Aya XDP loading failed, using stub"
+                    );
+                }
+            }
+        }
+
+        // Stub fallback
+        tracing::info!(
+            program_id = %program_id,
+            source_len = program.len(),
+            "Filter program registered (stub — build with --features aya-ebpf for real loading)"
+        );
+        Ok(program_id)
+    }
+
+    /// Compile eBPF C source and load the resulting XDP program via Aya.
+    #[cfg(feature = "aya-ebpf")]
+    async fn compile_and_load_with_aya(&self, source: &str) -> Result<()> {
+        use aya::Ebpf;
+
+        // Step 1: Write source to a temporary file and compile with clang
+        let temp_dir = tempfile::TempDir::new()?;
+        let source_path = temp_dir.path().join("filter.c");
+        let object_path = temp_dir.path().join("filter.o");
+
+        std::fs::write(&source_path, source)?;
+
+        let clang_output = std::process::Command::new("clang")
+            .args([
+                "-O2",
+                "-target",
+                "bpf",
+                "-c",
+                source_path.to_str().unwrap(),
+                "-o",
+                object_path.to_str().unwrap(),
+            ])
+            .output()?;
+
+        if !clang_output.status.success() {
+            let stderr = String::from_utf8_lossy(&clang_output.stderr);
+            anyhow::bail!("clang compilation failed: {}", stderr);
+        }
+
+        // Step 2: Load the compiled ELF with Aya
+        let bytecode = std::fs::read(&object_path)?;
+        let mut bpf = Ebpf::load(&bytecode)?;
+
+        // Step 3: Find and load the XDP program
+        for (name, program) in bpf.programs_mut() {
+            if let aya::programs::Program::Xdp(xdp) = program {
+                xdp.load()?;
+                tracing::info!(program = %name, "XDP filter program loaded via Aya");
+                return Ok(());
+            }
+        }
+
+        anyhow::bail!("No XDP program section found in compiled filter")
     }
 
     async fn unload_filter_program(&self, program_id: &str) -> Result<()> {

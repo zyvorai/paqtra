@@ -140,7 +140,7 @@ impl ComplianceEngine {
                     name: "Apply secure configurations to all system components".to_string(),
                     status: ControlState::Compliant,
                     evidence: vec![
-                        "Service accounts do not auto-mount tokens by default".to_string(),
+                        "Service accounts do not auto-mount tokens by default".to_string()
                     ],
                 }
             } else {
@@ -175,8 +175,10 @@ impl ComplianceEngine {
                 "jsonpath={.items[?(@.roleRef.name=='cluster-admin')].subjects[*].name}",
             ]);
             if ok {
-                let admin_bindings: Vec<&str> =
-                    output.split_whitespace().filter(|s| !s.is_empty()).collect();
+                let admin_bindings: Vec<&str> = output
+                    .split_whitespace()
+                    .filter(|s| !s.is_empty())
+                    .collect();
                 if admin_bindings.len() <= 2 {
                     ControlStatus {
                         control_id: "PCI-DSS-7.1".to_string(),
@@ -237,8 +239,13 @@ impl ComplianceEngine {
             ]);
             let policy_count = if ok { output.lines().count() } else { 0 };
 
-            let (rbac_ok, rbac_out) =
-                Self::kubectl_check(&["get", "roles,rolebindings", "--all-namespaces", "-o", "name"]);
+            let (rbac_ok, rbac_out) = Self::kubectl_check(&[
+                "get",
+                "roles,rolebindings",
+                "--all-namespaces",
+                "-o",
+                "name",
+            ]);
             let rbac_count = if rbac_ok { rbac_out.lines().count() } else { 0 };
 
             if policy_count > 0 && rbac_count > 0 {
@@ -309,9 +316,7 @@ impl ComplianceEngine {
                         control_id: "CC7.2".to_string(),
                         name: "System monitoring and anomaly detection".to_string(),
                         status: ControlState::Compliant,
-                        evidence: vec![
-                            "Hubble relay is running in kube-system".to_string(),
-                        ],
+                        evidence: vec!["Hubble relay is running in kube-system".to_string()],
                     }
                 } else {
                     ControlStatus {
@@ -356,7 +361,7 @@ impl ComplianceEngine {
                     name: "Access control - unique user identification".to_string(),
                     status: ControlState::Compliant,
                     evidence: vec![
-                        "Identity-based network policies are enforced via Cilium".to_string(),
+                        "Identity-based network policies are enforced via Cilium".to_string()
                     ],
                 }
             } else {
@@ -365,7 +370,7 @@ impl ComplianceEngine {
                     name: "Access control - unique user identification".to_string(),
                     status: ControlState::NonCompliant,
                     evidence: vec![
-                        "No Cilium identity-based policies found for access control".to_string(),
+                        "No Cilium identity-based policies found for access control".to_string()
                     ],
                 }
             }
@@ -394,7 +399,7 @@ impl ComplianceEngine {
                     name: "Transmission security - encryption of ePHI in transit".to_string(),
                     status: ControlState::Compliant,
                     evidence: vec![
-                        "TLS termination policies found in Cilium network policies".to_string(),
+                        "TLS termination policies found in Cilium network policies".to_string()
                     ],
                 }
             } else {
@@ -487,7 +492,10 @@ impl ComplianceEngine {
             let mut compliant = true;
 
             if policy_count > 0 {
-                evidence.push(format!("{} network policies for access control", policy_count));
+                evidence.push(format!(
+                    "{} network policies for access control",
+                    policy_count
+                ));
             } else {
                 evidence.push("No network policies found - access controls missing".to_string());
                 compliant = false;
@@ -552,7 +560,9 @@ impl ComplianceEngine {
             if policy_count > 0 && ns_count > 1 {
                 ControlStatus {
                     control_id: "A.13.1.1".to_string(),
-                    name: "Network controls - networks managed and controlled to protect information".to_string(),
+                    name:
+                        "Network controls - networks managed and controlled to protect information"
+                            .to_string(),
                     status: ControlState::Compliant,
                     evidence: vec![format!(
                         "{} network policies across {} namespaces provide micro-segmentation",
@@ -562,7 +572,9 @@ impl ComplianceEngine {
             } else {
                 ControlStatus {
                     control_id: "A.13.1.1".to_string(),
-                    name: "Network controls - networks managed and controlled to protect information".to_string(),
+                    name:
+                        "Network controls - networks managed and controlled to protect information"
+                            .to_string(),
                     status: ControlState::NonCompliant,
                     evidence: vec![format!(
                         "Insufficient segmentation: {} policies, {} namespaces",
@@ -603,8 +615,9 @@ impl ComplianceEngine {
             if policy_count > 0 {
                 ControlStatus {
                     control_id: "PR.AC-5".to_string(),
-                    name: "Network integrity is protected (e.g., network segregation, segmentation)"
-                        .to_string(),
+                    name:
+                        "Network integrity is protected (e.g., network segregation, segmentation)"
+                            .to_string(),
                     status: ControlState::Compliant,
                     evidence: vec![format!(
                         "{} network policies enforce network segmentation",
@@ -614,11 +627,12 @@ impl ComplianceEngine {
             } else {
                 ControlStatus {
                     control_id: "PR.AC-5".to_string(),
-                    name: "Network integrity is protected (e.g., network segregation, segmentation)"
-                        .to_string(),
+                    name:
+                        "Network integrity is protected (e.g., network segregation, segmentation)"
+                            .to_string(),
                     status: ControlState::NonCompliant,
                     evidence: vec![
-                        "No network policies found - segmentation is not enforced".to_string(),
+                        "No network policies found - segmentation is not enforced".to_string()
                     ],
                 }
             }

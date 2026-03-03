@@ -52,7 +52,10 @@ fn test_mock_reader_conntrack_map_has_data() {
 fn test_mock_reader_lb_map_has_data() {
     let reader = MockMapReader;
     let entries = reader.read_lb_map().unwrap();
-    assert!(!entries.is_empty(), "MockMapReader LB map should have realistic test data");
+    assert!(
+        !entries.is_empty(),
+        "MockMapReader LB map should have realistic test data"
+    );
 }
 
 #[test]
@@ -69,7 +72,10 @@ fn test_mock_reader_ipcache_map_has_data() {
 fn test_mock_reader_drop_map_has_data() {
     let reader = MockMapReader;
     let entries = reader.read_drop_map().unwrap();
-    assert!(!entries.is_empty(), "MockMapReader drop map should have realistic test data");
+    assert!(
+        !entries.is_empty(),
+        "MockMapReader drop map should have realistic test data"
+    );
 }
 
 // ---------------------------------------------------------------------------
