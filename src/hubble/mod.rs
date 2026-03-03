@@ -42,7 +42,7 @@ impl HubbleClient {
 pub async fn start_port_forward() -> Result<u16> {
     let port: u16 = 4245;
 
-    let child = Command::new("cilium")
+    let mut child = Command::new("cilium")
         .args(["hubble", "port-forward"])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -52,6 +52,9 @@ pub async fn start_port_forward() -> Result<u16> {
     // Store the child PID so we can clean up on exit
     let pid = child.id();
     tracing::info!("Started hubble port-forward (pid: {})", pid);
+
+    // Take stderr handle so we can read it if the process exits unexpectedly
+    let mut child_stderr = child.stderr.take();
 
     // Register a cleanup handler for the port-forward process
     let pid_for_cleanup = pid;
@@ -77,10 +80,37 @@ pub async fn start_port_forward() -> Result<u16> {
         }
     });
 
-    // Wait and verify the port-forward is actually listening
-    let max_retries = 10;
+    // Wait and verify the port-forward is actually listening.
+    // Port-forward setup involves discovering the hubble-relay pod and
+    // establishing a tunnel, which can take 15-30s on real clusters.
+    let max_retries = 30;
     for attempt in 1..=max_retries {
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        // Check if the child process has exited unexpectedly
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let mut stderr_output = String::new();
+                if let Some(ref mut stderr) = child_stderr {
+                    use std::io::Read;
+                    let _ = stderr.read_to_string(&mut stderr_output);
+                }
+                let detail = if stderr_output.trim().is_empty() {
+                    format!("exit status: {}", status)
+                } else {
+                    stderr_output.trim().to_string()
+                };
+                anyhow::bail!(
+                    "Hubble port-forward process exited unexpectedly: {}. \
+                     Ensure Hubble relay is running (cilium hubble enable).",
+                    detail
+                );
+            }
+            Ok(None) => {} // Still running, try connecting
+            Err(e) => {
+                tracing::warn!("Failed to check port-forward process status: {}", e);
+            }
+        }
 
         // Try connecting to verify port-forward is ready
         match tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)).await {
