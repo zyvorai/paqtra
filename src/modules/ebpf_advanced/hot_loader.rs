@@ -122,14 +122,24 @@ impl HotLoader {
 
     /// List all loaded programs
     pub fn list_programs(&self) -> Vec<ProgramInfo> {
-        // Would need async access in real implementation
-        vec![] // Stub for now
+        match self.loaded_programs.try_read() {
+            Ok(programs) => programs.values().map(|p| p.info.clone()).collect(),
+            Err(_) => {
+                tracing::debug!("Could not acquire read lock on loaded_programs; returning empty");
+                vec![]
+            }
+        }
     }
 
     /// Get program statistics
-    pub fn get_stats(&self, _program_id: &str) -> Option<ProgramStats> {
-        // Would need async access in real implementation
-        None // Stub for now
+    pub fn get_stats(&self, program_id: &str) -> Option<ProgramStats> {
+        match self.loaded_programs.try_read() {
+            Ok(programs) => programs.get(program_id).map(|p| p.stats.clone()),
+            Err(_) => {
+                tracing::debug!("Could not acquire read lock on loaded_programs");
+                None
+            }
+        }
     }
 
     fn load_bpf_program(&self, bytecode: &[u8], program_type: &super::ProgramType) -> Result<i32> {

@@ -313,7 +313,28 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
                 })
                 .collect();
 
-            if blocked_egress.is_empty() {
+            // Analyze ingress: find flows where this identity is the destination
+            let mut ingress_counts: HashMap<(u32, u16, u8), usize> = HashMap::new();
+            for f in flow_results
+                .iter()
+                .filter(|f| f.dst_identity == identity && f.changed && f.after == PolicyVerdict::Deny)
+            {
+                *ingress_counts
+                    .entry((f.src_identity, f.port, f.protocol))
+                    .or_insert(0) += 1;
+            }
+
+            let blocked_ingress: Vec<_> = ingress_counts
+                .into_iter()
+                .map(|((from_identity, port, protocol), count)| IngressBlocked {
+                    from_identity,
+                    port,
+                    protocol,
+                    flow_count: count,
+                })
+                .collect();
+
+            if blocked_egress.is_empty() && blocked_ingress.is_empty() {
                 continue;
             }
 
@@ -323,7 +344,7 @@ impl<'a, M: MapReader> ImpactAnalyzer<'a, M> {
                 namespace: resolved_namespace,
                 labels: resolved_labels,
                 blocked_egress,
-                blocked_ingress: Vec::new(), // Ingress analysis requires tracking inbound flows separately; not yet implemented
+                blocked_ingress,
             });
         }
 

@@ -30,22 +30,126 @@ impl COREHandler {
             return self.compile_without_core(program).await;
         }
 
+        // Return pre-compiled bytecode if available
+        if let Some(ref bytecode) = program.compiled_bytecode {
+            tracing::info!(
+                "Using pre-compiled bytecode for {} ({} bytes)",
+                program.name,
+                bytecode.len()
+            );
+            return Ok(bytecode.clone());
+        }
+
+        if program.source_code.is_empty() {
+            anyhow::bail!(
+                "Cannot compile {}: no source code or pre-compiled bytecode",
+                program.name
+            );
+        }
+
         tracing::info!("Compiling {} with CO-RE support", program.name);
-
-        // In real implementation:
-        // 1. Parse BTF from kernel
-        // 2. Compile with clang -g -O2 -target bpf -D__TARGET_ARCH_x86
-        // 3. Generate relocations for struct offsets
-        // 4. Enable BTF and CO-RE features
-
-        // For now, return stub
-        Ok(vec![])
+        self.invoke_clang(&program.source_code, &program.name, true)
+            .await
     }
 
     async fn compile_without_core(&self, program: &EBPFProgram) -> Result<Vec<u8>> {
+        // Return pre-compiled bytecode if available
+        if let Some(ref bytecode) = program.compiled_bytecode {
+            tracing::info!(
+                "Using pre-compiled bytecode for {} ({} bytes)",
+                program.name,
+                bytecode.len()
+            );
+            return Ok(bytecode.clone());
+        }
+
+        if program.source_code.is_empty() {
+            anyhow::bail!(
+                "Cannot compile {}: no source code or pre-compiled bytecode",
+                program.name
+            );
+        }
+
         tracing::info!("Compiling {} without CO-RE", program.name);
-        // Standard compilation without CO-RE
-        Ok(vec![])
+        self.invoke_clang(&program.source_code, &program.name, false)
+            .await
+    }
+
+    /// Invoke clang to compile eBPF source code to bytecode
+    async fn invoke_clang(
+        &self,
+        source_code: &str,
+        name: &str,
+        core_enabled: bool,
+    ) -> Result<Vec<u8>> {
+        // Check for clang
+        let clang = Self::find_clang()?;
+
+        // Write source to temp file
+        let tmp_dir = std::env::temp_dir();
+        let src_path = tmp_dir.join(format!("{}.c", name));
+        let obj_path = tmp_dir.join(format!("{}.o", name));
+
+        std::fs::write(&src_path, source_code)?;
+
+        let mut cmd = tokio::process::Command::new(&clang);
+        cmd.args(["-g", "-O2", "-target", "bpf"]);
+
+        if core_enabled {
+            cmd.args(["-D__TARGET_ARCH_x86", "-mcpu=v3"]);
+        }
+
+        cmd.arg("-c")
+            .arg(src_path.to_str().unwrap())
+            .arg("-o")
+            .arg(obj_path.to_str().unwrap());
+
+        let output = cmd.output().await?;
+
+        // Clean up source file
+        let _ = std::fs::remove_file(&src_path);
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let _ = std::fs::remove_file(&obj_path);
+            anyhow::bail!("clang compilation failed for {}: {}", name, stderr);
+        }
+
+        // Read compiled object
+        let bytecode = std::fs::read(&obj_path)?;
+        let _ = std::fs::remove_file(&obj_path);
+
+        tracing::info!(
+            "Successfully compiled {} ({} bytes, CO-RE={})",
+            name,
+            bytecode.len(),
+            core_enabled
+        );
+        Ok(bytecode)
+    }
+
+    /// Find clang binary, preferring versioned clang for BPF compilation
+    fn find_clang() -> Result<String> {
+        // Try versioned clang first (higher versions preferred for BPF)
+        for version in (11..=19).rev() {
+            let name = format!("clang-{}", version);
+            if let Ok(output) = std::process::Command::new("which").arg(&name).output() {
+                if output.status.success() {
+                    return Ok(name);
+                }
+            }
+        }
+
+        // Try plain clang
+        if let Ok(output) = std::process::Command::new("which").arg("clang").output() {
+            if output.status.success() {
+                return Ok("clang".to_string());
+            }
+        }
+
+        anyhow::bail!(
+            "clang not found. Install clang (>= 11) for eBPF program compilation."
+        )
     }
 
     fn check_btf_support() -> Result<bool> {
@@ -162,24 +266,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_compile_with_core_no_btf_falls_back() {
+    async fn test_compile_with_core_uses_precompiled_bytecode() {
         let handler = COREHandler::default(); // btf_available = false
         let program = super::super::EBPFProgram {
             id: "test-id".to_string(),
             name: "test-prog".to_string(),
             program_type: super::super::ProgramType::XDP,
-            source_code: "// test".to_string(),
-            compiled_bytecode: None,
+            source_code: String::new(),
+            compiled_bytecode: Some(vec![0x7f, b'E', b'L', b'F']),
             attach_point: super::super::AttachPoint::NetInterface {
                 interface: "eth0".to_string(),
                 direction: super::super::Direction::Ingress,
             },
             co_re_enabled: true,
         };
-        // Without BTF, compile_with_core falls back to compile_without_core
+        // Without BTF, falls back to compile_without_core, which returns pre-compiled bytecode
         let result = handler.compile_with_core(&program).await;
         assert!(result.is_ok());
-        // Returns empty stub bytecode
-        assert!(result.unwrap().is_empty());
+        assert_eq!(result.unwrap(), vec![0x7f, b'E', b'L', b'F']);
+    }
+
+    #[tokio::test]
+    async fn test_compile_without_source_or_bytecode_fails() {
+        let handler = COREHandler::default();
+        let program = super::super::EBPFProgram {
+            id: "test-id".to_string(),
+            name: "test-prog".to_string(),
+            program_type: super::super::ProgramType::XDP,
+            source_code: String::new(),
+            compiled_bytecode: None,
+            attach_point: super::super::AttachPoint::NetInterface {
+                interface: "eth0".to_string(),
+                direction: super::super::Direction::Ingress,
+            },
+            co_re_enabled: false,
+        };
+        let result = handler.compile_with_core(&program).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("no source code"));
     }
 }

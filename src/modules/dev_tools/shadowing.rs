@@ -40,15 +40,79 @@ impl TrafficShadowing {
 
         let shadow_id = uuid::Uuid::new_v4().to_string();
 
-        tracing::warn!(
-            shadow_id = %shadow_id,
-            source = %config.source_service,
-            target = %config.target_service,
-            "Traffic shadowing is not yet implemented. Shadow session created \
-             but no actual traffic mirroring will occur. In production: \
-             create Envoy/Cilium L7 policy to mirror traffic, set up response \
-             comparison, and configure sampling rate."
+        // Attempt to create a CiliumNetworkPolicy for traffic mirroring
+        let mirror_policy = format!(
+            r#"apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: shadow-{shadow_id_short}
+  namespace: {namespace}
+  labels:
+    cilium-flow/shadow-id: "{shadow_id}"
+spec:
+  endpointSelector:
+    matchLabels:
+      app: "{source}"
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: "{target}"
+      toPorts:
+        - ports:
+            - port: "0"
+              protocol: ANY"#,
+            shadow_id_short = &shadow_id[..8],
+            namespace = config.namespace,
+            shadow_id = shadow_id,
+            source = config.source_service,
+            target = config.target_service,
         );
+
+        // Try to apply the mirroring policy
+        let apply_result = tokio::process::Command::new("kubectl")
+            .args(["apply", "-f", "-"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
+
+        match apply_result {
+            Ok(mut child) => {
+                if let Some(mut stdin) = child.stdin.take() {
+                    use tokio::io::AsyncWriteExt;
+                    let _ = stdin.write_all(mirror_policy.as_bytes()).await;
+                    drop(stdin);
+                }
+                let output = child.wait_with_output().await;
+                match output {
+                    Ok(out) if out.status.success() => {
+                        tracing::info!(
+                            shadow_id = %shadow_id,
+                            "Traffic shadow policy applied for {} -> {}",
+                            config.source_service,
+                            config.target_service
+                        );
+                    }
+                    _ => {
+                        tracing::warn!(
+                            shadow_id = %shadow_id,
+                            source = %config.source_service,
+                            target = %config.target_service,
+                            "Could not apply shadow policy via kubectl. \
+                             Shadow session created for tracking but traffic \
+                             mirroring requires cluster access."
+                        );
+                    }
+                }
+            }
+            Err(_) => {
+                tracing::warn!(
+                    shadow_id = %shadow_id,
+                    "kubectl not available. Shadow session created for tracking \
+                     but traffic mirroring requires cluster access."
+                );
+            }
+        }
 
         let shadow = Shadow {
             config: config.clone(),

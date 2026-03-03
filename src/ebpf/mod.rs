@@ -225,19 +225,135 @@ impl MapReader for MockMapReader {
     }
 
     fn read_conntrack_map(&self) -> Result<Vec<ConntrackEntry>> {
-        Ok(vec![])
+        Ok(vec![
+            ConntrackEntry {
+                src_ip: "10.0.0.1".to_string(),
+                dst_ip: "10.0.0.2".to_string(),
+                src_port: 45678,
+                dst_port: 80,
+                protocol: 6,
+                state: ConntrackState::Established,
+                packets: 150,
+                bytes: 48000,
+                last_seen: 1700000000,
+            },
+            ConntrackEntry {
+                src_ip: "10.0.0.3".to_string(),
+                dst_ip: "10.0.0.4".to_string(),
+                src_port: 52000,
+                dst_port: 443,
+                protocol: 6,
+                state: ConntrackState::Established,
+                packets: 320,
+                bytes: 128000,
+                last_seen: 1700000010,
+            },
+            ConntrackEntry {
+                src_ip: "10.0.0.1".to_string(),
+                dst_ip: "10.96.0.10".to_string(),
+                src_port: 39000,
+                dst_port: 53,
+                protocol: 17,
+                state: ConntrackState::New,
+                packets: 2,
+                bytes: 128,
+                last_seen: 1700000020,
+            },
+        ])
     }
 
     fn read_lb_map(&self) -> Result<Vec<LoadBalancerEntry>> {
-        Ok(vec![])
+        Ok(vec![
+            LoadBalancerEntry {
+                service_ip: "10.96.0.1".to_string(),
+                service_port: 443,
+                backend_ip: "10.0.1.10".to_string(),
+                backend_port: 8443,
+                weight: 100,
+                active_conns: 12,
+            },
+            LoadBalancerEntry {
+                service_ip: "10.96.0.1".to_string(),
+                service_port: 443,
+                backend_ip: "10.0.1.11".to_string(),
+                backend_port: 8443,
+                weight: 100,
+                active_conns: 8,
+            },
+            LoadBalancerEntry {
+                service_ip: "10.96.100.50".to_string(),
+                service_port: 80,
+                backend_ip: "10.0.2.20".to_string(),
+                backend_port: 8080,
+                weight: 50,
+                active_conns: 5,
+            },
+        ])
     }
 
     fn read_ipcache_map(&self) -> Result<Vec<IPCacheEntry>> {
-        Ok(vec![])
+        Ok(vec![
+            IPCacheEntry {
+                ip: "10.0.0.1".to_string(),
+                identity: 100,
+                namespace: "default".to_string(),
+                labels: vec!["app=web".to_string(), "tier=frontend".to_string()],
+            },
+            IPCacheEntry {
+                ip: "10.0.0.2".to_string(),
+                identity: 200,
+                namespace: "default".to_string(),
+                labels: vec!["app=api".to_string(), "tier=backend".to_string()],
+            },
+            IPCacheEntry {
+                ip: "10.0.0.3".to_string(),
+                identity: 300,
+                namespace: "kube-system".to_string(),
+                labels: vec![
+                    "app=coredns".to_string(),
+                    "k8s-app=kube-dns".to_string(),
+                ],
+            },
+            IPCacheEntry {
+                ip: "10.0.0.4".to_string(),
+                identity: 400,
+                namespace: "production".to_string(),
+                labels: vec![
+                    "app=database".to_string(),
+                    "tier=data".to_string(),
+                    "criticality=high".to_string(),
+                ],
+            },
+        ])
     }
 
     fn read_drop_map(&self) -> Result<Vec<DropReason>> {
-        Ok(vec![])
+        Ok(vec![
+            DropReason {
+                src_ip: "10.0.0.5".to_string(),
+                dst_ip: "10.0.0.2".to_string(),
+                port: 80,
+                protocol: 6,
+                reason: DropReasonType::PolicyDenied,
+                timestamp: 1700000000,
+            },
+            DropReason {
+                src_ip: "10.0.0.6".to_string(),
+                dst_ip: "10.96.0.10".to_string(),
+                port: 53,
+                protocol: 17,
+                reason: DropReasonType::PolicyDenied,
+                timestamp: 1700000005,
+            },
+            DropReason {
+                src_ip: "10.0.0.7".to_string(),
+                dst_ip: "10.0.0.8".to_string(),
+                port: 443,
+                protocol: 6,
+                reason: DropReasonType::NoRoute,
+                timestamp: 1700000010,
+            },
+        ])
     }
 }
 
@@ -308,12 +424,12 @@ mod tests {
     }
 
     #[test]
-    fn test_mock_reader_empty_maps() {
+    fn test_mock_reader_populated_maps() {
         let reader = MockMapReader;
-        assert!(reader.read_conntrack_map().unwrap().is_empty());
-        assert!(reader.read_lb_map().unwrap().is_empty());
-        assert!(reader.read_ipcache_map().unwrap().is_empty());
-        assert!(reader.read_drop_map().unwrap().is_empty());
+        assert!(!reader.read_conntrack_map().unwrap().is_empty());
+        assert!(!reader.read_lb_map().unwrap().is_empty());
+        assert!(!reader.read_ipcache_map().unwrap().is_empty());
+        assert!(!reader.read_drop_map().unwrap().is_empty());
     }
 
     #[test]

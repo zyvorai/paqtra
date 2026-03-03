@@ -39,37 +39,37 @@ fn test_mock_reader_policy_map_entry_has_correct_fields() {
 }
 
 #[test]
-fn test_mock_reader_conntrack_map_returns_empty() {
+fn test_mock_reader_conntrack_map_has_data() {
     let reader = MockMapReader;
     let entries = reader.read_conntrack_map().unwrap();
     assert!(
-        entries.is_empty(),
-        "MockMapReader conntrack map should be empty"
+        !entries.is_empty(),
+        "MockMapReader conntrack map should have realistic test data"
     );
 }
 
 #[test]
-fn test_mock_reader_lb_map_returns_empty() {
+fn test_mock_reader_lb_map_has_data() {
     let reader = MockMapReader;
     let entries = reader.read_lb_map().unwrap();
-    assert!(entries.is_empty(), "MockMapReader LB map should be empty");
+    assert!(!entries.is_empty(), "MockMapReader LB map should have realistic test data");
 }
 
 #[test]
-fn test_mock_reader_ipcache_map_returns_empty() {
+fn test_mock_reader_ipcache_map_has_data() {
     let reader = MockMapReader;
     let entries = reader.read_ipcache_map().unwrap();
     assert!(
-        entries.is_empty(),
-        "MockMapReader IP cache map should be empty"
+        !entries.is_empty(),
+        "MockMapReader IP cache map should have realistic test data"
     );
 }
 
 #[test]
-fn test_mock_reader_drop_map_returns_empty() {
+fn test_mock_reader_drop_map_has_data() {
     let reader = MockMapReader;
     let entries = reader.read_drop_map().unwrap();
-    assert!(entries.is_empty(), "MockMapReader drop map should be empty");
+    assert!(!entries.is_empty(), "MockMapReader drop map should have realistic test data");
 }
 
 // ---------------------------------------------------------------------------

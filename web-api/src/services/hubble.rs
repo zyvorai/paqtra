@@ -51,21 +51,58 @@ impl HubbleService {
         self.get_flows_cli(limit, namespace).await
     }
 
-    /// Attempt to get flows via gRPC (stub -- real impl would use tonic)
+    /// Attempt to get flows via the Hubble relay.
+    ///
+    /// Connects to the Hubble relay address and uses the `hubble` CLI with
+    /// `--server` pointing to the relay. This provides gRPC-equivalent
+    /// functionality without requiring a tonic-generated client.
     async fn get_flows_grpc(
         &self,
-        _limit: usize,
-        _namespace: Option<&str>,
+        limit: usize,
+        namespace: Option<&str>,
     ) -> Result<Vec<Flow>> {
         // Verify connectivity first
         tokio::net::TcpStream::connect(&self.address)
             .await
-            .context("Cannot connect to Hubble relay via gRPC")?;
+            .context("Cannot connect to Hubble relay")?;
 
-        // In a real implementation this would use a tonic-generated Hubble
-        // Observer client. For now we return an error so the CLI fallback
-        // is exercised, unless Hubble is genuinely reachable.
-        anyhow::bail!("gRPC client not yet implemented -- falling back to CLI")
+        // Use hubble CLI with the relay server address
+        let mut cmd = Command::new("hubble");
+        cmd.arg("observe")
+            .arg("--output")
+            .arg("json")
+            .arg("--last")
+            .arg(limit.to_string())
+            .arg("--server")
+            .arg(&self.address);
+
+        if let Some(ns) = namespace {
+            cmd.arg("--namespace").arg(ns);
+        }
+
+        let output = cmd
+            .output()
+            .await
+            .context("Failed to execute hubble CLI with relay server")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!(
+                "hubble observe via relay failed: {}",
+                stderr.trim()
+            );
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let flows: Vec<Flow> = stdout
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .enumerate()
+            .map(|(i, v)| hubble_json_to_flow(i, &v))
+            .collect();
+
+        Ok(flows)
     }
 
     /// Fall back to the `hubble` CLI binary

@@ -135,10 +135,19 @@ impl AdvancedEBPFManager {
         Ok(())
     }
 
-    async fn compile_program(&self, _program: &EBPFProgram) -> Result<Vec<u8>> {
-        // In real implementation: use clang/llvm to compile
-        tracing::warn!("Using stub compiler - in production would compile with clang");
-        Ok(vec![]) // Stub
+    async fn compile_program(&self, program: &EBPFProgram) -> Result<Vec<u8>> {
+        // Return pre-compiled bytecode if available
+        if let Some(ref bytecode) = program.compiled_bytecode {
+            tracing::info!(
+                "Using pre-compiled bytecode for {} ({} bytes)",
+                program.name,
+                bytecode.len()
+            );
+            return Ok(bytecode.clone());
+        }
+
+        // Compile using CO-RE handler (which invokes clang)
+        self.core_handler.compile_with_core(program).await
     }
 
     /// Get list of loaded programs

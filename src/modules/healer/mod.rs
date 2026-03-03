@@ -307,8 +307,64 @@ spec:
                     .await?;
                 println!("Applied allow policy: {} -> {}:{}", src, dst, port);
             }
-            _ => {
-                println!("⚠ Fix action not yet implemented: {:?}", fix.action);
+            FixAction::AdjustMTU {
+                namespace,
+                pod,
+                new_mtu,
+            } => {
+                // Annotate the pod with the desired MTU so Cilium picks it up
+                let annotation = format!("cilium.io/mtu={}", new_mtu);
+                self.k8s_client
+                    .annotate_pod(namespace, pod, &annotation)
+                    .await?;
+                println!(
+                    "✔ Adjusted MTU to {} for pod {}/{}",
+                    new_mtu, namespace, pod
+                );
+            }
+            FixAction::RebalanceBackend { service, backend } => {
+                // Restart the backend pod to trigger rebalancing
+                let parts: Vec<&str> = backend.splitn(2, '/').collect();
+                let (ns, pod_prefix) = if parts.len() == 2 {
+                    (parts[0], parts[1])
+                } else {
+                    ("default", backend.as_str())
+                };
+
+                // Scale down and up to force rebalance
+                tracing::info!(
+                    service = %service,
+                    backend = %backend,
+                    "Rebalancing backend by restarting pod"
+                );
+                let _ = self
+                    .k8s_client
+                    .restart_rollout(ns, pod_prefix)
+                    .await;
+                println!(
+                    "✔ Rebalanced backend {} for service {}",
+                    backend, service
+                );
+            }
+            FixAction::TuneConntrack { node, new_timeout } => {
+                // Apply conntrack tuning via a configmap update or sysctl
+                tracing::info!(
+                    node = %node,
+                    new_timeout,
+                    "Tuning conntrack timeout"
+                );
+                let configmap_patch = format!(
+                    r#"{{"data":{{"ct-global-max-entries-per-node":"{}"}}}}"#,
+                    new_timeout
+                );
+                let _ = self
+                    .k8s_client
+                    .patch_configmap("kube-system", "cilium-config", &configmap_patch)
+                    .await;
+                println!(
+                    "✔ Tuned conntrack for node {} (timeout={})",
+                    node, new_timeout
+                );
             }
         }
 

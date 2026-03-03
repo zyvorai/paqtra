@@ -142,6 +142,73 @@ impl K8sClient {
         Ok(())
     }
 
+    /// Annotate a pod with a key=value annotation
+    pub async fn annotate_pod(&self, namespace: &str, pod: &str, annotation: &str) -> Result<()> {
+        let api: Api<Pod> = Api::namespaced(self.client.clone(), namespace);
+        let parts: Vec<&str> = annotation.splitn(2, '=').collect();
+        if parts.len() != 2 {
+            anyhow::bail!("annotation must be in key=value format");
+        }
+        let patch = serde_json::json!({
+            "metadata": {
+                "annotations": {
+                    parts[0]: parts[1]
+                }
+            }
+        });
+        api.patch(
+            pod,
+            &kube::api::PatchParams::apply("cilium-flow"),
+            &kube::api::Patch::Merge(&patch),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Restart a deployment by patching the template annotation
+    pub async fn restart_rollout(&self, namespace: &str, deployment: &str) -> Result<()> {
+        use k8s_openapi::api::apps::v1::Deployment;
+        let api: Api<Deployment> = Api::namespaced(self.client.clone(), namespace);
+        let now = chrono::Utc::now().to_rfc3339();
+        let patch = serde_json::json!({
+            "spec": {
+                "template": {
+                    "metadata": {
+                        "annotations": {
+                            "kubectl.kubernetes.io/restartedAt": now
+                        }
+                    }
+                }
+            }
+        });
+        api.patch(
+            deployment,
+            &kube::api::PatchParams::apply("cilium-flow"),
+            &kube::api::Patch::Merge(&patch),
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Patch a configmap with a JSON merge patch
+    pub async fn patch_configmap(
+        &self,
+        namespace: &str,
+        name: &str,
+        patch_json: &str,
+    ) -> Result<()> {
+        let api: Api<ConfigMap> = Api::namespaced(self.client.clone(), namespace);
+        let patch: serde_json::Value = serde_json::from_str(patch_json)
+            .context("Invalid JSON patch for configmap")?;
+        api.patch(
+            name,
+            &kube::api::PatchParams::apply("cilium-flow"),
+            &kube::api::Patch::Merge(&patch),
+        )
+        .await?;
+        Ok(())
+    }
+
     pub async fn apply_custom_resource(&self, _namespace: Option<&str>, yaml: &str) -> Result<()> {
         // Validate the YAML is well-formed before passing to kubectl
         let parsed: serde_yaml::Value = serde_yaml::from_str(yaml)
