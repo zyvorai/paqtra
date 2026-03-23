@@ -306,17 +306,19 @@ impl SimulationEngine {
         }
 
         // Also add a catch-all deny for any traffic matching existing policies to this IP
-        for policy in self.policies.clone() {
-            if policy.dst_identity == dst_identity && policy.verdict == PolicyVerdict::Allow {
-                self.simulated_policies.push(PolicyDecision {
-                    src_identity: policy.src_identity,
-                    dst_identity,
-                    port: policy.port,
-                    protocol: policy.protocol,
-                    verdict: PolicyVerdict::Deny,
-                });
-            }
-        }
+        let overrides: Vec<PolicyDecision> = self
+            .policies
+            .iter()
+            .filter(|p| p.dst_identity == dst_identity && p.verdict == PolicyVerdict::Allow)
+            .map(|p| PolicyDecision {
+                src_identity: p.src_identity,
+                dst_identity,
+                port: p.port,
+                protocol: p.protocol,
+                verdict: PolicyVerdict::Deny,
+            })
+            .collect();
+        self.simulated_policies.extend(overrides);
 
         self.trace.push(format!(
             "Added deny rules for external IP {} (identity {})",

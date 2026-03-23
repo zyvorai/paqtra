@@ -235,9 +235,7 @@ impl CiliumManager {
 
             if !verify_output.status.success() {
                 // Clean up the downloaded file
-                let _ = std::process::Command::new("rm")
-                    .args(["-f", &format!("/tmp/{}", binary_name)])
-                    .status();
+                let _ = std::fs::remove_file(format!("/tmp/{}", binary_name));
                 anyhow::bail!(
                     "Checksum verification failed! The downloaded file may be corrupted or tampered with. \
                      Aborting installation for security."

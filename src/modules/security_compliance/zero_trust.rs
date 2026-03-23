@@ -132,8 +132,10 @@ impl ZeroTrustEngine {
                     .map(|p| p.to_string());
                 let protocol = if flow.pointer("/l4/TCP").is_some() {
                     "TCP"
-                } else {
+                } else if flow.pointer("/l4/UDP").is_some() {
                     "UDP"
+                } else {
+                    continue; // Skip flows with unknown L4 protocol
                 };
 
                 if let (Some(src), Some(dst), Some(port)) = (src_app, dst_app, dst_port) {
