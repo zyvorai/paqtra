@@ -139,15 +139,18 @@ impl TuiApp {
             }
             10 => {
                 // Chaos view
-                self.chaos_view.render(f, chunks[2], None)
+                self.chaos_view
+                    .render(f, chunks[2], Some(&self.chaos_engine))
             }
             11 => {
                 // Canary view
-                self.canary_view.render(f, chunks[2], None)
+                self.canary_view
+                    .render(f, chunks[2], Some(&self.canary_engine))
             }
             12 => {
                 // MultiCluster view
-                self.multicluster_view.render(f, chunks[2], None)
+                self.multicluster_view
+                    .render(f, chunks[2], Some(&self.multicluster_engine))
             }
             _ => {}
         }

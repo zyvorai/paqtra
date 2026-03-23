@@ -4,7 +4,10 @@ use crate::hubble::{Flow, HubbleClient};
 use crate::integration::{EnrichedConnection, IntegratedDataProvider};
 use crate::kubernetes::K8sClient;
 use crate::modules::autopolicy::{AutoPolicy, AutoPolicyConfig};
+use crate::modules::canary::{CanaryConfig, CanaryEngine};
+use crate::modules::chaos::{ChaosConfig, ChaosEngine};
 use crate::modules::healer::{HealerConfig, SelfHealer};
+use crate::modules::multicluster::{MultiClusterAutopilot, MultiClusterConfig};
 use crate::modules::replay::{ReplayConfig, ReplayEngine};
 use crate::modules::rootcause::{RootCauseConfig, RootCauseEngine};
 use crate::modules::simulator::{Simulator, SimulatorConfig};
@@ -68,6 +71,11 @@ pub struct TuiApp {
     // Intelligence modules (either enriched or mock)
     pub(crate) modules: ModuleContainer,
 
+    // Standalone engines (don't depend on MapReader)
+    pub(crate) chaos_engine: ChaosEngine,
+    pub(crate) canary_engine: CanaryEngine,
+    pub(crate) multicluster_engine: MultiClusterAutopilot,
+
     // Module state
     pub(crate) last_healer_run: std::time::Instant,
     pub(crate) last_autopolicy_update: std::time::Instant,
@@ -103,6 +111,9 @@ pub struct TuiApp {
     pub(crate) show_packet_explanation: bool,
     pub(crate) packet_explainer:
         std::cell::RefCell<crate::modules::packet_explainer::PacketExplainer>,
+
+    // Pending async actions from sync confirmation handlers
+    pub(crate) canary_pending_action: Option<super::canary_view::ConfirmationType>,
 
     // UX enhancements
     pub(crate) show_help: bool,
@@ -221,6 +232,12 @@ impl TuiApp {
             }
         };
 
+        // Initialize standalone engines
+        let chaos_engine = ChaosEngine::new(ChaosConfig::default(), k8s_client.clone());
+        let canary_engine = CanaryEngine::new(CanaryConfig::default(), k8s_client.clone());
+        let multicluster_engine =
+            MultiClusterAutopilot::new(MultiClusterConfig::default(), k8s_client.clone());
+
         Ok(Self {
             hubble_client,
             endpoint_manager,
@@ -232,6 +249,9 @@ impl TuiApp {
             integrated_provider,
             enriched_connections: Vec::new(),
             modules,
+            chaos_engine,
+            canary_engine,
+            multicluster_engine,
             last_healer_run: std::time::Instant::now(),
             last_autopolicy_update: std::time::Instant::now(),
             status_message: None,
@@ -257,6 +277,7 @@ impl TuiApp {
             packet_explainer: std::cell::RefCell::new(
                 crate::modules::packet_explainer::PacketExplainer::new(),
             ),
+            canary_pending_action: None,
             show_help: false,
         })
     }

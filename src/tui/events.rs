@@ -131,7 +131,11 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
         }
         KeyCode::Down if !app.show_help && app.selected_tab == 10 => {
             // Navigate chaos experiments/presets down
-            let max = if app.chaos_view.show_presets { 7 } else { 2 };
+            let max = if app.chaos_view.show_presets {
+                super::chaos_view::CHAOS_PRESETS.len()
+            } else {
+                app.chaos_engine.active_experiments().len().max(1)
+            };
             app.chaos_view.move_selection_down(max);
         }
         KeyCode::Enter
@@ -146,9 +150,8 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
         KeyCode::Char('y')
             if !app.show_help && app.selected_tab == 10 && app.chaos_view.confirmation_mode =>
         {
-            // Confirm chaos experiment
+            // Confirm chaos experiment — actual start happens in async handler
             app.chaos_view.cancel_confirmation();
-            app.set_status_message("Chaos experiment started!");
         }
         KeyCode::Char('n')
             if !app.show_help && app.selected_tab == 10 && app.chaos_view.confirmation_mode =>
@@ -160,29 +163,48 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
         KeyCode::Char('s')
             if !app.show_help && app.selected_tab == 10 && !app.chaos_view.show_presets =>
         {
-            // Stop selected experiment
-            app.set_status_message("Chaos experiment stopped");
+            // Stop selected experiment — handled in async handler
         }
         KeyCode::Char('S')
             if !app.show_help && app.selected_tab == 10 && !app.chaos_view.show_presets =>
         {
-            // Stop all experiments
-            app.set_status_message("All chaos experiments stopped");
+            // Stop all experiments — handled in async handler
         }
         KeyCode::Char('b')
             if !app.show_help
                 && app.selected_tab == 10
                 && !app.chaos_view.circuit_breaker_confirm =>
         {
-            // Trigger circuit breaker
+            // Trigger circuit breaker confirmation
             app.chaos_view.circuit_breaker_confirm = true;
+            app.set_status_message("Trigger circuit breaker? Press 'y' to confirm");
+        }
+        KeyCode::Char('y')
+            if !app.show_help
+                && app.selected_tab == 10
+                && app.chaos_view.circuit_breaker_confirm =>
+        {
+            // Confirm circuit breaker
+            app.chaos_view.circuit_breaker_confirm = false;
+            app.chaos_engine
+                .trigger_circuit_breaker("Manual trigger from TUI");
+            app.set_status_message("Circuit breaker TRIGGERED - all chaos disabled");
+        }
+        KeyCode::Char('n')
+            if !app.show_help
+                && app.selected_tab == 10
+                && app.chaos_view.circuit_breaker_confirm =>
+        {
+            app.chaos_view.circuit_breaker_confirm = false;
+            app.set_status_message("Circuit breaker cancelled");
         }
         // Canary tab (11) keyboard handlers
         KeyCode::Up if !app.show_help && app.selected_tab == 11 => {
             app.canary_view.move_selection_up();
         }
         KeyCode::Down if !app.show_help && app.selected_tab == 11 => {
-            app.canary_view.move_selection_down(2); // 2 active canaries
+            let max = app.canary_engine.active_canaries().len().max(1);
+            app.canary_view.move_selection_down(max);
         }
         KeyCode::Char('p') if !app.show_help && app.selected_tab == 11 => {
             app.canary_view
@@ -193,7 +215,7 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
                 .trigger_confirmation(canary_view::ConfirmationType::Rollback);
         }
         KeyCode::Char('+') if !app.show_help && app.selected_tab == 11 => {
-            app.set_status_message("Canary traffic increased by 10%");
+            // Progress canary — handled in async handler
         }
         KeyCode::Char('d') if !app.show_help && app.selected_tab == 11 => {
             app.canary_view.toggle_details();
@@ -203,8 +225,10 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
                 && app.selected_tab == 11
                 && app.canary_view.confirmation_mode != canary_view::ConfirmationType::None =>
         {
+            // Store the pending action, then clear confirmation.
+            // Async handler will pick it up.
+            app.canary_pending_action = Some(app.canary_view.confirmation_mode.clone());
             app.canary_view.cancel_confirmation();
-            app.set_status_message("Canary action confirmed");
         }
         KeyCode::Char('n')
             if !app.show_help
@@ -219,10 +243,14 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
             app.multicluster_view.move_selection_up();
         }
         KeyCode::Down if !app.show_help && app.selected_tab == 12 => {
-            app.multicluster_view.move_selection_down(4); // 4 clusters
+            let max = app.multicluster_engine.clusters().len().max(1);
+            app.multicluster_view.move_selection_down(max);
         }
         KeyCode::Char('v') if !app.show_help && app.selected_tab == 12 => {
             app.multicluster_view.cycle_view();
+        }
+        KeyCode::Char('h') if !app.show_help && app.selected_tab == 12 => {
+            // Health check all clusters — handled in async handler
         }
         KeyCode::Char('s') if !app.show_help && app.selected_tab == 8 => {
             // Run simulation
@@ -328,6 +356,165 @@ pub(crate) async fn handle_key_event_async(app: &mut TuiApp, key_code: KeyCode) 
                 }
             }
             app.last_autopolicy_update = std::time::Instant::now();
+        }
+        // --- Chaos tab (10) async handlers ---
+        KeyCode::Char('y')
+            if !app.show_help
+                && app.selected_tab == 10
+                && app.chaos_view.show_presets
+                && !app.chaos_view.circuit_breaker_confirm =>
+        {
+            // Start chaos experiment from selected preset
+            let preset_idx = app.chaos_view.selected_preset_index;
+            let experiment = super::chaos_view::preset_to_experiment(preset_idx);
+            let name = super::chaos_view::CHAOS_PRESETS
+                .get(preset_idx)
+                .map(|(n, _, _, _)| n.to_string())
+                .unwrap_or_else(|| "Unknown".to_string());
+            let target = crate::modules::chaos::ChaosTarget::default();
+            let duration = Some(std::time::Duration::from_secs(300));
+
+            match app
+                .chaos_engine
+                .start_experiment(name.clone(), experiment, target, duration)
+                .await
+            {
+                Ok(id) => {
+                    app.set_status_message(&format!("Chaos experiment '{}' started: {}", name, id));
+                }
+                Err(e) => {
+                    app.set_status_message(&format!("Failed to start chaos: {}", e));
+                }
+            }
+        }
+        KeyCode::Char('s')
+            if !app.show_help && app.selected_tab == 10 && !app.chaos_view.show_presets =>
+        {
+            // Stop selected experiment
+            let experiments = app.chaos_engine.active_experiments();
+            if let Some(exp) = experiments.get(app.chaos_view.selected_experiment_index) {
+                let id = exp.id.clone();
+                match app.chaos_engine.stop_experiment(&id).await {
+                    Ok(result) => {
+                        app.set_status_message(&format!(
+                            "Stopped '{}' ({}s, {} packets affected)",
+                            result.experiment.name,
+                            result.duration_secs,
+                            result.experiment.metrics.packets_affected
+                        ));
+                    }
+                    Err(e) => {
+                        app.set_status_message(&format!("Failed to stop experiment: {}", e));
+                    }
+                }
+            } else {
+                app.set_status_message("No experiment selected");
+            }
+        }
+        KeyCode::Char('S')
+            if !app.show_help && app.selected_tab == 10 && !app.chaos_view.show_presets =>
+        {
+            // Stop all experiments
+            match app.chaos_engine.stop_all().await {
+                Ok(count) => {
+                    app.set_status_message(&format!("Stopped {} chaos experiments", count));
+                }
+                Err(e) => {
+                    app.set_status_message(&format!("Failed to stop all: {}", e));
+                }
+            }
+        }
+        // --- Canary tab (11) async handlers ---
+        KeyCode::Char('+') if !app.show_help && app.selected_tab == 11 => {
+            // Progress canary traffic
+            let canaries = app.canary_engine.active_canaries();
+            if let Some(c) = canaries.get(app.canary_view.selected_canary_index) {
+                let id = c.id.clone();
+                match app.canary_engine.progress_canary(&id).await {
+                    Ok(()) => {
+                        if let Some(updated) = app
+                            .canary_engine
+                            .active_canaries()
+                            .iter()
+                            .find(|c| c.id == id)
+                        {
+                            app.set_status_message(&format!(
+                                "Canary traffic: {}% canary / {}% stable",
+                                updated.current_split.canary_pct,
+                                updated.current_split.stable_pct
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        app.set_status_message(&format!("Failed to progress canary: {}", e));
+                    }
+                }
+            } else {
+                app.set_status_message("No canary selected");
+            }
+        }
+        // Handle confirmed canary promote/rollback
+        KeyCode::Char('y') if !app.show_help && app.selected_tab == 11 => {
+            if let Some(action) = app.canary_pending_action.take() {
+                let canaries = app.canary_engine.active_canaries();
+                if let Some(c) = canaries.get(app.canary_view.selected_canary_index) {
+                    let id = c.id.clone();
+                    let name = c.name.clone();
+                    match action {
+                        canary_view::ConfirmationType::Promote => {
+                            match app.canary_engine.promote_canary(&id).await {
+                                Ok(()) => {
+                                    app.set_status_message(&format!(
+                                        "Canary '{}' promoted to stable",
+                                        name
+                                    ));
+                                }
+                                Err(e) => {
+                                    app.set_status_message(&format!(
+                                        "Failed to promote: {}",
+                                        e
+                                    ));
+                                }
+                            }
+                        }
+                        canary_view::ConfirmationType::Rollback => {
+                            match app.canary_engine.rollback_canary(&id).await {
+                                Ok(()) => {
+                                    app.set_status_message(&format!(
+                                        "Canary '{}' rolled back",
+                                        name
+                                    ));
+                                }
+                                Err(e) => {
+                                    app.set_status_message(&format!(
+                                        "Failed to rollback: {}",
+                                        e
+                                    ));
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    app.set_status_message("No canary selected");
+                }
+            }
+        }
+        // --- MultiCluster tab (12) async handlers ---
+        KeyCode::Char('h') if !app.show_help && app.selected_tab == 12 => {
+            // Health check all clusters
+            match app.multicluster_engine.health_check_all().await {
+                Ok(()) => {
+                    let stats = app.multicluster_engine.stats();
+                    app.set_status_message(&format!(
+                        "Health check complete: {}/{} active, {} degraded",
+                        stats.active_clusters, stats.total_clusters, stats.degraded_clusters
+                    ));
+                }
+                Err(e) => {
+                    app.set_status_message(&format!("Health check failed: {}", e));
+                }
+            }
         }
         _ => {}
     }

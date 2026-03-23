@@ -566,7 +566,37 @@ impl ChaosEngine {
                     anyhow::bail!("DNS failure rate too high - would break cluster");
                 }
             }
-            _ => {}
+            ChaosExperiment::Bandwidth { limit_mbps } => {
+                if *limit_mbps == 0 {
+                    anyhow::bail!("Bandwidth limit of 0 Mbps would block all traffic");
+                }
+            }
+            ChaosExperiment::ConnectionKill { kill_rate } => {
+                if *kill_rate > self.config.max_drop_rate {
+                    anyhow::bail!(
+                        "Connection kill rate {:.1}% exceeds safety limit {:.1}%",
+                        kill_rate * 100.0,
+                        self.config.max_drop_rate * 100.0
+                    );
+                }
+            }
+            ChaosExperiment::PacketCorruption { corruption_rate } => {
+                if *corruption_rate > self.config.max_drop_rate {
+                    anyhow::bail!(
+                        "Corruption rate {:.1}% exceeds safety limit {:.1}%",
+                        corruption_rate * 100.0,
+                        self.config.max_drop_rate * 100.0
+                    );
+                }
+            }
+            ChaosExperiment::PacketDuplication { duplication_rate } => {
+                if *duplication_rate > 0.9 {
+                    anyhow::bail!(
+                        "Duplication rate {:.1}% is dangerously high",
+                        duplication_rate * 100.0
+                    );
+                }
+            }
         }
 
         Ok(())
