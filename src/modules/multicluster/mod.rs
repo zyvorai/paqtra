@@ -117,13 +117,13 @@ pub struct ClusterHealth {
 impl Default for ClusterHealth {
     fn default() -> Self {
         Self {
-            healthy: true,
-            node_count: 3,
-            healthy_nodes: 3,
-            pod_count: 100,
-            cpu_usage_pct: 45.0,
-            memory_usage_pct: 60.0,
-            network_ok: true,
+            healthy: false,
+            node_count: 0,
+            healthy_nodes: 0,
+            pod_count: 0,
+            cpu_usage_pct: 0.0,
+            memory_usage_pct: 0.0,
+            network_ok: false,
         }
     }
 }
@@ -341,14 +341,15 @@ impl MultiClusterAutopilot {
     pub async fn health_check_all(&mut self) -> Result<()> {
         for cluster in self.clusters.values_mut() {
             // Try to query real node health via kubectl
-            let check = std::process::Command::new("kubectl")
+            let check = tokio::process::Command::new("kubectl")
                 .args([
                     "get", "nodes",
                     "--context", &cluster.name,
                     "-o", "jsonpath={range .items[*]}{.metadata.name},{.status.conditions[?(@.type==\"Ready\")].status}{\"\\n\"}{end}",
                     "--request-timeout=5s",
                 ])
-                .output();
+                .output()
+                .await;
 
             match check {
                 Ok(output) if output.status.success() => {
@@ -379,8 +380,7 @@ impl MultiClusterAutopilot {
             }
 
             // Derive cluster state from node readiness
-            cluster.health.healthy =
-                cluster.health.healthy_nodes == cluster.health.node_count;
+            cluster.health.healthy = cluster.health.healthy_nodes == cluster.health.node_count;
 
             if cluster.health.healthy {
                 cluster.state = ClusterState::Active;
@@ -477,6 +477,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "requires live Kubernetes cluster"]
     async fn test_autopilot_creation() {
         let config = MultiClusterConfig::default();
         let k8s_client = K8sClient::new().await.unwrap();
@@ -494,7 +495,7 @@ mod tests {
     #[test]
     fn test_cluster_health() {
         let health = ClusterHealth::default();
-        assert_eq!(health.healthy, true);
-        assert_eq!(health.node_count, 3);
+        assert_eq!(health.healthy, false);
+        assert_eq!(health.node_count, 0);
     }
 }

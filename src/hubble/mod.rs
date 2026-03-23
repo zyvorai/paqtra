@@ -1,5 +1,8 @@
 use anyhow::{Context, Result};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
+use std::sync::Arc;
+use tokio::process::Command;
+use tokio::sync::Mutex;
 
 #[cfg(feature = "grpc")]
 pub mod grpc;
@@ -42,41 +45,38 @@ impl HubbleClient {
 pub async fn start_port_forward() -> Result<u16> {
     let port: u16 = 4245;
 
-    let mut child = Command::new("cilium")
+    // Check if an existing port-forward is already working on this port
+    if tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
+        .await
+        .is_ok()
+    {
+        tracing::info!("Reusing existing Hubble port-forward on port {}", port);
+        println!("Hubble port-forward already active on port {}", port);
+        return Ok(port);
+    }
+
+    let child = Command::new("cilium")
         .args(["hubble", "port-forward"])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .context("Failed to start cilium hubble port-forward. Is cilium CLI installed?")?;
 
-    // Store the child PID so we can clean up on exit
-    let pid = child.id();
+    let pid = child.id().unwrap_or(0);
     tracing::info!("Started hubble port-forward (pid: {})", pid);
 
-    // Take stderr handle so we can read it if the process exits unexpectedly
-    let mut child_stderr = child.stderr.take();
+    // Wrap the child in Arc<Mutex> for safe shared access
+    let child = Arc::new(Mutex::new(child));
 
     // Register a cleanup handler for the port-forward process
-    let pid_for_cleanup = pid;
+    let child_for_cleanup = Arc::clone(&child);
     tokio::spawn(async move {
-        // Wait for a shutdown signal or the process to exit
         tokio::signal::ctrl_c().await.ok();
-        tracing::info!(
-            "Cleaning up port-forward process (pid: {})",
-            pid_for_cleanup
-        );
-        #[cfg(unix)]
-        {
-            unsafe {
-                let ret = libc::kill(pid_for_cleanup as i32, libc::SIGTERM);
-                if ret != 0 {
-                    tracing::warn!(
-                        "Failed to send SIGTERM to pid {}: errno {}",
-                        pid_for_cleanup,
-                        std::io::Error::last_os_error()
-                    );
-                }
-            }
+        tracing::info!("Cleaning up port-forward process");
+        let mut child = child_for_cleanup.lock().await;
+        if let Err(e) = child.kill().await {
+            tracing::warn!("Failed to kill port-forward process: {}", e);
         }
     });
 
@@ -88,27 +88,20 @@ pub async fn start_port_forward() -> Result<u16> {
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
         // Check if the child process has exited unexpectedly
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let mut stderr_output = String::new();
-                if let Some(ref mut stderr) = child_stderr {
-                    use std::io::Read;
-                    let _ = stderr.read_to_string(&mut stderr_output);
+        {
+            let mut child_guard = child.lock().await;
+            match child_guard.try_wait() {
+                Ok(Some(status)) => {
+                    anyhow::bail!(
+                        "Hubble port-forward process exited unexpectedly ({}). \
+                         Ensure Hubble relay is running (cilium hubble enable).",
+                        status
+                    );
                 }
-                let detail = if stderr_output.trim().is_empty() {
-                    format!("exit status: {}", status)
-                } else {
-                    stderr_output.trim().to_string()
-                };
-                anyhow::bail!(
-                    "Hubble port-forward process exited unexpectedly: {}. \
-                     Ensure Hubble relay is running (cilium hubble enable).",
-                    detail
-                );
-            }
-            Ok(None) => {} // Still running, try connecting
-            Err(e) => {
-                tracing::warn!("Failed to check port-forward process status: {}", e);
+                Ok(None) => {} // Still running, try connecting
+                Err(e) => {
+                    tracing::warn!("Failed to check port-forward process status: {}", e);
+                }
             }
         }
 
@@ -132,16 +125,9 @@ pub async fn start_port_forward() -> Result<u16> {
                     e
                 );
                 // Kill the process since it's not working
-                #[cfg(unix)]
-                unsafe {
-                    let ret = libc::kill(pid as i32, libc::SIGTERM);
-                    if ret != 0 {
-                        tracing::warn!(
-                            "Failed to send SIGTERM to pid {}: errno {}",
-                            pid,
-                            std::io::Error::last_os_error()
-                        );
-                    }
+                let mut child_guard = child.lock().await;
+                if let Err(kill_err) = child_guard.kill().await {
+                    tracing::warn!("Failed to kill port-forward process: {}", kill_err);
                 }
                 anyhow::bail!(
                     "Hubble port-forward failed to start on port {}. \
@@ -159,16 +145,12 @@ pub struct CliHubbleClient {
     _port: u16,
 }
 
-#[cfg(feature = "grpc")]
 impl CliHubbleClient {
-    pub fn new(port: u16) -> Self {
-        Self { _port: port }
-    }
-
-    pub async fn get_flows(&self) -> Result<Vec<Flow>> {
-        let output = Command::new("cilium")
+    async fn get_flows_impl() -> Result<Vec<Flow>> {
+        let output = tokio::process::Command::new("cilium")
             .args(["hubble", "observe", "--last", "100", "-o", "json"])
             .output()
+            .await
             .context("Failed to execute cilium hubble observe")?;
 
         let flows_json = String::from_utf8_lossy(&output.stdout);
@@ -181,6 +163,17 @@ impl CliHubbleClient {
     }
 }
 
+#[cfg(feature = "grpc")]
+impl CliHubbleClient {
+    pub fn new(port: u16) -> Self {
+        Self { _port: port }
+    }
+
+    pub async fn get_flows(&self) -> Result<Vec<Flow>> {
+        Self::get_flows_impl().await
+    }
+}
+
 #[cfg(not(feature = "grpc"))]
 impl CliHubbleClient {
     pub async fn new(port: u16, _use_grpc: bool) -> Result<Self> {
@@ -188,18 +181,7 @@ impl CliHubbleClient {
     }
 
     pub async fn get_flows(&self) -> Result<Vec<Flow>> {
-        let output = Command::new("cilium")
-            .args(["hubble", "observe", "--last", "100", "-o", "json"])
-            .output()
-            .context("Failed to execute cilium hubble observe")?;
-
-        let flows_json = String::from_utf8_lossy(&output.stdout);
-        let flows: Vec<Flow> = flows_json
-            .lines()
-            .filter_map(|line| serde_json::from_str(line).ok())
-            .collect();
-
-        Ok(flows)
+        Self::get_flows_impl().await
     }
 }
 

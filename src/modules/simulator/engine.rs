@@ -23,9 +23,10 @@ pub struct SimulationEngine {
 
 impl SimulationEngine {
     pub fn new(current_policies: Vec<PolicyDecision>) -> Self {
+        let simulated_policies = current_policies.clone();
         Self {
-            policies: current_policies.clone(),
-            simulated_policies: current_policies,
+            policies: current_policies,
+            simulated_policies,
             policy_sources: HashMap::new(),
             trace: Vec::new(),
         }
@@ -167,8 +168,7 @@ impl SimulationEngine {
     /// Remove a policy by name, undoing the entries it added.
     fn remove_policy(&mut self, policy_name: &str, namespace: &str) -> Result<()> {
         let source_key = format!("{}/{}", namespace, policy_name);
-        self.trace
-            .push(format!("Removing policy: {}", source_key));
+        self.trace.push(format!("Removing policy: {}", source_key));
 
         let before = self.simulated_policies.len();
 

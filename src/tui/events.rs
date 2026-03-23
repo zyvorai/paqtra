@@ -1,6 +1,7 @@
 use super::app::{ModuleContainer, TuiApp};
 use super::canary_view;
 use super::handlers;
+use super::tabs::TabIndex;
 use crossterm::event::KeyCode;
 
 /// Possible result from handling a key event.
@@ -30,11 +31,13 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
         }
         KeyCode::Char('q') if !app.show_help => return KeyAction::Quit,
         KeyCode::Tab if !app.show_help => {
-            app.selected_tab = (app.selected_tab + 1) % 10;
+            let count = TabIndex::count();
+            app.selected_tab = (app.selected_tab + 1) % count;
         }
         KeyCode::BackTab if !app.show_help => {
+            let count = TabIndex::count();
             app.selected_tab = if app.selected_tab == 0 {
-                9
+                count - 1
             } else {
                 app.selected_tab - 1
             };
@@ -45,9 +48,7 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
                 ModuleContainer::Enriched { replay, .. } => {
                     replay.list_recordings().map(|r| r.len())
                 }
-                ModuleContainer::Mock { replay, .. } => {
-                    replay.list_recordings().map(|r| r.len())
-                }
+                ModuleContainer::Mock { replay, .. } => replay.list_recordings().map(|r| r.len()),
             };
             match count {
                 Ok(n) => app.set_status_message(&format!("Refreshed: {} recordings found", n)),

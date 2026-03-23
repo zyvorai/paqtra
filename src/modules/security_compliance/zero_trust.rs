@@ -80,10 +80,14 @@ impl ZeroTrustEngine {
         let output = std::process::Command::new("hubble")
             .args([
                 "observe",
-                "--namespace", namespace,
-                "--verdict", "FORWARDED",
-                "--last", "500",
-                "-o", "json",
+                "--namespace",
+                namespace,
+                "--verdict",
+                "FORWARDED",
+                "--last",
+                "500",
+                "-o",
+                "json",
             ])
             .output()
             .ok()?;
@@ -173,8 +177,12 @@ spec:
     fn discover_via_kubectl(&self, namespace: &str) -> Vec<String> {
         let output = match std::process::Command::new("kubectl")
             .args([
-                "get", "pods", "-n", namespace,
-                "-o", "jsonpath={range .items[*]}{.metadata.labels.app}{\"\\n\"}{end}",
+                "get",
+                "pods",
+                "-n",
+                namespace,
+                "-o",
+                "jsonpath={range .items[*]}{.metadata.labels.app}{\"\\n\"}{end}",
                 "--request-timeout=5s",
             ])
             .output()

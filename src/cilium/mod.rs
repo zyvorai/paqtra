@@ -3,7 +3,7 @@ use k8s_openapi::api::core::v1::{ConfigMap, ServiceAccount};
 use k8s_openapi::api::rbac::v1::{ClusterRoleBinding, RoleRef, Subject};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use std::collections::BTreeMap;
-use std::process::Command;
+use tokio::process::Command;
 
 use crate::kubernetes::K8sClient;
 
@@ -45,7 +45,7 @@ impl CiliumManager {
         }
 
         // Get version from cilium CLI if available
-        let version = self.get_cilium_version().ok();
+        let version = self.get_cilium_version().await.ok();
 
         // Check if Hubble is enabled by looking for hubble-relay
         let hubble_pods = self
@@ -61,10 +61,11 @@ impl CiliumManager {
         })
     }
 
-    fn get_cilium_version(&self) -> Result<String> {
+    async fn get_cilium_version(&self) -> Result<String> {
         let output = Command::new("cilium")
             .args(["version", "--client"])
             .output()
+            .await
             .context("Failed to get Cilium version")?;
 
         if output.status.success() {
@@ -86,7 +87,7 @@ impl CiliumManager {
         println!("🔍 Cilium not detected in the cluster.");
 
         // Check if cilium CLI is available
-        if !self.is_cilium_cli_available() {
+        if !self.is_cilium_cli_available().await {
             println!("📥 Cilium CLI not found. Installing automatically...");
 
             if !auto_approve {
@@ -119,6 +120,7 @@ impl CiliumManager {
         let output = Command::new("cilium")
             .args(["install"])
             .status()
+            .await
             .context("Failed to execute cilium install")?;
 
         if !output.success() {
@@ -130,6 +132,7 @@ impl CiliumManager {
         let status_output = Command::new("cilium")
             .args(["status", "--wait"])
             .status()
+            .await
             .context("Failed to wait for Cilium status")?;
 
         if !status_output.success() {
@@ -146,6 +149,7 @@ impl CiliumManager {
         let output = Command::new("cilium")
             .args(["upgrade"])
             .status()
+            .await
             .context("Failed to execute cilium upgrade")?;
 
         if !output.success() {
@@ -156,10 +160,11 @@ impl CiliumManager {
         Ok(())
     }
 
-    fn is_cilium_cli_available(&self) -> bool {
+    async fn is_cilium_cli_available(&self) -> bool {
         Command::new("cilium")
             .arg("version")
             .output()
+            .await
             .map(|o| o.status.success())
             .unwrap_or(false)
     }
@@ -194,9 +199,10 @@ impl CiliumManager {
 
         // Download binary and checksum to /tmp
         let output = Command::new("curl")
-            .args(["-L", "--remote-name-all", download_url])
+            .args(["-fL", "--remote-name-all", download_url])
             .current_dir("/tmp")
             .status()
+            .await
             .context("Failed to download Cilium CLI")?;
 
         if !output.success() {
@@ -205,13 +211,14 @@ impl CiliumManager {
 
         let checksum_output = Command::new("curl")
             .args([
-                "-L",
+                "-fL",
                 "-o",
                 &format!("{}.sha256sum", binary_name),
                 checksum_url,
             ])
             .current_dir("/tmp")
             .status()
+            .await
             .context("Failed to download checksum file")?;
 
         if !checksum_output.success() {
@@ -223,11 +230,12 @@ impl CiliumManager {
                 .args(["--check", &format!("{}.sha256sum", binary_name)])
                 .current_dir("/tmp")
                 .output()
+                .await
                 .context("Failed to verify checksum")?;
 
             if !verify_output.status.success() {
                 // Clean up the downloaded file
-                let _ = Command::new("rm")
+                let _ = std::process::Command::new("rm")
                     .args(["-f", &format!("/tmp/{}", binary_name)])
                     .status();
                 anyhow::bail!(
@@ -245,6 +253,7 @@ impl CiliumManager {
             .args(["-xzf", binary_name])
             .current_dir("/tmp")
             .status()
+            .await
             .context("Failed to extract Cilium CLI")?;
 
         if !extract_output.success() {
@@ -257,6 +266,7 @@ impl CiliumManager {
         let install_output = Command::new("sudo")
             .args(["mv", "/tmp/cilium", "/usr/local/bin/"])
             .status()
+            .await
             .context("Failed to install Cilium CLI to /usr/local/bin")?;
 
         if !install_output.success() {
@@ -272,6 +282,7 @@ impl CiliumManager {
             let fallback_output = Command::new("mv")
                 .args(["/tmp/cilium", &format!("{}/cilium", local_bin)])
                 .status()
+                .await
                 .context("Failed to install Cilium CLI to ~/.local/bin")?;
 
             if !fallback_output.success() {
@@ -283,12 +294,12 @@ impl CiliumManager {
         }
 
         // Clean up
-        let _ = Command::new("rm")
+        let _ = std::process::Command::new("rm")
             .args(["-f", &format!("/tmp/{}", binary_name)])
             .status();
 
         // Verify installation
-        if !self.is_cilium_cli_available() {
+        if !self.is_cilium_cli_available().await {
             anyhow::bail!(
                 "Cilium CLI installed but not found in PATH. You may need to restart your shell."
             );
@@ -334,7 +345,7 @@ impl CiliumManager {
 
     /// Enable Hubble via the cilium CLI, which deploys hubble-relay.
     pub async fn enable_hubble(&self) -> Result<()> {
-        if !self.is_cilium_cli_available() {
+        if !self.is_cilium_cli_available().await {
             anyhow::bail!(
                 "Cilium CLI is required to enable Hubble. Please install cilium-cli first."
             );
@@ -345,12 +356,11 @@ impl CiliumManager {
         let output = Command::new("cilium")
             .args(["hubble", "enable"])
             .status()
+            .await
             .context("Failed to execute 'cilium hubble enable'")?;
 
         if !output.success() {
-            anyhow::bail!(
-                "Failed to enable Hubble. Please run 'cilium hubble enable' manually."
-            );
+            anyhow::bail!("Failed to enable Hubble. Please run 'cilium hubble enable' manually.");
         }
 
         // Wait for hubble-relay pods to become ready
@@ -372,6 +382,7 @@ impl CiliumManager {
                         "--timeout=5s",
                     ])
                     .output()
+                    .await
                     .map(|o| o.status.success())
                     .unwrap_or(false);
 
@@ -385,7 +396,7 @@ impl CiliumManager {
                 println!("  Still waiting for Hubble relay... ({}/{}s)", i, max_wait);
             }
 
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
 
         anyhow::bail!(

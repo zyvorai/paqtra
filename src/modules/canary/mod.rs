@@ -322,9 +322,18 @@ impl CanaryEngine {
         let svc = &canary.service_name;
         let ns = &canary.namespace;
 
-        match std::process::Command::new("kubectl")
-            .args(["annotate", "service", svc, "-n", ns, &annotation, "--overwrite"])
+        match tokio::process::Command::new("kubectl")
+            .args([
+                "annotate",
+                "service",
+                svc,
+                "-n",
+                ns,
+                &annotation,
+                "--overwrite",
+            ])
             .output()
+            .await
         {
             Ok(output) if output.status.success() => {
                 tracing::info!(
@@ -527,6 +536,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "requires live Kubernetes cluster"]
     async fn test_canary_engine_creation() {
         let config = CanaryConfig::default();
         let k8s_client = K8sClient::new().await.unwrap();

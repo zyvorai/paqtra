@@ -417,9 +417,7 @@ pub(crate) fn handle_rootcause_keys(app: &mut TuiApp, key: KeyCode) -> bool {
         {
             // Trigger fix application confirmation
             app.fix_apply_confirmation = true;
-            let name = FIX_NAMES
-                .get(app.selected_fix_index)
-                .unwrap_or(&"unknown");
+            let name = FIX_NAMES.get(app.selected_fix_index).unwrap_or(&"unknown");
             app.set_status_message(&format!(
                 "Apply fix '{}'? Press 'y' to confirm, 'n' to cancel",
                 name

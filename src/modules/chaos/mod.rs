@@ -153,7 +153,7 @@ pub enum ChaosSeverity {
 }
 
 impl ChaosSeverity {
-    pub fn to_string(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             ChaosSeverity::Low => "Low",
             ChaosSeverity::Medium => "Medium",
@@ -324,7 +324,7 @@ impl ChaosEngine {
         let netem_args = Self::experiment_to_netem_args(&experiment);
         if !netem_args.is_empty() {
             let target_selector = Self::build_pod_selector(&chaos.target);
-            match Self::apply_netem_via_kubectl(&target_selector, &netem_args) {
+            match Self::apply_netem_via_kubectl(&target_selector, &netem_args).await {
                 Ok(affected) => {
                     tracing::info!(
                         experiment = chaos.name,
@@ -358,10 +358,7 @@ impl ChaosEngine {
     fn experiment_to_netem_args(experiment: &ChaosExperiment) -> Vec<String> {
         match experiment {
             ChaosExperiment::PacketDrop { drop_rate } => {
-                vec![
-                    "loss".to_string(),
-                    format!("{:.1}%", drop_rate * 100.0),
-                ]
+                vec!["loss".to_string(), format!("{:.1}%", drop_rate * 100.0)]
             }
             ChaosExperiment::Latency {
                 delay_ms,
@@ -376,10 +373,7 @@ impl ChaosEngine {
             ChaosExperiment::Bandwidth { limit_mbps } => {
                 // tc rate limiting uses tbf (token bucket filter), not netem
                 // We approximate via netem rate
-                vec![
-                    "rate".to_string(),
-                    format!("{}mbit", limit_mbps),
-                ]
+                vec!["rate".to_string(), format!("{}mbit", limit_mbps)]
             }
             ChaosExperiment::PacketCorruption { corruption_rate } => {
                 vec![
@@ -411,19 +405,20 @@ impl ChaosEngine {
 
     /// Apply netem rules to pods matching the selector via kubectl exec.
     /// Returns the number of pods affected.
-    fn apply_netem_via_kubectl(selector: &str, netem_args: &[String]) -> Result<usize> {
+    async fn apply_netem_via_kubectl(selector: &str, netem_args: &[String]) -> Result<usize> {
         // Get pod names matching the selector
-        let ns_args: Vec<String> = vec!["get".into(), "pods".into(), "-o".into(), "name".into()];
-        let mut cmd_args = ns_args;
+        let mut cmd_args: Vec<String> =
+            vec!["get".into(), "pods".into(), "-o".into(), "name".into()];
         if !selector.is_empty() {
             cmd_args.push("-l".into());
             cmd_args.push(selector.to_string());
         }
         cmd_args.push("--no-headers".into());
 
-        let output = std::process::Command::new("kubectl")
+        let output = tokio::process::Command::new("kubectl")
             .args(cmd_args.iter().map(|s| s.as_str()))
-            .output()?;
+            .output()
+            .await?;
 
         if !output.status.success() {
             anyhow::bail!(
@@ -442,15 +437,15 @@ impl ChaosEngine {
 
             // Apply: tc qdisc add dev eth0 root netem <args>
             let mut tc_cmd = vec![
-                "exec", pod_name, "--",
-                "tc", "qdisc", "replace", "dev", "eth0", "root", "netem",
+                "exec", pod_name, "--", "tc", "qdisc", "replace", "dev", "eth0", "root", "netem",
             ];
             let netem_str_refs: Vec<&str> = netem_args.iter().map(|s| s.as_str()).collect();
             tc_cmd.extend_from_slice(&netem_str_refs);
 
-            match std::process::Command::new("kubectl")
+            match tokio::process::Command::new("kubectl")
                 .args(&tc_cmd)
                 .output()
+                .await
             {
                 Ok(result) if result.status.success() => {
                     affected += 1;
@@ -471,7 +466,7 @@ impl ChaosEngine {
 
     /// Remove netem rules from pods matching the selector by deleting the
     /// root qdisc, restoring normal networking.
-    fn remove_netem_via_kubectl(selector: &str) -> Result<()> {
+    async fn remove_netem_via_kubectl(selector: &str) -> Result<()> {
         let mut cmd_args = vec!["get", "pods", "-o", "name"];
         if !selector.is_empty() {
             cmd_args.push("-l");
@@ -479,9 +474,10 @@ impl ChaosEngine {
         }
         cmd_args.push("--no-headers");
 
-        let output = std::process::Command::new("kubectl")
+        let output = tokio::process::Command::new("kubectl")
             .args(&cmd_args)
-            .output()?;
+            .output()
+            .await?;
 
         if !output.status.success() {
             anyhow::bail!("kubectl get pods failed during cleanup");
@@ -494,12 +490,12 @@ impl ChaosEngine {
                 continue;
             }
             // Delete the root qdisc to remove all netem rules
-            let _ = std::process::Command::new("kubectl")
+            let _ = tokio::process::Command::new("kubectl")
                 .args([
-                    "exec", pod_name, "--",
-                    "tc", "qdisc", "del", "dev", "eth0", "root",
+                    "exec", pod_name, "--", "tc", "qdisc", "del", "dev", "eth0", "root",
                 ])
-                .output();
+                .output()
+                .await;
             tracing::debug!(pod = pod_name, "Removed netem rules");
         }
 
@@ -594,7 +590,7 @@ impl ChaosEngine {
         let netem_args = Self::experiment_to_netem_args(&experiment.experiment);
         if !netem_args.is_empty() {
             let selector = Self::build_pod_selector(&experiment.target);
-            if let Err(e) = Self::remove_netem_via_kubectl(&selector) {
+            if let Err(e) = Self::remove_netem_via_kubectl(&selector).await {
                 tracing::warn!(error = %e, "Failed to remove netem rules during cleanup");
             }
         }
@@ -654,7 +650,7 @@ impl ChaosEngine {
             let netem_args = Self::experiment_to_netem_args(&experiment.experiment);
             if !netem_args.is_empty() {
                 let selector = Self::build_pod_selector(&experiment.target);
-                if let Err(e) = Self::remove_netem_via_kubectl(&selector) {
+                if let Err(e) = Self::remove_netem_via_kubectl(&selector).await {
                     tracing::warn!(
                         experiment = experiment.name,
                         error = %e,
@@ -714,6 +710,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "requires live Kubernetes cluster"]
     async fn test_chaos_engine_creation() {
         let config = ChaosConfig::default();
         let k8s_client = K8sClient::new().await.unwrap();

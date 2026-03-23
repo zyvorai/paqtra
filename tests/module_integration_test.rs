@@ -653,10 +653,11 @@ fn test_cluster_state_equality() {
 #[test]
 fn test_cluster_health_default() {
     let health = ClusterHealth::default();
-    assert!(health.healthy);
-    assert!(health.network_ok);
-    assert_eq!(health.node_count, health.healthy_nodes);
-    assert!(health.pod_count > 0);
+    assert!(!health.healthy);
+    assert!(!health.network_ok);
+    assert_eq!(health.node_count, 0);
+    assert_eq!(health.healthy_nodes, 0);
+    assert_eq!(health.pod_count, 0);
 }
 
 #[test]

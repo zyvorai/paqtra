@@ -69,9 +69,10 @@ impl PerformanceProfiler {
         let duration = target.duration_seconds;
         let freq = target.sample_frequency_hz;
         let target_type = target.target_type.clone();
-        let handle = tokio::spawn(async move {
-            Self::collect_proc_samples(target_type, duration, freq).await
-        });
+        let handle =
+            tokio::spawn(
+                async move { Self::collect_proc_samples(target_type, duration, freq).await },
+            );
 
         self.sample_tasks
             .write()
@@ -221,11 +222,11 @@ impl PerformanceProfiler {
 
         tracing::info!("Stopping profiling session: {}", session_id);
 
-        // Collect samples from the background task
+        // Collect samples from the background task.
+        // Give it a brief window to finish before aborting.
         if let Some(handle) = self.sample_tasks.write().await.remove(session_id) {
-            handle.abort(); // stop early if still running
-            match handle.await {
-                Ok(collected) => {
+            match tokio::time::timeout(tokio::time::Duration::from_secs(2), handle).await {
+                Ok(Ok(collected)) => {
                     tracing::info!(
                         session_id,
                         samples = collected.len(),
@@ -233,8 +234,11 @@ impl PerformanceProfiler {
                     );
                     session.samples = collected;
                 }
+                Ok(Err(e)) => {
+                    tracing::debug!(session_id, error = %e, "Sample task join error");
+                }
                 Err(_) => {
-                    tracing::debug!(session_id, "Sample task was cancelled");
+                    tracing::debug!(session_id, "Sample task timed out, aborting");
                 }
             }
         }
@@ -278,7 +282,8 @@ impl PerformanceProfiler {
         let perf_available = std::process::Command::new("perf")
             .arg("--version")
             .output()
-            .is_ok();
+            .map(|o| o.status.success())
+            .unwrap_or(false);
 
         tracing::info!(
             sample_hz = target.sample_frequency_hz,
