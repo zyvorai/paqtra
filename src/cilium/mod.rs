@@ -292,9 +292,7 @@ impl CiliumManager {
         }
 
         // Clean up
-        let _ = std::process::Command::new("rm")
-            .args(["-f", &format!("/tmp/{}", binary_name)])
-            .status();
+        let _ = std::fs::remove_file(format!("/tmp/{}", binary_name));
 
         // Verify installation
         if !self.is_cilium_cli_available().await {
