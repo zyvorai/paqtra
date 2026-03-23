@@ -115,9 +115,10 @@ impl TrafficSplit {
     }
 
     pub fn new_split(canary_pct: u8) -> Self {
+        let clamped = canary_pct.min(100);
         Self {
-            stable_pct: 100 - canary_pct,
-            canary_pct,
+            stable_pct: 100 - clamped,
+            canary_pct: clamped,
         }
     }
 

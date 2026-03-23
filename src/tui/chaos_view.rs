@@ -27,16 +27,17 @@ pub const CHAOS_PRESETS: &[(
 ];
 
 /// Convert a preset index into a concrete ChaosExperiment value.
-pub fn preset_to_experiment(index: usize) -> ChaosExperiment {
+/// Returns `None` if the index is out of range.
+pub fn preset_to_experiment(index: usize) -> Option<ChaosExperiment> {
     match index {
-        0 => ChaosExperiment::PacketDrop { drop_rate: 0.20 },
-        1 => ChaosExperiment::Latency { delay_ms: 500, jitter_ms: 50 },
-        2 => ChaosExperiment::DNSFailure { failure_rate: 0.30 },
-        3 => ChaosExperiment::ConnectionKill { kill_rate: 0.15 },
-        4 => ChaosExperiment::Bandwidth { limit_mbps: 10 },
-        5 => ChaosExperiment::PacketCorruption { corruption_rate: 0.05 },
-        6 => ChaosExperiment::PacketDrop { drop_rate: 1.0 },
-        _ => ChaosExperiment::PacketDrop { drop_rate: 0.10 },
+        0 => Some(ChaosExperiment::PacketDrop { drop_rate: 0.20 }),
+        1 => Some(ChaosExperiment::Latency { delay_ms: 500, jitter_ms: 50 }),
+        2 => Some(ChaosExperiment::DNSFailure { failure_rate: 0.30 }),
+        3 => Some(ChaosExperiment::ConnectionKill { kill_rate: 0.15 }),
+        4 => Some(ChaosExperiment::Bandwidth { limit_mbps: 10 }),
+        5 => Some(ChaosExperiment::PacketCorruption { corruption_rate: 0.05 }),
+        6 => Some(ChaosExperiment::PacketDrop { drop_rate: 1.0 }),
+        _ => None,
     }
 }
 

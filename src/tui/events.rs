@@ -366,25 +366,31 @@ pub(crate) async fn handle_key_event_async(app: &mut TuiApp, key_code: KeyCode) 
         {
             // Start chaos experiment from selected preset
             let preset_idx = app.chaos_view.selected_preset_index;
-            let experiment = super::chaos_view::preset_to_experiment(preset_idx);
-            let name = super::chaos_view::CHAOS_PRESETS
-                .get(preset_idx)
-                .map(|(n, _, _, _)| n.to_string())
-                .unwrap_or_else(|| "Unknown".to_string());
-            let target = crate::modules::chaos::ChaosTarget::default();
-            let duration = Some(std::time::Duration::from_secs(300));
+            if let Some(experiment) = super::chaos_view::preset_to_experiment(preset_idx) {
+                let name = super::chaos_view::CHAOS_PRESETS
+                    .get(preset_idx)
+                    .map(|(n, _, _, _)| n.to_string())
+                    .unwrap_or_else(|| "Unknown".to_string());
+                let target = crate::modules::chaos::ChaosTarget::default();
+                let duration = Some(std::time::Duration::from_secs(300));
 
-            match app
-                .chaos_engine
-                .start_experiment(name.clone(), experiment, target, duration)
-                .await
-            {
-                Ok(id) => {
-                    app.set_status_message(&format!("Chaos experiment '{}' started: {}", name, id));
+                match app
+                    .chaos_engine
+                    .start_experiment(name.clone(), experiment, target, duration)
+                    .await
+                {
+                    Ok(id) => {
+                        app.set_status_message(&format!(
+                            "Chaos experiment '{}' started: {}",
+                            name, id
+                        ));
+                    }
+                    Err(e) => {
+                        app.set_status_message(&format!("Failed to start chaos: {}", e));
+                    }
                 }
-                Err(e) => {
-                    app.set_status_message(&format!("Failed to start chaos: {}", e));
-                }
+            } else {
+                app.set_status_message("Invalid preset index");
             }
         }
         KeyCode::Char('s')

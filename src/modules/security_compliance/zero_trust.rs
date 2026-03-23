@@ -40,7 +40,7 @@ impl ZeroTrustEngine {
         policies.push(self.generate_allow_kubernetes_api(namespace));
 
         // 3. Discover observed traffic patterns and generate allow policies
-        let observed = self.discover_traffic_patterns(namespace);
+        let observed = self.discover_traffic_patterns(namespace).await;
         for policy in observed {
             policies.push(policy);
         }
@@ -62,22 +62,22 @@ impl ZeroTrustEngine {
     /// explicit allow policies for each unique src_label → dst_label:port flow.
     ///
     /// Falls back to `kubectl get pods` label enumeration if Hubble is unavailable.
-    fn discover_traffic_patterns(&self, namespace: &str) -> Vec<String> {
+    async fn discover_traffic_patterns(&self, namespace: &str) -> Vec<String> {
         // Try Hubble first: observe recent flows in the namespace
-        if let Some(policies) = self.discover_via_hubble(namespace) {
+        if let Some(policies) = self.discover_via_hubble(namespace).await {
             if !policies.is_empty() {
                 return policies;
             }
         }
 
         // Fallback: enumerate pod labels via kubectl to generate service-to-service policies
-        self.discover_via_kubectl(namespace)
+        self.discover_via_kubectl(namespace).await
     }
 
     /// Query `hubble observe` for recent flows and group by
     /// (source app label → destination app label, dest port).
-    fn discover_via_hubble(&self, namespace: &str) -> Option<Vec<String>> {
-        let output = std::process::Command::new("hubble")
+    async fn discover_via_hubble(&self, namespace: &str) -> Option<Vec<String>> {
+        let output = tokio::process::Command::new("hubble")
             .args([
                 "observe",
                 "--namespace",
@@ -90,6 +90,7 @@ impl ZeroTrustEngine {
                 "json",
             ])
             .output()
+            .await
             .ok()?;
 
         if !output.status.success() {
@@ -174,8 +175,8 @@ spec:
 
     /// Fallback: enumerate unique `app` labels in the namespace via kubectl
     /// and generate allow policies between all discovered services on common ports.
-    fn discover_via_kubectl(&self, namespace: &str) -> Vec<String> {
-        let output = match std::process::Command::new("kubectl")
+    async fn discover_via_kubectl(&self, namespace: &str) -> Vec<String> {
+        let output = match tokio::process::Command::new("kubectl")
             .args([
                 "get",
                 "pods",
@@ -186,6 +187,7 @@ spec:
                 "--request-timeout=5s",
             ])
             .output()
+            .await
         {
             Ok(o) if o.status.success() => o,
             _ => return Vec::new(),

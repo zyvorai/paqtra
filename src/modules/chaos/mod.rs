@@ -490,13 +490,24 @@ impl ChaosEngine {
                 continue;
             }
             // Delete the root qdisc to remove all netem rules
-            let _ = tokio::process::Command::new("kubectl")
+            match tokio::process::Command::new("kubectl")
                 .args([
                     "exec", pod_name, "--", "tc", "qdisc", "del", "dev", "eth0", "root",
                 ])
                 .output()
-                .await;
-            tracing::debug!(pod = pod_name, "Removed netem rules");
+                .await
+            {
+                Ok(output) if output.status.success() => {
+                    tracing::debug!(pod = pod_name, "Removed netem rules");
+                }
+                Ok(output) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    tracing::warn!(pod = pod_name, error = %stderr, "Failed to remove netem rules");
+                }
+                Err(e) => {
+                    tracing::warn!(pod = pod_name, error = %e, "kubectl exec failed during netem cleanup");
+                }
+            }
         }
 
         Ok(())

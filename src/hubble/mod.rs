@@ -66,19 +66,10 @@ pub async fn start_port_forward() -> Result<u16> {
     let pid = child.id().unwrap_or(0);
     tracing::info!("Started hubble port-forward (pid: {})", pid);
 
-    // Wrap the child in Arc<Mutex> for safe shared access
+    // Wrap the child in Arc<Mutex> for safe shared access.
+    // Note: kill_on_drop(true) ensures the process is killed when the
+    // Child handle is dropped, so no separate Ctrl-C handler is needed.
     let child = Arc::new(Mutex::new(child));
-
-    // Register a cleanup handler for the port-forward process
-    let child_for_cleanup = Arc::clone(&child);
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        tracing::info!("Cleaning up port-forward process");
-        let mut child = child_for_cleanup.lock().await;
-        if let Err(e) = child.kill().await {
-            tracing::warn!("Failed to kill port-forward process: {}", e);
-        }
-    });
 
     // Wait and verify the port-forward is actually listening.
     // Port-forward setup involves discovering the hubble-relay pod and
