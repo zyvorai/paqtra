@@ -57,9 +57,8 @@ async fn test_rootcause_and_healer_both_process_mock_data() {
     let rootcause = RootCauseEngine::new(RootCauseConfig::default(), MockMapReader, k8s);
 
     // Both modules read from MockMapReader, which returns realistic mock drops.
-    let healer_stats = healer.run().await.unwrap();
+    let _healer_stats = healer.run().await.unwrap();
     // MockMapReader has PolicyDenied drops, so healer should detect problems
-    assert!(healer_stats.problems_detected >= 0);
 
     // RootCause starts with zero stats until analyze_drops is called
     let stats = rootcause.get_stats();
@@ -72,16 +71,14 @@ async fn test_rootcause_and_healer_consistent_run_on_mock() {
 
     // Run healer
     let mut healer = SelfHealer::new(HealerConfig::default(), MockMapReader, k8s.clone());
-    let healer_stats = healer.run().await.unwrap();
+    let _healer_stats = healer.run().await.unwrap();
 
     // Run rootcause analysis
     let mut rootcause = RootCauseEngine::new(RootCauseConfig::default(), MockMapReader, k8s);
-    let analyses = rootcause.analyze_drops().await.unwrap();
+    let _analyses = rootcause.analyze_drops().await.unwrap();
 
     // Both should process mock data consistently
     // MockMapReader has drops, so both should find something
-    assert!(healer_stats.problems_detected >= 0);
-    assert!(analyses.len() >= 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -164,8 +161,7 @@ async fn test_healer_and_autopolicy_run_independently() {
     let mut autopolicy = AutoPolicy::new(AutoPolicyConfig::default(), MockMapReader, k8s);
 
     // Run healer
-    let healer_stats = healer.run().await.unwrap();
-    assert!(healer_stats.problems_detected >= 0);
+    let _healer_stats = healer.run().await.unwrap();
 
     // Start autopolicy learning
     autopolicy.start_learning().await.unwrap();
@@ -180,8 +176,7 @@ async fn test_simulator_and_replay_run_independently() {
     let mut replay = ReplayEngine::new(ReplayConfig::default(), MockMapReader, k8s);
 
     // Load simulator history (MockMapReader now has conntrack entries)
-    let loaded = simulator.load_history().await.unwrap();
-    assert!(loaded >= 0);
+    let _loaded = simulator.load_history().await.unwrap();
 
     // Start replay recording
     let rec_id = replay
@@ -203,16 +198,14 @@ async fn test_rootcause_and_autopolicy_independent() {
     let mut autopolicy = AutoPolicy::new(AutoPolicyConfig::default(), MockMapReader, k8s);
 
     // Analyze drops via rootcause (MockMapReader has drop data)
-    let analyses = rootcause.analyze_drops().await.unwrap();
-    assert!(analyses.len() >= 0);
+    let _analyses = rootcause.analyze_drops().await.unwrap();
 
     // Start autopolicy learning
     autopolicy.start_learning().await.unwrap();
     assert!(matches!(autopolicy.state(), LearningState::Learning { .. }));
 
     // Update autopolicy (MockMapReader has conntrack data)
-    let stats = autopolicy.update().await.unwrap();
-    assert!(stats.connections_observed >= 0);
+    let _stats = autopolicy.update().await.unwrap();
 }
 
 // ---------------------------------------------------------------------------
@@ -313,13 +306,11 @@ async fn test_healer_then_rootcause_lifecycle() {
 
     // Step 1: Healer runs and processes mock data
     let mut healer = SelfHealer::new(HealerConfig::default(), MockMapReader, k8s.clone());
-    let healer_stats = healer.run().await.unwrap();
-    assert!(healer_stats.problems_detected >= 0);
+    let _healer_stats = healer.run().await.unwrap();
 
     // Step 2: RootCause analyzes the same mock data
     let mut rootcause = RootCauseEngine::new(RootCauseConfig::default(), MockMapReader, k8s);
-    let analyses = rootcause.analyze_drops().await.unwrap();
-    assert!(analyses.len() >= 0);
+    let _analyses = rootcause.analyze_drops().await.unwrap();
 }
 
 #[tokio::test]
@@ -332,17 +323,14 @@ async fn test_autopolicy_to_simulator_lifecycle() {
     assert!(matches!(autopolicy.state(), LearningState::Learning { .. }));
 
     // Step 2: Update (MockMapReader has conntrack data)
-    let learning_stats = autopolicy.update().await.unwrap();
-    assert!(learning_stats.connections_observed >= 0);
+    let _learning_stats = autopolicy.update().await.unwrap();
 
     // Step 3: Generate policies
-    let policies = autopolicy.generate_policies().unwrap();
-    assert!(policies.len() >= 0);
+    let _policies = autopolicy.generate_policies().unwrap();
 
     // Step 4: Simulator loads history from mock conntrack data
     let mut simulator = Simulator::new(SimulatorConfig::default(), MockMapReader, k8s);
-    let loaded = simulator.load_history().await.unwrap();
-    assert!(loaded >= 0);
+    let _loaded = simulator.load_history().await.unwrap();
 }
 
 #[tokio::test]
@@ -358,8 +346,7 @@ async fn test_replay_to_rootcause_lifecycle() {
     assert!(!rec_id.is_empty());
 
     // Step 2: Capture (MockMapReader has conntrack data)
-    let captured = replay.capture().await.unwrap();
-    assert!(captured >= 0);
+    let _captured = replay.capture().await.unwrap();
 
     // Step 3: Stop recording
     let recording = replay.stop_recording().await.unwrap();
@@ -367,8 +354,7 @@ async fn test_replay_to_rootcause_lifecycle() {
 
     // Step 4: RootCause analyzes mock drops
     let mut rootcause = RootCauseEngine::new(RootCauseConfig::default(), MockMapReader, k8s);
-    let analyses = rootcause.analyze_drops().await.unwrap();
-    assert!(analyses.len() >= 0);
+    let _analyses = rootcause.analyze_drops().await.unwrap();
 }
 
 // ---------------------------------------------------------------------------
@@ -387,21 +373,18 @@ async fn test_all_five_modules_coexist() {
     let mut replay = ReplayEngine::new(ReplayConfig::default(), MockMapReader, k8s);
 
     // Run all modules
-    let healer_stats = healer.run().await.unwrap();
+    let _healer_stats = healer.run().await.unwrap();
     autopolicy.start_learning().await.unwrap();
     let _learning_stats = autopolicy.update().await.unwrap();
-    let analyses = rootcause.analyze_drops().await.unwrap();
-    let loaded = simulator.load_history().await.unwrap();
+    let _analyses = rootcause.analyze_drops().await.unwrap();
+    let _loaded = simulator.load_history().await.unwrap();
     let rec_id = replay
         .start_recording("all-modules-test".to_string())
         .await
         .unwrap();
 
     // Verify all are in expected states
-    assert!(healer_stats.problems_detected >= 0);
     assert!(matches!(autopolicy.state(), LearningState::Learning { .. }));
-    assert!(analyses.len() >= 0);
-    assert!(loaded >= 0);
     assert!(!rec_id.is_empty());
     assert!(replay.stats().recording_in_progress);
 }

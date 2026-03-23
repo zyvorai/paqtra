@@ -141,10 +141,7 @@ async fn test_autopolicy_update_returns_stats() {
     ap.start_learning().await.unwrap();
 
     // MockMapReader returns mock conntrack entries
-    let stats = ap.update().await.unwrap();
-    assert!(stats.connections_observed >= 0);
-    assert!(stats.patterns_learned >= 0);
-    assert!(stats.unique_patterns >= 0);
+    let _stats = ap.update().await.unwrap();
 }
 
 #[tokio::test]

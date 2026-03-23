@@ -73,8 +73,6 @@ async fn test_healer_detect_and_fix_lifecycle() {
     // MockMapReader returns realistic drop data with PolicyDenied entries,
     // so healer should detect problems and propose fixes.
     let stats = healer.run().await.unwrap();
-    assert!(stats.problems_detected >= 0);
-    assert!(stats.fixes_proposed >= 0);
     // dry_run is true by default, so no fixes applied
     assert_eq!(stats.fixes_applied, 0, "dry_run prevents application");
 }
@@ -148,7 +146,6 @@ async fn test_healer_stats_after_run() {
     let mut healer = SelfHealer::new(config, reader, k8s);
     let run_stats = healer.run().await.unwrap();
     // MockMapReader has drop data, stats reflect detected problems
-    assert!(run_stats.problems_detected >= 0);
 
     // The healer's internal stats should match
     let internal_stats = healer.stats();

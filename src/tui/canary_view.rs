@@ -21,6 +21,7 @@ pub enum ConfirmationType {
     None,
     Promote,
     Rollback,
+    #[allow(dead_code)]
     Pause,
 }
 
