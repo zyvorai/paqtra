@@ -34,7 +34,7 @@ impl Config {
         Ok(Self {
             host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: env::var("PORT")
-                .unwrap_or_else(|_| "0".to_string())
+                .unwrap_or_else(|_| "9191".to_string())
                 .parse()?,
             redis_url: env::var("REDIS_URL")
                 .unwrap_or_else(|_| "redis://localhost:6379".to_string()),

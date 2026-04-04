@@ -1,8 +1,14 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',
@@ -15,6 +21,10 @@ export default defineConfig({
         target: 'http://localhost:9191',
         changeOrigin: true,
       },
+      '/ws': {
+        target: 'ws://localhost:9191',
+        ws: true,
+      },
     },
   },
   build: {
@@ -23,10 +33,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          mui: ['@mui/material', '@mui/icons-material'],
-          charts: ['recharts'],
-          redux: ['@reduxjs/toolkit', 'react-redux'],
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'query-vendor': ['@tanstack/react-query', '@tanstack/react-table'],
+          'chart-vendor': ['recharts'],
+          'icon-vendor': ['lucide-react'],
         },
       },
     },

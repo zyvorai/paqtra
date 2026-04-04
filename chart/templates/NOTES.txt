@@ -1,0 +1,46 @@
+
+Cilium Vision has been deployed successfully!
+
+Namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+
+Components:
+  - API Server: {{ include "cilium-vision.fullname" . }}-api (port {{ .Values.api.service.port }})
+  - UI Dashboard: {{ include "cilium-vision.fullname" . }}-ui (port {{ .Values.ui.service.port }})
+{{- if .Values.redis.enabled }}
+  - Redis: {{ include "cilium-vision.fullname" . }}-redis (port 6379)
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+
+Access the application:
+{{- range .Values.ingress.hosts }}
+  UI:  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+  API: http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/api
+{{- end }}
+{{- else }}
+
+Access the application using port-forward:
+
+  # API Server
+  kubectl port-forward -n {{ .Values.global.namespace | default .Release.Namespace }} \
+    svc/{{ include "cilium-vision.fullname" . }}-api {{ .Values.api.service.port }}:{{ .Values.api.service.port }}
+
+  # UI Dashboard
+  kubectl port-forward -n {{ .Values.global.namespace | default .Release.Namespace }} \
+    svc/{{ include "cilium-vision.fullname" . }}-ui {{ .Values.ui.service.port }}:{{ .Values.ui.service.port }}
+
+Then open:
+  UI:  http://localhost:{{ .Values.ui.service.port }}
+  API: http://localhost:{{ .Values.api.service.port }}
+{{- end }}
+
+{{- if .Values.monitoring.enabled }}
+
+Monitoring:
+  ServiceMonitor has been created for Prometheus Operator.
+  {{- if .Values.monitoring.grafanaDashboard.enabled }}
+  Grafana dashboard ConfigMap has been provisioned.
+  {{- end }}
+{{- end }}
+
+For more information, visit: {{ .Chart.Home }}

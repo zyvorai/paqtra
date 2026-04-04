@@ -13,4 +13,12 @@ describe('API Client', () => {
   it('has JSON content type header', () => {
     expect(api.defaults.headers['Content-Type']).toBe('application/json');
   });
+
+  it('has request interceptor', () => {
+    expect(api.interceptors.request.handlers.length).toBeGreaterThan(0);
+  });
+
+  it('has response interceptor', () => {
+    expect(api.interceptors.response.handlers.length).toBeGreaterThan(0);
+  });
 });

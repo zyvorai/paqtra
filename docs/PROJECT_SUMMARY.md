@@ -8,15 +8,15 @@ Cilium Flow is a Rust-based terminal UI platform that provides real-time network
 
 | Metric | Value |
 |--------|-------|
-| Language | Rust |
-| Source files | 92 |
-| Lines of code | 11,400+ |
-| Modules | 13 |
+| Language | Rust + TypeScript |
+| Rust source files | 92 |
+| Rust lines of code | 11,400+ |
 | TUI tabs | 13 |
-| Test suites | 12 (9 integration + 3 in-crate) |
-| Tests passing | 969 |
-| Compiler warnings | 0 |
-| Clippy warnings | 0 |
+| Rust tests | 969 passing |
+| Web UI views | 58 |
+| Web UI components | 25 |
+| Web UI tests | 74 passing |
+| Compiler warnings | 0 (Rust + TypeScript + ESLint) |
 | Release binary | 13 MB |
 
 ## Module Status
@@ -86,16 +86,40 @@ Infrastructure           Cilium Agent, Kernel eBPF datapath
 - Fixed zero-trust policy generator to skip unknown L4 protocols
 - Removed resource leaks (orphaned cleanup tasks, unnecessary clones)
 
+## Web Dashboard (web-ui)
+
+| Metric | Value |
+|--------|-------|
+| Framework | React 19 + TypeScript 5.6 |
+| Views | 58 (lazy-loaded) |
+| Components | 25 shared UI components |
+| Hooks | 4 custom hooks |
+| Stores | 3 Zustand stores |
+| API types | 49 interfaces, 70+ functions |
+| Tests | 74 passing |
+| ESLint | 0 errors, 0 warnings |
+| Build time | ~6s |
+| Bundle (gzip) | ~220 KB |
+
+Design: Dark-first theme (HyperSDK-aligned) with gradient icon headers, card-glow effects, navbar with hover dropdowns, global search command palette, toggle switches, sortable tables, score gauges, and full light theme support.
+
 ## Build & Test
 
 ```bash
+# TUI (Rust)
 cargo build --release   # 13 MB optimized binary
 cargo test              # 969 tests, 0 failures
 cargo clippy            # 0 warnings
+
+# Web UI (React)
+cd web-ui
+npm run build           # Production build
+npm run test            # 74 tests
+npm run lint            # 0 errors
 ```
 
 ## Dependencies
 
-Key crates: tokio, ratatui, crossterm, kube, k8s-openapi, anyhow, tracing, serde, uuid, chrono, serde_yaml, serde_json, libc.
+**Rust**: tokio, ratatui, crossterm, kube, k8s-openapi, anyhow, tracing, serde, uuid, chrono, serde_yaml, serde_json, libc. Optional: aya (eBPF), tonic/prost (gRPC).
 
-Optional: aya (eBPF), tonic/prost (gRPC).
+**Web UI**: React 19, TypeScript 5.6, Tailwind CSS 3.4, Zustand 5, TanStack React Query, Axios, Recharts 2.15, D3.js, Lucide React, Monaco Editor, Vite 6, Vitest.

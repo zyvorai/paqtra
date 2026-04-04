@@ -91,8 +91,17 @@ kubectl apply -f deployments/k8s/
 
 Review and update `deployments/k8s/secrets.yaml` with your own JWT secret before applying.
 
+## Web UI Keyboard Shortcuts
+
+```
+/ = Search       ? = Shortcuts help
+r = Refresh      Esc = Close modal
+g h = Dashboard  g f = Flows  g t = Topology  g p = Policies
+```
+
 ## Next Steps
 
-- Read [FEATURES.md](FEATURES.md) for a detailed feature guide
-- Explore [examples/](examples/) for real-world scenarios
-- See [docs/architecture.md](docs/architecture.md) for system architecture
+- Read [docs/FEATURES.md](docs/FEATURES.md) for a detailed feature guide
+- Read [docs/WEB_APP_README.md](docs/WEB_APP_README.md) for web UI details
+- See [docs/WEB_APP_ARCHITECTURE.md](docs/WEB_APP_ARCHITECTURE.md) for system architecture
+- See [docs/WEB_APP_DEPLOYMENT.md](docs/WEB_APP_DEPLOYMENT.md) for deployment options

@@ -247,7 +247,25 @@ cilium-flow/
   tests/                       9 integration test suites
   docs/                        Architecture, guides, status
   web-api/                     REST API server (Actix-Web)
+  web-ui/                      React dashboard (58 views, 25 components)
 ```
+
+---
+
+## Web Dashboard
+
+Cilium Flow includes a full-featured web UI built with React 19, TypeScript, and Tailwind CSS.
+
+**58 views** covering observability, security, intelligence, operations, and networking. Dark-first design with real-time WebSocket updates, interactive charts, and keyboard shortcuts.
+
+```bash
+cd web-ui
+npm install && npm run dev   # Dev server on port 3000
+npm run build                # Production build
+npm run test                 # 74 tests
+```
+
+See [docs/WEB_APP_README.md](docs/WEB_APP_README.md) for full details.
 
 ---
 

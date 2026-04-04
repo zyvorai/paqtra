@@ -6,6 +6,13 @@ pub mod anomalies;
 pub mod compliance;
 pub mod modules;
 pub mod metrics;
+pub mod events;
+pub mod endpoints;
+pub mod nodes;
+pub mod extended;
+pub mod extended2;
+pub mod extended3;
+pub mod extended4;
 
 use crate::{AppMetrics, AppState};
 use serde::Serialize;

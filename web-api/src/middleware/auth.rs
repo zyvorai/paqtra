@@ -34,6 +34,11 @@ pub async fn auth_middleware(
         return next.run(request).await;
     }
 
+    // Skip auth entirely when AUTH_DISABLED is set (demo/dev mode)
+    if std::env::var("AUTH_DISABLED").unwrap_or_default() == "true" {
+        return next.run(request).await;
+    }
+
     let auth_header = request
         .headers()
         .get(header::AUTHORIZATION)

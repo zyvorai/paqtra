@@ -198,9 +198,9 @@ The tool auto-detects the cluster, verifies Cilium, enables Hubble relay, starts
 
 | Phase | Focus |
 |-------|-------|
-| Current | All 8 engines wired to TUI, 969 tests, production-ready core |
-| Next | Prometheus exporter, Grafana dashboards, REST API |
-| Future | Web UI, plugin system (WASM), deep learning anomaly models |
+| v1.0 | All 8 engines wired to TUI, 969 tests, production-ready core |
+| v2.0 (Current) | Web dashboard (58 views, React 19), REST API (Actix-Web), WebSocket streaming |
+| v3.0 | Prometheus exporter, Grafana dashboards, plugin system (WASM), deep learning |
 
 # Contact
 

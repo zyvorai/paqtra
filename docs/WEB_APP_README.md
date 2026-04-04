@@ -2,361 +2,129 @@
 
 Modern, cloud-native web interface for Cilium Vision network observability platform.
 
-## 🌟 Features
+## Technology Stack
 
-### Real-Time Dashboard
-- Live metrics visualization (requests/sec, latency, error rate)
-- WebSocket-powered real-time updates
-- Interactive charts with Recharts
+| Layer | Technology |
+|-------|-----------|
+| Framework | React 19 + TypeScript 5.6 |
+| Build | Vite 6 with manual chunk splitting |
+| Styling | Tailwind CSS 3.4 (dark-first, class-based theme) |
+| State | Zustand 5 (auth, theme, preferences) |
+| Data Fetching | TanStack React Query 5.56 + Axios |
+| Charts | Recharts 2.15 |
+| Icons | Lucide React |
+| Routing | React Router 6.28 (lazy-loaded views) |
+| Code Editor | Monaco Editor (YAML policy editing) |
+| Graphs | D3.js + D3-Force (topology, service map) |
+| Testing | Vitest 2 + React Testing Library |
 
-### Flow Monitoring
-- Live network flow table
-- Advanced filtering and search
-- Flow details with packet explanation
-- Time-travel debugging interface
-
-### Network Topology
-- Interactive service graph (D3.js/Cytoscape)
-- Pod-to-pod connection visualization
-- Namespace boundaries
-- Policy enforcement overlay
-
-### Policy Management
-- Visual policy editor with YAML support
-- Monaco editor for advanced editing
-- Dry-run simulation
-- Policy validation and testing
-
-### Anomaly Detection
-- Real-time anomaly alerts
-- ML confidence scoring visualization
-- Auto-remediation actions
-- Historical analysis and trends
-
-### Security & Compliance
-- Multi-framework compliance dashboards
-- Security posture scoring
-- Control status tracking
-- Audit reports and exports
-
-## 🏗️ Architecture
+## Project Structure
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                    React Frontend                     │
-│  • Material-UI components                            │
-│  • Redux Toolkit state management                    │
-│  • D3.js network visualization                       │
-│  • WebSocket real-time updates                       │
-│  • Monaco editor for YAML                            │
-└─────────────────┬────────────────────────────────────┘
-                  │ REST API + WebSocket
-┌─────────────────▼────────────────────────────────────┐
-│                  Rust Backend (Axum)                  │
-│  • REST API endpoints                                │
-│  • WebSocket server                                  │
-│  • GraphQL API (optional)                            │
-│  • JWT authentication                                │
-│  • Redis caching                                     │
-└─────────────────┬────────────────────────────────────┘
-                  │
-┌─────────────────▼────────────────────────────────────┐
-│              Cilium Vision Core                       │
-│  • Intelligence modules                              │
-│  • Anomaly detection                                 │
-│  • Policy generation                                 │
-│  • Hubble integration                                │
-└──────────────────────────────────────────────────────┘
+web-ui/
+  src/
+    App.tsx                    Router + providers (QueryClient, Toast, ErrorBoundary)
+    main.tsx                   Entry point + service worker registration
+    index.css                  Tailwind + custom utilities (gradients, glows, animations)
+    components/                25 shared UI components
+      MainLayout.tsx           Top navbar with hover dropdowns, mobile menu, WS status
+      LoginPage.tsx            Auth form with remember-me, show/hide password
+      StatCard.tsx             Stat card with gradient icon box, glow, trend
+      ChartContainer.tsx       Reusable line/bar/pie chart wrapper
+      SortableTable.tsx        Table with built-in column sorting
+      Badge.tsx                Status/severity/role badge (20+ variants)
+      ProgressBar.tsx          Status-based progress bar with animations
+      ScoreGauge.tsx           SVG circular gauge with score coloring
+      Accordion.tsx            Collapsible section with chevron
+      AlertsList.tsx           Severity-colored alert cards with dismiss
+      QuickLinks.tsx           Quick navigation card grid
+      EmptyState.tsx           Styled empty state with icon + description
+      ToggleSwitch.tsx         iOS-style toggle for boolean settings
+      Toast.tsx                Context-based notification system (4 types)
+      GlobalSearch.tsx         Command palette with keyboard navigation
+      ErrorBoundary.tsx        Chunk load error handling
+      LoadingSpinner.tsx       CSS border spinner (3 sizes)
+      LiveBadge.tsx            WS connection status badge/banner
+      ErrorRetry.tsx           Error alert with retry button
+      Skeleton.tsx             Shimmer loading placeholders
+      ExportButton.tsx         CSV/JSON export dropdown
+      Breadcrumbs.tsx          Route-based navigation breadcrumbs
+      ResponsiveTable.tsx      Desktop table + mobile cards
+      Sparkline.tsx            Compact inline trend chart
+      NotificationManager.tsx  Browser notification permission
+    hooks/                     4 custom hooks
+      useWebSocket.ts          Auto-reconnect WebSocket with JSON parsing
+      useMetricsHistory.ts     Sliding-window metrics buffer
+      useKeyboardShortcuts.ts  Global keyboard shortcuts (g-prefix navigation)
+      usePageTitle.ts          Dynamic document.title
+    stores/                    3 Zustand stores
+      authStore.ts             Token auth with session check
+      themeStore.ts            Dark/light toggle (class + localStorage)
+      preferencesStore.ts      User preferences (page size, refresh, etc.)
+    services/
+      api.ts                   Axios client with 49 interfaces, 70+ API functions
+    utils/
+      formatters.ts            formatBytes, formatDuration, getStatusColor, etc.
+      safe.ts                  Safe number handling (safeFixed, safePct, etc.)
+      chartTheme.ts            Theme-aware chart colors
+    i18n/
+      index.ts                 Simple i18n with 5 locale support
+    views/                     58 view components (lazy-loaded)
 ```
 
-## 🚀 Quick Start
+## Views (58 pages)
 
-### Local Development
+| Category | Views |
+|----------|-------|
+| **Overview** | Dashboard, Events, Nodes, Endpoints, Host Info, Cluster Health, Cilium Status |
+| **Observability** | Flows, Topology, Service Map, Heatmap, Dependencies, Latency, Flow Export, SLOs, DNS Monitor, Bandwidth, Interfaces, Metrics |
+| **Security** | Policies, Templates, Policy Editor, Pod Security, Anomalies, Security, Encryption, WireGuard, Identities, RBAC, Compliance, Audit Log, Alerts, Incidents, Change Log |
+| **Intelligence** | AutoPolicy, Healer, Root Cause, Diagnostics, Troubleshoot, Forecasting |
+| **Operations** | Chaos, Canary, Replay, Capture, Mirroring, MultiCluster, Cluster Mesh, BGP, Node Drain, eBPF |
+| **Networking** | Load Balancer, Ingress, Egress GW, Service Mesh, KPR, IPAM, Cost Analytics, Settings |
+
+## Design System
+
+Dark-first UI matching HyperSDK design patterns:
+
+- **Backgrounds**: `bg-slate-950` (page), `bg-slate-800/50` (cards), `bg-slate-900/50` (inputs/nested)
+- **Borders**: `border-slate-700/50` (cards), `border-slate-700/30` (table rows)
+- **Text**: `text-white` (headings), `text-slate-400` (secondary), `text-slate-500` (muted)
+- **Gradients**: `text-gradient-blue`, stat-card-{blue,green,red,purple,orange,cyan}
+- **Effects**: `card-glow`, `hover:scale-[1.02]`, `animate-fade-in`, `skeleton` shimmer
+- **Navbar**: `navbar-gradient` with backdrop blur, hover dropdowns, WS connection dot
+- **Buttons**: `bg-gradient-to-r from-blue-600 to-blue-700` (primary), border-based (secondary)
+- **Tables**: `bg-slate-900/50` thead, `uppercase tracking-wider` headers, `table-row-hover`
+- **Modals**: `modal-backdrop` with blur, `modal-card` with scale-in animation
+
+## Development
 
 ```bash
-# Terminal 1: Start backend API
-cd web-api
-cargo run
-
-# Terminal 2: Start frontend
 cd web-ui
 npm install
-npm run dev
-
-# Access at http://localhost:3000
+npm run dev          # Dev server on port 3000
+npm run build        # Production build with tsc + vite
+npm run test         # 74 tests via Vitest
+npm run lint         # ESLint (0 errors, 0 warnings)
 ```
 
-### Docker Compose
+## Keyboard Shortcuts
 
-```bash
-cd deployments
-docker-compose up -d
+| Key | Action |
+|-----|--------|
+| `/` | Open search |
+| `?` | Show keyboard shortcuts |
+| `r` | Refresh current view |
+| `g h` | Go to Dashboard |
+| `g f` | Go to Flows |
+| `g t` | Go to Topology |
+| `g p` | Go to Policies |
+| `Esc` | Close modal/overlay |
 
-# Frontend: http://localhost:3000
-# Backend: http://localhost:9191
-```
+## Build Output
 
-### Kubernetes
-
-```bash
-# Deploy all components
-kubectl apply -f deployments/k8s/
-
-# Port forward
-kubectl port-forward -n cilium-system svc/cilium-vision-ui 3000:80
-```
-
-See [WEB_APP_DEPLOYMENT.md](WEB_APP_DEPLOYMENT.md) for detailed deployment instructions.
-
-## 📂 Project Structure
-
-```
-.
-├── web-api/                  # Backend API server (Rust/Axum)
-│   ├── src/
-│   │   ├── main.rs          # Entry point
-│   │   ├── handlers/        # HTTP request handlers
-│   │   ├── routes.rs        # Route definitions
-│   │   ├── models.rs        # Data models
-│   │   ├── services/        # Business logic
-│   │   ├── middleware/      # Auth, CORS, etc.
-│   │   └── websocket.rs     # WebSocket handlers
-│   ├── Cargo.toml           # Rust dependencies
-│   └── Dockerfile           # Multi-stage build
-│
-├── web-ui/                   # Frontend application (React/TypeScript)
-│   ├── src/
-│   │   ├── App.tsx          # Main app component
-│   │   ├── pages/           # Page components
-│   │   │   ├── Dashboard.tsx
-│   │   │   ├── Flows.tsx
-│   │   │   ├── Topology.tsx
-│   │   │   ├── Policies.tsx
-│   │   │   ├── Anomalies.tsx
-│   │   │   └── Compliance.tsx
-│   │   ├── components/      # Reusable components
-│   │   │   ├── Layout.tsx
-│   │   │   ├── FlowTable.tsx
-│   │   │   └── NetworkGraph.tsx
-│   │   ├── features/        # Redux slices
-│   │   ├── services/        # API clients
-│   │   └── store/           # Redux store
-│   ├── package.json
-│   ├── vite.config.ts
-│   ├── Dockerfile
-│   └── nginx.conf           # Production nginx config
-│
-├── deployments/
-│   ├── k8s/                 # Kubernetes manifests
-│   │   ├── backend-deployment.yaml
-│   │   ├── frontend-deployment.yaml
-│   │   ├── redis-deployment.yaml
-│   │   ├── ingress.yaml
-│   │   ├── rbac.yaml
-│   │   ├── configmap.yaml
-│   │   └── secrets.yaml
-│   └── docker-compose.yaml  # Local development stack
-│
-└── docs/
-    ├── WEB_APP_ARCHITECTURE.md   # Architecture deep dive
-    ├── WEB_APP_DEPLOYMENT.md     # Deployment guide
-    └── WEB_APP_README.md         # This file
-```
-
-## 🔧 Technology Stack
-
-### Backend
-- **Framework**: Axum (Rust async web framework)
-- **WebSocket**: tokio-tungstenite
-- **Cache**: Redis
-- **Auth**: JWT (jsonwebtoken)
-- **Metrics**: Prometheus
-- **Tracing**: tracing + tracing-subscriber
-
-### Frontend
-- **Framework**: React 18 + TypeScript
-- **UI Library**: Material-UI (MUI)
-- **State**: Redux Toolkit + RTK Query
-- **Visualization**:
-  - D3.js (network graphs)
-  - Cytoscape.js (topology)
-  - Recharts (metrics charts)
-- **Editor**: Monaco Editor (YAML/JSON)
-- **Build**: Vite
-
-### Infrastructure
-- **Container**: Docker
-- **Orchestration**: Kubernetes
-- **Ingress**: NGINX
-- **TLS**: cert-manager
-- **Monitoring**: Prometheus + Grafana
-
-## 📊 API Endpoints
-
-### Health & Metrics
-- `GET /health` - Health check
-- `GET /ready` - Readiness check
-- `GET /metrics` - Prometheus metrics
-
-### Flow Monitoring
-- `GET /api/v1/flows` - List flows
-- `GET /api/v1/flows/:id` - Get flow details
-- `GET /api/v1/flows/stats` - Flow statistics
-- `WS /api/v1/ws/flows` - Real-time flow stream
-
-### Policy Management
-- `GET /api/v1/policies` - List policies
-- `POST /api/v1/policies` - Create policy
-- `PUT /api/v1/policies/:id` - Update policy
-- `DELETE /api/v1/policies/:id` - Delete policy
-- `POST /api/v1/policies/simulate` - Simulate policy
-
-### Anomaly Detection
-- `GET /api/v1/anomalies` - List anomalies
-- `POST /api/v1/anomalies/:id/remediate` - Apply remediation
-
-### Compliance
-- `GET /api/v1/compliance/frameworks` - List frameworks
-- `POST /api/v1/compliance/audit` - Run audit
-- `GET /api/v1/security/posture` - Security score
-
-See [API_REFERENCE.md](API_REFERENCE.md) for complete API documentation.
-
-## 🔒 Security
-
-### Authentication
-- JWT-based authentication
-- Secure password hashing (Argon2)
-- Session management with Redis
-
-### RBAC
-- Kubernetes RBAC integration
-- ServiceAccount-based permissions
-- Least-privilege access
-
-### Network Security
-- TLS/HTTPS only in production
-- CORS configuration
-- Security headers (CSP, X-Frame-Options, etc.)
-- Pod security contexts
-
-### Secrets Management
-- Kubernetes Secrets
-- Never commit secrets to git
-- Rotate JWT secrets regularly
-
-## 🎨 UI Screenshots
-
-(Screenshots would go here in production)
-
-### Dashboard
-- Real-time metrics
-- Service health
-- Active connections
-
-### Flow Monitoring
-- Live flow table
-- Packet details
-- Verdict analysis
-
-### Network Topology
-- Interactive graph
-- Service relationships
-- Policy visualization
-
-## 🧪 Development
-
-### Backend Development
-```bash
-cd web-api
-
-# Run with hot reload
-cargo watch -x run
-
-# Run tests
-cargo test
-
-# Format code
-cargo fmt
-
-# Lint
-cargo clippy
-```
-
-### Frontend Development
-```bash
-cd web-ui
-
-# Start dev server
-npm run dev
-
-# Run tests
-npm run test
-
-# Build for production
-npm run build
-
-# Preview production build
-npm run preview
-```
-
-### End-to-End Testing
-```bash
-# Start all services
-docker-compose up -d
-
-# Run E2E tests
-npm run test:e2e
-```
-
-## 📈 Performance
-
-### Backend
-- **Latency**: <50ms API response time
-- **Throughput**: 10,000+ requests/second
-- **Memory**: ~256MB base + cache
-- **CPU**: <500m typical usage
-
-### Frontend
-- **Initial Load**: <2s (gzipped)
-- **Time to Interactive**: <3s
-- **FPS**: 60 FPS rendering
-- **Bundle Size**: <500KB (code split)
-
-### WebSocket
-- **Connection**: Persistent WebSocket
-- **Updates**: Real-time (<100ms latency)
-- **Compression**: Enabled
-
-## 🐛 Troubleshooting
-
-See [WEB_APP_DEPLOYMENT.md#troubleshooting](WEB_APP_DEPLOYMENT.md#troubleshooting) for common issues and solutions.
-
-## 📝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## 📄 License
-
-Apache License 2.0 - See LICENSE file for details
-
-## 🙏 Acknowledgments
-
-- **Axum** - Excellent Rust web framework
-- **React** - Modern UI library
-- **Material-UI** - Beautiful component library
-- **D3.js** - Powerful visualization library
-- **Cilium** - eBPF-based networking
-
----
-
-**Built with ❤️ for the Cilium community**
-
-For detailed information:
-- [Architecture](WEB_APP_ARCHITECTURE.md)
-- [Deployment Guide](WEB_APP_DEPLOYMENT.md)
-- [Main README](../README.md)
+- React vendor: 35 KB (gzip: 12 KB)
+- Chart vendor: 406 KB (gzip: 111 KB)
+- Icon vendor: 45 KB (gzip: 9 KB)
+- App code: 267 KB (gzip: 84 KB)
+- Sourcemaps included for debugging

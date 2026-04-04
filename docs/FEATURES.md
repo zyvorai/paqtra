@@ -157,3 +157,31 @@ Zero-trust policy generation, compliance framework auditing (PCI-DSS, SOC2, HIPA
 
 ### Developer Tools
 Traffic shadowing, request replay, environment mirroring.
+
+---
+
+## Web Dashboard (web-ui)
+
+Full-featured React 19 web application with 58 views and 25 shared components.
+
+### Design
+- Dark-first theme (slate-950 base) with light mode toggle
+- Gradient icon headers, card-glow hover effects, shimmer skeletons
+- Navbar with hover dropdowns, WebSocket connection indicator, global search
+- Terminal-style code views with traffic light dots
+
+### Key Views
+| Category | Count | Highlights |
+|----------|-------|-----------|
+| Overview | 7 | Dashboard with live metrics, cluster health, Cilium agent status |
+| Observability | 12 | Flows, topology, service map, heatmap, latency, DNS, bandwidth |
+| Security | 15 | Policies, policy editor (Monaco), anomalies, encryption, RBAC, compliance |
+| Intelligence | 6 | AutoPolicy ML engine, healer, root cause, diagnostics, forecasting |
+| Operations | 10 | Chaos engineering, canary, replay, packet capture, multi-cluster, eBPF |
+| Networking | 8 | Load balancer, ingress/egress, service mesh, IPAM, cost analytics |
+
+### Reusable Components
+StatCard, ChartContainer, SortableTable, Badge, ProgressBar, ScoreGauge, Accordion, ToggleSwitch, AlertsList, EmptyState, Toast, GlobalSearch, and more.
+
+### Tech Stack
+React 19, TypeScript 5.6, Tailwind CSS 3.4, Zustand 5, TanStack React Query, Recharts, D3.js, Monaco Editor, Vite 6, Vitest (74 tests).

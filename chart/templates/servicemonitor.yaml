@@ -1,0 +1,77 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "cilium-vision.fullname" . }}-api
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "cilium-vision.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+    {{- with .Values.monitoring.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "cilium-vision.api.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout }}
+      path: /metrics
+---
+{{- if .Values.monitoring.prometheusRules.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "cilium-vision.fullname" . }}
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "cilium-vision.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: cilium-vision
+      rules:
+        - alert: CiliumVisionAPIDown
+          expr: up{job="{{ include "cilium-vision.fullname" . }}-api"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Cilium Vision API is down"
+            description: "The Cilium Vision API has been unreachable for more than 5 minutes."
+        - alert: CiliumVisionHighErrorRate
+          expr: rate(http_requests_total{job="{{ include "cilium-vision.fullname" . }}-api",status=~"5.."}[5m]) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High error rate on Cilium Vision API"
+            description: "The API error rate has exceeded 10% for more than 10 minutes."
+        {{- with .Values.monitoring.prometheusRules.rules }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}
+---
+{{- if .Values.monitoring.grafanaDashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cilium-vision.fullname" . }}-grafana-dashboard
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "cilium-vision.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.grafanaDashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  cilium-vision.json: |
+    {
+      "dashboard": {
+        "title": "Cilium Vision Overview",
+        "uid": "cilium-vision",
+        "panels": []
+      }
+    }
+{{- end }}
+{{- end }}

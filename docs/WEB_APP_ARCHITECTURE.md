@@ -2,440 +2,224 @@
 
 ## Overview
 
-A cloud-native web application for Cilium Vision that provides a modern, real-time dashboard for network observability, policy management, and intelligent automation.
+Cloud-native web application providing a real-time dashboard for Cilium network observability, policy management, and intelligent automation. Built with React 19, TypeScript, and Tailwind CSS.
 
 ## Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Kubernetes Cluster                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌────────────────────────────────────────────────────────┐    │
-│  │                    Ingress Controller                   │    │
-│  │              (TLS Termination, Routing)                 │    │
-│  └────────────────────────────────────────────────────────┘    │
-│                           │                                      │
-│              ┌────────────┴────────────┐                        │
-│              │                         │                        │
-│  ┌───────────▼──────────┐  ┌──────────▼──────────┐            │
-│  │   Frontend Service   │  │   Backend Service    │            │
-│  │   (React SPA)        │  │   (Rust/Axum API)    │            │
-│  │   Port: 80           │  │   Port: 8080         │            │
-│  │                      │  │                      │            │
-│  │  • Dashboard         │  │  • REST API          │            │
-│  │  • Flow Viz          │  │  • WebSocket         │            │
-│  │  • Policy Management │  │  • GraphQL           │            │
-│  │  • Real-time Updates │  │  • gRPC Proxy        │            │
-│  └──────────────────────┘  └──────────────────────┘            │
-│                                     │                            │
-│                      ┌──────────────┴──────────────┐            │
-│                      │                             │            │
-│          ┌───────────▼──────────┐     ┌───────────▼─────────┐  │
-│          │  Cilium Vision Core  │     │   Redis Cache       │  │
-│          │  (Intelligence)      │     │   (Sessions/State)  │  │
-│          │                      │     └─────────────────────┘  │
-│          │  • Anomaly Detection │                              │
-│          │  • AutoPolicy        │                              │
-│          │  • Security Module   │                              │
-│          │  • eBPF Advanced     │                              │
-│          └──────────┬───────────┘                              │
-│                     │                                           │
-│          ┌──────────▼───────────┐                              │
-│          │   Hubble Relay       │                              │
-│          │   (Flow Observer)    │                              │
-│          └──────────────────────┘                              │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
++-------------------------------------------------------------+
+|                    Kubernetes Cluster                         |
++-------------------------------------------------------------+
+|                                                               |
+|  +---------------------------+  +--------------------------+ |
+|  |   Frontend (React SPA)    |  |   Backend (Rust/Actix)   | |
+|  |   Port: 3000 (dev)        |  |   Port: 9191             | |
+|  |                            |  |                          | |
+|  |  25 shared components      |  |  REST API (/api/v1/*)   | |
+|  |  58 lazy-loaded views      |  |  WebSocket (/ws/*)      | |
+|  |  Zustand state (3 stores)  |  |  JWT authentication     | |
+|  |  WebSocket real-time       |  |  Hubble gRPC proxy      | |
+|  +---------------------------+  +--------------------------+ |
+|                                          |                    |
+|                           +--------------+---------------+   |
+|                           |                              |   |
+|               +-----------v-----------+  +---------------v-+ |
+|               |  Cilium Vision Core   |  |  Hubble Relay   | |
+|               |  (Intelligence)       |  |  (Flow Data)    | |
+|               |                       |  +-----------------+ |
+|               |  AutoPolicy Engine    |                      |
+|               |  Anomaly Detection    |                      |
+|               |  Chaos Engineering    |                      |
+|               |  eBPF Profiler        |                      |
+|               +-----------------------+                      |
++-------------------------------------------------------------+
 ```
 
 ## Technology Stack
 
 ### Backend (Rust)
-- **Framework**: Axum (high-performance async web framework)
-- **WebSocket**: tokio-tungstenite
-- **GraphQL**: async-graphql
+- **Framework**: Actix-Web
+- **WebSocket**: actix-ws
 - **Serialization**: serde_json
-- **Authentication**: JWT (jsonwebtoken)
-- **Cache**: redis-rs
-- **Database**: PostgreSQL (sqlx) - optional for persistence
+- **Authentication**: JWT (Bearer tokens)
 - **Observability**: tracing, prometheus metrics
 
 ### Frontend (React)
-- **Framework**: React 18 with TypeScript
-- **State Management**: Redux Toolkit + RTK Query
-- **UI Library**: Material-UI (MUI) or Ant Design
-- **Visualization**:
-  - D3.js for network topology
-  - Recharts for metrics
-  - Cytoscape.js for policy graphs
-- **Real-time**: Socket.IO or native WebSocket
-- **Build Tool**: Vite
-- **Testing**: Vitest + React Testing Library
+- **Framework**: React 19 with TypeScript 5.6
+- **State Management**: Zustand 5 (auth, theme, preferences)
+- **Data Fetching**: TanStack React Query 5.56 + Axios
+- **Routing**: React Router 6.28 with React.lazy code splitting
+- **Visualization**: Recharts 2.15, D3.js 7.9 (topology/service map)
+- **Code Editor**: Monaco Editor (YAML policy editing)
+- **Icons**: Lucide React
+- **Styling**: Tailwind CSS 3.4 (dark-first, class-based toggle)
+- **Build Tool**: Vite 6 (manual chunk splitting, sourcemaps)
+- **Testing**: Vitest 2 + React Testing Library (74 tests)
 
-### Infrastructure
-- **Container Runtime**: Docker
-- **Orchestration**: Kubernetes
-- **Ingress**: NGINX Ingress Controller
-- **TLS**: cert-manager for automatic certificates
-- **Monitoring**: Prometheus + Grafana
-- **Logging**: Fluent Bit → Elasticsearch → Kibana
+## Frontend Architecture
 
-## Component Architecture
+### Component Layer (25 components)
 
-### 1. Backend API Server
-
-#### Core Modules
-```rust
-web-api/
-├── src/
-│   ├── main.rs                 # Entry point
-│   ├── routes/
-│   │   ├── mod.rs              # Route definitions
-│   │   ├── flows.rs            # Flow monitoring APIs
-│   │   ├── policies.rs         # Policy management APIs
-│   │   ├── anomalies.rs        # Anomaly detection APIs
-│   │   ├── compliance.rs       # Compliance APIs
-│   │   └── websocket.rs        # WebSocket handler
-│   ├── handlers/
-│   │   ├── mod.rs
-│   │   ├── flow_handler.rs     # Flow business logic
-│   │   ├── policy_handler.rs   # Policy business logic
-│   │   └── module_handler.rs   # Intelligence modules
-│   ├── models/
-│   │   ├── mod.rs
-│   │   ├── flow.rs             # Flow data models
-│   │   ├── policy.rs           # Policy data models
-│   │   └── response.rs         # API response models
-│   ├── services/
-│   │   ├── mod.rs
-│   │   ├── hubble_service.rs   # Hubble integration
-│   │   ├── k8s_service.rs      # Kubernetes client
-│   │   └── cache_service.rs    # Redis cache
-│   ├── middleware/
-│   │   ├── auth.rs             # JWT authentication
-│   │   ├── cors.rs             # CORS configuration
-│   │   └── metrics.rs          # Prometheus metrics
-│   └── graphql/
-│       ├── schema.rs           # GraphQL schema
-│       └── resolvers.rs        # Query/Mutation resolvers
+```
+components/
+  Layout:       MainLayout, LoginPage
+  Data Display: StatCard, ChartContainer, SortableTable, ResponsiveTable,
+                AlertsList, Badge, ProgressBar, ScoreGauge, Sparkline
+  Feedback:     Toast, LoadingSpinner, Skeleton, ErrorBoundary, ErrorRetry,
+                EmptyState, LiveBadge
+  Navigation:   GlobalSearch, Breadcrumbs, QuickLinks
+  Form:         ToggleSwitch, Accordion, ExportButton, NotificationManager
 ```
 
-#### API Endpoints
+### State Management
 
-**Flow Monitoring**
-- `GET /api/v1/flows` - List flows with filters
-- `GET /api/v1/flows/:id` - Get flow details
-- `GET /api/v1/flows/stats` - Flow statistics
-- `WS /api/v1/flows/stream` - Real-time flow stream
+| Store | Purpose | Persistence |
+|-------|---------|-------------|
+| authStore | Token, username, session check | localStorage + sessionStorage |
+| themeStore | Dark/light toggle | localStorage |
+| preferencesStore | Page size, refresh interval, etc. | localStorage |
 
-**Policy Management**
-- `GET /api/v1/policies` - List policies
-- `POST /api/v1/policies` - Create policy
-- `PUT /api/v1/policies/:id` - Update policy
-- `DELETE /api/v1/policies/:id` - Delete policy
-- `POST /api/v1/policies/simulate` - Dry-run simulation
+### Hooks
 
-**Anomaly Detection**
-- `GET /api/v1/anomalies` - List detected anomalies
-- `GET /api/v1/anomalies/:id` - Anomaly details
-- `POST /api/v1/anomalies/:id/remediate` - Apply remediation
+| Hook | Purpose |
+|------|---------|
+| useWebSocket | Auto-reconnect WS with JSON parsing |
+| useMetricsHistory | Sliding-window buffer for time-series data |
+| useKeyboardShortcuts | Global shortcuts with g-prefix navigation |
+| usePageTitle | Dynamic document.title |
 
-**Security & Compliance**
-- `GET /api/v1/compliance/frameworks` - List frameworks
-- `POST /api/v1/compliance/audit` - Run compliance audit
-- `GET /api/v1/security/posture` - Security posture score
-- `POST /api/v1/security/zerotrust` - Generate zero-trust policies
+### View Layer (58 views)
 
-**Intelligence Modules**
-- `POST /api/v1/modules/autopolicy/generate` - Generate policies
-- `GET /api/v1/modules/chaos/experiments` - List experiments
-- `POST /api/v1/modules/chaos/run` - Run chaos experiment
-- `GET /api/v1/modules/canary/:id` - Canary deployment status
+All views are lazy-loaded via `React.lazy()` + `Suspense` for optimal code splitting.
 
-**GraphQL**
-- `POST /graphql` - GraphQL queries and mutations
-- `WS /graphql/subscriptions` - GraphQL subscriptions
+Each view follows a consistent pattern:
+1. Gradient icon box page header
+2. Error/success alert banners
+3. Stat cards with card-glow hover effects
+4. Data tables with sortable headers, section headers, count badges
+5. Charts with gradient icon headers and dark tooltip styling
 
-### 2. Frontend Application
+### API Layer
 
-#### Page Structure
-```
-web-ui/
-├── src/
-│   ├── App.tsx                 # Main app component
-│   ├── pages/
-│   │   ├── Dashboard.tsx       # Overview dashboard
-│   │   ├── Flows.tsx           # Flow monitoring
-│   │   ├── Topology.tsx        # Network topology
-│   │   ├── Policies.tsx        # Policy management
-│   │   ├── Anomalies.tsx       # Anomaly detection
-│   │   ├── Compliance.tsx      # Compliance dashboard
-│   │   ├── Chaos.tsx           # Chaos engineering
-│   │   └── Settings.tsx        # Configuration
-│   ├── components/
-│   │   ├── FlowTable.tsx       # Flow data table
-│   │   ├── NetworkGraph.tsx    # Network visualization
-│   │   ├── PolicyEditor.tsx    # YAML policy editor
-│   │   ├── MetricsChart.tsx    # Metrics visualization
-│   │   └── AnomalyCard.tsx     # Anomaly display
-│   ├── features/
-│   │   ├── flows/              # Flow feature slice
-│   │   ├── policies/           # Policy feature slice
-│   │   └── anomalies/          # Anomaly feature slice
-│   ├── services/
-│   │   ├── api.ts              # REST API client
-│   │   └── websocket.ts        # WebSocket client
-│   └── hooks/
-│       ├── useFlows.ts         # Flow data hook
-│       └── useWebSocket.ts     # WebSocket hook
-```
+Single Axios instance (`services/api.ts`) with:
+- Auto-injected Bearer token from sessionStorage
+- 401 response interceptor (clears auth state)
+- 49 typed interfaces for all API responses
+- 70+ typed API functions
 
-#### Dashboard Views
+## Design System
 
-**1. Overview Dashboard**
-- Real-time metrics (requests/sec, latency, errors)
-- Active connections map
-- Policy compliance status
-- Recent anomalies
-- Security posture score
+Dark-first theme matching HyperSDK patterns:
 
-**2. Flow Monitoring**
-- Live flow table with filtering
-- Flow details modal
-- Packet explanation integration
-- Time-travel replay controls
+### Color Palette
+- **Page**: `bg-slate-950` / `#0f172a`
+- **Cards**: `bg-slate-800/50` with `border-slate-700/50`
+- **Inputs**: `bg-slate-900/50` with `border-slate-700/50`
+- **Primary text**: `text-white`
+- **Secondary text**: `text-slate-400`
+- **Muted text**: `text-slate-500`
 
-**3. Network Topology**
-- Interactive service graph (D3.js)
-- Pod-to-pod connections
-- Policy enforcement visualization
-- Namespace boundaries
+### Stat Card System
+Six gradient variants: `stat-card-{blue,green,red,purple,orange,cyan}`
+Each with matching `card-glow-{color}` hover effect and `hover:scale-[1.02]`
 
-**4. Policy Management**
-- Policy list with search
-- Visual policy editor
-- Dry-run simulator integration
-- Policy validation
+### Component Patterns
+- **Gradient icon box**: `w-10 h-10 rounded-lg bg-gradient-to-br from-{color}-500 to-{color}-700`
+- **Section accent bar**: `w-1 h-5 bg-gradient-to-b from-{color}-400 to-{color}-500 rounded-full`
+- **Terminal header**: Traffic light dots (red/yellow/green circles)
+- **Table headers**: `uppercase tracking-wider font-semibold text-slate-400`
+- **Buttons**: Gradient primary, border secondary, gradient-to-r reset
 
-**5. Anomaly Detection**
-- Anomaly timeline
-- Confidence scoring display
-- Remediation actions
-- Historical analysis
+### Animations
+- `animate-fade-in`: translateY(8px) + opacity
+- `animate-scale-in`: scale(0.95) + opacity
+- `animate-slide-in`: translateX(100%) + opacity
+- `animate-pulse-dot`: opacity pulse for live indicators
+- `skeleton`: shimmer gradient for loading states
 
-**6. Compliance Dashboard**
-- Framework selection (PCI-DSS, SOC2, HIPAA, etc.)
-- Control status grid
-- Violation details
-- Audit reports
+### Light Theme
+Full light theme support via `.light-theme` class + `html:not(.dark)` CSS variables.
+Toggle persisted in localStorage.
 
-## Data Flow
+## API Endpoints
 
-### Real-time Updates Flow
-```
-Hubble gRPC → Backend Service → WebSocket → Frontend Components
-     │              │                             │
-     │              ├─ Redis Cache ←──────────────┘
-     │              │
-     │              ├─ Intelligence Modules
-     │              │  (Anomaly Detection, AutoPolicy)
-     │              │
-     │              └─ Prometheus Metrics
-```
+### Core
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/health` | Health check |
+| POST | `/auth/login` | Authentication |
+| WS | `/api/v1/ws/metrics` | Real-time metrics stream |
 
-### Request Flow
-```
-User Action → Frontend → REST API → Backend Handler →
-   ↓                                        ↓
-   ↓                                   K8s/Hubble
-   ↓                                        ↓
-   ← JSON Response ← API Response ← Result ←
-```
+### Observability
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/flows` | Paginated flows with filters |
+| GET | `/api/v1/flows/stats` | Flow statistics |
+| GET | `/api/v1/events` | Kubernetes events |
+| GET | `/api/v1/nodes` | Node status and resources |
+| GET | `/api/v1/endpoints` | Cilium endpoints |
+| GET | `/api/v1/heatmap` | Traffic heatmap data |
+| GET | `/api/v1/service-deps` | Service dependency graph |
+| GET | `/api/v1/dns/queries` | DNS query monitoring |
+| GET | `/api/v1/latency` | Latency percentile analysis |
 
-## Security Architecture
+### Security & Policy
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/policies` | List network policies |
+| POST | `/api/v1/policies` | Create policy |
+| POST | `/api/v1/policies/validate` | Validate YAML |
+| GET | `/api/v1/anomalies` | Detected anomalies |
+| GET | `/api/v1/security/findings` | Security findings |
+| GET | `/api/v1/security/zero-trust` | Zero-trust score |
+| GET | `/api/v1/compliance/frameworks` | Compliance frameworks |
 
-### Authentication & Authorization
-- **JWT-based authentication**
-- **RBAC integration with Kubernetes**
-- **API key support for CI/CD**
-- **Session management with Redis**
+### Intelligence
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/modules/autopolicy/generate` | ML policy generation |
+| GET | `/api/v1/healer/problems` | Detected problems |
+| GET | `/api/v1/packet-drops` | Drop analysis |
+| POST | `/api/v1/diagnostics/run` | Run health checks |
+| POST | `/api/v1/troubleshoot` | Connectivity test |
 
-### Security Headers
-```yaml
-Content-Security-Policy: default-src 'self'
-X-Frame-Options: DENY
-X-Content-Type-Options: nosniff
-Strict-Transport-Security: max-age=31536000
-```
+### Operations
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/modules/chaos/experiments` | Chaos experiments |
+| POST | `/api/v1/modules/chaos/run` | Run experiment |
+| GET | `/api/v1/recordings` | Flow recordings |
+| GET | `/api/v1/capture/sessions` | Packet captures |
+| GET | `/api/v1/clusters` | Multi-cluster status |
 
-### TLS Configuration
-- Automatic certificate management via cert-manager
-- TLS 1.3 minimum
-- Strong cipher suites
+## Development
 
-## Scalability
-
-### Horizontal Scaling
-- Frontend: Stateless, can scale infinitely
-- Backend: Stateless API pods (3+ replicas recommended)
-- Redis: Redis Sentinel for HA
-- Database: PostgreSQL with read replicas
-
-### Performance Optimizations
-- Response caching with Redis (60s TTL)
-- GraphQL query batching
-- WebSocket connection pooling
-- Frontend code splitting
-- CDN for static assets
-
-## Monitoring & Observability
-
-### Metrics (Prometheus)
-```
-# Backend metrics
-http_requests_total{method, path, status}
-http_request_duration_seconds{method, path}
-websocket_connections_active
-hubble_flows_processed_total
-
-# Frontend metrics (via backend proxy)
-page_load_time_seconds{page}
-api_call_duration_seconds{endpoint}
-```
-
-### Logging
-```json
-{
-  "timestamp": "2026-02-11T18:00:00Z",
-  "level": "INFO",
-  "service": "cilium-vision-api",
-  "message": "Policy created",
-  "namespace": "production",
-  "policy_name": "allow-frontend-backend",
-  "user": "admin@example.com"
-}
-```
-
-### Distributed Tracing
-- OpenTelemetry integration
-- Jaeger for trace visualization
-- Trace context propagation across services
-
-## Deployment Strategy
-
-### Rolling Updates
-```yaml
-strategy:
-  type: RollingUpdate
-  rollingUpdate:
-    maxSurge: 1
-    maxUnavailable: 0
-```
-
-### Health Checks
-```yaml
-livenessProbe:
-  httpGet:
-    path: /health
-    port: 8080
-  initialDelaySeconds: 10
-  periodSeconds: 30
-
-readinessProbe:
-  httpGet:
-    path: /ready
-    port: 8080
-  initialDelaySeconds: 5
-  periodSeconds: 10
-```
-
-### Resource Requirements
-```yaml
-# Backend
-resources:
-  requests:
-    memory: "256Mi"
-    cpu: "250m"
-  limits:
-    memory: "1Gi"
-    cpu: "1000m"
-
-# Frontend
-resources:
-  requests:
-    memory: "64Mi"
-    cpu: "100m"
-  limits:
-    memory: "256Mi"
-    cpu: "500m"
-```
-
-## Development Workflow
-
-### Local Development
 ```bash
-# Backend
-cd web-api
-cargo run
-
 # Frontend
 cd web-ui
-npm run dev
+npm install
+npm run dev        # Vite dev server (port 3000, proxies to :9191)
+npm run build      # Production build (tsc + vite)
+npm run test       # 74 tests (vitest)
+npm run lint       # ESLint (0 errors)
 
-# Docker Compose for full stack
+# Backend
+cd web-api
+cargo run          # API server on port 9191
+
+# Full stack
 docker-compose up
 ```
 
-### CI/CD Pipeline
-```yaml
-Stages:
-1. Build & Test
-   - Cargo build & test (backend)
-   - npm build & test (frontend)
-2. Security Scan
-   - cargo audit
-   - npm audit
-   - Trivy container scan
-3. Build Images
-   - Multi-stage Docker builds
-   - Push to registry
-4. Deploy to Staging
-   - Helm chart deployment
-   - Integration tests
-5. Deploy to Production
-   - Manual approval
-   - Helm upgrade
-   - Smoke tests
-```
+## Build & Performance
 
-## Future Enhancements
-
-### Phase 1 (v1.0)
-- Core dashboard and flow monitoring
-- Policy management UI
-- WebSocket real-time updates
-- Basic authentication
-
-### Phase 2 (v1.1)
-- Anomaly detection UI
-- Compliance dashboard
-- Advanced visualizations
-- Multi-tenancy support
-
-### Phase 3 (v2.0)
-- AI-powered insights
-- Mobile app (React Native)
-- Advanced RBAC
-- Plugin system
-
----
-
-**Architecture Principles:**
-1. **Cloud-Native**: Kubernetes-first design
-2. **Scalable**: Horizontal scaling for all components
-3. **Observable**: Comprehensive metrics, logs, traces
-4. **Secure**: Authentication, authorization, encryption
-5. **Performant**: <100ms API latency, 60 FPS frontend
-
-Built with ❤️ using Rust, React, and Kubernetes
+| Metric | Value |
+|--------|-------|
+| Production build | ~6s |
+| Bundle size (gzip) | ~220 KB total |
+| Code splitting | 4 vendor chunks + per-view lazy loading |
+| TypeScript | Strict mode, 0 errors |
+| ESLint | 0 errors, 0 warnings |
+| Test suite | 74 tests, 9 files |
+| Views | 58 lazy-loaded pages |
+| Components | 25 shared UI components |

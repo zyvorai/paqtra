@@ -1,0 +1,496 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────
+# Cilium Vision — Remote Deployment via SSH + rsync
+# Supports password auth (sshpass), --quick mode, K3s deploy
+#
+# Usage:
+#   ./scripts/deploy-remote.sh <host> <user> [password] [options]
+#   ./scripts/deploy-remote.sh 10.0.1.5 root mypass --quick
+#   ./scripts/deploy-remote.sh 10.0.1.5 root mypass --k3s
+#   ./scripts/deploy-remote.sh 10.0.1.5 root --key  (SSH key auth)
+#   ./scripts/deploy-remote.sh --fleet hosts.txt
+#   ./scripts/deploy-remote.sh 10.0.1.5 root mypass --uninstall
+# ─────────────────────────────────────────────────────────────
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+VERSION="2.0.0"
+
+# Parse args
+TARGET_HOST="${1:-}"
+TARGET_USER="${2:-root}"
+TARGET_PASS="${3:-}"
+QUICK_MODE=false
+K3S_MODE=false
+UNINSTALL=false
+FLEET_FILE=""
+KEY_AUTH=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --quick)     QUICK_MODE=true ;;
+        --k3s)       K3S_MODE=true ;;
+        --uninstall) UNINSTALL=true ;;
+        --key)       KEY_AUTH=true; TARGET_PASS="" ;;
+        --fleet)     FLEET_FILE="${4:-}" ;;
+    esac
+done
+
+ok()   { echo "  ✅ $*"; }
+fail() { echo "  ❌ $*"; }
+info() { echo "  ℹ️  $*"; }
+warn() { echo "  ⚠️  $*"; }
+
+# ─── SSH / rsync wrappers with sshpass support ───────────────
+
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
+
+_ssh() {
+    if [ -n "${TARGET_PASS}" ] && command -v sshpass &>/dev/null; then
+        sshpass -p "${TARGET_PASS}" ssh ${SSH_OPTS} "${TARGET_USER}@${TARGET_HOST}" "$@"
+    else
+        ssh ${SSH_OPTS} "${TARGET_USER}@${TARGET_HOST}" "$@"
+    fi
+}
+
+_rsync() {
+    local rsync_opts="-az --delete --progress"
+    if [ -n "${TARGET_PASS}" ] && command -v sshpass &>/dev/null; then
+        rsync ${rsync_opts} -e "sshpass -p '${TARGET_PASS}' ssh ${SSH_OPTS}" "$@"
+    else
+        rsync ${rsync_opts} -e "ssh ${SSH_OPTS}" "$@"
+    fi
+}
+
+# ─── Validate ────────────────────────────────────────────────
+
+validate() {
+    if [ -z "${TARGET_HOST}" ]; then
+        echo "Usage: $0 <host> <user> [password] [--quick|--k3s|--uninstall|--key]"
+        echo ""
+        echo "Examples:"
+        echo "  $0 10.0.1.5 root mypassword              # Full deploy with password"
+        echo "  $0 10.0.1.5 root mypassword --quick       # Rsync + install only"
+        echo "  $0 10.0.1.5 root mypassword --k3s         # Deploy with K3s + Helm"
+        echo "  $0 10.0.1.5 root --key                    # SSH key auth"
+        echo "  $0 10.0.1.5 root mypassword --uninstall   # Remove everything"
+        echo "  $0 --fleet hosts.txt                      # Deploy to multiple hosts"
+        exit 1
+    fi
+
+    if [ -n "${TARGET_PASS}" ] && ! command -v sshpass &>/dev/null; then
+        warn "sshpass not found — install it for password auth, or use --key"
+        warn "  Fedora/RHEL: sudo dnf install sshpass"
+        warn "  Ubuntu:      sudo apt install sshpass"
+        exit 1
+    fi
+}
+
+# ─── Connectivity check ─────────────────────────────────────
+
+check_connectivity() {
+    info "Testing SSH connectivity to ${TARGET_USER}@${TARGET_HOST}..."
+    if _ssh "echo ok" &>/dev/null; then
+        ok "SSH connected to ${TARGET_HOST}"
+    else
+        fail "Cannot SSH to ${TARGET_HOST}"
+        exit 1
+    fi
+}
+
+# ─── Sync project files ─────────────────────────────────────
+
+sync_files() {
+    info "Syncing project to ${TARGET_HOST}:/root/cilium-vision..."
+
+    _rsync \
+        --exclude '.git' \
+        --exclude 'node_modules' \
+        --exclude 'target' \
+        --exclude 'dist' \
+        --exclude '*.vmdk' \
+        --exclude '*.qcow2' \
+        --exclude '*.iso' \
+        "${PROJECT_DIR}/" \
+        "${TARGET_USER}@${TARGET_HOST}:/root/cilium-vision/"
+
+    ok "Synced to ${TARGET_HOST}:/root/cilium-vision"
+}
+
+# ─── Sync pre-built binaries (quick mode) ────────────────────
+
+sync_binaries() {
+    info "Syncing pre-built binaries..."
+
+    # API binary
+    if [ -f "${PROJECT_DIR}/web-api/target/release/cilium-vision-api" ]; then
+        _rsync \
+            "${PROJECT_DIR}/web-api/target/release/cilium-vision-api" \
+            "${TARGET_USER}@${TARGET_HOST}:/tmp/cilium-vision-api"
+        ok "API binary synced"
+    else
+        warn "API binary not found — run 'make api-build' first"
+    fi
+
+    # UI dist
+    if [ -d "${PROJECT_DIR}/web-ui/dist" ]; then
+        _rsync \
+            "${PROJECT_DIR}/web-ui/dist/" \
+            "${TARGET_USER}@${TARGET_HOST}:/tmp/cilium-vision-ui/"
+        ok "UI files synced"
+    else
+        warn "UI not built — run 'make ui-build' first"
+    fi
+
+    # Install script
+    _rsync "${PROJECT_DIR}/install.sh" "${TARGET_USER}@${TARGET_HOST}:/tmp/cilium-vision-install.sh"
+}
+
+# ─── Uninstall old version ───────────────────────────────────
+
+uninstall_old() {
+    info "Removing old version..."
+    _ssh bash <<'REMOTE'
+systemctl stop cilium-vision-api 2>/dev/null || true
+systemctl stop cilium-vision-ui 2>/dev/null || true
+systemctl disable cilium-vision-api cilium-vision-ui 2>/dev/null || true
+rm -f /usr/local/bin/cilium-vision-api
+rm -f /usr/lib/systemd/system/cilium-vision-api.service
+rm -f /usr/lib/systemd/system/cilium-vision-ui.service
+systemctl daemon-reload 2>/dev/null || true
+REMOTE
+    ok "Old version removed"
+}
+
+# ─── Install on remote (quick mode) ─────────────────────────
+
+install_quick() {
+    info "Installing binaries on ${TARGET_HOST}..."
+    _ssh bash <<'REMOTE'
+set -e
+
+# Install API binary
+if [ -f /tmp/cilium-vision-api ]; then
+    install -m 755 /tmp/cilium-vision-api /usr/local/bin/cilium-vision-api
+    echo "  API binary installed"
+fi
+
+# Install UI files
+if [ -d /tmp/cilium-vision-ui ]; then
+    mkdir -p /var/lib/cilium-vision/ui
+    cp -r /tmp/cilium-vision-ui/* /var/lib/cilium-vision/ui/
+    echo "  UI files installed"
+fi
+
+# Create user if needed
+id cilium-vision &>/dev/null || useradd -r -s /sbin/nologin -m -d /var/lib/cilium-vision cilium-vision 2>/dev/null || true
+
+# Create config
+mkdir -p /etc/cilium-vision /var/log/cilium-vision
+if [ ! -f /etc/cilium-vision/config.env ]; then
+    JWT=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 64)
+    cat > /etc/cilium-vision/config.env <<EOF
+CILIUM_VISION_HOST=0.0.0.0
+CILIUM_VISION_PORT=9191
+HUBBLE_ADDRESS=localhost:4245
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=${JWT}
+RUST_LOG=info
+UI_DIST_DIR=/var/lib/cilium-vision/ui
+EOF
+    chmod 600 /etc/cilium-vision/config.env
+fi
+
+# Systemd service
+cat > /usr/lib/systemd/system/cilium-vision-api.service <<'EOF'
+[Unit]
+Description=Cilium Vision API Server
+After=network-online.target redis.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cilium-vision
+EnvironmentFile=/etc/cilium-vision/config.env
+ExecStart=/usr/local/bin/cilium-vision-api
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/cilium-vision /var/lib/cilium-vision
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+
+# Install and start Redis if available
+if command -v redis-server &>/dev/null; then
+    systemctl enable redis --now 2>/dev/null || true
+fi
+
+# Start API
+systemctl enable cilium-vision-api --now 2>/dev/null || true
+sleep 2
+
+# Health check
+if curl -sf http://localhost:9191/health >/dev/null 2>&1; then
+    echo "  ✅ API health check passed"
+else
+    echo "  ⚠️  API not responding (may need Redis)"
+fi
+REMOTE
+    ok "Installation complete"
+}
+
+# ─── Full install (build on remote) ─────────────────────────
+
+install_full() {
+    info "Running full installation on ${TARGET_HOST}..."
+    _ssh bash <<'REMOTE'
+set -e
+cd /root/cilium-vision
+
+# Install system deps
+if command -v dnf &>/dev/null; then
+    dnf install -y gcc make openssl-devel pkg-config curl wget git redis nodejs npm 2>/dev/null || true
+elif command -v apt-get &>/dev/null; then
+    apt-get update -qq && apt-get install -y -qq build-essential pkg-config libssl-dev curl wget git redis-server nodejs npm 2>/dev/null || true
+fi
+
+# Install Rust if needed
+if ! command -v rustc &>/dev/null; then
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    source "$HOME/.cargo/env"
+fi
+
+# Build API
+echo "Building API..."
+cd web-api && cargo build --release && cd ..
+
+# Build UI
+echo "Building UI..."
+cd web-ui && npm ci --silent && npm run build && cd ..
+
+# Run installer
+bash install.sh setup-services
+bash install.sh start
+REMOTE
+    ok "Full installation complete"
+}
+
+# ─── K3s deployment ──────────────────────────────────────────
+
+deploy_k3s() {
+    info "Deploying Cilium Vision on K3s..."
+    _ssh bash <<'REMOTE'
+set -e
+
+# Install K3s if not present
+if ! command -v k3s &>/dev/null; then
+    echo "Installing K3s..."
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --flannel-backend=none --disable-network-policy" sh -
+    sleep 10
+
+    # Install Cilium CNI
+    if command -v helm &>/dev/null || (curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash); then
+        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        helm repo add cilium https://helm.cilium.io/ 2>/dev/null || true
+        helm install cilium cilium/cilium --namespace kube-system \
+            --set operator.replicas=1 \
+            --set hubble.relay.enabled=true \
+            --set hubble.ui.enabled=false \
+            --set kubeProxyReplacement=true 2>/dev/null || true
+        echo "  Cilium CNI installed"
+    fi
+fi
+
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+# Wait for K3s ready
+echo "Waiting for K3s..."
+for i in $(seq 1 30); do
+    kubectl get nodes &>/dev/null && break
+    sleep 2
+done
+
+# Deploy Cilium Vision via Helm if chart exists
+if [ -d /root/cilium-vision/chart ]; then
+    echo "Installing via Helm chart..."
+    helm upgrade --install cilium-vision /root/cilium-vision/chart \
+        --namespace cilium-system --create-namespace \
+        --set redis.enabled=true \
+        --set api.replicas=1 \
+        --set ui.replicas=1 \
+        --wait --timeout 120s 2>/dev/null || {
+            echo "  Helm install failed, deploying via kubectl..."
+            kubectl apply -f /root/cilium-vision/deployments/k8s/ 2>/dev/null || true
+        }
+else
+    # Fallback to raw manifests
+    kubectl apply -f /root/cilium-vision/deployments/k8s/ 2>/dev/null || true
+fi
+
+echo ""
+echo "  K3s cluster status:"
+kubectl get nodes
+echo ""
+echo "  Cilium Vision pods:"
+kubectl -n cilium-system get pods 2>/dev/null || kubectl get pods -A | grep cilium-vision || true
+echo ""
+echo "  ✅ K3s deployment complete"
+echo "  Access: kubectl -n cilium-system port-forward svc/cilium-vision-api 9191:9191"
+REMOTE
+    ok "K3s deployment complete on ${TARGET_HOST}"
+}
+
+# ─── Uninstall ───────────────────────────────────────────────
+
+do_uninstall() {
+    info "Uninstalling Cilium Vision from ${TARGET_HOST}..."
+    _ssh bash <<'REMOTE'
+set -e
+
+# Stop services
+systemctl stop cilium-vision-api cilium-vision-ui 2>/dev/null || true
+systemctl disable cilium-vision-api cilium-vision-ui 2>/dev/null || true
+
+# Remove K8s deployment
+if command -v kubectl &>/dev/null; then
+    kubectl delete namespace cilium-system 2>/dev/null || true
+fi
+if command -v helm &>/dev/null; then
+    helm uninstall cilium-vision -n cilium-system 2>/dev/null || true
+fi
+
+# Remove files
+rm -f /usr/local/bin/cilium-vision-api /usr/local/bin/cilium-tui
+rm -f /usr/lib/systemd/system/cilium-vision-api.service
+rm -f /usr/lib/systemd/system/cilium-vision-ui.service
+rm -f /etc/pam.d/cilium-vision
+rm -rf /var/lib/cilium-vision /etc/cilium-vision /var/log/cilium-vision
+rm -rf /root/cilium-vision
+userdel cilium-vision 2>/dev/null || true
+systemctl daemon-reload
+
+echo "  ✅ Cilium Vision uninstalled"
+REMOTE
+    ok "Uninstall complete on ${TARGET_HOST}"
+}
+
+# ─── Fleet deploy ────────────────────────────────────────────
+
+deploy_fleet() {
+    local hosts_file="$1"
+    [ -f "$hosts_file" ] || { fail "File not found: $hosts_file"; exit 1; }
+
+    local count=0
+    while IFS=' ' read -r host user pass opts; do
+        [ -z "$host" ] && continue
+        [[ "$host" =~ ^# ]] && continue
+
+        echo ""
+        echo "🚀 ═══ Deploying to ${host} ═══"
+        TARGET_HOST="$host"
+        TARGET_USER="${user:-root}"
+        TARGET_PASS="${pass:-}"
+
+        if [[ "$opts" == *"--quick"* ]] || [ "$QUICK_MODE" = true ]; then
+            check_connectivity && uninstall_old && sync_binaries && install_quick
+        elif [[ "$opts" == *"--k3s"* ]] || [ "$K3S_MODE" = true ]; then
+            check_connectivity && sync_files && deploy_k3s
+        else
+            check_connectivity && sync_files && uninstall_old && install_full
+        fi
+
+        count=$((count + 1))
+    done < "$hosts_file"
+
+    echo ""
+    ok "Deployed to ${count} host(s)"
+}
+
+# ─── Verify ──────────────────────────────────────────────────
+
+verify() {
+    info "Verifying deployment on ${TARGET_HOST}..."
+    _ssh bash <<'REMOTE'
+echo ""
+echo "=== Service Status ==="
+systemctl is-active cilium-vision-api 2>/dev/null && echo "  API: ✅ active" || echo "  API: ❌ inactive"
+
+echo ""
+echo "=== Health Check ==="
+if curl -sf http://localhost:9191/health 2>/dev/null; then
+    echo "  ✅ API healthy"
+else
+    echo "  ❌ API not responding"
+fi
+
+echo ""
+echo "=== Versions ==="
+cilium-vision-api --version 2>/dev/null || echo "  API version: unknown"
+
+if command -v k3s &>/dev/null; then
+    echo ""
+    echo "=== K3s ==="
+    k3s --version
+    KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -n cilium-system 2>/dev/null || true
+fi
+REMOTE
+}
+
+# ─── Main ────────────────────────────────────────────────────
+
+main() {
+    echo ""
+    echo "🔷 ══════════════════════════════════════════════════"
+    echo "🔷    Cilium Vision v${VERSION} — Remote Deploy"
+    echo "🔷 ══════════════════════════════════════════════════"
+    echo ""
+
+    # Fleet mode
+    if [ "${FLEET_FILE}" != "" ]; then
+        deploy_fleet "${FLEET_FILE}"
+        exit 0
+    fi
+
+    validate
+    check_connectivity
+
+    if [ "$UNINSTALL" = true ]; then
+        do_uninstall
+        exit 0
+    fi
+
+    if [ "$QUICK_MODE" = true ]; then
+        uninstall_old
+        sync_binaries
+        install_quick
+    elif [ "$K3S_MODE" = true ]; then
+        sync_files
+        deploy_k3s
+    else
+        sync_files
+        uninstall_old
+        install_full
+    fi
+
+    verify
+
+    echo ""
+    echo "✅ ══════════════════════════════════════════════════"
+    echo "✅    Deployment complete: ${TARGET_HOST}"
+    echo "✅ ══════════════════════════════════════════════════"
+    echo ""
+    echo "  API:  http://${TARGET_HOST}:9191"
+    echo "  UI:   http://${TARGET_HOST}:3001"
+    echo ""
+}
+
+main

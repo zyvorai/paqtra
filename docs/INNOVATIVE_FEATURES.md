@@ -354,7 +354,16 @@ All innovative features are integrated into the Cilium Vision platform:
 - Automated compliance remediation
 - IDE integrations for debugging
 
-### v2.0 Vision
+### v2.0 (Current)
+- Full web dashboard (58 views, 25 components, React 19 + TypeScript)
+- Real-time WebSocket metrics with live charts
+- Monaco YAML policy editor with validation
+- Interactive D3.js topology and service map visualization
+- Dark-first design system with full light theme support
+- Score gauges, sortable tables, accordion sections, toggle switches
+- Global search command palette with keyboard shortcuts
+
+### v3.0 Vision
 - Federated learning across clusters
 - Custom ML model training
 - Advanced threat hunting

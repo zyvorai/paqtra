@@ -6,11 +6,13 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3
+    restart: unless-stopped
 
   api:
     build:
@@ -18,25 +20,27 @@ services:
       dockerfile: Dockerfile
     container_name: cilium-vision-api
     ports:
-      - "9191:9191"
+      - "${API_PORT:-9191}:9191"
     environment:
       - HOST=0.0.0.0
       - PORT=9191
       - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set (at least 32 characters)}
-      - HUBBLE_ADDRESS=${HUBBLE_ADDRESS:-localhost:4245}
-      - RUST_LOG=info,cilium_vision_api=debug
-      - ALLOWED_ORIGINS=http://localhost:3001,http://localhost:3000,http://localhost:9191
+      - JWT_SECRET=${JWT_SECRET:-changeme-at-least-32-characters-long-secret}
+      - HUBBLE_ADDRESS=${HUBBLE_ADDRESS:-hubble-relay.kube-system.svc.cluster.local:4245}
+      - RUST_LOG=${RUST_LOG:-info,cilium_vision_api=debug}
+      - ALLOWED_ORIGINS=http://localhost:3001,http://localhost:3000,http://localhost:8080
+    volumes:
+      - ${KUBECONFIG:-~/.kube/config}:/home/appuser/.kube/config:ro
     depends_on:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9191/health"]
-      interval: 30s
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9191/health"]
+      interval: 15s
       timeout: 3s
+      start_period: 10s
       retries: 3
     restart: unless-stopped
-    # On Linux, use host network mode or extra_hosts for host access
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -46,12 +50,12 @@ services:
       dockerfile: Dockerfile
     container_name: cilium-vision-ui
     ports:
-      - "3001:80"
+      - "${UI_PORT:-3001}:8080"
     depends_on:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/"]
       interval: 30s
       timeout: 3s
       retries: 3

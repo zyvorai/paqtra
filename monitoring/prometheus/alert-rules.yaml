@@ -1,0 +1,114 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cilium-vision-alerts
+  namespace: cilium-system
+  labels:
+    app: cilium-vision
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: cilium-vision.api
+      rules:
+        - alert: CiliumVisionAPIDown
+          expr: up{job="cilium-vision-api"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Cilium Vision API is down"
+            description: "Cilium Vision API has been unreachable for more than 2 minutes."
+
+        - alert: CiliumVisionHighErrorRate
+          expr: rate(cilium_vision_total_errors[5m]) / rate(cilium_vision_total_requests[5m]) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High error rate on Cilium Vision API"
+            description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+
+        - alert: CiliumVisionHighLatency
+          expr: histogram_quantile(0.99, rate(cilium_vision_request_duration_seconds_bucket[5m])) > 2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High P99 latency on Cilium Vision API"
+            description: "P99 latency is {{ $value }}s over the last 5 minutes."
+
+        - alert: CiliumVisionCacheHitRateLow
+          expr: cilium_vision_cache_hits / (cilium_vision_cache_hits + cilium_vision_cache_misses) < 0.5
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Low cache hit rate"
+            description: "Cache hit rate is {{ $value | humanizePercentage }}. Check Redis connectivity."
+
+        - alert: CiliumVisionRedisDown
+          expr: up{job="cilium-vision-redis"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Redis is down"
+            description: "Redis used by Cilium Vision has been unreachable for more than 1 minute."
+
+    - name: cilium-vision.network
+      rules:
+        - alert: CiliumVisionHighDropRate
+          expr: rate(cilium_vision_flows_dropped[5m]) / rate(cilium_vision_flows_total[5m]) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High network drop rate detected"
+            description: "Flow drop rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+
+        - alert: CiliumVisionPolicyDenialSpike
+          expr: rate(cilium_vision_policy_denials[1m]) > 100
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Policy denial spike"
+            description: "{{ $value }} policy denials per minute detected."
+
+        - alert: CiliumVisionAnomalyDetected
+          expr: cilium_vision_anomalies_open > 0
+          for: 0m
+          labels:
+            severity: info
+          annotations:
+            summary: "Network anomaly detected"
+            description: "{{ $value }} open anomalies detected by ML engine."
+
+    - name: cilium-vision.resources
+      rules:
+        - alert: CiliumVisionHighMemory
+          expr: container_memory_usage_bytes{container="cilium-vision-api"} / container_spec_memory_limit_bytes{container="cilium-vision-api"} > 0.9
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Cilium Vision API high memory usage"
+            description: "Memory usage is at {{ $value | humanizePercentage }} of limit."
+
+        - alert: CiliumVisionHighCPU
+          expr: rate(container_cpu_usage_seconds_total{container="cilium-vision-api"}[5m]) > 0.8
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Cilium Vision API high CPU usage"
+            description: "CPU usage is {{ $value }} cores averaged over 5 minutes."
+
+        - alert: CiliumVisionPodRestarts
+          expr: increase(kube_pod_container_status_restarts_total{container="cilium-vision-api"}[1h]) > 3
+          for: 0m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Cilium Vision API pod restarting"
+            description: "{{ $value }} restarts in the last hour."

@@ -99,13 +99,37 @@ Co-Authored-By: Your Name <your.email@example.com>
 
 **Types**: feat, fix, docs, style, refactor, test, chore
 
+## Web UI Development
+
+The web dashboard is in `web-ui/` and uses React 19, TypeScript, and Tailwind CSS.
+
+```bash
+cd web-ui
+npm install
+npm run dev        # Dev server on port 3000
+npm run test       # 74 tests
+npm run lint       # ESLint
+npm run build      # Production build
+```
+
+**Key conventions:**
+- Views go in `src/views/<ViewName>/index.tsx` (lazy-loaded via React Router)
+- Shared components go in `src/components/`
+- API types and functions in `src/services/api.ts`
+- Dark-first styling: use `bg-slate-800/50`, `border-slate-700/50`, `text-white`/`text-slate-400`
+- Page headers use gradient icon box pattern
+- Tables use `bg-slate-900/50` thead with `uppercase tracking-wider` headers
+- All stat cards need `card-glow` and `hover:scale-[1.02]`
+
 ## Areas for Contribution
 
 1. Prometheus Integration
-2. Web UI
+2. Web UI views and components
 3. Additional Chaos Experiments
 4. Policy Templates
 5. Documentation
+6. API endpoint coverage
+7. Test coverage improvements
 
 ## Getting Help
 
