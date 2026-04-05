@@ -2,7 +2,7 @@
 
 ## Overview
 
-Cilium Flow is a Rust-based terminal UI platform that provides real-time network observability and intelligent operations for Kubernetes clusters running Cilium. It reads eBPF maps, streams Hubble flows, and exposes 13 interactive tabs covering everything from live packet inspection to chaos engineering and multi-cluster orchestration.
+Cilium Flow is a Rust-based terminal UI platform that provides real-time network observability and intelligent operations for Kubernetes clusters running Cilium. It reads eBPF maps, streams Hubble flows, and exposes 13 interactive tabs covering everything from live packet inspection to chaos engineering and multi-cluster orchestration. A companion React web dashboard and Rust/Axum API server provide browser-based access with 64 REST endpoints.
 
 ## By the Numbers
 
@@ -12,14 +12,24 @@ Cilium Flow is a Rust-based terminal UI platform that provides real-time network
 | Rust source files | 92 |
 | Rust lines of code | 32,000+ |
 | TUI tabs | 13 |
-| Rust tests | 961 passing |
+| Rust tests | 961 passing, 0 failures |
 | Web API tests | 26 passing |
-| Web UI views | 58 |
-| Web UI components | 25 |
+| Web UI views | 59 |
+| Web UI components | 31 |
 | Web UI hooks | 5 |
 | Web UI tests | 68 passing |
+| REST API endpoints | 64 |
 | Total tests | 1,055 |
 | Compiler warnings | 0 (Rust + TypeScript) |
+
+## Deployment
+
+| Component | Value |
+|-----------|-------|
+| Kubernetes | K3s v1.34.5 |
+| CNI | Cilium v1.19.1 |
+| Web API runtime | Rust/Axum, ~2 MB memory |
+| TUI binary | 13 MB optimized |
 
 ## Module Status
 
@@ -62,9 +72,26 @@ Terminal UI Layer        ratatui + crossterm, 13 tabs, 60 FPS
 Event Handler Layer      Sync handlers (navigation, confirmation)
                          Async handlers (engine operations)
 Engine Layer             8 engines with real K8s/kubectl integration
+Web API Layer            Axum, 64 endpoints, JWT auth, RBAC, Redis
+Web UI Layer             React 19, 59 views, WebSocket streaming
 Data Layer               eBPF maps (Aya/bpftool), Hubble CLI, K8s API
 Infrastructure           Cilium Agent, Kernel eBPF datapath
 ```
+
+## Security
+
+| Feature | Detail |
+|---------|--------|
+| JWT Authentication | Token-based auth on all protected API endpoints |
+| RBAC Enforcement | `require_admin()` on destructive operations (delete, bulk delete, apply, rollback) |
+| Rate Limiting | Per-IP request throttling with periodic cleanup of stale entries |
+| WebSocket Limit | Maximum 100 concurrent WebSocket connections |
+| YAML Injection Prevention | `yaml_escape` helper sanitizes user-supplied strings |
+| Input Validation | RFC 1123 regex on kubectl-bound names/namespaces, flag injection prevention |
+| Type-Safe Handlers | All POST endpoints use typed `Deserialize` structs, no raw `Json<Value>` |
+| Hubble Validation | Startup validation of Hubble gRPC endpoint address |
+| Concurrent Health Checks | Parallel health probes with 3-second timeout |
+| Confirmation Dialogs | Destructive TUI actions require y/n confirmation |
 
 ## Key Design Decisions
 
@@ -81,34 +108,47 @@ Infrastructure           Cilium Agent, Kernel eBPF datapath
 
 ## Recent Changes
 
+### Code Review (55 fixes)
 - Replaced unsafe libc::kill with safe Child::kill via Arc<Mutex>
 - Converted all blocking std::process::Command to tokio::process::Command in async fns
-- Wired ChaosEngine, CanaryEngine, MultiClusterAutopilot to TUI with real data
-- Connected all key handlers to actual engine methods
-- Added async handlers for chaos start/stop, canary promote/rollback, health checks
-- Completed safety validation for all 7 chaos experiment types
-- Eliminated all compiler warnings (0 warnings across all tests)
-- Fixed zero-trust policy generator to skip unknown L4 protocols
-- Removed resource leaks (orphaned cleanup tasks, unnecessary clones)
-- Security hardening: JWT RBAC, input validation, typed request structs, graceful shutdown
-- Fixed auth token storage mismatch (localStorage vs sessionStorage)
-- Fixed DropReason u32→u8 truncation, pattern_counts double-counting
+- Fixed DropReason u32-to-u8 truncation, pattern_counts double-counting
 - Fixed port-forward process lifetime (global OnceLock)
 - Replaced RefCell with Mutex in async context
-- Added confirmation dialogs for destructive operations
-- Added auto-dismiss for success messages via useAutoDismiss hook
+- Removed resource leaks (orphaned cleanup tasks, unnecessary clones)
+- Consolidated duplicate HubbleService methods
 - Removed dead code: unused i18n system, chartTheme, service worker, date-fns, react-table
 - Tree-shaken d3 imports (d3-selection, d3-force, d3-drag instead of full d3)
-- Consolidated duplicate HubbleService methods
+- Fixed auth token storage mismatch (localStorage vs sessionStorage)
+
+### Web UX Overhaul
+- 59 dashboard pages with dark-first HyperSDK-aligned theme
+- Visual Rule Builder for form-based policy creation without YAML
+- Policy CRUD: create (YAML/visual/template/ML), edit/update, delete, bulk delete
+- Auto-refresh (30s) on all data views with DataFreshness indicator
+- Export CSV/JSON on all tabular data
+- WebSocket real-time streaming for flows and metrics
+- 31 shared components, 5 custom hooks
 - Added accessibility: aria-labels, role="dialog", aria-modal on all modals
+- Added auto-dismiss for success messages via useAutoDismiss hook
+
+### Security Hardening (24 fixes)
+- JWT RBAC with require_admin on all destructive API operations
+- Rate limiting with periodic cleanup of stale entries
+- WebSocket connection limit (100 max concurrent)
+- Hubble address validation at startup
+- YAML injection prevention via yaml_escape helper
+- Concurrent health checks with 3-second timeout
+- Input validation on all kubectl-bound parameters
+- Type-safe request handlers (no raw Json<Value>)
+- Graceful shutdown handling
 
 ## Web Dashboard (web-ui)
 
 | Metric | Value |
 |--------|-------|
-| Framework | React 19 + TypeScript 5.6 |
-| Views | 58 (lazy-loaded) |
-| Components | 25 shared UI components |
+| Framework | React 19 + TypeScript 5.8 |
+| Views | 59 (lazy-loaded) |
+| Components | 31 shared UI components |
 | Hooks | 5 custom hooks |
 | Stores | 3 Zustand stores |
 | API types | 49 interfaces, 70+ functions |

@@ -1,6 +1,6 @@
-# Innovative Features - Experimental & Cutting-Edge
+# Innovative Features - Delivered & Roadmap
 
-> **Note**: These features are experimental and represent cutting-edge capabilities for Cilium network observability and management.
+> **Status**: All v2.0 features listed below are **delivered and implemented**. The v3.0 roadmap describes planned future work.
 
 ## Table of Contents
 
@@ -8,6 +8,9 @@
 2. [Advanced eBPF Capabilities](#advanced-ebpf-capabilities)
 3. [Security & Compliance Framework](#security--compliance-framework)
 4. [Developer Experience Tools](#developer-experience-tools)
+5. [v2.0 Delivered Features](#v20-delivered-features)
+6. [Recently Delivered: Security Hardening & Visual Rule Builder](#recently-delivered-security-hardening--visual-rule-builder)
+7. [v3.0 Roadmap](#v30-roadmap-planned)
 
 ---
 
@@ -229,7 +232,7 @@ Productivity tools for developers working with microservices.
 - Regression testing
 
 #### Environment Mirroring
-- Clone entire environments (production → staging)
+- Clone entire environments (production -> staging)
 - Selective service mirroring
 - Local development environments
 - Resource right-sizing
@@ -300,23 +303,26 @@ let session_id = devtools.start_debug_session(debug_config).await?;
 
 ## Architecture Integration
 
-All innovative features are integrated into the Cilium Vision platform:
+All features are integrated into the Cilium Flow platform:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                  Terminal User Interface                │
-│              (ratatui + crossterm)                      │
+│                    Web Dashboard                        │
+│          (React 19 + TypeScript + Tailwind)             │
 ├─────────────────────────────────────────────────────────┤
-│              Experimental Features Layer                │
+│                  Axum REST API Layer                    │
+│       (RBAC, Rate Limiting, WebSocket, CORS)            │
+├─────────────────────────────────────────────────────────┤
+│              Delivered Features Layer                   │
 │  ┌──────────┬──────────┬──────────┬──────────────────┐ │
-│  │ Anomaly  │ Advanced │ Security │ Dev Tools       │ │
+│  │ Anomaly  │ Advanced │ Security │ Dev Tools        │ │
 │  │ Detection│ eBPF     │ Compliance│                 │ │
 │  └──────────┴──────────┴──────────┴──────────────────┘ │
 ├─────────────────────────────────────────────────────────┤
-│                   Core Intelligence Layer                │
+│                   Core Intelligence Layer               │
 │  ┌──────────┬──────────┬──────────┬──────────────────┐ │
-│  │ Packet   │ Auto     │ Root     │ Dry-run         │ │
-│  │ Explainer│ Policy   │ Cause    │ Simulator       │ │
+│  │ Packet   │ Auto     │ Root     │ Dry-run          │ │
+│  │ Explainer│ Policy   │ Cause    │ Simulator        │ │
 │  └──────────┴──────────┴──────────┴──────────────────┘ │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -346,15 +352,10 @@ All innovative features are integrated into the Cilium Vision platform:
 
 ---
 
-## Future Enhancements
+## v2.0 Delivered Features
 
-### v1.1 Planned
-- Deep learning models for anomaly detection
-- Distributed eBPF program management
-- Automated compliance remediation
-- IDE integrations for debugging
+All v2.0 features are **implemented and shipping**:
 
-### v2.0 (Current)
 - Full web dashboard (58 views, 25 components, React 19 + TypeScript)
 - Real-time WebSocket metrics with live charts
 - Monaco YAML policy editor with validation
@@ -363,16 +364,68 @@ All innovative features are integrated into the Cilium Vision platform:
 - Score gauges, sortable tables, accordion sections, toggle switches
 - Global search command palette with keyboard shortcuts
 
-### v3.0 Vision
-- Federated learning across clusters
-- Custom ML model training
-- Advanced threat hunting
-- Full CI/CD integration
+---
+
+## Recently Delivered: Security Hardening & Visual Rule Builder
+
+The following features were delivered in the latest release cycle:
+
+### Security Hardening (24 fixes across all three layers)
+- **RBAC enforcement on destructive operations** (`require_admin` middleware)
+- **WebSocket connection limiting** (100 max concurrent connections)
+- **Rate limiter hardening** (periodic cleanup, mutex poisoning protection)
+- **YAML injection prevention** across all policy generation paths
+
+### Visual Rule Builder
+- **Form-based policy creation** -- no YAML knowledge required
+- **Policy CRUD** -- create, edit, update, delete, and bulk operations
+
+### UI/UX Improvements
+- **Auto-refresh with DataFreshness indicators** on all views
+- **CSV/JSON export** on all tabular data
+
+### Backend Improvements
+- **Concurrent health checks** with 3s timeout
+- **CT entry parsing** with real flags and lifetime fields
 
 ---
 
-**Experimental Status**: These features are cutting-edge and may undergo significant changes. Use in production environments at your own discretion.
+## v3.0 Roadmap (Planned)
 
-Built with ❤️ using Rust, eBPF, and Machine Learning
+### Real-Time & Data
+- Live flow WebSocket in Flows page (stream instead of poll)
+- Server-side pagination for large datasets
+- gRPC Hubble integration (direct, not CLI fallback)
+- Prometheus metrics export for Grafana
+- OpenTelemetry trace correlation
+
+### Visualization & UI
+- Policy diff viewer (side-by-side YAML comparison)
+- D3 force-layout topology graph
+- Plugin system for custom widgets
+
+### Intelligence & ML
+- Real ML anomaly pipeline from Hubble metrics
+- Network policy recommendation engine (30-day traffic history)
+- CVE-aware policy generation
+
+### Multi-Cluster
+- Multi-cluster aggregated dashboard
+- Cross-cluster policy sync UI
+
+### Operations & Automation
+- eBPF program hot-reload from web UI
+- GitOps policy sync (watch Git repo, auto-apply)
+- Slack/PagerDuty alert integration
+- Scheduled chaos experiments with cron
+- Compliance report PDF export
+
+### Enterprise
+- Multi-tenancy with namespace-scoped views
+- SSO/OIDC authentication
+
+---
+
+Built with Rust, eBPF, and Machine Learning
 
 Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>

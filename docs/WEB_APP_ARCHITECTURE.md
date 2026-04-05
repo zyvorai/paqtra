@@ -15,8 +15,8 @@ Cloud-native web application providing a real-time dashboard for Cilium network 
 |  |   Frontend (React SPA)    |  |   Backend (Rust/Actix)   | |
 |  |   Port: 3000 (dev)        |  |   Port: 9191             | |
 |  |                            |  |                          | |
-|  |  25 shared components      |  |  REST API (/api/v1/*)   | |
-|  |  58 lazy-loaded views      |  |  WebSocket (/ws/*)      | |
+|  |  31 shared components      |  |  REST API (/api/v1/*)   | |
+|  |  59 lazy-loaded views      |  |  WebSocket (/ws/*)      | |
 |  |  Zustand state (3 stores)  |  |  JWT authentication     | |
 |  |  WebSocket real-time       |  |  Hubble gRPC proxy      | |
 |  +---------------------------+  +--------------------------+ |
@@ -58,17 +58,19 @@ Cloud-native web application providing a real-time dashboard for Cilium network 
 
 ## Frontend Architecture
 
-### Component Layer (25 components)
+### Component Layer (31 components)
 
 ```
 components/
   Layout:       MainLayout, LoginPage
-  Data Display: StatCard, ChartContainer, SortableTable, ResponsiveTable,
-                AlertsList, Badge, ProgressBar, ScoreGauge, Sparkline
-  Feedback:     Toast, LoadingSpinner, Skeleton, ErrorBoundary, ErrorRetry,
-                EmptyState, LiveBadge
-  Navigation:   GlobalSearch, Breadcrumbs, QuickLinks
-  Form:         ToggleSwitch, Accordion, ExportButton, NotificationManager
+  Data Display: StatCard, HealthCheckCard, ChartContainer, SortableTable,
+                ResponsiveTable, AlertsList, Badge, ProgressBar, ScoreGauge,
+                Sparkline, PipelineView, SystemInfoPanel, ActivityFeed
+  Feedback:     Toast, LoadingSpinner, Skeleton, EmptyState, LiveBadge,
+                DataFreshness
+  Navigation:   GlobalSearch, Breadcrumbs, NamespaceSidebar, Pagination
+  Form:         ToggleSwitch, Accordion, ExportButton, NotificationManager,
+                FilterBar, BulkActionBar
 ```
 
 ### State Management
@@ -79,16 +81,18 @@ components/
 | themeStore | Dark/light toggle | localStorage |
 | preferencesStore | Page size, refresh interval, etc. | localStorage |
 
-### Hooks
+### Hooks (6 hooks)
 
 | Hook | Purpose |
 |------|---------|
+| useAutoRefresh | Configurable auto-refresh with interval control |
 | useWebSocket | Auto-reconnect WS with JSON parsing |
 | useMetricsHistory | Sliding-window buffer for time-series data |
 | useKeyboardShortcuts | Global shortcuts with g-prefix navigation |
+| useAutoDismiss | Auto-clearing state for success/error messages |
 | usePageTitle | Dynamic document.title |
 
-### View Layer (58 views)
+### View Layer (59 views)
 
 All views are lazy-loaded via `React.lazy()` + `Suspense` for optimal code splitting.
 
@@ -141,56 +145,138 @@ Each with matching `card-glow-{color}` hover effect and `hover:scale-[1.02]`
 Full light theme support via `.light-theme` class + `html:not(.dark)` CSS variables.
 Toggle persisted in localStorage.
 
-## API Endpoints
+## API Endpoints (64 total)
 
-### Core
+### Health & Metrics
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/health` | Health check |
-| POST | `/auth/login` | Authentication |
-| WS | `/api/v1/ws/metrics` | Real-time metrics stream |
+| GET | `/health` | Health check |
+| GET | `/ready` | Readiness probe |
+| GET | `/metrics` | Prometheus metrics |
 
-### Observability
+### Core Data (under /api/v1)
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/flows` | Paginated flows with filters |
+| GET | `/api/v1/flows/{id}` | Single flow detail |
 | GET | `/api/v1/flows/stats` | Flow statistics |
-| GET | `/api/v1/events` | Kubernetes events |
-| GET | `/api/v1/nodes` | Node status and resources |
 | GET | `/api/v1/endpoints` | Cilium endpoints |
-| GET | `/api/v1/heatmap` | Traffic heatmap data |
-| GET | `/api/v1/service-deps` | Service dependency graph |
-| GET | `/api/v1/dns/queries` | DNS query monitoring |
-| GET | `/api/v1/latency` | Latency percentile analysis |
+| GET | `/api/v1/nodes` | Node status and resources |
+| GET | `/api/v1/events` | Kubernetes events |
+| GET | `/api/v1/identities` | Cilium identities |
 
-### Security & Policy
+### Policies
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/policies` | List network policies |
 | POST | `/api/v1/policies` | Create policy |
+| PUT | `/api/v1/policies/{id}` | Update policy |
+| DELETE | `/api/v1/policies/{id}` | Delete policy |
+| POST | `/api/v1/policies/simulate` | Simulate policy impact |
 | POST | `/api/v1/policies/validate` | Validate YAML |
+| GET | `/api/v1/policies/templates` | Policy templates |
+| POST | `/api/v1/policies/templates/{id}/apply` | Apply template |
+
+### Security
+| Method | Path | Description |
+|--------|------|-------------|
 | GET | `/api/v1/anomalies` | Detected anomalies |
+| GET | `/api/v1/anomalies/{id}` | Anomaly detail |
+| POST | `/api/v1/anomalies/{id}/remediate` | Remediate anomaly |
+| GET | `/api/v1/compliance/frameworks` | Compliance frameworks |
+| POST | `/api/v1/compliance/audit` | Run compliance audit |
+| GET | `/api/v1/security/posture` | Security posture overview |
 | GET | `/api/v1/security/findings` | Security findings |
 | GET | `/api/v1/security/zero-trust` | Zero-trust score |
-| GET | `/api/v1/compliance/frameworks` | Compliance frameworks |
+| GET | `/api/v1/security/pods` | Pod security status |
 
-### Intelligence
+### Intelligence Modules
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/v1/modules/autopolicy/generate` | ML policy generation |
-| GET | `/api/v1/healer/problems` | Detected problems |
-| GET | `/api/v1/packet-drops` | Drop analysis |
-| POST | `/api/v1/diagnostics/run` | Run health checks |
-| POST | `/api/v1/troubleshoot` | Connectivity test |
+| GET | `/api/v1/modules/chaos/experiments` | Chaos experiments |
+| POST | `/api/v1/modules/chaos/run` | Run experiment |
+| GET | `/api/v1/modules/canary/{id}` | Canary deployment status |
+| GET | `/api/v1/modules/replay/recordings` | Flow recordings |
+| POST | `/api/v1/modules/replay/start` | Start recording |
+| POST | `/api/v1/modules/replay/{id}/stop` | Stop recording |
+| GET | `/api/v1/modules/healer/problems` | Detected problems |
+| POST | `/api/v1/modules/healer/{id}/fix` | Apply fix |
+| GET | `/api/v1/modules/rootcause/drops` | Drop analysis |
+| POST | `/api/v1/modules/rootcause/analyze` | Root cause analysis |
+| GET | `/api/v1/modules/multicluster/clusters` | Multi-cluster status |
+| POST | `/api/v1/modules/multicluster/{name}/sync` | Sync cluster |
+| GET | `/api/v1/modules/ebpf/programs` | eBPF programs |
+| GET | `/api/v1/modules/ebpf/maps` | eBPF maps |
+| GET | `/api/v1/modules/capture/sessions` | Packet captures |
+| POST | `/api/v1/modules/capture/start` | Start capture |
+| POST | `/api/v1/modules/capture/{id}/stop` | Stop capture |
+| GET | `/api/v1/modules/mirror/rules` | Mirror rules |
+| POST | `/api/v1/modules/mirror/rules` | Create mirror rule |
+| DELETE | `/api/v1/modules/mirror/rules/{id}` | Delete mirror rule |
+
+### Observability
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/heatmap` | Traffic heatmap data |
+| GET | `/api/v1/dependencies` | Service dependencies |
+| GET | `/api/v1/servicemap` | Service map topology |
+| GET | `/api/v1/dns/queries` | DNS query monitoring |
+| GET | `/api/v1/dns/stats` | DNS statistics |
+| GET | `/api/v1/latency/analysis` | Latency percentile analysis |
+| GET | `/api/v1/bandwidth` | Bandwidth metrics |
+| GET | `/api/v1/metrics/summary` | Metrics summary |
+
+### Networking
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/network/interfaces` | Network interfaces |
+| GET | `/api/v1/loadbalancer/services` | Load balancer services |
+| GET | `/api/v1/ingress/routes` | Ingress routes |
+| GET | `/api/v1/ipam/pools` | IPAM pools |
+| GET | `/api/v1/ipam/allocations` | IP allocations |
+| GET | `/api/v1/encryption/status` | Encryption status |
+| GET | `/api/v1/wireguard/peers` | WireGuard peers |
+| GET | `/api/v1/bgp/peers` | BGP peers |
+| GET | `/api/v1/clustermesh/peers` | ClusterMesh peers |
+| POST | `/api/v1/clustermesh/connect` | Connect cluster |
+| GET | `/api/v1/kpr/status` | KPR status |
+| GET | `/api/v1/egress/policies` | Egress policies |
+| GET | `/api/v1/servicemesh/services` | Service mesh services |
 
 ### Operations
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/modules/chaos/experiments` | Chaos experiments |
-| POST | `/api/v1/modules/chaos/run` | Run experiment |
-| GET | `/api/v1/recordings` | Flow recordings |
-| GET | `/api/v1/capture/sessions` | Packet captures |
-| GET | `/api/v1/clusters` | Multi-cluster status |
+| GET | `/api/v1/host/info` | Host information |
+| GET | `/api/v1/cilium/status` | Cilium agent status |
+| GET | `/api/v1/cluster/health` | Cluster health |
+| GET | `/api/v1/rbac/bindings` | RBAC bindings |
+| GET | `/api/v1/alerts/rules` | Alert rules |
+| GET | `/api/v1/alerts/history` | Alert history |
+| PUT | `/api/v1/alerts/rules/{id}` | Update alert rule |
+| GET | `/api/v1/audit/log` | Audit log |
+| GET | `/api/v1/slo/targets` | SLO targets |
+| GET | `/api/v1/incidents` | Incidents |
+| GET | `/api/v1/changes` | Change log |
+| POST | `/api/v1/changes/{id}/rollback` | Rollback change |
+| GET | `/api/v1/nodes/drain/status` | Node drain status |
+| POST | `/api/v1/nodes/drain` | Drain node |
+| POST | `/api/v1/nodes/uncordon` | Uncordon node |
+| GET | `/api/v1/flows/exports` | Flow exports |
+| POST | `/api/v1/flows/exports` | Create export |
+| DELETE | `/api/v1/flows/exports/{id}` | Delete export |
+| GET | `/api/v1/costs/breakdown` | Cost breakdown |
+| GET | `/api/v1/forecast/metrics` | Forecast metrics |
+| GET | `/api/v1/forecast/{metric}` | Forecast specific metric |
+| POST | `/api/v1/diagnostics/run` | Run health checks |
+| POST | `/api/v1/diagnostics/connectivity` | Connectivity test |
+| POST | `/api/v1/troubleshoot/run` | Troubleshooting |
+
+### WebSocket
+| Method | Path | Description |
+|--------|------|-------------|
+| WS | `/api/v1/ws/flows` | Real-time flow stream |
+| WS | `/api/v1/ws/metrics` | Real-time metrics stream |
 
 ## Development
 
@@ -200,7 +286,7 @@ cd web-ui
 npm install
 npm run dev        # Vite dev server (port 3000, proxies to :9191)
 npm run build      # Production build (tsc + vite)
-npm run test       # 68 tests (vitest)
+npm run test       # vitest
 npm run lint       # ESLint (0 errors)
 
 # Backend
@@ -220,6 +306,18 @@ docker-compose up
 | Code splitting | 4 vendor chunks + per-view lazy loading |
 | TypeScript | Strict mode, 0 errors |
 | ESLint | 0 errors, 0 warnings |
-| Test suite | 68 tests, 9 files |
-| Views | 58 lazy-loaded pages |
-| Components | 25 shared UI components |
+| Views | 59 lazy-loaded pages |
+| Components | 31 shared UI components |
+| API Endpoints | 64 |
+| Hooks | 6 custom hooks |
+
+## Security
+
+| Feature | Details |
+|---------|---------|
+| Authentication | JWT Bearer tokens |
+| Authorization | RBAC with `require_admin` on destructive operations |
+| Rate Limiting | Per-endpoint rate limiting |
+| CORS | Configurable origin whitelist |
+| WebSocket Limits | Max 100 concurrent connections |
+| Input Validation | Request body validation on all POST/PUT endpoints |

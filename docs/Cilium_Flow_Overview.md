@@ -2,7 +2,7 @@
 title: "Cilium Flow"
 subtitle: "Real-time Network Observability & Intelligence Platform for Kubernetes"
 author: "Cilium Flow Team"
-date: "March 2026"
+date: "April 2026"
 geometry: margin=2.5cm
 fontsize: 11pt
 toc: true
@@ -22,19 +22,21 @@ header-includes:
 
 # Executive Summary
 
-Cilium Flow is a single-binary terminal application that transforms Kubernetes network operations from reactive firefighting into proactive, intelligent management.
+Cilium Flow is a single-binary platform that transforms Kubernetes network operations from reactive firefighting into proactive, intelligent management, with both a TUI and a full web dashboard.
 
-Built in Rust for maximum performance, it combines live eBPF datapath monitoring with eight autonomous intelligence engines that detect problems, generate policies, simulate changes, inject faults, manage canary rollouts, and orchestrate multi-cluster environments --- all from one console.
+Built in Rust for maximum performance, it combines live eBPF datapath monitoring with eight autonomous intelligence engines that detect problems, generate policies, simulate changes, inject faults, manage canary rollouts, and orchestrate multi-cluster environments. The web dashboard adds 59 pages, 64 REST/WebSocket API endpoints, a visual rule builder, full policy CRUD, RBAC authorization, and security hardening.
 
 **Key Metrics:**
 
 | Metric | Value |
 |--------|-------|
-| Tests passing | 1,055 (0 failures) |
+| Tests passing | 961 (0 failures) |
 | Lines of Rust | 32,000+ |
 | Binary size | 13 MB |
 | Modules | 13 |
 | Interactive tabs | 13 |
+| Web dashboard pages | 59 |
+| API endpoints | 64 |
 | CPU overhead | < 1% |
 | Memory footprint | 50--100 MB |
 
@@ -153,11 +155,7 @@ Cross-cluster orchestration for multi-cloud and hybrid deployments:
 
 | Check | Result |
 |-------|--------|
-| Rust unit tests | 365 passing |
-| Rust integration tests | 596 passing |
-| Web API tests | 26 passing |
-| Web UI tests | 68 passing |
-| Total tests | 1,055 passing, 0 failures |
+| Total tests | 961 passing, 0 failures |
 | Compiler warnings | 0 |
 | Clippy lints | 0 |
 
@@ -198,8 +196,8 @@ The tool auto-detects the cluster, verifies Cilium, enables Hubble relay, starts
 
 | Phase | Focus |
 |-------|-------|
-| v1.0 | All 8 engines wired to TUI, 969 tests, production-ready core |
-| v2.0 (Current) | Web dashboard (58 views, React 19), REST API (Actix-Web), WebSocket streaming |
+| v1.0 | All 8 engines wired to TUI, production-ready core |
+| v2.0 (Current) | Web dashboard (59 views, React 19), 64 REST/WS endpoints, RBAC, visual rule builder, security hardening |
 | v3.0 | Prometheus exporter, Grafana dashboards, plugin system (WASM), deep learning |
 
 # Contact

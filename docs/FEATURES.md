@@ -3,19 +3,19 @@
 ## Core Observability (Tabs 0-4)
 
 ### Flows
-Live packet stream from Hubble with verdict coloring (FORWARDED/DROPPED), source/destination pods, namespaces, and IPs. Navigate with arrow keys, press `e` to explain any packet.
+Live packet stream from Hubble with verdict coloring (FORWARDED/DROPPED), source/destination pods, namespaces, and IPs. Navigate with arrow keys, press `e` to explain any packet. Auto-refresh every 30s with DataFreshness indicator. Export CSV/JSON.
 
 ### Connections
-Enriched connection tracking combining eBPF conntrack data with Kubernetes pod metadata. Shows active TCP/UDP connections with identity resolution.
+Enriched connection tracking combining eBPF conntrack data with Kubernetes pod metadata. Shows active TCP/UDP connections with identity resolution. Auto-refresh every 30s with DataFreshness indicator. Export CSV/JSON.
 
 ### Endpoints
-Auto-discovered Cilium endpoints with labels, identity numbers, and policy status. Data sourced from the Kubernetes API.
+Auto-discovered Cilium endpoints with labels, identity numbers, and policy status. Data sourced from the Kubernetes API. Auto-refresh every 30s with DataFreshness indicator. Export CSV/JSON.
 
 ### Policies
-Active CiliumNetworkPolicy and NetworkPolicy resources visualized with rule counts and target selectors.
+Active CiliumNetworkPolicy and NetworkPolicy resources visualized with rule counts and target selectors. Full CRUD: create (YAML editor, Visual Rule Builder, templates, ML-generated), edit/update, delete, and bulk delete. Auto-refresh every 30s. Export CSV/JSON.
 
 ### Metrics
-Aggregate eBPF datapath metrics: forwarded/dropped counts, policy verdict breakdown, endpoint health.
+Aggregate eBPF datapath metrics: forwarded/dropped counts, policy verdict breakdown, endpoint health. Auto-refresh every 30s with DataFreshness indicator. Export CSV/JSON.
 
 ---
 
@@ -162,7 +162,7 @@ Traffic shadowing, request replay, environment mirroring.
 
 ## Web Dashboard (web-ui)
 
-Full-featured React 19 web application with 58 views and 25 shared components.
+Full-featured React 19 web application with 59 views, 31 shared components, and 5 custom hooks.
 
 ### Design
 - Dark-first theme (slate-950 base) with light mode toggle
@@ -177,11 +177,73 @@ Full-featured React 19 web application with 58 views and 25 shared components.
 | Observability | 12 | Flows, topology, service map, heatmap, latency, DNS, bandwidth |
 | Security | 15 | Policies, policy editor (Monaco), anomalies, encryption, RBAC, compliance |
 | Intelligence | 6 | AutoPolicy ML engine, healer, root cause, diagnostics, forecasting |
-| Operations | 10 | Chaos engineering, canary, replay, packet capture, multi-cluster, eBPF |
+| Operations | 11 | Chaos engineering, canary, replay, packet capture, multi-cluster, eBPF |
 | Networking | 8 | Load balancer, ingress/egress, service mesh, IPAM, cost analytics |
 
-### Reusable Components
-StatCard, ChartContainer, SortableTable, Badge, ProgressBar, ScoreGauge, Accordion, ToggleSwitch, AlertsList, EmptyState, Toast, GlobalSearch, and more.
+### Policy Management
+- **Visual Rule Builder**: Form-based policy creation without writing YAML
+- **YAML Editor**: Monaco-powered editor with syntax highlighting and validation
+- **Template Library**: Pre-built policy templates for common use cases
+- **ML-Generated Policies**: AutoPolicy engine generates policies from observed traffic
+- **Full CRUD**: Create, edit/update, delete, and bulk delete operations
+- **YAML Injection Prevention**: `yaml_escape` helper sanitizes all user input
+
+### Real-Time Features
+- **WebSocket Streaming**: Live flow and metrics data via WebSocket connections
+- **Auto-Refresh**: 30-second refresh interval on all data views with DataFreshness indicator
+- **Export**: CSV and JSON export on all tabular data views
+
+### Reusable Components (31)
+StatCard, ChartContainer, SortableTable, Badge, ProgressBar, ScoreGauge, Accordion, ToggleSwitch, AlertsList, EmptyState, Toast, GlobalSearch, DataFreshness, and more.
 
 ### Tech Stack
 React 19, TypeScript 5.8, Tailwind CSS 3.4, Zustand 5, TanStack React Query, Recharts, D3 (d3-force, d3-selection, d3-drag), Monaco Editor, Vite 6, Vitest (68 tests).
+
+---
+
+## Web API (64 REST Endpoints)
+
+Rust/Axum backend serving the web dashboard with 64 REST API endpoints.
+
+### Authentication & Authorization
+- **JWT Authentication**: Token-based auth on all protected endpoints
+- **RBAC Enforcement**: `require_admin()` guard on all destructive operations (delete, bulk delete, apply, rollback)
+- **Role-Based Access**: Admin and viewer roles with granular permission checks
+
+### Security
+- **Rate Limiting**: Per-IP request throttling with periodic cleanup of stale entries
+- **WebSocket Connection Limit**: Maximum 100 concurrent WebSocket connections
+- **Hubble Address Validation**: Startup validation of Hubble gRPC endpoint
+- **YAML Injection Prevention**: `yaml_escape` helper sanitizes user-supplied strings
+- **Concurrent Health Checks**: Parallel health probes with 3-second timeout
+- **Input Validation**: RFC 1123 regex on kubectl-bound names/namespaces, flag injection prevention
+- **Type-Safe Handlers**: All POST endpoints use typed `Deserialize` structs, no raw `Json<Value>`
+- **Redis Caching**: Response caching for frequently accessed data
+
+### API Categories
+| Category | Endpoints | Highlights |
+|----------|-----------|-----------|
+| Flows & Observability | 12 | Live flows, connections, metrics, WebSocket streaming |
+| Policies | 10 | CRUD, bulk delete, templates, visual builder, ML generation |
+| Endpoints & Identity | 8 | Cilium endpoints, identity resolution, labels |
+| Intelligence | 10 | AutoPolicy, healer, root cause, simulator, anomaly detection |
+| Operations | 8 | Chaos experiments, canary deployments, replay |
+| Cluster & Infra | 8 | Multi-cluster, health checks, node status, agent info |
+| Auth & Admin | 4 | Login, token refresh, RBAC management |
+| Search & Export | 4 | Global search, CSV/JSON export |
+
+---
+
+## Platform Metrics
+
+| Metric | Value |
+|--------|-------|
+| Rust tests | 961 passing, 0 failures |
+| TUI tabs | 13 |
+| Rust lines of code | 32,000+ |
+| Web dashboard pages | 59 |
+| Web components | 31 |
+| Custom hooks | 5 |
+| REST API endpoints | 64 |
+| Web UI tests | 68 passing |
+| Compiler warnings | 0 (Rust + TypeScript) |
