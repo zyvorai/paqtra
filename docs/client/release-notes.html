@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cilium Flow — Release Notes</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #161a23;
+    --surface2: #1c2130;
+    --border: #2a2f3e;
+    --text: #e0e4ec;
+    --text-muted: #8a90a0;
+    --accent: #3b82f6;
+    --accent2: #22d3ee;
+    --green: #34d399;
+    --orange: #f59e0b;
+    --red: #ef4444;
+    --purple: #a78bfa;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  .header {
+    background: linear-gradient(135deg, #1a1f2e 0%, #0f1117 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 3rem 2rem;
+    text-align: center;
+  }
+  .header h1 { font-size: 2.2rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .header .subtitle { color: var(--text-muted); font-size: 1.1rem; }
+  .container { max-width: 900px; margin: 0 auto; padding: 2rem; }
+
+  .version-block { margin-bottom: 3rem; }
+  .version-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .version-tag {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .version-date {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    padding: 0.2rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+  }
+  .version-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.25rem 0.8rem;
+    border-radius: 9999px;
+  }
+  .badge-current { background: rgba(52,211,153,0.15); color: var(--green); border: 1px solid rgba(52,211,153,0.3); }
+  .badge-security { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+
+  .category { margin-bottom: 1.5rem; }
+  .category-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .cat-icon {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .cat-feature { background: var(--green); }
+  .cat-security { background: var(--red); }
+  .cat-known { background: var(--orange); }
+  .cat-roadmap { background: var(--purple); }
+
+  ul { margin: 0 0 0.5rem 1.5rem; }
+  li { margin-bottom: 0.3rem; }
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: var(--surface2);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.88em;
+    color: var(--accent2);
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .stat-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 0.2rem;
+  }
+
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2rem 0;
+  }
+
+  .footer {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    border-top: 1px solid var(--border);
+    margin-top: 2rem;
+  }
+
+  @media print {
+    body { background: #fff; color: #111; }
+    .header { background: none; border-bottom: 2px solid #111; }
+    .header h1 { color: #111; }
+    .stat-card { background: #f8f8f8; border-color: #ccc; }
+    .stat-value { color: #1a56db; }
+    code { background: #eee; color: #333; }
+    a { color: #1a56db; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Cilium Flow &mdash; Release Notes</h1>
+  <p class="subtitle">Changelog and version history</p>
+</div>
+
+<div class="container">
+
+<!-- v1.0.0 -->
+<div class="version-block">
+  <div class="version-header">
+    <span class="version-tag">v1.0.0</span>
+    <span class="version-date">April 2026</span>
+    <span class="version-badge badge-current">Current Release</span>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-value">59</div>
+      <div class="stat-label">Dashboard Pages</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">64</div>
+      <div class="stat-label">REST API Endpoints</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">13</div>
+      <div class="stat-label">TUI Tabs</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">961</div>
+      <div class="stat-label">Tests Passing</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">32K</div>
+      <div class="stat-label">Lines of Rust</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">0</div>
+      <div class="stat-label">Test Failures</div>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <div class="category">
+    <div class="category-title"><span class="cat-icon cat-feature"></span> Features</div>
+    <ul>
+      <li><strong>Web Dashboard</strong> &mdash; 59 pages built with React 19 + TypeScript, styled with Tailwind CSS dark theme</li>
+      <li><strong>REST API</strong> &mdash; 64 endpoints powered by Rust/Axum with full JWT authentication and RBAC</li>
+      <li><strong>Terminal TUI</strong> &mdash; 13-tab interactive terminal interface with 32K lines of Rust</li>
+      <li><strong>Visual Rule Builder</strong> &mdash; form-based policy creation with drag-and-drop rule composition, eliminating the need to write YAML manually</li>
+      <li><strong>Full Policy CRUD</strong> &mdash; create, edit, update, delete, and bulk operations on Cilium network policies</li>
+      <li><strong>Auto-refresh</strong> &mdash; all views refresh every 30 seconds with <code>DataFreshness</code> indicators showing data age</li>
+      <li><strong>Data Export</strong> &mdash; CSV and JSON export available on all tabular data views</li>
+      <li><strong>Concurrent Health Checks</strong> &mdash; parallel health probes with 3-second timeout per target</li>
+      <li><strong>CT Entry Parsing</strong> &mdash; conntrack entries parsed with real TCP flags and lifetime fields</li>
+      <li><strong>SPA Fallback</strong> &mdash; the API server serves the React SPA with proper client-side routing fallback</li>
+      <li><strong>K3s Deployment</strong> &mdash; automated deployment script with built-in smoke tests</li>
+      <li><strong>Client Presentation</strong> &mdash; 13-slide HTML presentation for stakeholder demos</li>
+    </ul>
+  </div>
+
+  <!-- Security -->
+  <div class="category">
+    <div class="category-title"><span class="cat-icon cat-security"></span> Security Hardening</div>
+    <ul>
+      <li><strong>RBAC enforcement</strong> on all destructive operations (policy CRUD, node drain, chaos, healer, rollback)</li>
+      <li><strong>WebSocket connection limiting</strong> &mdash; maximum 100 concurrent connections to prevent resource exhaustion</li>
+      <li><strong>Rate limiter hardening</strong> &mdash; periodic bucket cleanup every 60s, mutex poisoning recovery</li>
+      <li><strong>YAML injection prevention</strong> &mdash; <code>yaml_escape()</code> applied across all policy generation paths</li>
+      <li><strong>JWT secret enforcement</strong> &mdash; minimum 32-character secret required at startup</li>
+      <li><strong>Input validation</strong> &mdash; RFC 1123 DNS name validation on all Kubernetes resource names</li>
+    </ul>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Security Fixes -->
+  <div class="category">
+    <div class="version-header" style="margin-bottom:0.8rem;">
+      <span class="version-badge badge-security">55 Security Fixes</span>
+    </div>
+    <ul>
+      <li><strong>ConfigMap overwrite</strong> &mdash; fixed destructive overwrite that could destroy Cilium agent configuration</li>
+      <li><strong>CIDR matching false positives</strong> &mdash; corrected identity resolution logic for overlapping CIDR ranges</li>
+      <li><strong>Path traversal in replay storage</strong> &mdash; sanitized file paths to prevent directory escape</li>
+      <li><strong>Division-by-zero</strong> &mdash; fixed 5 locations in anomaly detection scoring where zero denominators caused panics</li>
+      <li><strong>Terminal not restored on panic</strong> &mdash; added panic hook to restore terminal state before unwinding</li>
+      <li><strong>Unsafe <code>close(0)</code></strong> &mdash; prevented closing stdin by adding fd validity guard (fd &gt; 2)</li>
+      <li><strong>API route mismatches</strong> &mdash; fixed 25+ endpoints where frontend paths did not match backend routes</li>
+      <li><strong>Policy verdict logic</strong> &mdash; corrected allow/deny determination that was inverted for certain policy types</li>
+      <li><strong>Chaos confirmation bypass</strong> &mdash; enforced confirmation step that could previously be skipped via direct API call</li>
+      <li><strong>Index-out-of-bounds</strong> &mdash; fixed array access panics in multiple TUI views when data was empty</li>
+    </ul>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Known Limitations -->
+  <div class="category">
+    <div class="category-title"><span class="cat-icon cat-known"></span> Known Limitations</div>
+    <ul>
+      <li>WebSocket <code>/ws/flows</code> and <code>/ws/metrics</code> streams require a running Hubble relay instance; without it, streams return no data</li>
+      <li>gRPC Hubble integration is not yet implemented &mdash; the platform currently uses the <code>hubble observe</code> CLI as a fallback for flow collection</li>
+      <li>Server-side pagination is not yet implemented for large datasets; all results are returned in a single response</li>
+      <li>JWT tokens are validated at WebSocket upgrade time but are not re-validated during the lifetime of an open connection; token expiry during a session does not terminate the stream</li>
+    </ul>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Roadmap -->
+  <div class="category">
+    <div class="category-title"><span class="cat-icon cat-roadmap"></span> Roadmap</div>
+    <p>For the full development roadmap, planned features, and contribution guidelines, see the <a href="../../README.md">project README</a>.</p>
+    <ul>
+      <li>Native gRPC Hubble relay integration</li>
+      <li>Server-side pagination and filtering</li>
+      <li>Token refresh and re-validation for long-lived WebSocket sessions</li>
+      <li>Multi-cluster federation support</li>
+      <li>OpenTelemetry tracing integration</li>
+    </ul>
+  </div>
+</div>
+
+</div>
+
+<div class="footer">
+  Cilium Flow Release Notes &mdash; v1.0.0 &mdash; April 2026
+</div>
+
+</body>
+</html>
