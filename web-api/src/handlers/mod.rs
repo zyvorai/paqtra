@@ -13,6 +13,7 @@ pub mod extended;
 pub mod extended2;
 pub mod extended3;
 pub mod extended4;
+pub mod ebpf;
 
 use axum::{http::StatusCode, Json};
 use crate::{AppMetrics, AppState};

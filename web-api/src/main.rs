@@ -131,9 +131,18 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/security/findings", get(handlers::extended::list_security_findings))
         .route("/api/v1/security/zero-trust", get(handlers::extended::zero_trust_score))
 
-        // eBPF Profiler
-        .route("/api/v1/modules/ebpf/programs", get(handlers::extended::list_ebpf_programs))
-        .route("/api/v1/modules/ebpf/maps", get(handlers::extended::list_ebpf_maps))
+        // eBPF Profiler (real kernel data via bpftool)
+        .route("/api/v1/modules/ebpf/programs", get(handlers::ebpf::list_real_programs))
+        .route("/api/v1/modules/ebpf/maps", get(handlers::ebpf::list_real_maps))
+        .route("/api/v1/ebpf/programs", get(handlers::ebpf::list_real_programs))
+        .route("/api/v1/ebpf/programs/{id}", get(handlers::ebpf::get_program_stats))
+        .route("/api/v1/ebpf/maps", get(handlers::ebpf::list_real_maps))
+        .route("/api/v1/ebpf/maps/{id}/entries", get(handlers::ebpf::dump_map_entries))
+        .route("/api/v1/ebpf/conntrack", get(handlers::ebpf::get_conntrack))
+        .route("/api/v1/ebpf/ipcache", get(handlers::ebpf::get_ipcache))
+        .route("/api/v1/ebpf/lb", get(handlers::ebpf::get_lb_backends))
+        .route("/api/v1/ebpf/drops", get(handlers::ebpf::get_drop_stats))
+        .route("/api/v1/ebpf/summary", get(handlers::ebpf::get_ebpf_summary))
 
         // Metrics summary
         .route("/api/v1/metrics/summary", get(handlers::extended::metrics_summary))

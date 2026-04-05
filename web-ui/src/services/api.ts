@@ -1074,3 +1074,14 @@ export const fetchMeshServices = () => api.get<{ services: MeshService[] }>('/se
 
 // KPR (Kube Proxy Replacement)
 export const fetchKPRStatus = () => api.get<KPRStatus>('/kpr/status');
+
+// eBPF Real Data
+export const fetchRealEbpfPrograms = () => api.get<{ programs: unknown[]; total: number }>('/ebpf/programs');
+export const fetchRealEbpfMaps = () => api.get<{ maps: unknown[]; total: number }>('/ebpf/maps');
+export const fetchEbpfProgramStats = (id: string) => api.get(`/ebpf/programs/${id}`);
+export const fetchEbpfMapEntries = (id: number, limit?: number) => api.get(`/ebpf/maps/${id}/entries`, { params: { limit: limit || 50 } });
+export const fetchEbpfConntrack = () => api.get<{ entries: unknown[]; total: number }>('/ebpf/conntrack');
+export const fetchEbpfIpcache = () => api.get<{ entries: unknown[]; total: number }>('/ebpf/ipcache');
+export const fetchEbpfLb = () => api.get<{ entries: unknown[]; total: number }>('/ebpf/lb');
+export const fetchEbpfDrops = () => api.get<{ drops: unknown[]; total_drops: number }>('/ebpf/drops');
+export const fetchEbpfSummary = () => api.get('/ebpf/summary');

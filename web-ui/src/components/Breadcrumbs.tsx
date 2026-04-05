@@ -61,6 +61,11 @@ const LABEL_MAP: Record<string, string> = {
   kpr: 'KPR',
   ipam: 'IPAM',
   costs: 'Cost Analytics',
+  conntrack: 'Conntrack Table',
+  'policy-map': 'Policy Map',
+  ipcache: 'IP Cache',
+  'lb-map': 'LB Map',
+  drops: 'Drop Analytics',
 };
 
 function segmentToLabel(segment: string): string {

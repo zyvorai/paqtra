@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { Cpu, Zap, Database } from 'lucide-react';
-import { fetchEbpfPrograms, fetchEbpfMaps, EbpfProgram, EbpfMapInfo } from '../../services/api';
+import { Cpu, Zap, Database, Search } from 'lucide-react';
+import { fetchEbpfPrograms, fetchEbpfMaps, fetchRealEbpfPrograms, fetchRealEbpfMaps, fetchEbpfMapEntries, EbpfProgram, EbpfMapInfo } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { formatCount } from '../../utils/formatters';
 import { usePageTitle } from '../../hooks/usePageTitle';
@@ -8,20 +8,46 @@ import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
 
+interface MapEntry {
+  key: string;
+  value: string;
+  [k: string]: unknown;
+}
+
 const EbpfProfiler: React.FC = () => {
   usePageTitle('eBPF Profiler');
   const [programs, setPrograms] = useState<EbpfProgram[]>([]);
   const [maps, setMaps] = useState<EbpfMapInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'programs' | 'maps'>('programs');
+  const [activeTab, setActiveTab] = useState<'programs' | 'maps' | 'explorer'>('programs');
   const [autoRefreshOn, setAutoRefreshOn] = useState(true);
+
+  // Map Explorer state
+  const [selectedMapId, setSelectedMapId] = useState<number | null>(null);
+  const [mapEntries, setMapEntries] = useState<MapEntry[]>([]);
+  const [mapEntriesLoading, setMapEntriesLoading] = useState(false);
+  const [mapEntriesError, setMapEntriesError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setError(null);
     try {
-      const [progRes, mapRes] = await Promise.all([fetchEbpfPrograms(), fetchEbpfMaps()]);
-      setPrograms(progRes.data.programs ?? []);
-      setMaps(mapRes.data.maps ?? []);
+      // Try real API first, fall back to module API
+      let progData: EbpfProgram[] = [];
+      let mapData: EbpfMapInfo[] = [];
+
+      try {
+        const [progRes, mapRes] = await Promise.all([fetchRealEbpfPrograms(), fetchRealEbpfMaps()]);
+        progData = (progRes.data.programs ?? []) as EbpfProgram[];
+        mapData = (mapRes.data.maps ?? []) as EbpfMapInfo[];
+      } catch {
+        // Fallback to module API
+        const [progRes, mapRes] = await Promise.all([fetchEbpfPrograms(), fetchEbpfMaps()]);
+        progData = progRes.data.programs ?? [];
+        mapData = mapRes.data.maps ?? [];
+      }
+
+      setPrograms(progData);
+      setMaps(mapData);
     } catch (err) {
       setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to load eBPF data');
     }
@@ -29,8 +55,23 @@ const EbpfProfiler: React.FC = () => {
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(loadData, 30000, autoRefreshOn);
 
-  const totalRuns = programs.reduce((sum, p) => sum + p.run_count, 0);
-  const totalMapEntries = maps.reduce((sum, m) => sum + m.current_entries, 0);
+  const totalRuns = programs.reduce((sum, p) => sum + (p.run_count ?? 0), 0);
+  const totalMapEntries = maps.reduce((sum, m) => sum + (m.current_entries ?? 0), 0);
+
+  const loadMapEntries = useCallback(async (mapId: number) => {
+    setSelectedMapId(mapId);
+    setMapEntriesLoading(true);
+    setMapEntriesError(null);
+    try {
+      const res = await fetchEbpfMapEntries(mapId);
+      setMapEntries((res.data as { entries?: MapEntry[] }).entries ?? (res.data as unknown as MapEntry[]) ?? []);
+    } catch (err) {
+      setMapEntriesError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to load map entries');
+      setMapEntries([]);
+    } finally {
+      setMapEntriesLoading(false);
+    }
+  }, []);
 
   return (
     <div>
@@ -77,6 +118,10 @@ const EbpfProfiler: React.FC = () => {
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'maps' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>
           Maps
         </button>
+        <button onClick={() => setActiveTab('explorer')}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'explorer' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}>
+          <span className="flex items-center gap-1.5"><Search className="w-3.5 h-3.5" />Map Explorer</span>
+        </button>
       </div>
 
       {activeTab === 'programs' && (
@@ -103,7 +148,7 @@ const EbpfProfiler: React.FC = () => {
                   <td className="px-4 py-3 text-slate-400">{p.type}</td>
                   <td className="px-4 py-3 text-slate-400">{p.attached_to || p.attach_point || '-'}</td>
                   <td className="px-4 py-3 text-right text-slate-300">{formatCount(p.run_count)}</td>
-                  <td className="px-4 py-3 text-right text-slate-300">{p.map_count ?? p.map_ids.length}</td>
+                  <td className="px-4 py-3 text-right text-slate-300">{p.map_count ?? p.map_ids?.length ?? 0}</td>
                 </tr>
               ))}
               {programs.length === 0 && !loading && (
@@ -146,6 +191,75 @@ const EbpfProfiler: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {activeTab === 'explorer' && (
+        <div className="grid grid-cols-3 gap-6">
+          {/* Map list */}
+          <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-700/50">
+              <h3 className="text-sm font-medium text-white">Select a Map</h3>
+            </div>
+            <div className="max-h-[500px] overflow-y-auto">
+              {maps.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => loadMapEntries(Number(m.id))}
+                  className={`w-full text-left px-4 py-3 border-b border-slate-700/30 text-sm transition-colors hover:bg-slate-700/50 ${
+                    selectedMapId === Number(m.id) ? 'bg-blue-600/20 text-blue-400' : 'text-slate-300'
+                  }`}
+                >
+                  <div className="font-medium">{m.name}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{m.type} - {formatCount(m.current_entries)} entries</div>
+                </button>
+              ))}
+              {maps.length === 0 && (
+                <div className="px-4 py-8 text-center text-slate-400 text-sm">No maps available</div>
+              )}
+            </div>
+          </div>
+
+          {/* Entries */}
+          <div className="col-span-2 rounded-xl border border-slate-700/50 bg-slate-800/50 overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-700/50">
+              <h3 className="text-sm font-medium text-white">
+                {selectedMapId !== null ? `Map Entries (ID: ${selectedMapId})` : 'Map Entries'}
+              </h3>
+            </div>
+            {mapEntriesError && (
+              <div className="m-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{mapEntriesError}</div>
+            )}
+            {mapEntriesLoading && (
+              <div className="px-4 py-8 text-center text-slate-400 text-sm">Loading entries...</div>
+            )}
+            {!mapEntriesLoading && selectedMapId === null && (
+              <div className="px-4 py-8 text-center text-slate-400 text-sm">Click a map to view its entries</div>
+            )}
+            {!mapEntriesLoading && selectedMapId !== null && mapEntries.length === 0 && !mapEntriesError && (
+              <div className="px-4 py-8 text-center text-slate-400 text-sm">No entries in this map</div>
+            )}
+            {!mapEntriesLoading && mapEntries.length > 0 && (
+              <div className="overflow-x-auto max-h-[450px] overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-900/50 sticky top-0">
+                    <tr className="text-left text-slate-400">
+                      <th className="px-4 py-3 font-medium">Key (hex)</th>
+                      <th className="px-4 py-3 font-medium">Value (hex)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/50">
+                    {mapEntries.map((entry, i) => (
+                      <tr key={i} className="table-row-hover">
+                        <td className="px-4 py-3 text-cyan-400 font-mono text-xs break-all">{entry.key}</td>
+                        <td className="px-4 py-3 text-slate-300 font-mono text-xs break-all">{entry.value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -9,6 +9,7 @@ import {
   DollarSign, TrendingUp, Lock, Scale, Timer, Copy,
   Users, Cable, Wrench, Activity, FileEdit, Download, Target, Siren,
   History, ServerOff, Unplug, Hexagon, ChevronDown, User,
+  Database, AlertTriangle,
 } from 'lucide-react';
 import { useThemeStore } from '../stores/themeStore';
 import { useAuthStore } from '../stores/authStore';
@@ -95,6 +96,16 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'BGP Peering', path: '/bgp', icon: Route },
       { label: 'Node Drain', path: '/node-drain', icon: ServerOff },
       { label: 'eBPF', path: '/ebpf', icon: Cpu },
+    ],
+  },
+  {
+    label: 'eBPF Data',
+    items: [
+      { label: 'Conntrack Table', path: '/conntrack', icon: Database },
+      { label: 'Policy Map', path: '/policy-map', icon: Shield },
+      { label: 'IP Cache', path: '/ipcache', icon: Globe },
+      { label: 'LB Map', path: '/lb-map', icon: Scale },
+      { label: 'Drop Analytics', path: '/drops', icon: AlertTriangle },
     ],
   },
   {

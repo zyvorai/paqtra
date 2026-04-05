@@ -68,6 +68,11 @@ const PodSecurityView = React.lazy(() => import('./views/PodSecurity'));
 const EgressGatewayView = React.lazy(() => import('./views/EgressGateway'));
 const ServiceMeshViewComp = React.lazy(() => import('./views/ServiceMeshView'));
 const KubeProxyReplacement = React.lazy(() => import('./views/KubeProxyReplacement'));
+const ConntrackViewer = React.lazy(() => import('./views/ConntrackViewer'));
+const PolicyMapViewer = React.lazy(() => import('./views/PolicyMapViewer'));
+const IPCacheViewer = React.lazy(() => import('./views/IPCacheViewer'));
+const LBMapViewer = React.lazy(() => import('./views/LBMapViewer'));
+const DropDashboard = React.lazy(() => import('./views/DropDashboard'));
 const Settings = React.lazy(() => import('./views/Settings'));
 const NotFound = React.lazy(() => import('./views/NotFound'));
 
@@ -171,6 +176,11 @@ const App: React.FC = () => {
                   <Route path="/egress" element={<V><EgressGatewayView /></V>} />
                   <Route path="/service-mesh" element={<V><ServiceMeshViewComp /></V>} />
                   <Route path="/kpr" element={<V><KubeProxyReplacement /></V>} />
+                  <Route path="/conntrack" element={<V><ConntrackViewer /></V>} />
+                  <Route path="/policy-map" element={<V><PolicyMapViewer /></V>} />
+                  <Route path="/ipcache" element={<V><IPCacheViewer /></V>} />
+                  <Route path="/lb-map" element={<V><LBMapViewer /></V>} />
+                  <Route path="/drops" element={<V><DropDashboard /></V>} />
                   <Route path="/settings" element={<V><Settings /></V>} />
                   <Route path="*" element={<V><NotFound /></V>} />
                 </Route>
