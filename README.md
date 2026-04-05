@@ -1,31 +1,33 @@
-# Cilium Flow
+# Cilium Vision
 
-**Real-time Network Observability & Intelligence Platform for Kubernetes**
+**Real-Time Network Intelligence Platform for Kubernetes**
 
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
+[![React](https://img.shields.io/badge/react-19-blue.svg)](https://react.dev/)
 [![Tests](https://img.shields.io/badge/tests-961%20passing-brightgreen.svg)](#testing)
+[![API](https://img.shields.io/badge/API-64%20endpoints-blueviolet.svg)](#web-api)
+[![Pages](https://img.shields.io/badge/dashboard-59%20pages-cyan.svg)](#web-dashboard)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Cilium](https://img.shields.io/badge/cilium-1.14%2B-purple.svg)](https://cilium.io/)
-[![Lines of Code](https://img.shields.io/badge/LoC-32k%20Rust-informational.svg)](#)
 
-Cilium Flow is a terminal-based platform that turns Cilium's eBPF data plane into an intelligent observability and operations console. It combines live flow monitoring, ML-enhanced policy automation, chaos engineering, canary deployments, and multi-cluster orchestration in a single binary.
+Cilium Vision is a full-stack observability and operations platform for Kubernetes networks powered by Cilium eBPF. It provides a **web dashboard** (59 pages), **REST API** (64 endpoints), and **terminal TUI** (13 tabs) in a single deployable package.
 
 ---
 
-## Key Capabilities
+## What It Does
 
-| Area | What It Does |
+| Area | Capabilities |
 |------|-------------|
-| **Live Flows** | Stream Hubble flows with verdict coloring, per-packet explanations |
-| **AutoPolicy** | Learn traffic patterns, generate CiliumNetworkPolicy with ML confidence scores |
-| **Root Cause** | Detect drops, correlate with policies, propose one-click fixes |
-| **Simulator** | Dry-run policy changes with impact analysis and risk scoring |
-| **Time-Travel** | Record flows, replay with VCR controls, jump to events |
-| **Chaos** | Inject packet loss / latency / DNS failures via tc-netem, circuit breaker |
-| **Canary** | Progressive traffic shifting with promote / rollback / health gates |
-| **Multi-Cluster** | Register clusters, health-check, topology view, policy sync |
-| **Zero-Trust** | Generate default-deny + discovered-allow policies from Hubble/kubectl |
-| **Profiler** | CPU / memory / network sampling via /proc with flame-graph output |
+| **Flow Monitoring** | Real-time Hubble flows, per-packet explanations, verdict coloring, WebSocket streaming |
+| **Policy Management** | Visual rule builder, YAML editor, ML-powered AutoPolicy, simulate before applying |
+| **Security** | Zero-trust policy generation, compliance audits (CIS/NIST/SOC2), anomaly detection |
+| **Root Cause** | Packet drop analysis, policy correlation, one-click fixes, network healer |
+| **Chaos Engineering** | Fault injection (loss/latency/DNS), circuit breaker, preset experiments |
+| **Canary Deployments** | Progressive traffic shifting, health gates, auto-promote/rollback |
+| **Multi-Cluster** | Cluster registration, health checks, policy sync, topology view |
+| **Networking** | Load balancer, ingress/egress, IPAM, encryption, BGP, ClusterMesh, WireGuard |
+| **Observability** | Service map, heatmap, DNS monitor, latency analysis, bandwidth, cost analytics |
+| **Operations** | Diagnostics, troubleshooter, packet capture, SLOs, alerts, audit log, incidents |
 
 ---
 
@@ -34,260 +36,230 @@ Cilium Flow is a terminal-based platform that turns Cilium's eBPF data plane int
 ### Prerequisites
 
 - Kubernetes cluster with Cilium installed
-- `kubectl` configured and pointing at the cluster
-- Rust 1.75+ (for building from source)
+- `kubectl` configured
+- Rust 1.75+ and Node.js 18+ (for building from source)
 
-### Install
+### Install & Run
 
 ```bash
 git clone https://github.com/ssahani/cilium-flow.git
 cd cilium-flow
-cargo build --release
-sudo cp target/release/cilium-tui /usr/local/bin/
+
+# Build everything
+cargo build --release                    # TUI binary (13MB)
+cd web-api && cargo build --release      # API server
+cd web-ui && npm ci && npm run build     # Web dashboard
+
+# Deploy to remote K3s cluster
+./scripts/deploy-k3s-test.sh <host> <user> <password> --test
+
+# Or run locally
+cilium-tui                               # Terminal UI
+cilium-tui --skip-bootstrap              # Skip auto-setup
 ```
 
-### Run
+### Access
 
-```bash
-# Full bootstrap (auto-detects cluster, enables Hubble, starts port-forward)
-cilium-tui
-
-# Skip bootstrap if Cilium & Hubble are already running
-cilium-tui --skip-bootstrap
-
-# Custom Hubble port
-cilium-tui --hubble-port 4245
-
-# Auto-install Cilium if missing (no prompts)
-cilium-tui --auto-install
-```
-
-On first run the tool will:
-1. Detect your Kubernetes cluster context
-2. Verify Cilium is installed (offer to install if missing)
-3. Enable Hubble relay if not running
-4. Start port-forward to hubble-relay
-5. Launch the interactive TUI
+| Interface | URL | Description |
+|-----------|-----|-------------|
+| **Web Dashboard** | `http://<host>:9191` | 59-page React dashboard |
+| **REST API** | `http://<host>:9191/api/v1/` | 64 JSON endpoints |
+| **WebSocket** | `ws://<host>:9191/api/v1/ws/metrics` | Real-time metrics stream |
+| **Health Check** | `http://<host>:9191/health` | API health + subsystem status |
+| **Presentation** | `http://<host>:9191/presentation.html` | Client presentation (13 slides) |
 
 ---
 
 ## Architecture
 
 ```
-+-------------------------------------------------------------+
-|                      Terminal UI (ratatui)                    |
-|  Flows | Conns | Endpoints | Policies | Metrics | ...       |
-+-------------------------------------------------------------+
-|  Healer | AutoPolicy | RootCause | Simulator | Replay       |
-|  Chaos  | Canary     | MultiCluster                         |
-+-------------------------------------------------------------+
-|  eBPF Maps (Aya/bpftool)  |  Hubble CLI  |  K8s API (kube)  |
-+-------------------------------------------------------------+
-|              Cilium Agent  |  Kernel eBPF datapath            |
-+-------------------------------------------------------------+
-```
-
-**92 source files** across 13 modules, with 9 integration test suites.
-
----
-
-## Tabs & Navigation
-
-### Global Keys
-
-| Key | Action |
-|-----|--------|
-| `Tab` / `Shift+Tab` | Cycle through 13 tabs |
-| `?` | Toggle help overlay |
-| `q` | Quit |
-| `Esc` | Cancel / close overlay |
-
-### Per-Tab Keys
-
-| Tab | Keys | Actions |
-|-----|------|---------|
-| **Flows** | `e`, Up/Down | Explain packet, navigate |
-| **Healer** | `d` | Detect problems |
-| **AutoPolicy** | `u` `g` `v` `a` `r` `A` `R` | Update, generate, view, apply, rollback, batch apply/rollback |
-| **RootCause** | `a`, Up/Down | Apply fix, navigate |
-| **Simulator** | `s` `c`, Up/Down | Simulate, clear, navigate scenarios |
-| **Replay** | `t` Space Left/Right `[` `]` `+` `-` | Time-travel, play/pause, step, jump, speed |
-| **Chaos** | Enter `v` `s` `S` `b` | Run preset, toggle view, stop, stop-all, circuit breaker |
-| **Canary** | `p` `r` `+` `d` | Promote, rollback, progress traffic, details |
-| **MultiCluster** | `v` `h` | Cycle views, health-check all clusters |
-
----
-
-## Module Details
-
-### Chaos Engineering
-
-Seven presets map to real `tc-netem` fault injection:
-
-| Preset | Experiment | Default |
-|--------|-----------|---------|
-| Network Partition | PacketDrop | 20% loss |
-| Latency Spike | Latency | 500ms +/- 50ms |
-| DNS Outage | DNSFailure | 30% failure |
-| Connection Reset | ConnectionKill | 15% kill |
-| Bandwidth Limit | Bandwidth | 10 Mbps cap |
-| Packet Corruption | PacketCorruption | 5% corrupt |
-| Total Partition | PacketDrop | 100% loss |
-
-Safety: max 50% drop rate, max 5s latency, circuit breaker, 5-minute auto-cleanup.
-
-### Canary Deployments
-
-Progressive traffic shifting via Cilium L7 annotations:
-
-- Start at 10%, increment by 10% per step
-- Auto-promote at 99% success rate, auto-rollback below 90%
-- Real-time metrics: success rate, latency comparison, error rate
-- Health gauges in TUI
-
-### Multi-Cluster Autopilot
-
-- Register clusters with provider/region metadata
-- Health-check via `kubectl get nodes --context <name>`
-- Topology view with connected pairs and region grouping
-- Policy sync and workload placement recommendations
-
-### Zero-Trust Policy Generator
-
-- Discovers traffic patterns via `hubble observe` or `kubectl get pods`
-- Generates: default-deny, allow-dns, allow-k8s-api, per-service-pair allow rules
-- All policies are valid CiliumNetworkPolicy YAML
-
----
-
-## Testing
-
-```bash
-cargo test          # 961 Rust tests (unit + integration)
-cargo clippy        # 0 warnings
-cargo build --release  # Optimized binary
-
-cd web-api && cargo test  # 26 API tests
-cd web-ui && npm test     # 68 UI tests
-```
-
-| Suite | Tests | Notes |
-|-------|-------|-------|
-| Library unit tests | 365 | Core logic, parsers, engines |
-| Library (release) | 365 | Optimized build verification |
-| Integration: modules | 51 | Cross-module interaction |
-| Integration: autopolicy | 27 | ML confidence, policy gen |
-| Integration: healer | 22 | Problem detection, fixes |
-| Integration: simulator | 22 | Policy simulation, impact |
-| Integration: replay | 20 | Recording, time-travel |
-| Integration: cross-module | 24 | End-to-end workflows |
-| Integration: tui-tabs | 17 | Tab navigation, rendering |
-| Other suites | 48 | Remaining test files |
-| Web API tests | 26 | Config, auth, models |
-| Web UI tests | 68 | Components, stores, hooks |
-| **Total** | **1,055** | **0 failures** |
-
----
-
-## Configuration
-
-```yaml
-# ~/.config/cilium-vision/config.yaml
-kubernetes:
-  context: "my-cluster"
-
-hubble:
-  port: 4245
-
-autopolicy:
-  enabled: true
-  ml_confidence_threshold: 0.75
-
-chaos:
-  enabled: true
-  max_drop_rate: 0.5
-  max_latency_ms: 5000
-  require_confirmation: true
-
-canary:
-  initial_traffic_pct: 10
-  auto_promote_threshold: 0.99
-  auto_rollback_threshold: 0.90
-
-multicluster:
-  auto_sync_policies: true
-  health_check_interval_secs: 30
-```
-
----
-
-## Project Structure
-
-```
-cilium-flow/
-  src/
-    main.rs                    Entry point & CLI args
-    bootstrap/                 Auto-detection & setup
-    tui/                       Terminal UI (13 tabs, views, event handlers)
-    modules/
-      autopolicy/              ML-enhanced policy generation
-      canary/                  Sidecarless canary deployments
-      chaos/                   eBPF chaos engineering
-      healer/                  Self-healing problem detection
-      multicluster/            Multi-cluster autopilot
-      packet_explainer/        AI-like packet analysis
-      replay/                  Flow recording & time-travel
-      rootcause/               Drop root-cause analysis
-      simulator/               Dry-run policy simulator
-      anomaly_detection/       AI/ML anomaly detection
-      ebpf_advanced/           Profiling, packet filters
-      security_compliance/     Zero-trust, compliance
-      dev_tools/               Traffic replay, shadowing
-    ebpf/                      BPF map readers (Aya + bpftool)
-    hubble/                    Hubble CLI/gRPC client
-    kubernetes/                K8s API client
-    integration/               Enriched data provider
-    cilium/                    Cilium CLI manager
-    endpoints/                 Endpoint discovery
-  tests/                       9 integration test suites
-  docs/                        Architecture, guides, status
-  web-api/                     REST API server (Axum + Redis + JWT auth)
-  web-ui/                      React dashboard (58 views, 25 components, 5 hooks)
++------------------------------------------------------------------+
+|                    Web Dashboard (React 19 + TypeScript)           |
+|  59 Pages | 31 Components | WebSocket | Dark/Light Theme         |
++------------------------------------------------------------------+
+|                    REST API (Rust + Axum)                          |
+|  64 Endpoints | JWT Auth | Redis Cache | Rate Limiting           |
++------------------------------------------------------------------+
+|                    Terminal TUI (Rust + Ratatui)                   |
+|  13 Tabs | 32K Lines | Live Monitoring | Packet Explainer        |
++------------------------------------------------------------------+
+|  eBPF Maps (Aya)  |  Hubble Relay  |  Kubernetes API  |  Redis   |
++------------------------------------------------------------------+
+|              Cilium Agent  |  Linux Kernel eBPF Datapath          |
++------------------------------------------------------------------+
 ```
 
 ---
 
 ## Web Dashboard
 
-Cilium Flow includes a full-featured web UI built with React 19, TypeScript, and Tailwind CSS.
+59 pages organized in 6 navigation groups:
 
-**58 views** covering observability, security, intelligence, operations, and networking. Dark-first design with real-time WebSocket updates, interactive charts, and keyboard shortcuts.
+### Overview
+Dashboard, Flows, Topology, Endpoints, Nodes, Events, Metrics
+
+### Observability
+Service Map, Heatmap, DNS Monitor, Latency Analysis, Bandwidth, Cost Analytics, Forecasting, Service Dependencies
+
+### Security
+Policies, Policy Editor, Visual Rule Builder, Policy Templates, Anomaly Detection, Compliance, Security Dashboard, Pod Security, RBAC Visualizer, Cilium Status, Identities
+
+### Intelligence
+AutoPolicy Engine, Chaos Engineering, Canary Deployments, Network Healer, Root Cause Analysis, eBPF Profiler
+
+### Operations
+Cluster Health, Alerts, Audit Log, SLO Dashboard, Incident Timeline, Change Log, Diagnostics, Troubleshooter, Node Drain, Settings
+
+### Networking
+ClusterMesh, BGP Peering, Load Balancer, Ingress Gateway, Egress Gateway, IPAM, Encryption, WireGuard, Network Interfaces, Traffic Mirror, Packet Capture, Flow Exporter, Service Mesh, KubeProxy Replacement
+
+### Dashboard Features
+
+Every view includes:
+- **Auto-refresh** (30s interval with toggle)
+- **Data freshness indicator** (color aging: green/yellow/red)
+- **Export** (CSV/JSON download)
+- **Empty state** messaging
+- **Error handling** with retry
+
+### Policy Management
+
+| Feature | How |
+|---------|-----|
+| **Create (YAML)** | Monaco editor with syntax highlighting and validation |
+| **Create (Visual)** | Form-based rule builder with live YAML preview |
+| **Create (Template)** | Pre-built policy templates library |
+| **Create (ML)** | AutoPolicy engine learns traffic and generates policies |
+| **Edit/Update** | Click pencil icon, modify, apply |
+| **Delete** | Single or bulk (multi-select checkboxes) |
+| **Simulate** | Dry-run impact analysis before applying |
+| **Validate** | Schema validation with error details |
+
+---
+
+## REST API
+
+64 endpoints serving JSON over HTTP with JWT authentication.
 
 ```bash
-cd web-ui
-npm install && npm run dev   # Dev server on port 3000
-npm run build                # Production build
-npm run test                 # 68 tests
+# Health check
+curl http://localhost:9191/health
+
+# List flows
+curl http://localhost:9191/api/v1/flows
+
+# List policies
+curl http://localhost:9191/api/v1/policies
+
+# Generate policy from traffic
+curl -X POST http://localhost:9191/api/v1/modules/autopolicy/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"namespace":"default","observation_duration":"5m"}'
 ```
 
-See [docs/WEB_APP_README.md](docs/WEB_APP_README.md) for full details.
+See full endpoint list in [docs/WEB_APP_ARCHITECTURE.md](docs/WEB_APP_ARCHITECTURE.md).
+
+---
+
+## Terminal TUI
+
+13 interactive tabs with vim-style navigation:
+
+| Key | Action |
+|-----|--------|
+| `Tab` / `Shift+Tab` | Cycle tabs |
+| `?` | Help overlay |
+| `q` | Quit |
+| `e` | Explain selected packet |
+| `d` | Detect problems (Healer) |
+| `s` | Simulate / Stop |
+| `t` | Enter time-travel mode |
+
+---
+
+## Testing
+
+```bash
+cargo test              # 961 tests (0 failures)
+cargo check             # 0 errors, 0 warnings
+cd web-api && cargo test  # API tests
+cd web-ui && npm test     # UI tests
+```
+
+---
+
+## Deployment Options
+
+| Method | Command |
+|--------|---------|
+| **Remote K3s** | `./scripts/deploy-k3s-test.sh <host> <user> <pass> --test` |
+| **Docker** | `docker compose -f deployments/docker-compose.yaml up` |
+| **Helm** | `helm install cilium-vision ./deployments/k8s/chart` |
+| **Systemd** | `bash install.sh setup-services && bash install.sh start` |
+| **Binary** | `cargo build --release && cp target/release/cilium-tui /usr/local/bin/` |
+
+### Environment Variables
+
+```bash
+HOST=0.0.0.0              # API listen address
+PORT=9191                  # API port
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=<min-32-chars>  # Required for auth
+HUBBLE_ADDRESS=localhost:4245
+UI_DIST_DIR=/var/lib/cilium-vision/ui  # Path to built web UI
+AUTH_DISABLED=true         # Dev mode only
+```
 
 ---
 
 ## Security
 
-The platform includes defense-in-depth security controls:
+- JWT authentication (HS256, 32+ char secret)
+- RBAC-ready middleware
+- Input validation on all kubectl-bound fields
+- CORS with explicit origin allowlist
+- Rate limiting
+- Confirmation dialogs on destructive operations
+- Secure temp files via `tempfile::NamedTempFile`
 
-- **JWT authentication** with HS256 and minimum 32-char secret enforcement
-- **RBAC-ready** middleware — decoded claims injected into request context with `require_admin()` helper
-- **Input validation** on all kubectl-bound fields (RFC 1123 DNS name regex, flag injection prevention)
-- **Typed request structs** for all POST endpoints (no raw `Json<Value>` handlers)
-- **CORS** with explicit origin allowlist; credentials only enabled for non-localhost origins
-- **Graceful shutdown** with SIGTERM/SIGINT handling
-- **Secure temp files** via `tempfile::NamedTempFile` (no predictable paths)
-- **Confirmation dialogs** on destructive operations (node drain, chaos experiments)
+---
 
-Set `AUTH_DISABLED=true` only for development. The flag is read once at startup and logged as a warning.
+## Roadmap
+
+### v1.1 - Network Intelligence (Next)
+- [ ] **Live flow WebSocket in Flows page** - Stream flows in real-time instead of polling
+- [ ] **Policy diff viewer** - Side-by-side YAML comparison before/after updates
+- [ ] **Anomaly detection ML pipeline** - Real anomaly scoring from Hubble metrics (currently uses baseline stats)
+- [ ] **eBPF program hot-reload from web UI** - Upload and attach eBPF programs via the dashboard
+- [ ] **Topology graph with D3 force layout** - Interactive node-link diagram with traffic volume edges
+
+### v1.2 - Multi-Cluster & Scale
+- [ ] **Multi-cluster dashboard** - Aggregate metrics across clusters in a single pane
+- [ ] **Cross-cluster policy sync UI** - Visual diff and push policies between clusters
+- [ ] **Pagination on all large data views** - Server-side pagination for Flows, Events, Endpoints
+- [ ] **gRPC Hubble integration** - Direct gRPC to Hubble relay instead of CLI fallback
+- [ ] **Prometheus metrics export** - Expose platform metrics for Grafana dashboards
+
+### v1.3 - Advanced Security
+- [ ] **Network policy recommendation engine** - Suggest least-privilege policies based on 30-day traffic history
+- [ ] **CVE-aware policy generation** - Cross-reference container CVEs with network exposure
+- [ ] **Compliance report PDF export** - Generate downloadable CIS/NIST/SOC2 compliance reports
+- [ ] **Secret detection in DNS** - Flag DNS queries to known bad domains or data exfiltration patterns
+- [ ] **mTLS enforcement dashboard** - Track which services have mutual TLS enabled vs plaintext
+
+### v1.4 - Operations & Automation
+- [ ] **Runbook automation** - Define remediation playbooks triggered by alerts
+- [ ] **GitOps policy sync** - Watch a Git repo for policy changes and auto-apply
+- [ ] **Slack/PagerDuty integration** - Send alerts to incident management tools
+- [ ] **Scheduled chaos experiments** - Cron-based chaos testing with result history
+- [ ] **Capacity planning** - Predict when IP pools, conntrack tables, or policy maps will fill
+
+### v1.5 - Platform
+- [ ] **Multi-tenancy** - Namespace-scoped views and RBAC per user/team
+- [ ] **Plugin system** - Custom dashboard widgets and API extensions
+- [ ] **OpenTelemetry integration** - Correlate network events with application traces
+- [ ] **Mobile-responsive dashboard** - Touch-friendly tables and navigation
+- [ ] **SSO / OIDC authentication** - Integrate with corporate identity providers
 
 ---
 
@@ -296,10 +268,12 @@ Set `AUTH_DISABLED=true` only for development. The flag is read once at startup 
 | Component | Minimum | Recommended |
 |-----------|---------|-------------|
 | Rust | 1.75 | latest stable |
+| Node.js | 18 | 22+ |
 | Kubernetes | 1.25 | 1.28+ |
-| Cilium | 1.14 | 1.16+ |
-| Memory | 50 MB | 100 MB |
-| CPU overhead | < 1% | - |
+| Cilium | 1.14 | 1.19+ |
+| Redis | 6.0 | 7.0+ |
+| API Memory | 2 MB | 10 MB |
+| TUI Binary | 13 MB | - |
 
 ---
 
@@ -312,6 +286,9 @@ Apache License 2.0
 ## Acknowledgments
 
 - [Cilium](https://cilium.io/) - eBPF-based networking
-- [Ratatui](https://ratatui.rs/) - Terminal UI framework
 - [Hubble](https://docs.cilium.io/en/stable/observability/hubble/) - Network observability
+- [Ratatui](https://ratatui.rs/) - Terminal UI framework
 - [Aya](https://aya-rs.dev/) - Rust eBPF library
+- [Axum](https://github.com/tokio-rs/axum) - Rust web framework
+- [React](https://react.dev/) - UI framework
+- [Tailwind CSS](https://tailwindcss.com/) - Utility-first CSS
