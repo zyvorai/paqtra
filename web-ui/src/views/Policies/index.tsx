@@ -340,17 +340,9 @@ const Policies: React.FC = () => {
             <div><span className="text-slate-400">Status:</span> <span className={`ml-1 px-2 py-0.5 rounded-full text-xs border ${STATUS_BADGE[detailPolicy.status] ?? ''}`}>{detailPolicy.status}</span></div>
             <div><span className="text-slate-400">Created:</span> <span className="text-white">{fmtTs(detailPolicy.created_at)}</span></div>
             <div className="pt-3 border-t border-slate-700/50">
-              <div className="text-slate-400 mb-2">YAML</div>
+              <div className="text-slate-400 mb-2">Policy Data</div>
               <pre className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-white overflow-auto max-h-60">
-{`apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: ${detailPolicy.name}
-  namespace: ${detailPolicy.namespace}
-spec:
-  endpointSelector: {}
-  ingress: []
-  egress: []`}
+{JSON.stringify(detailPolicy, null, 2)}
               </pre>
             </div>
           </div>

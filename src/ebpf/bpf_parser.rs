@@ -88,27 +88,56 @@ pub fn parse_ct_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
     // Protocol
     let protocol = key[12];
 
+    // Flags byte at key offset 13
+    let flags = key[13];
+
     // Parse value
-    let (packets, bytes, state) = if value.len() >= 32 {
+    let (packets, bytes, lifetime, state) = if value.len() >= 36 {
         let rx_packets = LittleEndian::read_u64(&value[0..8]);
         let rx_bytes = LittleEndian::read_u64(&value[8..16]);
         let tx_packets = LittleEndian::read_u64(&value[16..24]);
         let tx_bytes = LittleEndian::read_u64(&value[24..32]);
+        let lifetime = LittleEndian::read_u32(&value[32..36]);
 
         // Total packets and bytes
         let total_packets = rx_packets + tx_packets;
         let total_bytes = rx_bytes + tx_bytes;
 
-        // Derive state from flags (simplified)
-        let state = if total_packets > 10 {
+        // Derive state from flags
+        // rx_closing = bit 0, tx_closing = bit 1
+        let rx_closing = flags & 0x01 != 0;
+        let tx_closing = flags & 0x02 != 0;
+        let state = if rx_closing && tx_closing {
+            ConntrackState::Invalid // closing
+        } else if total_packets > 0 {
             ConntrackState::Established
         } else {
             ConntrackState::New
         };
 
-        (total_packets, total_bytes, state)
+        (total_packets, total_bytes, lifetime as u64, state)
+    } else if value.len() >= 32 {
+        let rx_packets = LittleEndian::read_u64(&value[0..8]);
+        let rx_bytes = LittleEndian::read_u64(&value[8..16]);
+        let tx_packets = LittleEndian::read_u64(&value[16..24]);
+        let tx_bytes = LittleEndian::read_u64(&value[24..32]);
+
+        let total_packets = rx_packets + tx_packets;
+        let total_bytes = rx_bytes + tx_bytes;
+
+        let rx_closing = flags & 0x01 != 0;
+        let tx_closing = flags & 0x02 != 0;
+        let state = if rx_closing && tx_closing {
+            ConntrackState::Invalid
+        } else if total_packets > 0 {
+            ConntrackState::Established
+        } else {
+            ConntrackState::New
+        };
+
+        (total_packets, total_bytes, 0u64, state)
     } else {
-        (0, 0, ConntrackState::New)
+        (0, 0, 0u64, ConntrackState::New)
     };
 
     Ok(ConntrackEntry {
@@ -120,7 +149,7 @@ pub fn parse_ct_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
         state,
         packets,
         bytes,
-        last_seen: 0, // Would need timestamp from value
+        last_seen: lifetime,
         src_namespace: None,
         src_pod: None,
         src_labels: None,
@@ -154,8 +183,33 @@ pub fn parse_ct6_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
     // Protocol
     let protocol = key[36];
 
-    // Parse value (same heuristic as IPv4)
-    let (packets, bytes, state) = if value.len() >= 32 {
+    // Flags byte at key offset 37
+    let flags = key[37];
+
+    // Parse value
+    let (packets, bytes, lifetime, state) = if value.len() >= 36 {
+        let rx_packets = LittleEndian::read_u64(&value[0..8]);
+        let rx_bytes = LittleEndian::read_u64(&value[8..16]);
+        let tx_packets = LittleEndian::read_u64(&value[16..24]);
+        let tx_bytes = LittleEndian::read_u64(&value[24..32]);
+        let lifetime = LittleEndian::read_u32(&value[32..36]);
+
+        let total_packets = rx_packets + tx_packets;
+        let total_bytes = rx_bytes + tx_bytes;
+
+        // Derive state from flags
+        let rx_closing = flags & 0x01 != 0;
+        let tx_closing = flags & 0x02 != 0;
+        let state = if rx_closing && tx_closing {
+            ConntrackState::Invalid // closing
+        } else if total_packets > 0 {
+            ConntrackState::Established
+        } else {
+            ConntrackState::New
+        };
+
+        (total_packets, total_bytes, lifetime as u64, state)
+    } else if value.len() >= 32 {
         let rx_packets = LittleEndian::read_u64(&value[0..8]);
         let rx_bytes = LittleEndian::read_u64(&value[8..16]);
         let tx_packets = LittleEndian::read_u64(&value[16..24]);
@@ -164,16 +218,19 @@ pub fn parse_ct6_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
         let total_packets = rx_packets + tx_packets;
         let total_bytes = rx_bytes + tx_bytes;
 
-        // Derive state from packet count (same logic as IPv4)
-        let state = if total_packets > 10 {
+        let rx_closing = flags & 0x01 != 0;
+        let tx_closing = flags & 0x02 != 0;
+        let state = if rx_closing && tx_closing {
+            ConntrackState::Invalid
+        } else if total_packets > 0 {
             ConntrackState::Established
         } else {
             ConntrackState::New
         };
 
-        (total_packets, total_bytes, state)
+        (total_packets, total_bytes, 0u64, state)
     } else {
-        (0, 0, ConntrackState::New)
+        (0, 0, 0u64, ConntrackState::New)
     };
 
     Ok(ConntrackEntry {
@@ -185,7 +242,7 @@ pub fn parse_ct6_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
         state,
         packets,
         bytes,
-        last_seen: 0,
+        last_seen: lifetime,
         src_namespace: None,
         src_pod: None,
         src_labels: None,

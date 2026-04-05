@@ -2,6 +2,7 @@
 ///
 /// Generates CiliumNetworkPolicy resources from learned patterns
 use super::*;
+use crate::modules::yaml_escape;
 
 pub struct PolicyGenerator {
     min_observations: u64,
@@ -115,15 +116,15 @@ spec:
   endpointSelector:
     matchLabels:
 "#,
-            name,
-            namespace,
+            yaml_escape(name),
+            yaml_escape(namespace),
             observations.len(),
             self.audit_mode
         ));
 
         // Selector labels
         for (k, v) in labels.iter() {
-            yaml.push_str(&format!("      {}: \"{}\"\n", k, v));
+            yaml.push_str(&format!("      {}: {}\n", yaml_escape(k), yaml_escape(v)));
         }
 
         // Egress rules
@@ -165,14 +166,14 @@ spec:
             if !dst_labels.is_empty() {
                 rules.push_str("        - matchLabels:\n");
                 for (k, v) in dst_labels.iter() {
-                    rules.push_str(&format!("            {}: \"{}\"\n", k, v));
+                    rules.push_str(&format!("            {}: {}\n", yaml_escape(k), yaml_escape(v)));
                 }
             } else {
                 // Just namespace
                 rules.push_str("        - matchLabels:\n");
                 rules.push_str(&format!(
-                    "            k8s:io.kubernetes.pod.namespace: \"{}\"\n",
-                    dst_ns
+                    "            k8s:io.kubernetes.pod.namespace: {}\n",
+                    yaml_escape(&dst_ns)
                 ));
             }
 

@@ -44,7 +44,8 @@ export function useAutoRefresh(
     }
   }, []);
 
-  // Initial fetch on mount
+  // Always fetch on mount regardless of `enabled` flag — the user expects
+  // data immediately.  The `enabled` flag only controls the recurring interval.
   useEffect(() => {
     doFetch();
   }, [doFetch]);

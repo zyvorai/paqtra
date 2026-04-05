@@ -11,7 +11,7 @@ use std::sync::atomic::Ordering;
 use crate::AppState;
 use crate::error::ApiError;
 use crate::models::policy::CreatePolicyRequest;
-use super::{track_request, track_error, to_json};
+use super::{check_admin, track_request, track_error, to_json};
 
 /// Query parameters for paginated list endpoints.
 #[derive(Debug, Deserialize)]
@@ -51,8 +51,10 @@ pub async fn list_policies(
 
 pub async fn create_policy(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
     tracing::info!("Creating policy: {}/{}", req.namespace, req.name);
 
     track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
@@ -98,12 +100,28 @@ pub async fn get_policy(
 
 pub async fn update_policy(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
     tracing::info!("Updating policy: {}", id);
 
     track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
+
+    // Verify the policy exists before updating (prevent IDOR)
+    match state.k8s.list_policies().await {
+        Ok(policies) => {
+            if !policies.iter().any(|p| p.id == id || p.name == id) {
+                return Err(ApiError::NotFound);
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to look up policy {}: {}", id, e);
+            track_error(&state).await;
+            return Err(ApiError::InternalError(e.to_string()));
+        }
+    }
 
     // kubectl apply is idempotent, so create == update
     match state.k8s.create_policy(&req).await {
@@ -122,8 +140,10 @@ pub async fn update_policy(
 
 pub async fn delete_policy(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
 ) -> Result<axum::http::StatusCode, ApiError> {
+    check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
     tracing::info!("Deleting policy: {}", id);
 
     track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;

@@ -17,7 +17,6 @@ pub mod bpf_reader;
 pub mod bpf_syscall;
 pub mod capabilities;
 pub mod enriched_reader;
-pub mod parser;
 pub mod reader;
 
 // Re-export for convenience

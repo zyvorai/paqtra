@@ -23,6 +23,8 @@ pub struct RateLimiter {
     capacity: f64,
     /// Tokens added per second.
     refill_rate: f64,
+    /// Last time cleanup was run.
+    last_cleanup: Mutex<Instant>,
 }
 
 impl RateLimiter {
@@ -33,12 +35,23 @@ impl RateLimiter {
             buckets: Mutex::new(HashMap::new()),
             capacity: capacity as f64,
             refill_rate: per_second as f64,
+            last_cleanup: Mutex::new(Instant::now()),
         }
     }
 
     /// Try to consume one token for the given IP. Returns true if allowed.
     fn allow(&self, ip: IpAddr) -> bool {
-        let mut buckets = self.buckets.lock().unwrap();
+        // Periodic cleanup every 60 seconds to prevent unbounded growth
+        {
+            let mut last = self.last_cleanup.lock().unwrap_or_else(|e| e.into_inner());
+            if last.elapsed().as_secs() >= 60 {
+                *last = Instant::now();
+                drop(last);
+                self.cleanup();
+            }
+        }
+
+        let mut buckets = self.buckets.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
 
         let bucket = buckets.entry(ip).or_insert(Bucket {
@@ -61,7 +74,7 @@ impl RateLimiter {
 
     /// Evict stale entries (call periodically to prevent unbounded growth).
     pub fn cleanup(&self) {
-        let mut buckets = self.buckets.lock().unwrap();
+        let mut buckets = self.buckets.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
         buckets.retain(|_, b| now.duration_since(b.last_refill).as_secs() < 300);
     }
@@ -72,14 +85,12 @@ pub async fn rate_limit_middleware(
     request: Request,
     next: Next,
 ) -> Response {
-    // Extract client IP from ConnectInfo or X-Forwarded-For
-    let ip = request
-        .headers()
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.split(',').next())
-        .and_then(|s| s.trim().parse::<IpAddr>().ok())
-        .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+    // Use the peer IP address for rate limiting.
+    // NOTE: X-Forwarded-For is not trusted because it can be spoofed by clients.
+    // TODO: Add axum::extract::ConnectInfo<SocketAddr> to the router for real
+    //       peer IP extraction. Until then, fall back to 0.0.0.0 which applies a
+    //       single shared bucket (safe but coarse).
+    let ip = IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
 
     // Skip rate limiting for health/metrics endpoints
     let path = request.uri().path();

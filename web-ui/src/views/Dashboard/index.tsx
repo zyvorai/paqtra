@@ -205,6 +205,7 @@ const Dashboard: React.FC = () => {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const wsRef = useRef<WebSocket | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
 
   // New state for added sections
   const [healthChecks, setHealthChecks] = useState<HealthCheck[]>(FALLBACK_HEALTH_CHECKS);
@@ -232,8 +233,9 @@ const Dashboard: React.FC = () => {
     const ws = new WebSocket(getWsUrl('/api/v1/ws/metrics'));
     wsRef.current = ws;
 
-    ws.onopen = () => setStatus('connected');
+    ws.onopen = () => { if (mountedRef.current) setStatus('connected'); };
     ws.onmessage = (event) => {
+      if (!mountedRef.current) return;
       try {
         const data = JSON.parse(event.data);
         if (data.timestamp) {
@@ -261,18 +263,25 @@ const Dashboard: React.FC = () => {
         }
       } catch { /* ignore */ }
     };
-    ws.onerror = () => setStatus('disconnected');
+    ws.onerror = () => { if (mountedRef.current) setStatus('disconnected'); };
     ws.onclose = () => {
-      setStatus('disconnected');
+      if (mountedRef.current) setStatus('disconnected');
       wsRef.current = null;
-      timerRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
+      if (mountedRef.current) {
+        timerRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
+      }
     };
   }, [addMetrics]);
 
   useEffect(() => {
+    mountedRef.current = true;
     connect();
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
+      mountedRef.current = false;
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
       wsRef.current?.close();
     };
   }, [connect]);

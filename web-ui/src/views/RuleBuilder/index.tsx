@@ -368,15 +368,17 @@ const RuleBuilder: React.FC = () => {
 
   /* ---- actions ---- */
 
-  const handleValidate = async () => {
+  const handleValidate = async (): Promise<boolean> => {
     setValidating(true);
     setError(null);
     setValidation(null);
     try {
       const res = await validatePolicy(yaml);
       setValidation(res.data);
+      return res.data?.valid === true;
     } catch (err) {
       setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Validation failed');
+      return false;
     } finally {
       setValidating(false);
     }
@@ -822,8 +824,10 @@ const RuleBuilder: React.FC = () => {
             </button>
             <button
               onClick={async () => {
-                await handleValidate();
-                await handleApply();
+                const valid = await handleValidate();
+                if (valid) {
+                  await handleApply();
+                }
               }}
               disabled={applying || validating}
               className={`${btnSmCls} bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 shadow-lg shadow-blue-600/20`}

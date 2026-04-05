@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::AppState;
-use super::{track_request, to_json};
+use super::{check_admin, track_request, to_json};
 
 /// Typed request for the autopolicy generation endpoint.
 #[derive(Debug, Deserialize)]
@@ -267,8 +267,10 @@ pub async fn list_chaos_experiments(
 
 pub async fn run_chaos_experiment(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(req): Json<RunChaosRequest>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     // Simulate an experiment that has already completed with results

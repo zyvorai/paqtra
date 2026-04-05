@@ -11,6 +11,7 @@ use std::collections::HashMap;
 
 use crate::ebpf::{DropReason, DropReasonType, EnrichedMapReader, MapReader};
 use crate::kubernetes::K8sClient;
+use crate::modules::yaml_escape;
 use crate::policies::PolicyManager;
 
 const UNKNOWN: &str = "unknown";
@@ -285,18 +286,21 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: auto-allow-{port}
-  namespace: {src}
+  namespace: {src_esc}
 spec:
   endpointSelector: {{}}
   egress:
     - toEndpoints:
         - matchLabels:
-            io.kubernetes.pod.ip: "{dst}"
+            io.kubernetes.pod.ip: {dst_esc}
       toPorts:
         - ports:
             - port: "{port}"
               protocol: TCP
-"#
+"#,
+                    src_esc = yaml_escape(src),
+                    dst_esc = yaml_escape(dst),
+                    port = port,
                 );
                 self.k8s_client
                     .apply_custom_resource(Some(src), &policy_yaml)
@@ -333,7 +337,7 @@ spec:
                     backend = %backend,
                     "Rebalancing backend by restarting pod"
                 );
-                let _ = self.k8s_client.restart_rollout(ns, pod_prefix).await;
+                self.k8s_client.restart_rollout(ns, pod_prefix).await?;
                 println!("✔ Rebalanced backend {} for service {}", backend, service);
             }
             FixAction::TuneConntrack { node, new_timeout } => {
@@ -347,10 +351,9 @@ spec:
                     r#"{{"data":{{"ct-global-max-entries-per-node":"{}"}}}}"#,
                     new_timeout
                 );
-                let _ = self
-                    .k8s_client
+                self.k8s_client
                     .patch_configmap("kube-system", "cilium-config", &configmap_patch)
-                    .await;
+                    .await?;
                 println!(
                     "✔ Tuned conntrack for node {} (timeout={})",
                     node, new_timeout

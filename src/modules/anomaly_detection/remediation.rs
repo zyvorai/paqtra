@@ -2,6 +2,7 @@
 use anyhow::Result;
 
 use super::{Anomaly, AnomalyType, RemediationAction, RemediationType, Severity};
+use crate::modules::yaml_escape;
 
 /// Suggests and optionally applies automated remediation
 pub struct RemediationEngine {
@@ -184,9 +185,9 @@ spec:
           rateLimit:
             requestsPerSecond: {}
 "#,
-            anomaly.context.service,
-            anomaly.context.namespace,
-            anomaly.context.service,
+            yaml_escape(&anomaly.context.service),
+            yaml_escape(&anomaly.context.namespace),
+            yaml_escape(&anomaly.context.service),
             anomaly.context.port,
             (anomaly.baseline_value * 1.5) as i32
         )
@@ -214,10 +215,10 @@ spec:
       rules:
         deny: true
 "#,
-            anomaly.id,
-            anomaly.context.namespace,
-            anomaly.context.service,
-            anomaly.context.pod,
+            yaml_escape(&anomaly.id),
+            yaml_escape(&anomaly.context.namespace),
+            yaml_escape(&anomaly.context.service),
+            yaml_escape(&anomaly.context.pod),
             anomaly.context.port
         )
     }
@@ -247,7 +248,7 @@ spec:
         - matchPattern: "*.cluster.local"
         - matchPattern: "*.svc"
 "#,
-            anomaly.context.service, anomaly.context.namespace, anomaly.context.service
+            yaml_escape(&anomaly.context.service), yaml_escape(&anomaly.context.namespace), yaml_escape(&anomaly.context.service)
         )
     }
 
@@ -274,7 +275,7 @@ spec:
       - port: "53"
         protocol: UDP
 "#,
-            anomaly.id, anomaly.context.namespace, anomaly.context.pod
+            yaml_escape(&anomaly.id), yaml_escape(&anomaly.context.namespace), yaml_escape(&anomaly.context.pod)
         )
     }
 }

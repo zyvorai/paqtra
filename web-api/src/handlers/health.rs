@@ -2,9 +2,13 @@
 use axum::{extract::State, http::StatusCode, Json};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use tokio::time::timeout;
 
 use crate::AppState;
+
+/// Timeout for individual health-check probes.
+const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Tracks when the process started, used to compute uptime in health checks.
 static START_TIME: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
@@ -19,10 +23,16 @@ pub async fn health_check(
 ) -> (StatusCode, Json<Value>) {
     let uptime = process_start().elapsed();
 
-    // Probe each subsystem so the liveness endpoint reflects real status
-    let redis_ok = state.cache.is_healthy().await;
-    let hubble_ok = state.hubble.is_healthy().await;
-    let k8s_ok = state.k8s.is_healthy().await;
+    // Probe each subsystem concurrently with a timeout so one slow probe
+    // cannot block the others or hang the endpoint indefinitely.
+    let (redis_res, hubble_res, k8s_res) = tokio::join!(
+        timeout(HEALTH_CHECK_TIMEOUT, state.cache.is_healthy()),
+        timeout(HEALTH_CHECK_TIMEOUT, state.hubble.is_healthy()),
+        timeout(HEALTH_CHECK_TIMEOUT, state.k8s.is_healthy()),
+    );
+    let redis_ok = redis_res.unwrap_or(false);
+    let hubble_ok = hubble_res.unwrap_or(false);
+    let k8s_ok = k8s_res.unwrap_or(false);
 
     let overall = if redis_ok && hubble_ok && k8s_ok {
         "healthy"
@@ -59,8 +69,14 @@ pub async fn readiness_check(
     let mut checks = serde_json::Map::new();
     let mut all_ok = true;
 
-    // Check Redis/Cache connectivity
-    let cache_healthy = state.cache.is_healthy().await;
+    // Run all readiness probes concurrently with a timeout
+    let (cache_res, hubble_res, k8s_res) = tokio::join!(
+        timeout(HEALTH_CHECK_TIMEOUT, state.cache.is_healthy()),
+        timeout(HEALTH_CHECK_TIMEOUT, state.hubble.is_healthy()),
+        timeout(HEALTH_CHECK_TIMEOUT, state.k8s.is_healthy()),
+    );
+
+    let cache_healthy = cache_res.unwrap_or(false);
     if cache_healthy {
         checks.insert("redis".to_string(), json!("ok"));
     } else {
@@ -69,8 +85,7 @@ pub async fn readiness_check(
         tracing::warn!("Redis readiness check failed");
     }
 
-    // Check Hubble connectivity
-    let hubble_healthy = state.hubble.is_healthy().await;
+    let hubble_healthy = hubble_res.unwrap_or(false);
     if hubble_healthy {
         checks.insert("hubble".to_string(), json!("ok"));
     } else {
@@ -79,8 +94,7 @@ pub async fn readiness_check(
         tracing::info!("Hubble relay is not reachable (degraded mode)");
     }
 
-    // Check Kubernetes connectivity
-    let k8s_healthy = state.k8s.is_healthy().await;
+    let k8s_healthy = k8s_res.unwrap_or(false);
     if k8s_healthy {
         checks.insert("kubernetes".to_string(), json!("ok"));
     } else {

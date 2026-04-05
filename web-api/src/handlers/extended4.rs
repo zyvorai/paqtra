@@ -1,8 +1,8 @@
-use axum::{extract::{Query, State}, Json};
+use axum::{extract::{Query, State}, http::StatusCode, Json};
 use serde::Deserialize;
 use std::sync::Arc;
 use crate::AppState;
-use super::{track_request, PaginationQuery, paginate_json};
+use super::{check_admin, track_request, PaginationQuery, paginate_json};
 
 #[derive(Debug, Deserialize)]
 pub struct ValidatePolicyRequest {
@@ -375,15 +375,17 @@ pub async fn list_changes(
 
 pub async fn rollback_change(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "id": id,
         "status": "rolled_back",
         "message": "Change successfully rolled back",
         "rolled_back_at": "2026-04-03T12:10:00Z"
-    }))
+    })))
 }
 
 // ── Node Drain ────────────────────────────────────────────
@@ -422,31 +424,35 @@ pub async fn node_drain_status(State(state): State<Arc<AppState>>) -> Json<serde
 
 pub async fn drain_node(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(body): Json<NodeActionRequest>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let node = &body.node;
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "node": node,
         "status": "draining",
         "message": "Node drain initiated, pods being evicted gracefully",
         "started_at": "2026-04-03T12:15:00Z",
         "estimated_completion": "2026-04-03T12:20:00Z"
-    }))
+    })))
 }
 
 pub async fn uncordon_node(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(body): Json<NodeActionRequest>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let node = &body.node;
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "node": node,
         "status": "ready",
         "message": "Node uncordoned and scheduling resumed",
         "cordon": false
-    }))
+    })))
 }
 
 // ── Pod Security ──────────────────────────────────────────

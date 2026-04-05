@@ -1,9 +1,9 @@
-use axum::{extract::{Query, State}, Json};
+use axum::{extract::{Path, Query, State}, http::StatusCode, Json};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use crate::AppState;
-use super::{track_request, PaginationQuery, paginate_json};
+use super::{check_admin, track_request, PaginationQuery, paginate_json};
 
 #[derive(Debug, Deserialize)]
 pub struct StartRecordingRequest {
@@ -64,9 +64,10 @@ pub async fn start_recording(
 
 pub async fn stop_recording(
     State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "status": "stopped", "message": "Recording stopped" }))
+    Json(serde_json::json!({ "id": id, "status": "stopped", "message": "Recording stopped" }))
 }
 
 // ── Healer ──────────────────────────────────────────────────
@@ -119,9 +120,12 @@ pub async fn list_healer_problems(
 
 pub async fn apply_healer_fix(
     State(state): State<Arc<AppState>>,
-) -> Json<serde_json::Value> {
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "status": "applied", "message": "Fix applied successfully" }))
+    Ok(Json(serde_json::json!({ "id": id, "status": "applied", "message": "Fix applied successfully" })))
 }
 
 // ── RootCause ───────────────────────────────────────────────
@@ -221,9 +225,10 @@ pub async fn list_clusters(
 
 pub async fn sync_cluster(
     State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "status": "syncing", "message": "Policy sync initiated" }))
+    Json(serde_json::json!({ "cluster": name, "status": "syncing", "message": "Policy sync initiated" }))
 }
 
 // ── Heatmap ─────────────────────────────────────────────────

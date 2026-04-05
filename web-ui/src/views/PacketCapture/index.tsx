@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Radio, RefreshCw, Loader2, Play, Square, Plus, HardDrive } from 'lucide-react';
-import { fetchCaptureSessions, startCapture, CaptureSession } from '../../services/api';
+import { fetchCaptureSessions, startCapture, stopCapture, CaptureSession } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
@@ -20,6 +20,7 @@ const PacketCapture: React.FC = () => {
   const [newNs, setNewNs] = useState('default');
   const [newFilter, setNewFilter] = useState('');
   const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null);
@@ -36,6 +37,13 @@ const PacketCapture: React.FC = () => {
     try { await startCapture({ name: newName, target_pod: newPod, namespace: newNs, filter: newFilter || undefined }); setSuccess('Capture started'); setShowNew(false); setNewName(''); setNewPod(''); fetchData(); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
     finally { setStarting(false); }
+  };
+
+  const handleStop = async (id: string) => {
+    setStopping(id); setError(null);
+    try { await stopCapture(id); setSuccess('Capture stopped'); fetchData(); }
+    catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to stop capture'); }
+    finally { setStopping(null); }
   };
 
   return (
@@ -88,7 +96,7 @@ const PacketCapture: React.FC = () => {
               <div className="flex items-center gap-1"><HardDrive className="w-3 h-3 text-slate-400" /><span className="text-white">{formatBytes(s.size_bytes ?? s.size ?? 0)}</span></div>
             </div>
             {s.status === 'capturing' && (
-              <button className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 text-sm hover:bg-red-500/10 transition-colors"><Square className="w-4 h-4" /> Stop</button>
+              <button onClick={() => handleStop(s.id)} disabled={stopping === s.id} className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 text-sm hover:bg-red-500/10 disabled:opacity-50 transition-colors">{stopping === s.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />} Stop</button>
             )}
           </div>
         ))}

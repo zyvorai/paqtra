@@ -12,7 +12,19 @@ pub struct HubbleService {
 }
 
 impl HubbleService {
+    /// Create a new HubbleService.
+    ///
+    /// # Panics
+    /// Panics at startup if `address` is not in `host:port` format.
     pub fn new(address: &str) -> Self {
+        // Validate host:port format
+        let parts: Vec<&str> = address.rsplitn(2, ':').collect();
+        if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
+            panic!("Invalid Hubble address '{}': expected host:port format (e.g. hubble-relay:4245)", address);
+        }
+        if parts[0].parse::<u16>().is_err() {
+            panic!("Invalid Hubble address '{}': port must be a valid u16", address);
+        }
         Self {
             address: address.to_string(),
         }
@@ -34,6 +46,9 @@ impl HubbleService {
         limit: usize,
         namespace: Option<&str>,
     ) -> Result<Vec<Flow>> {
+        // Cap the limit to prevent excessive resource consumption
+        let limit = limit.min(10_000);
+
         // Validate namespace to prevent flag injection
         if let Some(ns) = namespace {
             if ns.starts_with('-') || ns.contains(char::is_whitespace) {

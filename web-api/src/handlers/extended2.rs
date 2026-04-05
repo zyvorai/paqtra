@@ -1,4 +1,4 @@
-use axum::{extract::{Query, State}, Json};
+use axum::{extract::{Path, Query, State}, Json};
 use std::sync::Arc;
 use crate::AppState;
 use super::{track_request, PaginationQuery, paginate_json};
@@ -54,9 +54,12 @@ pub async fn list_policy_templates(
     Json(paginate_json(items, &params, "templates"))
 }
 
-pub async fn apply_template(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn apply_template(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "status": "applied", "message": "Template applied successfully" }))
+    Json(serde_json::json!({ "id": id, "status": "applied", "message": "Template applied successfully" }))
 }
 
 // ── Diagnostics ─────────────────────────────────────────────
@@ -124,9 +127,12 @@ pub async fn alert_history(State(state): State<Arc<AppState>>) -> Json<serde_jso
     Json(serde_json::json!({ "alerts": alerts }))
 }
 
-pub async fn toggle_alert_rule(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn toggle_alert_rule(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "status": "updated" }))
+    Json(serde_json::json!({ "id": id, "status": "updated" }))
 }
 
 // ── Service Map ─────────────────────────────────────────────
@@ -170,9 +176,12 @@ pub async fn start_capture(State(state): State<Arc<AppState>>) -> Json<serde_jso
     Json(serde_json::json!({ "id": "cap-003", "status": "capturing", "message": "Capture started" }))
 }
 
-pub async fn stop_capture(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn stop_capture(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "status": "completed", "message": "Capture stopped" }))
+    Json(serde_json::json!({ "id": id, "status": "completed", "message": "Capture stopped" }))
 }
 
 // ── DNS Monitor ─────────────────────────────────────────────

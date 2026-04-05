@@ -16,6 +16,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::ebpf::{DropReason as EbpfDropReason, MapReader, PolicyDecision};
 use crate::kubernetes::K8sClient;
+use crate::modules::yaml_escape;
 use crate::policies::PolicyManager;
 
 pub mod types;
@@ -173,6 +174,28 @@ impl<M: MapReader> RootCauseEngine<M> {
         // Add new events
         self.drop_history.extend(new_events);
 
+        // Cap history size to prevent unbounded growth
+        const MAX_HISTORY: usize = 10_000;
+        if self.drop_history.len() > MAX_HISTORY {
+            // Remove oldest entries (front of the vec) and decrement their pattern counts
+            let excess = self.drop_history.len() - MAX_HISTORY;
+            for event in self.drop_history.drain(..excess) {
+                let pattern = DropPattern {
+                    reason: event.reason.clone(),
+                    src_identity: event.identity_src,
+                    dst_identity: event.identity_dst,
+                    dst_port: event.dst_port,
+                    protocol: event.protocol,
+                };
+                if let Some(count) = self.pattern_counts.get_mut(&pattern) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        self.pattern_counts.remove(&pattern);
+                    }
+                }
+            }
+        }
+
         // Clean old events and decrement their pattern counts
         let cutoff = now.saturating_sub(self.config.analysis_window_secs);
         self.drop_history.retain(|e| {
@@ -313,12 +336,12 @@ impl<M: MapReader> RootCauseEngine<M> {
                 // Build label selectors for the YAML from resolved labels
                 let from_label_yaml: String = from_labels
                     .iter()
-                    .map(|(k, v)| format!("      {}: \"{}\"", k, v))
+                    .map(|(k, v)| format!("      {}: {}", yaml_escape(k), yaml_escape(v)))
                     .collect::<Vec<_>>()
                     .join("\n");
                 let to_label_yaml: String = to_labels
                     .iter()
-                    .map(|(k, v)| format!("        {}: \"{}\"", k, v))
+                    .map(|(k, v)| format!("        {}: {}", yaml_escape(k), yaml_escape(v)))
                     .collect::<Vec<_>>()
                     .join("\n");
 
@@ -341,7 +364,7 @@ spec:
       - port: "{}"
         protocol: {}
 "#,
-                    namespace, from_label_yaml, to_label_yaml, event.dst_port, protocol
+                    yaml_escape(&namespace), from_label_yaml, to_label_yaml, event.dst_port, protocol
                 );
 
                 Ok(SuggestedFix::AddPolicyRule {

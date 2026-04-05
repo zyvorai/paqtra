@@ -68,21 +68,6 @@ const BulkActionBar: React.FC<BulkActionBarProps> = ({
         </div>
       </div>
 
-      <style>{`
-        @keyframes slide-in-up {
-          from {
-            opacity: 0;
-            transform: translateY(1rem);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        .animate-slide-in-up {
-          animation: slide-in-up 0.2s ease-out;
-        }
-      `}</style>
     </div>
   );
 };

@@ -14,10 +14,28 @@ pub mod extended2;
 pub mod extended3;
 pub mod extended4;
 
+use axum::{http::StatusCode, Json};
 use crate::{AppMetrics, AppState};
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
+
+/// RBAC check: require admin role for destructive operations.
+/// Returns Ok(()) if auth is disabled or the caller has role == "admin".
+/// Returns Err(403) otherwise.
+///
+/// `claims` comes from `Option<axum::Extension<Claims>>` extractors injected
+/// by the auth middleware.
+pub fn check_admin(
+    state: &AppState,
+    claims: &Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if state.config.auth_disabled { return Ok(()); }
+    match claims.as_ref().map(|c| c.role.as_str()) {
+        Some("admin") => Ok(()),
+        _ => Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Admin role required"})))),
+    }
+}
 
 /// Increment total_requests and run an extra closure on the metrics.
 pub async fn track_request(state: &AppState, f: impl FnOnce(&AppMetrics)) {

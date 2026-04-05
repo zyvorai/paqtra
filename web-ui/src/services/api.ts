@@ -18,10 +18,10 @@ const DEFAULT_SETTINGS: AppSettings = {
 function isValidApiBaseUrl(url: string): boolean {
   // Allow relative paths starting with /
   if (url.startsWith('/')) return true;
-  // Allow only http/https URLs pointing to same origin or known patterns
+  // Only allow same-origin absolute URLs to prevent SSRF
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    return parsed.origin === window.location.origin;
   } catch {
     return false;
   }

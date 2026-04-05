@@ -1,3 +1,9 @@
+/// Escape a string for safe interpolation into YAML values.
+/// Wraps the value in double quotes and escapes embedded backslashes and quotes.
+pub fn yaml_escape(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
 pub mod autopolicy;
 pub mod canary;
 pub mod chaos;

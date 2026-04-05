@@ -1,5 +1,6 @@
 /// Policy-specific healing logic
 use super::*;
+use crate::modules::yaml_escape;
 
 pub struct PolicyHealer;
 
@@ -43,7 +44,7 @@ spec:
             - port: "{}"
               protocol: {}
 "#,
-            src, dst, src, dst, port, protocol
+            yaml_escape(src), yaml_escape(dst), yaml_escape(src), yaml_escape(dst), port, yaml_escape(protocol)
         )
     }
 }
@@ -154,19 +155,19 @@ mod tests {
     fn test_suggest_policy_tcp() {
         let yaml = PolicyHealer::suggest_policy("frontend", "backend", 80, "TCP");
         assert!(yaml.contains("CiliumNetworkPolicy"));
-        assert!(yaml.contains("auto-allow-frontend-to-backend"));
-        assert!(yaml.contains("app: frontend"));
-        assert!(yaml.contains("app: backend"));
+        assert!(yaml.contains("auto-allow-\"frontend\"-to-\"backend\""));
+        assert!(yaml.contains("app: \"frontend\""));
+        assert!(yaml.contains("app: \"backend\""));
         assert!(yaml.contains("port: \"80\""));
-        assert!(yaml.contains("protocol: TCP"));
+        assert!(yaml.contains("protocol: \"TCP\""));
     }
 
     #[test]
     fn test_suggest_policy_udp_dns() {
         let yaml = PolicyHealer::suggest_policy("app", "kube-dns", 53, "UDP");
-        assert!(yaml.contains("auto-allow-app-to-kube-dns"));
+        assert!(yaml.contains("auto-allow-\"app\"-to-\"kube-dns\""));
         assert!(yaml.contains("port: \"53\""));
-        assert!(yaml.contains("protocol: UDP"));
+        assert!(yaml.contains("protocol: \"UDP\""));
     }
 
     #[test]

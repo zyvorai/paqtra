@@ -39,7 +39,7 @@ const DataFreshness: React.FC<DataFreshnessProps> = ({
   // Re-render every second to keep the age text current
   const [, setTick] = useState(0);
   useEffect(() => {
-    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    const timer = setInterval(() => setTick((t) => t + 1), 5000);
     return () => clearInterval(timer);
   }, []);
 

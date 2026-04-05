@@ -14,36 +14,28 @@ pub async fn prometheus_metrics(
         "# HELP cilium_vision_http_requests_total Total HTTP requests handled\n\
          # TYPE cilium_vision_http_requests_total counter\n\
          cilium_vision_http_requests_total {}\n\
-         \n\
-         # HELP cilium_vision_http_errors_total Total HTTP errors\n\
+         \n# HELP cilium_vision_http_errors_total Total HTTP errors\n\
          # TYPE cilium_vision_http_errors_total counter\n\
          cilium_vision_http_errors_total {}\n\
-         \n\
-         # HELP cilium_vision_flows_fetched_total Total flows fetched from Hubble\n\
+         \n# HELP cilium_vision_flows_fetched_total Total flows fetched from Hubble\n\
          # TYPE cilium_vision_flows_fetched_total counter\n\
          cilium_vision_flows_fetched_total {}\n\
-         \n\
-         # HELP cilium_vision_policies_created_total Total policies created\n\
+         \n# HELP cilium_vision_policies_created_total Total policies created\n\
          # TYPE cilium_vision_policies_created_total counter\n\
          cilium_vision_policies_created_total {}\n\
-         \n\
-         # HELP cilium_vision_policies_deleted_total Total policies deleted\n\
+         \n# HELP cilium_vision_policies_deleted_total Total policies deleted\n\
          # TYPE cilium_vision_policies_deleted_total counter\n\
          cilium_vision_policies_deleted_total {}\n\
-         \n\
-         # HELP cilium_vision_cache_hits_total Cache hits\n\
+         \n# HELP cilium_vision_cache_hits_total Cache hits\n\
          # TYPE cilium_vision_cache_hits_total counter\n\
          cilium_vision_cache_hits_total {}\n\
-         \n\
-         # HELP cilium_vision_cache_misses_total Cache misses\n\
+         \n# HELP cilium_vision_cache_misses_total Cache misses\n\
          # TYPE cilium_vision_cache_misses_total counter\n\
          cilium_vision_cache_misses_total {}\n\
-         \n\
-         # HELP cilium_vision_hubble_queries_total Hubble queries issued\n\
+         \n# HELP cilium_vision_hubble_queries_total Hubble queries issued\n\
          # TYPE cilium_vision_hubble_queries_total counter\n\
          cilium_vision_hubble_queries_total {}\n\
-         \n\
-         # HELP cilium_vision_k8s_queries_total Kubernetes API queries issued\n\
+         \n# HELP cilium_vision_k8s_queries_total Kubernetes API queries issued\n\
          # TYPE cilium_vision_k8s_queries_total counter\n\
          cilium_vision_k8s_queries_total {}\n",
         m.total_requests.load(Ordering::Relaxed),
