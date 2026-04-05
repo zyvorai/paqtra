@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // Environment Mirroring - Clone environments for testing
 use anyhow::Result;
 

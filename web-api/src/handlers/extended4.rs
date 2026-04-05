@@ -1,8 +1,33 @@
-use axum::{extract::State, Json};
-
+use axum::{extract::{Query, State}, Json};
+use serde::Deserialize;
 use std::sync::Arc;
 use crate::AppState;
-use super::track_request;
+use super::{track_request, PaginationQuery, paginate_json};
+
+#[derive(Debug, Deserialize)]
+pub struct ValidatePolicyRequest {
+    #[serde(default)]
+    pub yaml: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateExportRequest {
+    #[serde(default = "default_export_name")]
+    pub name: String,
+    #[serde(default = "default_export_format")]
+    pub format: String,
+    #[serde(default)]
+    pub destination: String,
+}
+
+fn default_export_name() -> String { "new-export".to_string() }
+fn default_export_format() -> String { "json".to_string() }
+
+#[derive(Debug, Deserialize)]
+pub struct NodeActionRequest {
+    #[serde(default)]
+    pub node: String,
+}
 
 // ── WireGuard Peers ───────────────────────────────────────
 
@@ -106,10 +131,10 @@ pub async fn cilium_status(State(state): State<Arc<AppState>>) -> Json<serde_jso
 
 pub async fn validate_policy(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<ValidatePolicyRequest>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let yaml = body.get("yaml").and_then(|v| v.as_str()).unwrap_or("");
+    let yaml = &body.yaml;
     let valid = !yaml.is_empty();
     let errors: Vec<String> = if valid {
         vec![]
@@ -124,52 +149,54 @@ pub async fn validate_policy(
 
 // ── Flow Export Configs ───────────────────────────────────
 
-pub async fn list_export_configs(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn list_export_configs(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
+) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "configs": [
-            {
-                "id": "exp-001",
-                "name": "production-s3-export",
-                "format": "json",
-                "destination": "s3://cilium-flows-prod/daily/",
-                "filter": "namespace=production",
-                "status": "active",
-                "exported_count": 1_842_500,
-                "last_export": "2026-04-03T11:55:00Z"
-            },
-            {
-                "id": "exp-002",
-                "name": "security-siem-feed",
-                "format": "cef",
-                "destination": "syslog://siem.internal:514",
-                "filter": "verdict=DROPPED",
-                "status": "active",
-                "exported_count": 34_210,
-                "last_export": "2026-04-03T11:59:30Z"
-            },
-            {
-                "id": "exp-003",
-                "name": "staging-debug",
-                "format": "csv",
-                "destination": "s3://cilium-flows-staging/debug/",
-                "filter": "namespace=staging",
-                "status": "paused",
-                "exported_count": 520_000,
-                "last_export": "2026-04-02T18:00:00Z"
-            }
-        ]
-    }))
+    let items: Vec<serde_json::Value> = vec![
+        serde_json::json!({
+            "id": "exp-001",
+            "name": "production-s3-export",
+            "format": "json",
+            "destination": "s3://cilium-flows-prod/daily/",
+            "filter": "namespace=production",
+            "status": "active",
+            "exported_count": 1_842_500,
+            "last_export": "2026-04-03T11:55:00Z"
+        }),
+        serde_json::json!({
+            "id": "exp-002",
+            "name": "security-siem-feed",
+            "format": "cef",
+            "destination": "syslog://siem.internal:514",
+            "filter": "verdict=DROPPED",
+            "status": "active",
+            "exported_count": 34_210,
+            "last_export": "2026-04-03T11:59:30Z"
+        }),
+        serde_json::json!({
+            "id": "exp-003",
+            "name": "staging-debug",
+            "format": "csv",
+            "destination": "s3://cilium-flows-staging/debug/",
+            "filter": "namespace=staging",
+            "status": "paused",
+            "exported_count": 520_000,
+            "last_export": "2026-04-02T18:00:00Z"
+        }),
+    ];
+    Json(paginate_json(items, &params, "configs"))
 }
 
 pub async fn create_export_config(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<CreateExportRequest>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("new-export");
-    let format = body.get("format").and_then(|v| v.as_str()).unwrap_or("json");
-    let destination = body.get("destination").and_then(|v| v.as_str()).unwrap_or("");
+    let name = &body.name;
+    let format = &body.format;
+    let destination = &body.destination;
     Json(serde_json::json!({
         "id": "exp-004",
         "name": name,
@@ -194,150 +221,156 @@ pub async fn delete_export_config(
 
 // ── SLO Targets ───────────────────────────────────────────
 
-pub async fn list_slos(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn list_slos(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
+) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "slos": [
-            {
-                "name": "api-availability",
-                "service": "api-gateway",
-                "metric": "availability",
-                "target": 99.95,
-                "current": 99.98,
-                "budget_remaining": 0.87,
-                "budget_total": 1.0,
-                "window": "30d",
-                "status": "met"
-            },
-            {
-                "name": "api-latency-p99",
-                "service": "api-gateway",
-                "metric": "latency_p99",
-                "target": 200.0,
-                "current": 120.8,
-                "budget_remaining": 0.92,
-                "budget_total": 1.0,
-                "window": "30d",
-                "status": "met"
-            },
-            {
-                "name": "frontend-error-rate",
-                "service": "frontend",
-                "metric": "error_rate",
-                "target": 0.1,
-                "current": 0.08,
-                "budget_remaining": 0.45,
-                "budget_total": 1.0,
-                "window": "30d",
-                "status": "met"
-            },
-            {
-                "name": "dns-resolution",
-                "service": "coredns",
-                "metric": "latency_p95",
-                "target": 10.0,
-                "current": 12.4,
-                "budget_remaining": 0.0,
-                "budget_total": 1.0,
-                "window": "7d",
-                "status": "breached"
-            }
-        ]
-    }))
+    let items: Vec<serde_json::Value> = vec![
+        serde_json::json!({
+            "name": "api-availability",
+            "service": "api-gateway",
+            "metric": "availability",
+            "target": 99.95,
+            "current": 99.98,
+            "budget_remaining": 0.87,
+            "budget_total": 1.0,
+            "window": "30d",
+            "status": "met"
+        }),
+        serde_json::json!({
+            "name": "api-latency-p99",
+            "service": "api-gateway",
+            "metric": "latency_p99",
+            "target": 200.0,
+            "current": 120.8,
+            "budget_remaining": 0.92,
+            "budget_total": 1.0,
+            "window": "30d",
+            "status": "met"
+        }),
+        serde_json::json!({
+            "name": "frontend-error-rate",
+            "service": "frontend",
+            "metric": "error_rate",
+            "target": 0.1,
+            "current": 0.08,
+            "budget_remaining": 0.45,
+            "budget_total": 1.0,
+            "window": "30d",
+            "status": "met"
+        }),
+        serde_json::json!({
+            "name": "dns-resolution",
+            "service": "coredns",
+            "metric": "latency_p95",
+            "target": 10.0,
+            "current": 12.4,
+            "budget_remaining": 0.0,
+            "budget_total": 1.0,
+            "window": "7d",
+            "status": "breached"
+        }),
+    ];
+    Json(paginate_json(items, &params, "slos"))
 }
 
 // ── Incidents ─────────────────────────────────────────────
 
-pub async fn list_incidents(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn list_incidents(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
+) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "incidents": [
-            {
-                "id": "inc-001",
-                "title": "Elevated packet drops on cilium-node-3",
-                "severity": "warning",
-                "status": "resolved",
-                "started_at": "2026-04-01T14:22:00Z",
-                "resolved_at": "2026-04-01T15:05:00Z",
-                "duration_minutes": 43,
-                "affected_services": ["api-gateway", "frontend"],
-                "root_cause": "BPF map overflow due to stale CT entries",
-                "timeline": [
-                    { "timestamp": "2026-04-01T14:22:00Z", "event": "Alert triggered: packet drop rate > 50/s on cilium-node-3", "actor": "alertmanager" },
-                    { "timestamp": "2026-04-01T14:25:00Z", "event": "On-call engineer acknowledged", "actor": "ops-team" },
-                    { "timestamp": "2026-04-01T14:40:00Z", "event": "Root cause identified: CT map at 98% capacity", "actor": "ops-team" },
-                    { "timestamp": "2026-04-01T14:50:00Z", "event": "CT GC interval reduced, stale entries purged", "actor": "ops-team" },
-                    { "timestamp": "2026-04-01T15:05:00Z", "event": "Packet drop rate returned to normal", "actor": "system" }
-                ]
-            },
-            {
-                "id": "inc-002",
-                "title": "DNS resolution failures in staging namespace",
-                "severity": "critical",
-                "status": "investigating",
-                "started_at": "2026-04-03T09:15:00Z",
-                "resolved_at": null,
-                "duration_minutes": null,
-                "affected_services": ["grpc-backend", "worker-pool"],
-                "root_cause": null,
-                "timeline": [
-                    { "timestamp": "2026-04-03T09:15:00Z", "event": "Alert triggered: DNS SERVFAIL rate > 10% in staging", "actor": "alertmanager" },
-                    { "timestamp": "2026-04-03T09:18:00Z", "event": "On-call engineer acknowledged", "actor": "ops-team" },
-                    { "timestamp": "2026-04-03T09:30:00Z", "event": "CoreDNS pod logs show upstream timeout errors", "actor": "ops-team" }
-                ]
-            }
-        ]
-    }))
+    let items: Vec<serde_json::Value> = vec![
+        serde_json::json!({
+            "id": "inc-001",
+            "title": "Elevated packet drops on cilium-node-3",
+            "severity": "warning",
+            "status": "resolved",
+            "started_at": "2026-04-01T14:22:00Z",
+            "resolved_at": "2026-04-01T15:05:00Z",
+            "duration_minutes": 43,
+            "affected_services": ["api-gateway", "frontend"],
+            "root_cause": "BPF map overflow due to stale CT entries",
+            "timeline": [
+                { "timestamp": "2026-04-01T14:22:00Z", "event": "Alert triggered: packet drop rate > 50/s on cilium-node-3", "actor": "alertmanager" },
+                { "timestamp": "2026-04-01T14:25:00Z", "event": "On-call engineer acknowledged", "actor": "ops-team" },
+                { "timestamp": "2026-04-01T14:40:00Z", "event": "Root cause identified: CT map at 98% capacity", "actor": "ops-team" },
+                { "timestamp": "2026-04-01T14:50:00Z", "event": "CT GC interval reduced, stale entries purged", "actor": "ops-team" },
+                { "timestamp": "2026-04-01T15:05:00Z", "event": "Packet drop rate returned to normal", "actor": "system" }
+            ]
+        }),
+        serde_json::json!({
+            "id": "inc-002",
+            "title": "DNS resolution failures in staging namespace",
+            "severity": "critical",
+            "status": "investigating",
+            "started_at": "2026-04-03T09:15:00Z",
+            "resolved_at": null,
+            "duration_minutes": null,
+            "affected_services": ["grpc-backend", "worker-pool"],
+            "root_cause": null,
+            "timeline": [
+                { "timestamp": "2026-04-03T09:15:00Z", "event": "Alert triggered: DNS SERVFAIL rate > 10% in staging", "actor": "alertmanager" },
+                { "timestamp": "2026-04-03T09:18:00Z", "event": "On-call engineer acknowledged", "actor": "ops-team" },
+                { "timestamp": "2026-04-03T09:30:00Z", "event": "CoreDNS pod logs show upstream timeout errors", "actor": "ops-team" }
+            ]
+        }),
+    ];
+    Json(paginate_json(items, &params, "incidents"))
 }
 
 // ── Change Log ────────────────────────────────────────────
 
-pub async fn list_changes(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn list_changes(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
+) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "changes": [
-            {
-                "id": "chg-001",
-                "timestamp": "2026-04-03T10:30:00Z",
-                "type": "CiliumNetworkPolicy",
-                "resource": "allow-dns-egress",
-                "namespace": "production",
-                "diff_summary": "Added egress rule for UDP/53 to kube-dns",
-                "author": "platform-team",
-                "rollback_available": true
-            },
-            {
-                "id": "chg-002",
-                "timestamp": "2026-04-03T09:15:00Z",
-                "type": "CiliumClusterwideNetworkPolicy",
-                "resource": "deny-external-default",
-                "namespace": "",
-                "diff_summary": "Updated CIDR list: added 203.0.113.0/24 to deny list",
-                "author": "security-team",
-                "rollback_available": true
-            },
-            {
-                "id": "chg-003",
-                "timestamp": "2026-04-02T16:45:00Z",
-                "type": "Service",
-                "resource": "api-gateway",
-                "namespace": "production",
-                "diff_summary": "Changed service type from ClusterIP to LoadBalancer",
-                "author": "dev-team",
-                "rollback_available": false
-            },
-            {
-                "id": "chg-004",
-                "timestamp": "2026-04-02T14:00:00Z",
-                "type": "ConfigMap",
-                "resource": "cilium-config",
-                "namespace": "kube-system",
-                "diff_summary": "Enabled bandwidth manager, set devices=eth0",
-                "author": "platform-team",
-                "rollback_available": true
-            }
-        ]
-    }))
+    let items: Vec<serde_json::Value> = vec![
+        serde_json::json!({
+            "id": "chg-001",
+            "timestamp": "2026-04-03T10:30:00Z",
+            "type": "CiliumNetworkPolicy",
+            "resource": "allow-dns-egress",
+            "namespace": "production",
+            "diff_summary": "Added egress rule for UDP/53 to kube-dns",
+            "author": "platform-team",
+            "rollback_available": true
+        }),
+        serde_json::json!({
+            "id": "chg-002",
+            "timestamp": "2026-04-03T09:15:00Z",
+            "type": "CiliumClusterwideNetworkPolicy",
+            "resource": "deny-external-default",
+            "namespace": "",
+            "diff_summary": "Updated CIDR list: added 203.0.113.0/24 to deny list",
+            "author": "security-team",
+            "rollback_available": true
+        }),
+        serde_json::json!({
+            "id": "chg-003",
+            "timestamp": "2026-04-02T16:45:00Z",
+            "type": "Service",
+            "resource": "api-gateway",
+            "namespace": "production",
+            "diff_summary": "Changed service type from ClusterIP to LoadBalancer",
+            "author": "dev-team",
+            "rollback_available": false
+        }),
+        serde_json::json!({
+            "id": "chg-004",
+            "timestamp": "2026-04-02T14:00:00Z",
+            "type": "ConfigMap",
+            "resource": "cilium-config",
+            "namespace": "kube-system",
+            "diff_summary": "Enabled bandwidth manager, set devices=eth0",
+            "author": "platform-team",
+            "rollback_available": true
+        }),
+    ];
+    Json(paginate_json(items, &params, "changes"))
 }
 
 pub async fn rollback_change(
@@ -389,10 +422,10 @@ pub async fn node_drain_status(State(state): State<Arc<AppState>>) -> Json<serde
 
 pub async fn drain_node(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<NodeActionRequest>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let node = body.get("node").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let node = &body.node;
     Json(serde_json::json!({
         "node": node,
         "status": "draining",
@@ -404,10 +437,10 @@ pub async fn drain_node(
 
 pub async fn uncordon_node(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<NodeActionRequest>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let node = body.get("node").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let node = &body.node;
     Json(serde_json::json!({
         "node": node,
         "status": "ready",

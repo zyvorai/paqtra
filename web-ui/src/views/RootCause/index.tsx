@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Loader2, Play, ArrowDownRight } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Loader2, Play, ArrowDownRight } from 'lucide-react';
 import { fetchPacketDrops, analyzeDrops, PacketDrop } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const REASON_BADGE: Record<string, string> = {
   POLICY_DENIED: 'bg-red-500/15 text-red-400 border-red-500/30',
@@ -14,19 +17,18 @@ const REASON_BADGE: Record<string, string> = {
 const RootCause: React.FC = () => {
   usePageTitle('Root Cause');
   const [drops, setDrops] = useState<PacketDrop[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<Record<string, unknown> | null>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setDrops((await fetchPacketDrops()).data.drops ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const handleAnalyze = async () => {
     setAnalyzing(true); setError(null);
@@ -45,13 +47,12 @@ const RootCause: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-500/20"><ArrowDownRight className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Root Cause Analysis</h1></div>
           <p className="text-sm text-slate-400 mt-1">Packet drop analysis with one-click remediation</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {drops.length > 0 && <ExportButton data={drops as unknown as Record<string, unknown>[]} filename="packet-drops" />}
           <button onClick={handleAnalyze} disabled={analyzing} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 transition-colors">
             {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Analyze
           </button>
-          <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
         </div>
       </div>
 
@@ -88,6 +89,13 @@ const RootCause: React.FC = () => {
       {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 
       {/* Drop entries */}
+      {!loading && drops.length === 0 && (
+        <div className="text-center py-12 text-slate-400">
+          <ArrowDownRight className="w-12 h-12 mx-auto mb-3 text-green-400" />
+          <div className="font-medium text-white">No packet drops detected</div>
+          <div className="text-sm">All traffic is flowing normally.</div>
+        </div>
+      )}
       <div className="space-y-3">
         {drops.map((d) => (
           <div key={d.id} className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-4 card-glow transition-all hover:scale-[1.01]">

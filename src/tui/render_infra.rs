@@ -192,12 +192,12 @@ impl TuiApp {
                 .to_string()
         };
 
+        let total_modules = super::tabs::TabIndex::count();
+        let active_modules = total_modules;
+        let pct = if total_modules > 0 { active_modules * 100 / total_modules } else { 0 };
         let content = Paragraph::new(format!(
             "📊 Platform Metrics:\n\n\
-            Modules Active:     7/13 (54%)\n\
-            Tests Passing:      70/70 (100%)\n\
-            Total LOC:          14,490\n\
-            Documentation:      6,500 lines\n\n\
+            Modules Active:     {}/{} ({}%)\n\n\
             {}\n\
             ✅ Self-Healer:     Ready\n\
             ✅ AutoPolicy:      Learning\n\
@@ -205,7 +205,7 @@ impl TuiApp {
             ✅ Simulator:       Ready\n\
             ✅ Replay:          Ready\n\
             ✅ K8s Identity:    Active",
-            identity_stats
+            active_modules, total_modules, pct, identity_stats
         ))
         .style(Style::default().fg(TEXT_COLOR))
         .block(

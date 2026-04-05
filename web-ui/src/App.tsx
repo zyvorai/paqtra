@@ -58,6 +58,7 @@ const TroubleshootView = React.lazy(() => import('./views/Troubleshoot'));
 const WireGuardPeers = React.lazy(() => import('./views/WireGuardPeers'));
 const CiliumStatusView = React.lazy(() => import('./views/CiliumStatus'));
 const PolicyEditorView = React.lazy(() => import('./views/PolicyEditor'));
+const RuleBuilderView = React.lazy(() => import('./views/RuleBuilder'));
 const FlowExporter = React.lazy(() => import('./views/FlowExporter'));
 const SLODashboard = React.lazy(() => import('./views/SLODashboard'));
 const IncidentTimeline = React.lazy(() => import('./views/IncidentTimeline'));
@@ -75,6 +76,17 @@ const queryClient = new QueryClient({
     queries: { retry: 1, refetchOnWindowFocus: false },
   },
 });
+
+/** Wrap each route element in its own ErrorBoundary so a single view crash
+ *  doesn't take down the entire app. */
+function ViewBoundary({ children }: { children: React.ReactNode }) {
+  return <ErrorBoundary>{children}</ErrorBoundary>;
+}
+
+/** Helper: wrap a lazy-loaded view in Suspense + per-view ErrorBoundary */
+function V({ children }: { children: React.ReactNode }) {
+  return <ViewBoundary>{children}</ViewBoundary>;
+}
 
 const App: React.FC = () => {
   const { authRequired, checkSession } = useAuthStore();
@@ -101,65 +113,66 @@ const App: React.FC = () => {
             <Suspense fallback={<LoadingSpinner size="lg" text="Loading..." fullScreen />}>
               <Routes>
                 <Route element={<MainLayout />}>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/flows" element={<Flows />} />
-                  <Route path="/topology" element={<Topology />} />
-                  <Route path="/policies" element={<Policies />} />
-                  <Route path="/anomalies" element={<Anomalies />} />
-                  <Route path="/compliance" element={<Compliance />} />
-                  <Route path="/autopolicy" element={<AutoPolicy />} />
-                  <Route path="/chaos" element={<Chaos />} />
-                  <Route path="/canary" element={<Canary />} />
-                  <Route path="/events" element={<Events />} />
-                  <Route path="/endpoints" element={<Endpoints />} />
-                  <Route path="/nodes" element={<Nodes />} />
-                  <Route path="/replay" element={<Replay />} />
-                  <Route path="/healer" element={<Healer />} />
-                  <Route path="/rootcause" element={<RootCause />} />
-                  <Route path="/multicluster" element={<MultiCluster />} />
-                  <Route path="/heatmap" element={<Heatmap />} />
-                  <Route path="/dependencies" element={<ServiceDeps />} />
-                  <Route path="/security" element={<SecurityDash />} />
-                  <Route path="/ebpf" element={<EbpfProfiler />} />
-                  <Route path="/metrics" element={<MetricsDash />} />
-                  <Route path="/host" element={<HostInfo />} />
-                  <Route path="/templates" element={<PolicyTemplates />} />
-                  <Route path="/diagnostics" element={<Diagnostics />} />
-                  <Route path="/audit" element={<AuditLog />} />
-                  <Route path="/alerts" element={<Alerts />} />
-                  <Route path="/servicemap" element={<ServiceMap />} />
-                  <Route path="/capture" element={<PacketCapture />} />
-                  <Route path="/dns" element={<DnsMonitor />} />
-                  <Route path="/identities" element={<Identities />} />
-                  <Route path="/clustermesh" element={<ClusterMesh />} />
-                  <Route path="/bgp" element={<BgpPeering />} />
-                  <Route path="/bandwidth" element={<Bandwidth />} />
-                  <Route path="/costs" element={<CostAnalytics />} />
-                  <Route path="/forecast" element={<Forecasting />} />
-                  <Route path="/encryption" element={<EncryptionView />} />
-                  <Route path="/loadbalancer" element={<LoadBalancerView />} />
-                  <Route path="/ingress" element={<IngressGateway />} />
-                  <Route path="/ipam" element={<IPAMView />} />
-                  <Route path="/latency" element={<LatencyAnalysis />} />
-                  <Route path="/mirror" element={<TrafficMirror />} />
-                  <Route path="/clusterhealth" element={<ClusterHealthView />} />
-                  <Route path="/rbac" element={<RBACVisualizer />} />
-                  <Route path="/interfaces" element={<NetworkIfaces />} />
-                  <Route path="/troubleshoot" element={<TroubleshootView />} />
-                  <Route path="/wireguard" element={<WireGuardPeers />} />
-                  <Route path="/cilium-status" element={<CiliumStatusView />} />
-                  <Route path="/policy-editor" element={<PolicyEditorView />} />
-                  <Route path="/flow-export" element={<FlowExporter />} />
-                  <Route path="/slo" element={<SLODashboard />} />
-                  <Route path="/incidents" element={<IncidentTimeline />} />
-                  <Route path="/changelog" element={<ChangeLogView />} />
-                  <Route path="/node-drain" element={<NodeDrainView />} />
-                  <Route path="/pod-security" element={<PodSecurityView />} />
-                  <Route path="/egress" element={<EgressGatewayView />} />
-                  <Route path="/service-mesh" element={<ServiceMeshViewComp />} />
-                  <Route path="/kpr" element={<KubeProxyReplacement />} />
-                  <Route path="/settings" element={<Settings />} />
-                  <Route path="*" element={<NotFound />} />
+                  <Route path="/" element={<V><Dashboard /></V>} />
+                  <Route path="/flows" element={<V><Flows /></V>} />
+                  <Route path="/topology" element={<V><Topology /></V>} />
+                  <Route path="/policies" element={<V><Policies /></V>} />
+                  <Route path="/anomalies" element={<V><Anomalies /></V>} />
+                  <Route path="/compliance" element={<V><Compliance /></V>} />
+                  <Route path="/autopolicy" element={<V><AutoPolicy /></V>} />
+                  <Route path="/chaos" element={<V><Chaos /></V>} />
+                  <Route path="/canary" element={<V><Canary /></V>} />
+                  <Route path="/events" element={<V><Events /></V>} />
+                  <Route path="/endpoints" element={<V><Endpoints /></V>} />
+                  <Route path="/nodes" element={<V><Nodes /></V>} />
+                  <Route path="/replay" element={<V><Replay /></V>} />
+                  <Route path="/healer" element={<V><Healer /></V>} />
+                  <Route path="/rootcause" element={<V><RootCause /></V>} />
+                  <Route path="/multicluster" element={<V><MultiCluster /></V>} />
+                  <Route path="/heatmap" element={<V><Heatmap /></V>} />
+                  <Route path="/dependencies" element={<V><ServiceDeps /></V>} />
+                  <Route path="/security" element={<V><SecurityDash /></V>} />
+                  <Route path="/ebpf" element={<V><EbpfProfiler /></V>} />
+                  <Route path="/metrics" element={<V><MetricsDash /></V>} />
+                  <Route path="/host" element={<V><HostInfo /></V>} />
+                  <Route path="/templates" element={<V><PolicyTemplates /></V>} />
+                  <Route path="/diagnostics" element={<V><Diagnostics /></V>} />
+                  <Route path="/audit" element={<V><AuditLog /></V>} />
+                  <Route path="/alerts" element={<V><Alerts /></V>} />
+                  <Route path="/servicemap" element={<V><ServiceMap /></V>} />
+                  <Route path="/capture" element={<V><PacketCapture /></V>} />
+                  <Route path="/dns" element={<V><DnsMonitor /></V>} />
+                  <Route path="/identities" element={<V><Identities /></V>} />
+                  <Route path="/clustermesh" element={<V><ClusterMesh /></V>} />
+                  <Route path="/bgp" element={<V><BgpPeering /></V>} />
+                  <Route path="/bandwidth" element={<V><Bandwidth /></V>} />
+                  <Route path="/costs" element={<V><CostAnalytics /></V>} />
+                  <Route path="/forecast" element={<V><Forecasting /></V>} />
+                  <Route path="/encryption" element={<V><EncryptionView /></V>} />
+                  <Route path="/loadbalancer" element={<V><LoadBalancerView /></V>} />
+                  <Route path="/ingress" element={<V><IngressGateway /></V>} />
+                  <Route path="/ipam" element={<V><IPAMView /></V>} />
+                  <Route path="/latency" element={<V><LatencyAnalysis /></V>} />
+                  <Route path="/mirror" element={<V><TrafficMirror /></V>} />
+                  <Route path="/clusterhealth" element={<V><ClusterHealthView /></V>} />
+                  <Route path="/rbac" element={<V><RBACVisualizer /></V>} />
+                  <Route path="/interfaces" element={<V><NetworkIfaces /></V>} />
+                  <Route path="/troubleshoot" element={<V><TroubleshootView /></V>} />
+                  <Route path="/wireguard" element={<V><WireGuardPeers /></V>} />
+                  <Route path="/cilium-status" element={<V><CiliumStatusView /></V>} />
+                  <Route path="/policy-editor" element={<V><PolicyEditorView /></V>} />
+                  <Route path="/rule-builder" element={<V><RuleBuilderView /></V>} />
+                  <Route path="/flow-export" element={<V><FlowExporter /></V>} />
+                  <Route path="/slo" element={<V><SLODashboard /></V>} />
+                  <Route path="/incidents" element={<V><IncidentTimeline /></V>} />
+                  <Route path="/changelog" element={<V><ChangeLogView /></V>} />
+                  <Route path="/node-drain" element={<V><NodeDrainView /></V>} />
+                  <Route path="/pod-security" element={<V><PodSecurityView /></V>} />
+                  <Route path="/egress" element={<V><EgressGatewayView /></V>} />
+                  <Route path="/service-mesh" element={<V><ServiceMeshViewComp /></V>} />
+                  <Route path="/kpr" element={<V><KubeProxyReplacement /></V>} />
+                  <Route path="/settings" element={<V><Settings /></V>} />
+                  <Route path="*" element={<V><NotFound /></V>} />
                 </Route>
               </Routes>
             </Suspense>

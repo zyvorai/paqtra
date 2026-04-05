@@ -3,6 +3,7 @@ import { Download, RefreshCw, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { fetchExportConfigs, createExportConfig, deleteExportConfig, ExportConfig } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 
 const STATUS_BADGE: Record<string, string> = { active: 'bg-green-500/15 text-green-400 border-green-500/30', paused: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', error: 'bg-red-500/15 text-red-400 border-red-500/30' };
 const FORMAT_BADGE: Record<string, string> = { json: 'bg-blue-500/15 text-blue-400 border-blue-500/30', csv: 'bg-green-500/15 text-green-400 border-green-500/30', syslog: 'bg-purple-500/15 text-purple-400 border-purple-500/30', s3: 'bg-orange-500/15 text-orange-400 border-orange-500/30' };
@@ -12,7 +13,7 @@ const FlowExporter: React.FC = () => {
   const [configs, setConfigs] = useState<ExportConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newFormat, setNewFormat] = useState('json');

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Policy Correlator
 ///
 /// Correlates drop events with policies and other eBPF data

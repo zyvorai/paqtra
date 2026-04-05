@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // Traffic Shadowing - Mirror production traffic for testing
 use anyhow::Result;
 use std::collections::HashMap;
@@ -136,10 +135,27 @@ spec:
 
     pub async fn stop(&mut self, shadow_id: &str) -> Result<()> {
         let removed = self.active_shadows.write().await.remove(shadow_id);
-        if removed.is_none() {
-            anyhow::bail!("Shadow session not found: {}", shadow_id);
+        match removed {
+            Some(shadow) => {
+                // Clean up the shadow policy from the cluster
+                let policy_name = format!("shadow-{}", &shadow_id[..8.min(shadow_id.len())]);
+                let _ = tokio::process::Command::new("kubectl")
+                    .args([
+                        "delete",
+                        "ciliumnetworkpolicy",
+                        &policy_name,
+                        "-n",
+                        &shadow.config.namespace,
+                        "--ignore-not-found",
+                    ])
+                    .output()
+                    .await;
+                tracing::info!("Shadow stopped: {}", shadow_id);
+            }
+            None => {
+                anyhow::bail!("Shadow session not found: {}", shadow_id);
+            }
         }
-        tracing::info!("Shadow stopped: {}", shadow_id);
         Ok(())
     }
 

@@ -1,25 +1,27 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Lock, RefreshCw, Loader2, ShieldCheck, ShieldOff, Key, ArrowUpDown } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Lock, Loader2, ShieldCheck, ShieldOff, Key, ArrowUpDown } from 'lucide-react';
 import { fetchEncryptionStatus, EncryptionStatus } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 function formatBytes(b: number): string { return b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${(b / 1e3).toFixed(1)} KB`; }
 
 const Encryption: React.FC = () => {
   usePageTitle('Encryption');
   const [status, setStatus] = useState<EncryptionStatus | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setStatus((await fetchEncryptionStatus()).data); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const pct = status ? (status.nodes_encrypted / status.nodes_total) * 100 : 0;
 
@@ -30,12 +32,17 @@ const Encryption: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center shadow-lg shadow-slate-500/20"><Lock className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Encryption Status</h1></div>
           <p className="text-sm text-slate-400 mt-1">Node-to-node encryption monitoring</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-3">
+          {status && (status.interfaces ?? []).length > 0 && <ExportButton data={(status.interfaces ?? []) as unknown as Record<string, unknown>[]} filename="encryption-interfaces" />}
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
+        </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
       {loading && !status && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+
+      {!loading && !status && !error && (
+        <div className="text-center py-12 text-slate-400">No encryption data available.</div>
+      )}
 
       {status && (
         <>
@@ -72,7 +79,11 @@ const Encryption: React.FC = () => {
                 <th className="text-right px-4 py-3 font-semibold text-slate-400 uppercase tracking-wider">TX</th>
                 <th className="text-right px-4 py-3 font-semibold text-slate-400 uppercase tracking-wider">RX</th>
               </tr></thead>
-              <tbody>{(status.interfaces ?? []).map((iface) => (
+              <tbody>
+                {(status.interfaces ?? []).length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">No tunnel interfaces found.</td></tr>
+                )}
+                {(status.interfaces ?? []).map((iface) => (
                 <tr key={iface.name ?? iface.interface ?? '-'} className="border-b border-slate-700/30 table-row-hover">
                   <td className="px-4 py-2.5 font-mono text-white">{iface.name ?? iface.interface ?? '-'}</td>
                   <td className="px-4 py-2.5 font-mono text-white">{iface.peer ?? iface.public_key?.slice(0, 20) ?? '-'}</td>

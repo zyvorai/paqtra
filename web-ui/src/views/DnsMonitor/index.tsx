@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Globe2, RefreshCw, Loader2, Search } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Globe2, Loader2, Search } from 'lucide-react';
 import { fetchDnsQueries, fetchDnsStats, DnsQuery, DnsStats } from '../../services/api';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { formatRelativeTime } from '../../utils/formatters';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const RCODE_BADGE: Record<string, string> = {
   NOERROR: 'bg-green-500/15 text-green-400 border-green-500/30',
@@ -15,12 +18,11 @@ const DnsMonitor: React.FC = () => {
   usePageTitle('DNS Monitor');
   const [queries, setQueries] = useState<DnsQuery[]>([]);
   const [stats, setStats] = useState<DnsStats | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
       const [qRes, sRes] = await Promise.all([fetchDnsQueries(), fetchDnsStats()]);
@@ -28,12 +30,10 @@ const DnsMonitor: React.FC = () => {
       setStats(sRes.data);
     } catch {
       setError('Failed to fetch DNS data');
-    } finally {
-      setLoading(false);
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const filtered = searchText
     ? queries.filter((q) => q.query_name.toLowerCase().includes(searchText.toLowerCase()) || q.source_pod.toLowerCase().includes(searchText.toLowerCase()))
@@ -51,9 +51,11 @@ const DnsMonitor: React.FC = () => {
             <p className="text-sm text-slate-400">Track DNS queries and resolution across the cluster</p>
           </div>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <ExportButton data={filtered as Record<string, unknown>[]} filename="dns-queries" />
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading}
+            autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn(v => !v)} intervalSecs={30} />
+        </div>
       </div>
 
       {error && <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}

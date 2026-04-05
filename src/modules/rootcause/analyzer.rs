@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Drop Pattern Analyzer
 ///
 /// Analyzes drop patterns and trends over time
@@ -16,7 +15,7 @@ impl DropAnalyzer {
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         let cutoff = now.saturating_sub(window_secs);

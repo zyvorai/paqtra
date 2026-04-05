@@ -13,6 +13,7 @@ import {
 import { fetchChaosExperiments, runChaosExperiment } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 
 interface Experiment {
   id: string;
@@ -45,8 +46,9 @@ const Chaos: React.FC = () => {
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [running, setRunning] = useState<string | null>(null);
+  const [confirmExp, setConfirmExp] = useState<{ type: string; name: string } | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null);
@@ -57,7 +59,10 @@ const Chaos: React.FC = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const confirmAndRun = (type: string, name: string) => setConfirmExp({ type, name });
+
   const handleRun = async (type: string, name: string) => {
+    setConfirmExp(null);
     setRunning(type); setError(null);
     try {
       await runChaosExperiment({ type, target_namespace: 'default', duration: '30s' });
@@ -93,7 +98,7 @@ const Chaos: React.FC = () => {
             </div>
             <p className="text-sm text-slate-400 mb-4 flex-1">{p.desc}</p>
             <button
-              onClick={() => handleRun(p.type, p.name)}
+              onClick={() => confirmAndRun(p.type, p.name)}
               disabled={running === p.type}
               className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg border border-slate-700/50 text-sm hover:bg-slate-700/30 disabled:opacity-50 transition-colors"
             >
@@ -145,6 +150,21 @@ const Chaos: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {confirmExp && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-label="Confirm chaos experiment">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-white mb-2">Confirm Chaos Experiment</h3>
+            <p className="text-sm text-slate-400 mb-4">
+              Are you sure you want to run <span className="text-white font-semibold">{confirmExp.name}</span>? This will inject network faults into the default namespace.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirmExp(null)} className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:bg-slate-700 transition-colors">Cancel</button>
+              <button onClick={() => handleRun(confirmExp.type, confirmExp.name)} className="px-4 py-2 rounded-lg bg-pink-600 text-white text-sm hover:bg-pink-700 transition-colors">Run Experiment</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,6 +1,7 @@
 use axum::{extract::State, Json};
 use serde::Serialize;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use crate::AppState;
 use super::track_request;
 
@@ -20,7 +21,7 @@ pub struct CiliumEndpoint {
 pub async fn list_endpoints(
     State(state): State<Arc<AppState>>,
 ) -> Json<serde_json::Value> {
-    track_request(&state, |m| m.k8s_queries += 1).await;
+    track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
     let endpoints = vec![
         CiliumEndpoint {

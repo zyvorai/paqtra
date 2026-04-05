@@ -150,8 +150,8 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
         KeyCode::Char('y')
             if !app.show_help && app.selected_tab == 10 && app.chaos_view.confirmation_mode =>
         {
-            // Confirm chaos experiment — actual start happens in async handler
-            app.chaos_view.cancel_confirmation();
+            // Mark confirmation as accepted — async handler will start the experiment
+            app.chaos_view.confirmed = true;
         }
         KeyCode::Char('n')
             if !app.show_help && app.selected_tab == 10 && app.chaos_view.confirmation_mode =>
@@ -291,7 +291,8 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
             if !app.show_help && app.selected_tab == 0 && !app.show_packet_explanation =>
         {
             // Navigate flows down
-            if app.selected_flow_index < app.flows.len().saturating_sub(1).min(49) {
+            let max_index = app.flows.len().min(50).saturating_sub(1);
+            if app.selected_flow_index < max_index {
                 app.selected_flow_index += 1;
             }
         }
@@ -307,10 +308,8 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
             app.show_packet_explanation = false;
         }
         _ => {
-            // Delegate to autopolicy and rootcause handlers
-            if !handlers::handle_autopolicy_keys(app, key_code) {
-                handlers::handle_rootcause_keys(app, key_code);
-            }
+            // Non-async autopolicy/rootcause keys are handled here;
+            // async ones (policy apply/rollback) are handled in handle_key_event_async.
         }
     }
 
@@ -361,7 +360,7 @@ pub(crate) async fn handle_key_event_async(app: &mut TuiApp, key_code: KeyCode) 
         KeyCode::Char('y')
             if !app.show_help
                 && app.selected_tab == 10
-                && app.chaos_view.show_presets
+                && app.chaos_view.confirmed
                 && !app.chaos_view.circuit_breaker_confirm =>
         {
             // Start chaos experiment from selected preset
@@ -392,6 +391,8 @@ pub(crate) async fn handle_key_event_async(app: &mut TuiApp, key_code: KeyCode) 
             } else {
                 app.set_status_message("Invalid preset index");
             }
+            app.chaos_view.confirmed = false;
+            app.chaos_view.confirmation_mode = false;
         }
         KeyCode::Char('s')
             if !app.show_help && app.selected_tab == 10 && !app.chaos_view.show_presets =>
@@ -522,6 +523,11 @@ pub(crate) async fn handle_key_event_async(app: &mut TuiApp, key_code: KeyCode) 
                 }
             }
         }
-        _ => {}
+        _ => {
+            // Delegate to autopolicy and rootcause async handlers
+            if !handlers::handle_autopolicy_keys(app, key_code).await {
+                handlers::handle_rootcause_keys(app, key_code).await;
+            }
+        }
     }
 }

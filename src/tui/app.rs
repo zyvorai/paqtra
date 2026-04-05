@@ -110,7 +110,7 @@ pub struct TuiApp {
     pub(crate) selected_flow_index: usize,
     pub(crate) show_packet_explanation: bool,
     pub(crate) packet_explainer:
-        std::cell::RefCell<crate::modules::packet_explainer::PacketExplainer>,
+        std::sync::Mutex<crate::modules::packet_explainer::PacketExplainer>,
 
     // Pending async actions from sync confirmation handlers
     pub(crate) canary_pending_action: Option<super::canary_view::ConfirmationType>,
@@ -274,7 +274,7 @@ impl TuiApp {
             fix_apply_confirmation: false,
             selected_flow_index: 0,
             show_packet_explanation: false,
-            packet_explainer: std::cell::RefCell::new(
+            packet_explainer: std::sync::Mutex::new(
                 crate::modules::packet_explainer::PacketExplainer::new(),
             ),
             canary_pending_action: None,
@@ -309,22 +309,24 @@ impl TuiApp {
         Ok(count)
     }
 
-    pub(crate) fn apply_policy_kubectl(&self, policy_name: &str, policy_yaml: &str) -> Result<()> {
-        use std::process::Command;
+    pub(crate) async fn apply_policy_kubectl(&self, _policy_name: &str, policy_yaml: &str) -> Result<()> {
+        use std::io::Write;
+        use tokio::process::Command;
 
-        // Write policy to temporary file
-        let temp_file = format!("/tmp/cilium-policy-{}.yaml", policy_name);
-        std::fs::write(&temp_file, policy_yaml)?;
+        // Write policy to a secure temporary file
+        let mut temp = tempfile::NamedTempFile::with_suffix(".yaml")?;
+        temp.write_all(policy_yaml.as_bytes())?;
+        temp.flush()?;
 
         // Apply using kubectl
         let output = Command::new("kubectl")
             .arg("apply")
             .arg("-f")
-            .arg(&temp_file)
-            .output()?;
+            .arg(temp.path())
+            .output()
+            .await?;
 
-        // Clean up temp file
-        let _ = std::fs::remove_file(&temp_file);
+        // temp file is automatically cleaned up on drop
 
         if output.status.success() {
             Ok(())
@@ -334,8 +336,8 @@ impl TuiApp {
         }
     }
 
-    pub(crate) fn rollback_policy_kubectl(&self, policy_name: &str, namespace: &str) -> Result<()> {
-        use std::process::Command;
+    pub(crate) async fn rollback_policy_kubectl(&self, policy_name: &str, namespace: &str) -> Result<()> {
+        use tokio::process::Command;
 
         // Delete the CiliumNetworkPolicy using kubectl
         let output = Command::new("kubectl")
@@ -346,7 +348,8 @@ impl TuiApp {
                 "-n",
                 namespace,
             ])
-            .output()?;
+            .output()
+            .await?;
 
         if output.status.success() {
             Ok(())
@@ -361,7 +364,11 @@ impl TuiApp {
         }
     }
 
+    /// Get the policy name and YAML for a root-cause fix.
+    /// The number of arms here must match `handlers::FIX_COUNT`.
     pub(crate) fn get_fix_policy(&self, fix_index: usize) -> (String, String) {
+        // Compile-time assertion: if FIX_COUNT changes, this will fail to compile
+        const _: () = assert!(super::handlers::FIX_COUNT == 4, "FIX_COUNT and get_fix_policy arms must match");
         match fix_index {
             0 => {
                 // Allow port 8080 policy

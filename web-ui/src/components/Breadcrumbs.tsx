@@ -30,6 +30,7 @@ const LABEL_MAP: Record<string, string> = {
   metrics: 'Metrics',
   templates: 'Templates',
   'policy-editor': 'Policy Editor',
+  'rule-builder': 'Rule Builder',
   'pod-security': 'Pod Security',
   security: 'Security',
   encryption: 'Encryption',

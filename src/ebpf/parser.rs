@@ -31,6 +31,12 @@ pub fn parse_conntrack_entry(_data: &[u8]) -> Result<ConntrackEntry> {
         packets: 0,
         bytes: 0,
         last_seen: 0,
+        src_namespace: None,
+        src_pod: None,
+        src_labels: None,
+        dst_namespace: None,
+        dst_pod: None,
+        dst_labels: None,
     })
 }
 

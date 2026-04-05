@@ -23,9 +23,10 @@ pub struct Claims {
 
 /// JWT authentication middleware that validates Bearer tokens.
 /// Skips authentication for health and metrics endpoints.
+/// Injects decoded Claims into request extensions for downstream RBAC checks.
 pub async fn auth_middleware(
     State(state): State<Arc<AppState>>,
-    request: Request,
+    mut request: Request,
     next: Next,
 ) -> Response {
     // Skip auth for health/metrics endpoints
@@ -34,8 +35,8 @@ pub async fn auth_middleware(
         return next.run(request).await;
     }
 
-    // Skip auth entirely when AUTH_DISABLED is set (demo/dev mode)
-    if std::env::var("AUTH_DISABLED").unwrap_or_default() == "true" {
+    // Skip auth when disabled at startup (dev/demo mode only)
+    if state.config.auth_disabled {
         return next.run(request).await;
     }
 
@@ -59,7 +60,11 @@ pub async fn auth_middleware(
     let validation = Validation::new(Algorithm::HS256);
 
     match decode::<Claims>(token, &decoding_key, &validation) {
-        Ok(_token_data) => next.run(request).await,
+        Ok(token_data) => {
+            // Inject claims into request extensions for RBAC checks
+            request.extensions_mut().insert(token_data.claims);
+            next.run(request).await
+        }
         Err(e) => {
             tracing::warn!("JWT validation failed: {}", e);
             (
@@ -68,5 +73,27 @@ pub async fn auth_middleware(
             )
                 .into_response()
         }
+    }
+}
+
+/// Check if the request has admin role (for destructive operations).
+/// Returns None if authorized, or Some(Response) with 403 if not.
+pub fn require_admin(claims: Option<&Claims>) -> Option<Response> {
+    match claims {
+        Some(c) if c.role == "admin" => None,
+        Some(_) => Some(
+            (
+                StatusCode::FORBIDDEN,
+                Json(json!({"error": "Admin role required for this operation"})),
+            )
+                .into_response(),
+        ),
+        None => Some(
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"error": "Authentication required"})),
+            )
+                .into_response(),
+        ),
     }
 }

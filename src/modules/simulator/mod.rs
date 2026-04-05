@@ -1,8 +1,3 @@
-// allow(dead_code): Simulator types and engine methods are consumed by the TUI
-// for what-if analysis rendering but appear unused in library-only builds.
-// Suppressed at module level because the numerous structs, enums, and their
-// fields would each trigger individual warnings.
-#![allow(dead_code)]
 /// What-If Simulator Module
 ///
 /// Simulates policy changes and predicts their impact before applying.
@@ -181,7 +176,7 @@ pub enum RiskLevel {
 }
 
 impl RiskLevel {
-    pub fn to_string(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             RiskLevel::Low => "Low",
             RiskLevel::Medium => "Medium",
@@ -197,6 +192,12 @@ impl RiskLevel {
             6..=8 => RiskLevel::High,
             _ => RiskLevel::Critical,
         }
+    }
+}
+
+impl std::fmt::Display for RiskLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

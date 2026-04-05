@@ -1,8 +1,21 @@
-use axum::{extract::State, Json};
-use serde::Serialize;
+use axum::{extract::{Query, State}, Json};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use crate::AppState;
-use super::track_request;
+use super::{track_request, PaginationQuery, paginate_json};
+
+#[derive(Debug, Deserialize)]
+pub struct StartRecordingRequest {
+    #[serde(default = "default_recording_name")]
+    pub name: String,
+    #[serde(default)]
+    pub namespace: Option<String>,
+}
+
+fn default_recording_name() -> String {
+    "recording".to_string()
+}
 
 // ── Replay ──────────────────────────────────────────────────
 
@@ -20,8 +33,9 @@ pub struct ReplayRecording {
 
 pub async fn list_recordings(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
-    track_request(&state, |m| m.total_requests += 0).await;
+    track_request(&state, |_| {}).await;
     let recordings = vec![
         ReplayRecording { id: "rec-001".into(), name: "debug-dns-issue".into(), namespace: "default".into(),
             start_time: "2026-04-03T08:00:00Z".into(), end_time: "2026-04-03T08:15:00Z".into(),
@@ -30,15 +44,16 @@ pub async fn list_recordings(
             start_time: "2026-04-02T14:30:00Z".into(), end_time: "2026-04-02T15:00:00Z".into(),
             flow_count: 89500, status: "completed".into(), size_bytes: 12_000_000 },
     ];
-    Json(serde_json::json!({ "recordings": recordings }))
+    let items: Vec<_> = recordings.into_iter().map(|r| serde_json::to_value(r).unwrap()).collect();
+    Json(paginate_json(items, &params, "recordings"))
 }
 
 pub async fn start_recording(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<StartRecordingRequest>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("recording");
+    let name = &body.name;
     Json(serde_json::json!({
         "id": "rec-003",
         "name": name,
@@ -72,6 +87,7 @@ pub struct HealerProblem {
 
 pub async fn list_healer_problems(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
     let problems = vec![
@@ -97,7 +113,8 @@ pub async fn list_healer_problems(
             status: "open".into(), proposed_fix: "Check upstream DNS servers in CoreDNS ConfigMap".into(),
         },
     ];
-    Json(serde_json::json!({ "problems": problems }))
+    let items: Vec<_> = problems.into_iter().map(|p| serde_json::to_value(p).unwrap()).collect();
+    Json(paginate_json(items, &params, "problems"))
 }
 
 pub async fn apply_healer_fix(
@@ -125,6 +142,7 @@ pub struct PacketDrop {
 
 pub async fn list_packet_drops(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
     let drops = vec![
@@ -147,7 +165,8 @@ pub async fn list_packet_drops(
             remediation: "Add ingress rule allowing monitoring namespace on port 8080".into(),
             namespace: "monitoring".into(), count: 56 },
     ];
-    Json(serde_json::json!({ "drops": drops, "total": drops.len() }))
+    let items: Vec<_> = drops.into_iter().map(|d| serde_json::to_value(d).unwrap()).collect();
+    Json(paginate_json(items, &params, "drops"))
 }
 
 pub async fn analyze_drops(
@@ -182,6 +201,7 @@ pub struct ClusterInfo {
 
 pub async fn list_clusters(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
     let clusters = vec![
@@ -195,7 +215,8 @@ pub async fn list_clusters(
             region: "ap-south-1".into(), nodes: 4, pods: 95, latency_ms: 120.8,
             last_sync: "2026-04-03T09:45:00Z".into(), cilium_version: "1.15.2".into() },
     ];
-    Json(serde_json::json!({ "clusters": clusters }))
+    let items: Vec<_> = clusters.into_iter().map(|c| serde_json::to_value(c).unwrap()).collect();
+    Json(paginate_json(items, &params, "clusters"))
 }
 
 pub async fn sync_cluster(
@@ -251,6 +272,7 @@ pub struct ServiceDep {
 
 pub async fn list_dependencies(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
     let deps = vec![
@@ -261,7 +283,8 @@ pub async fn list_dependencies(
         ServiceDep { source: "api-gateway".into(), destination: "auth-service".into(), protocol: "HTTP".into(), port: 8081, request_rate: 400.0, error_rate: 1.2, latency_p50: 15.0, latency_p99: 120.0 },
         ServiceDep { source: "frontend".into(), destination: "cdn".into(), protocol: "HTTPS".into(), port: 443, request_rate: 5000.0, error_rate: 0.0, latency_p50: 2.0, latency_p99: 10.0 },
     ];
-    Json(serde_json::json!({ "dependencies": deps }))
+    let items: Vec<_> = deps.into_iter().map(|d| serde_json::to_value(d).unwrap()).collect();
+    Json(paginate_json(items, &params, "dependencies"))
 }
 
 // ── Security Dashboard ──────────────────────────────────────
@@ -281,6 +304,7 @@ pub struct SecurityFinding {
 
 pub async fn list_security_findings(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
     let findings = vec![
@@ -301,7 +325,8 @@ pub async fn list_security_findings(
             resource: "ciliumnetworkpolicy/legacy-allow-all".into(), namespace: "default".into(),
             remediation: "Replace with specific egress rules per service".into(), status: "open".into() },
     ];
-    Json(serde_json::json!({ "findings": findings }))
+    let items: Vec<_> = findings.into_iter().map(|f| serde_json::to_value(f).unwrap()).collect();
+    Json(paginate_json(items, &params, "findings"))
 }
 
 pub async fn zero_trust_score(
@@ -348,6 +373,7 @@ pub struct EbpfMapInfo {
 
 pub async fn list_ebpf_programs(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
     let programs = vec![
@@ -364,11 +390,13 @@ pub async fn list_ebpf_programs(
             attach_point: "cgroup/sock_ops".into(), run_count: 8_000_000, run_time_ns: 160_000_000,
             avg_run_time_ns: 20, map_count: 3, loaded_at: "2026-04-01T00:00:00Z".into() },
     ];
-    Json(serde_json::json!({ "programs": programs }))
+    let items: Vec<_> = programs.into_iter().map(|p| serde_json::to_value(p).unwrap()).collect();
+    Json(paginate_json(items, &params, "programs"))
 }
 
 pub async fn list_ebpf_maps(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
     let maps = vec![
@@ -379,7 +407,8 @@ pub async fn list_ebpf_maps(
         EbpfMapInfo { id: "map-5".into(), name: "cilium_lxc".into(), map_type: "hash".into(), key_size: 16, value_size: 96, max_entries: 65536, current_entries: 42 },
         EbpfMapInfo { id: "map-6".into(), name: "cilium_metrics".into(), map_type: "percpu_hash".into(), key_size: 8, value_size: 16, max_entries: 1024, current_entries: 64 },
     ];
-    Json(serde_json::json!({ "maps": maps }))
+    let items: Vec<_> = maps.into_iter().map(|m| serde_json::to_value(m).unwrap()).collect();
+    Json(paginate_json(items, &params, "maps"))
 }
 
 // ── Metrics Summary ─────────────────────────────────────────
@@ -387,13 +416,13 @@ pub async fn list_ebpf_maps(
 pub async fn metrics_summary(
     State(state): State<Arc<AppState>>,
 ) -> Json<serde_json::Value> {
-    let m = state.metrics.read().await;
+    let m = &state.metrics;
     Json(serde_json::json!({
-        "total_requests": m.total_requests,
-        "total_errors": m.total_errors,
-        "total_queries": m.hubble_queries + m.k8s_queries,
-        "cache_hits": m.cache_hits,
-        "cache_misses": m.cache_misses,
+        "total_requests": m.total_requests.load(Ordering::Relaxed),
+        "total_errors": m.total_errors.load(Ordering::Relaxed),
+        "total_queries": m.hubble_queries.load(Ordering::Relaxed) + m.k8s_queries.load(Ordering::Relaxed),
+        "cache_hits": m.cache_hits.load(Ordering::Relaxed),
+        "cache_misses": m.cache_misses.load(Ordering::Relaxed),
         "uptime_seconds": 86400
     }))
 }

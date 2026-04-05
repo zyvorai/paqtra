@@ -8,6 +8,7 @@ use ratatui::{
 use super::app::{ModuleContainer, TuiApp};
 use super::canary_view;
 use super::help_overlay;
+use super::tabs::TabIndex;
 use super::theme::*;
 
 impl TuiApp {
@@ -40,22 +41,7 @@ impl TuiApp {
         f.render_widget(title, chunks[0]);
 
         // Tabs
-        let titles = vec![
-            "Flows",
-            "Connections",
-            "Endpoints",
-            "Policies",
-            "Metrics",
-            "Healer",
-            "AutoPolicy",
-            "RootCause",
-            "Simulator",
-            "Replay",
-            "Chaos",
-            "Canary",
-            "MultiCluster",
-        ];
-        let tabs = Tabs::new(titles)
+        let tabs = Tabs::new(TabIndex::tab_names())
             .block(
                 Block::default()
                     .borders(Borders::ALL)

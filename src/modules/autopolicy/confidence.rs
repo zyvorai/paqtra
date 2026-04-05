@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use super::{Protocol, TrafficObservation, TrafficPattern};
 /// ML-Based Confidence Scoring for Policy Recommendations
 ///
@@ -334,7 +333,8 @@ impl ConfidenceScorer {
 
     /// Get confidence level as human-readable string
     pub fn confidence_level(score: f32) -> &'static str {
-        match (score * 100.0) as u8 {
+        let pct = (score.clamp(0.0, 1.0) * 100.0).round() as u32;
+        match pct {
             90..=100 => "Very High",
             75..=89 => "High",
             60..=74 => "Medium",
@@ -345,7 +345,8 @@ impl ConfidenceScorer {
 
     /// Get recommendation based on confidence score
     pub fn get_recommendation(score: f32) -> &'static str {
-        match (score * 100.0) as u8 {
+        let pct = (score.clamp(0.0, 1.0) * 100.0).round() as u32;
+        match pct {
             90..=100 => "✅ Safe to apply in production",
             75..=89 => "✓ Recommended for staging first",
             60..=74 => "⚠️  Test in audit mode",

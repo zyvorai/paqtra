@@ -85,7 +85,7 @@ fn test_mock_reader_drop_map_has_data() {
 /// All documented Cilium drop reason codes that are explicitly mapped
 /// in DropReasonType::from_code.
 const DOCUMENTED_CODES: &[(u32, &str)] = &[
-    (0, "PolicyDenied"),
+    // Code 0 is now Other(0) — not a documented drop reason
     (1, "PolicyDenied"),
     (2, "InvalidPacket"),
     (3, "NoRoute"),

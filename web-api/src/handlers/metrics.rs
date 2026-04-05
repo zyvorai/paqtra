@@ -1,13 +1,14 @@
 // Prometheus metrics endpoint
 use axum::{extract::State, http::StatusCode, response::IntoResponse};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use crate::AppState;
 
 pub async fn prometheus_metrics(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    let m = state.metrics.read().await;
+    let m = &state.metrics;
 
     let body = format!(
         "# HELP cilium_vision_http_requests_total Total HTTP requests handled\n\
@@ -45,15 +46,15 @@ pub async fn prometheus_metrics(
          # HELP cilium_vision_k8s_queries_total Kubernetes API queries issued\n\
          # TYPE cilium_vision_k8s_queries_total counter\n\
          cilium_vision_k8s_queries_total {}\n",
-        m.total_requests,
-        m.total_errors,
-        m.flows_fetched,
-        m.policies_created,
-        m.policies_deleted,
-        m.cache_hits,
-        m.cache_misses,
-        m.hubble_queries,
-        m.k8s_queries,
+        m.total_requests.load(Ordering::Relaxed),
+        m.total_errors.load(Ordering::Relaxed),
+        m.flows_fetched.load(Ordering::Relaxed),
+        m.policies_created.load(Ordering::Relaxed),
+        m.policies_deleted.load(Ordering::Relaxed),
+        m.cache_hits.load(Ordering::Relaxed),
+        m.cache_misses.load(Ordering::Relaxed),
+        m.hubble_queries.load(Ordering::Relaxed),
+        m.k8s_queries.load(Ordering::Relaxed),
     );
 
     (

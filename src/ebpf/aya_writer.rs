@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Native BPF Map Writer using Aya
 ///
 /// Writes to Cilium's pinned BPF maps (policy, LB, ipcache, metrics)
@@ -70,7 +69,7 @@ impl AyaMapWriter {
             map = map_name,
             "Cannot write map entry: aya-ebpf feature not enabled"
         );
-        Ok(())
+        anyhow::bail!("aya-ebpf feature not enabled: cannot write to BPF maps")
     }
 
     /// Delete a typed key from a pinned hash map.
@@ -106,7 +105,7 @@ impl AyaMapWriter {
             map = map_name,
             "Cannot delete map entry: aya-ebpf feature not enabled"
         );
-        Ok(())
+        anyhow::bail!("aya-ebpf feature not enabled: cannot write to BPF maps")
     }
 
     /// Build a policy map key from identity, port, and protocol.
@@ -286,8 +285,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let writer = AyaMapWriter::with_path(temp_dir.path().to_path_buf()).unwrap();
 
+        // Without aya-ebpf feature, write/delete operations should return errors
         let result = writer.write_policy_entry(100, 80, 6, true);
-        let _ = result;
+        assert!(result.is_err());
 
         let result = writer.clear_metrics();
         assert!(result.is_ok());

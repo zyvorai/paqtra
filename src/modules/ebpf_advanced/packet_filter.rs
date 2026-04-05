@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // Advanced Packet Filtering - Beyond standard filters
 use anyhow::Result;
 use std::collections::HashMap;

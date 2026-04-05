@@ -32,8 +32,16 @@ export const SkeletonChart: React.FC = () => (
   </div>
 );
 
+const GRID_COLS: Record<number, string> = {
+  2: 'lg:grid-cols-2',
+  3: 'lg:grid-cols-3',
+  4: 'lg:grid-cols-4',
+  5: 'lg:grid-cols-5',
+  6: 'lg:grid-cols-6',
+};
+
 export const SkeletonStats: React.FC<{ count?: number }> = ({ count = 4 }) => (
-  <div className={`grid grid-cols-2 lg:grid-cols-${count} gap-4`}>
+  <div className={`grid grid-cols-2 ${GRID_COLS[count] ?? 'lg:grid-cols-4'} gap-4`}>
     {Array.from({ length: count }).map((_, i) => <SkeletonCard key={i} />)}
   </div>
 );

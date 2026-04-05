@@ -9,7 +9,7 @@ description = "REST API server for Cilium Vision web application"
 # Web framework
 axum = { version = "0.8.8", features = ["ws", "macros"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "fs"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -37,6 +37,7 @@ dotenvy = "0.15"
 # Utilities
 uuid = { version = "1.6", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+regex = "1.10"
 
 [profile.release]
 opt-level = 3

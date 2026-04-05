@@ -6,6 +6,7 @@ use axum::{
 };
 use serde_json::{json, Value};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use crate::AppState;
 use crate::models::flow::{Flow, FlowQueryParams};
@@ -24,28 +25,26 @@ pub async fn list_flows(
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Fetching flows with params: {:?}", params);
 
-    track_request(&state, |m| m.hubble_queries += 1).await;
+    track_request(&state, |m| { m.hubble_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
     let limit = params.limit.unwrap_or(100).min(MAX_LIMIT);
     // offset is usize, so it is guaranteed to be non-negative
     let offset = params.offset.unwrap_or(0);
     let cache_key = format!(
-        "{}:ns={:?}:v={:?}:l={}",
+        "{}:ns={}:v={}:l={}:o={}",
         FLOWS_CACHE_PREFIX,
-        params.namespace,
-        params.verdict,
-        limit
+        params.namespace.as_deref().unwrap_or("*"),
+        params.verdict.as_deref().unwrap_or("*"),
+        limit,
+        offset
     );
 
     // Try cache first
     match state.cache.get::<Vec<Flow>>(&cache_key).await {
         Ok(Some(cached_flows)) => {
             tracing::debug!("Cache hit for flows (key={})", cache_key);
-            {
-                let mut m = state.metrics.write().await;
-                m.cache_hits += 1;
-                m.flows_fetched += cached_flows.len() as u64;
-            }
+            state.metrics.cache_hits.fetch_add(1, Ordering::Relaxed);
+            state.metrics.flows_fetched.fetch_add(cached_flows.len() as u64, Ordering::Relaxed);
 
             let total = cached_flows.len();
             let page = apply_pagination(&cached_flows, offset, limit);
@@ -60,8 +59,7 @@ pub async fn list_flows(
         }
         Ok(None) => {
             tracing::info!(limit = limit, offset = offset, "Cache miss for flows, fetching from Hubble");
-            let mut m = state.metrics.write().await;
-            m.cache_misses += 1;
+            state.metrics.cache_misses.fetch_add(1, Ordering::Relaxed);
         }
         Err(e) => {
             // Cache deserialization or connection errors are non-fatal; we fall
@@ -95,10 +93,7 @@ pub async fn list_flows(
         tracing::warn!("Cache write error: {}", e);
     }
 
-    {
-        let mut m = state.metrics.write().await;
-        m.flows_fetched += flows.len() as u64;
-    }
+    state.metrics.flows_fetched.fetch_add(flows.len() as u64, Ordering::Relaxed);
 
     let total = flows.len();
     let page = apply_pagination(&flows, offset, limit);
@@ -118,22 +113,23 @@ pub async fn get_flow(
 ) -> Result<Json<Value>, StatusCode> {
     tracing::info!("Fetching flow: {}", id);
 
-    track_request(&state, |m| m.hubble_queries += 1).await;
+    track_request(&state, |m| { m.hubble_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
     // Try cache
     let cache_key = format!("flow:{}", id);
     if let Ok(Some(flow)) = state.cache.get::<Flow>(&cache_key).await {
-        let mut m = state.metrics.write().await;
-        m.cache_hits += 1;
+        state.metrics.cache_hits.fetch_add(1, Ordering::Relaxed);
         return Ok(Json(to_json(&flow)));
     }
 
     // Fetch a batch and find by id
-    let flows = state
-        .hubble
-        .get_flows(500, None)
-        .await
-        .unwrap_or_default();
+    let flows = match state.hubble.get_flows(500, None).await {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::error!("Failed to fetch flows from Hubble: {}", e);
+            return Err(StatusCode::SERVICE_UNAVAILABLE);
+        }
+    };
 
     match flows.into_iter().find(|f| f.id == id) {
         Some(flow) => {
@@ -150,7 +146,7 @@ pub async fn get_flow(
 pub async fn flow_stats(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, StatusCode> {
-    track_request(&state, |m| m.hubble_queries += 1).await;
+    track_request(&state, |m| { m.hubble_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
     // Try cache
     let cache_key = "flow_stats";
@@ -159,8 +155,7 @@ pub async fn flow_stats(
         .get::<crate::models::flow::FlowStats>(cache_key)
         .await
     {
-        let mut m = state.metrics.write().await;
-        m.cache_hits += 1;
+        state.metrics.cache_hits.fetch_add(1, Ordering::Relaxed);
         return Ok(Json(to_json(&stats)));
     }
 

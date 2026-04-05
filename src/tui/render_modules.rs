@@ -183,7 +183,12 @@ impl TuiApp {
             return;
         }
 
-        let selected_policy = &policies[self.selected_policy_index];
+        let clamped_index = if self.selected_policy_index >= policies.len() {
+            policies.len() - 1
+        } else {
+            self.selected_policy_index
+        };
+        let selected_policy = &policies[clamped_index];
         let is_applied = self.applied_policies.contains(&selected_policy.name);
 
         // Create policy detail content
@@ -217,7 +222,7 @@ impl TuiApp {
             {}\n\
             ─────────────────────────────────────────────────────────\n\n\
             {}",
-            self.selected_policy_index + 1,
+            clamped_index + 1,
             policies.len(),
             selected_policy.name,
             selected_policy.namespace,

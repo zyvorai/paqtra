@@ -1,26 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Scale, RefreshCw, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Scale, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { fetchLBServices, LBService } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const STATE_BADGE: Record<string, string> = { active: 'bg-green-500/15 text-green-400 border-green-500/30', draining: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', inactive: 'bg-red-500/15 text-red-400 border-red-500/30' };
 
 const LoadBalancer: React.FC = () => {
   usePageTitle('Load Balancer');
   const [services, setServices] = useState<LBService[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setServices((await fetchLBServices()).data.services ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   return (
     <div>
@@ -29,10 +31,17 @@ const LoadBalancer: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-500/20"><Scale className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Load Balancer</h1></div>
           <p className="text-sm text-slate-400 mt-1">Cilium L4/L7 load balancer service status</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
+        <div className="flex items-center gap-3">
+          <ExportButton data={services as unknown as Record<string, unknown>[]} filename="load-balancer" />
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
+        </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
-      {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+      {loading && services.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+
+      {!loading && services.length === 0 && !error && (
+        <div className="text-center py-12 text-slate-400">No load balancer services found.</div>
+      )}
 
       <div className="space-y-3">
         {services.map((s) => (

@@ -1,26 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Link2, RefreshCw, Loader2, Wifi, Clock } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Link2, Loader2, Wifi, Clock } from 'lucide-react';
 import { fetchMeshPeers, MeshPeer } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const STATUS_BADGE: Record<string, string> = { connected: 'bg-green-500/15 text-green-400 border-green-500/30', disconnected: 'bg-red-500/15 text-red-400 border-red-500/30', connecting: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' };
 
 const ClusterMesh: React.FC = () => {
   usePageTitle('Cluster Mesh');
   const [peers, setPeers] = useState<MeshPeer[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success] = useState<string | null>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setPeers((await fetchMeshPeers()).data.peers ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const totalSynced = peers.reduce((a, p) => a + p.synced_endpoints, 0);
 
@@ -31,7 +33,10 @@ const ClusterMesh: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-500/20"><Link2 className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Cluster Mesh</h1></div>
           <p className="text-sm text-slate-400 mt-1">ClusterMesh peer connections and sync status</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
+        <div className="flex items-center gap-3">
+          <ExportButton data={peers as unknown as Record<string, unknown>[]} filename="cluster-mesh" />
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
+        </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
@@ -43,7 +48,12 @@ const ClusterMesh: React.FC = () => {
         <div className="rounded-xl border border-slate-700/50 p-4 stat-card-orange card-glow transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Synced Services</div><div className="text-2xl font-bold text-white">{peers.reduce((a, p) => a + p.synced_services, 0)}</div></div>
       </div>
 
-      {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+      {loading && peers.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+
+      {!loading && peers.length === 0 && !error && (
+        <div className="text-center py-12 text-slate-400">No cluster mesh peers found.</div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {peers.map((p) => (
           <div key={p.name} className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-5">

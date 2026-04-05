@@ -1,8 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { HeartPulse, RefreshCw, Loader2, Wrench, AlertOctagon, AlertTriangle, Info } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { HeartPulse, Loader2, Wrench, AlertOctagon, AlertTriangle, Info } from 'lucide-react';
 import { fetchHealerProblems, applyHealerFix, HealerProblem } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoDismiss } from '../../hooks/useAutoDismiss';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const SEV_BADGE: Record<string, string> = {
   critical: 'bg-red-500/15 text-red-400 border-red-500/30',
@@ -27,23 +31,22 @@ const STATUS_BADGE: Record<string, string> = {
 const Healer: React.FC = () => {
   usePageTitle('Network Healer');
   const [problems, setProblems] = useState<HealerProblem[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [fixing, setFixing] = useState<string | null>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setProblems((await fetchHealerProblems()).data.problems ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const handleFix = async (id: string) => {
     setFixing(id); setError(null);
-    try { await applyHealerFix(id); setSuccess('Fix applied'); fetchData(); }
+    try { await applyHealerFix(id); setSuccess('Fix applied'); manualRefresh(); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Fix failed'); }
     finally { setFixing(null); }
   };
@@ -55,9 +58,10 @@ const Healer: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-rose-500 to-rose-700 flex items-center justify-center shadow-lg shadow-rose-500/20"><HeartPulse className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Network Healer</h1></div>
           <p className="text-sm text-slate-400 mt-1">Automatic problem detection with proposed fixes</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-3">
+          {problems.length > 0 && <ExportButton data={problems as unknown as Record<string, unknown>[]} filename="healer-problems" />}
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
+        </div>
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}

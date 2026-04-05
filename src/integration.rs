@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Integration layer combining eBPF and Kubernetes
 ///
 /// Provides enriched data structures with both kernel-level network data
@@ -171,6 +170,12 @@ mod tests {
                 packets: 100,
                 bytes: 50000,
                 last_seen: 0,
+                src_namespace: None,
+                src_pod: None,
+                src_labels: None,
+                dst_namespace: None,
+                dst_pod: None,
+                dst_labels: None,
             },
             src_pod: Some(PodInfo {
                 namespace: "prod".to_string(),

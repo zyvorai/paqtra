@@ -4,6 +4,7 @@ import Editor, { OnMount } from '@monaco-editor/react';
 import { validatePolicy, createPolicy } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 
 const DEFAULT_YAML = `apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -39,7 +40,7 @@ const PolicyEditor: React.FC = () => {
   const [applying, setApplying] = useState(false);
   const [validation, setValidation] = useState<{ valid: boolean; errors: string[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
 
   const handleEditorMount: OnMount = (editor) => {

@@ -1,8 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { PlayCircle, StopCircle, RefreshCw, Loader2, Film, Clock, HardDrive, Plus } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { PlayCircle, StopCircle, Loader2, Film, Clock, HardDrive, Plus } from 'lucide-react';
 import { fetchRecordings, startRecording, ReplayRecording } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoDismiss } from '../../hooks/useAutoDismiss';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const STATUS_BADGE: Record<string, string> = {
   completed: 'bg-green-500/15 text-green-400 border-green-500/30',
@@ -19,23 +23,22 @@ function formatBytes(bytes: number): string {
 const Replay: React.FC = () => {
   usePageTitle('Flow Replay');
   const [recordings, setRecordings] = useState<ReplayRecording[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newNs, setNewNs] = useState('default');
   const [newDuration, setNewDuration] = useState('5m');
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setRecordings((await fetchRecordings()).data.recordings ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to fetch recordings'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const handleStart = async () => {
     if (!newName.trim()) return;
@@ -43,7 +46,7 @@ const Replay: React.FC = () => {
     try {
       await startRecording({ name: newName.trim(), namespace: newNs, duration: newDuration });
       setSuccess('Recording started'); setShowCreate(false); setNewName('');
-      fetchData();
+      manualRefresh();
     } catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to start recording'); }
     finally { setCreating(false); }
   };
@@ -55,13 +58,12 @@ const Replay: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shadow-lg shadow-violet-500/20"><Film className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Flow Replay</h1></div>
           <p className="text-sm text-slate-400 mt-1">Record and replay network flows for time-travel debugging</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+        <div className="flex items-center gap-2">
+          {recordings.length > 0 && <ExportButton data={recordings as unknown as Record<string, unknown>[]} filename="recordings" />}
           <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm hover:from-blue-500 hover:to-blue-600 transition-colors">
             <Plus className="w-4 h-4" /> New Recording
           </button>
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
         </div>
       </div>
 

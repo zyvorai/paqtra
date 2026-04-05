@@ -99,7 +99,7 @@ pub enum DropReason {
     TTLExceeded,
 
     /// Other reason
-    Other(u8),
+    Other(u32),
 }
 
 impl DropReason {
@@ -115,24 +115,24 @@ impl DropReason {
             DropReasonType::InvalidSourceIP => DropReason::InvalidSourceIP,
             DropReasonType::InvalidDestIP => DropReason::UnknownDestination,
             DropReasonType::UnsupportedL3Protocol => DropReason::UnsupportedL3Protocol,
-            DropReasonType::MissedTailCall => DropReason::Other(133),
-            DropReasonType::ErrorWritingToPacket => DropReason::Other(134),
-            DropReasonType::UnknownL4ICMPType => DropReason::Other(135),
-            DropReasonType::UnknownICMPv6Type => DropReason::Other(136),
-            DropReasonType::UnknownICMPv6Code => DropReason::Other(137),
+            DropReasonType::MissedTailCall => DropReason::Other(133u32),
+            DropReasonType::ErrorWritingToPacket => DropReason::Other(134u32),
+            DropReasonType::UnknownL4ICMPType => DropReason::Other(135u32),
+            DropReasonType::UnknownICMPv6Type => DropReason::Other(136u32),
+            DropReasonType::UnknownICMPv6Code => DropReason::Other(137u32),
             DropReasonType::ServiceBackendNotFound => DropReason::NoBackend,
             DropReasonType::NoTunnelEndpoint => DropReason::NoMapping,
             DropReasonType::HostUnreachable => DropReason::UnknownDestination,
             DropReasonType::StaleOrUnroutable => DropReason::NoMapping,
             DropReasonType::ConnectionTrackingInvalid => DropReason::CTStateMismatch,
             DropReasonType::AuthRequired => DropReason::PolicyDenied,
-            DropReasonType::NATNotNeeded => DropReason::Other(184),
-            DropReasonType::IsClusterIP => DropReason::Other(185),
-            DropReasonType::Other(code) => DropReason::Other(*code as u8),
+            DropReasonType::NATNotNeeded => DropReason::Other(184u32),
+            DropReasonType::IsClusterIP => DropReason::Other(185u32),
+            DropReasonType::Other(code) => DropReason::Other(*code),
         }
     }
 
-    pub fn to_string(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             DropReason::PolicyDenied => "Policy Denied",
             DropReason::InvalidSourceIP => "Invalid Source IP",
@@ -151,6 +151,12 @@ impl DropReason {
             DropReason::TTLExceeded => "TTL Exceeded",
             DropReason::Other(_) => "Other",
         }
+    }
+}
+
+impl std::fmt::Display for DropReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -321,7 +327,7 @@ mod tests {
         );
         assert_eq!(
             DropReason::from_ebpf(&DropReasonType::Other(999)),
-            DropReason::Other(999u32 as u8)
+            DropReason::Other(999)
         );
     }
 

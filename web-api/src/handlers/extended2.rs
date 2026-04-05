@@ -1,8 +1,7 @@
-use axum::{extract::State, Json};
-use serde::Serialize;
+use axum::{extract::{Query, State}, Json};
 use std::sync::Arc;
 use crate::AppState;
-use super::track_request;
+use super::{track_request, PaginationQuery, paginate_json};
 
 // ── Host Info ───────────────────────────────────────────────
 
@@ -33,23 +32,26 @@ pub async fn host_info(State(state): State<Arc<AppState>>) -> Json<serde_json::V
 
 // ── Policy Templates ────────────────────────────────────────
 
-pub async fn list_policy_templates(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn list_policy_templates(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
+) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let templates = serde_json::json!([
-        { "id": "tpl-001", "name": "Default Deny All", "category": "security", "description": "Deny all ingress and egress traffic by default", "tags": ["zero-trust", "baseline"],
-          "yaml": "apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: default-deny\nspec:\n  endpointSelector: {}\n  ingress: []\n  egress: []" },
-        { "id": "tpl-002", "name": "Allow DNS", "category": "connectivity", "description": "Allow DNS resolution to kube-dns", "tags": ["dns", "essential"],
-          "yaml": "apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: allow-dns\nspec:\n  endpointSelector: {}\n  egress:\n  - toEndpoints:\n    - matchLabels:\n        k8s:io.kubernetes.pod.namespace: kube-system\n        k8s-app: kube-dns\n    toPorts:\n    - ports:\n      - port: \"53\"\n        protocol: UDP" },
-        { "id": "tpl-003", "name": "Allow HTTP Ingress", "category": "connectivity", "description": "Allow HTTP/HTTPS ingress from any source", "tags": ["http", "ingress"],
-          "yaml": "apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: allow-http\nspec:\n  endpointSelector:\n    matchLabels:\n      app: web\n  ingress:\n  - toPorts:\n    - ports:\n      - port: \"80\"\n      - port: \"443\"" },
-        { "id": "tpl-004", "name": "Namespace Isolation", "category": "security", "description": "Restrict traffic to same namespace only", "tags": ["isolation", "namespace"],
-          "yaml": "apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: namespace-isolation\nspec:\n  endpointSelector: {}\n  ingress:\n  - fromEndpoints:\n    - matchLabels:\n        io.kubernetes.pod.namespace: ${NAMESPACE}" },
-        { "id": "tpl-005", "name": "Allow Monitoring", "category": "observability", "description": "Allow Prometheus scraping on metrics port", "tags": ["prometheus", "monitoring"],
-          "yaml": "apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: allow-monitoring\nspec:\n  endpointSelector: {}\n  ingress:\n  - fromEndpoints:\n    - matchLabels:\n        app: prometheus\n    toPorts:\n    - ports:\n      - port: \"9090\"" },
-        { "id": "tpl-006", "name": "L7 HTTP Policy", "category": "l7", "description": "L7 policy allowing only GET and POST methods", "tags": ["l7", "http", "advanced"],
-          "yaml": "apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: l7-http\nspec:\n  endpointSelector:\n    matchLabels:\n      app: api\n  ingress:\n  - toPorts:\n    - ports:\n      - port: \"8080\"\n      rules:\n        http:\n        - method: GET\n        - method: POST" }
-    ]);
-    Json(serde_json::json!({ "templates": templates }))
+    let items: Vec<serde_json::Value> = vec![
+        serde_json::json!({ "id": "tpl-001", "name": "Default Deny All", "category": "security", "description": "Deny all ingress and egress traffic by default", "tags": ["zero-trust", "baseline"],
+          "yaml": "apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: default-deny\nspec:\n  endpointSelector: {}\n  ingress: []\n  egress: []" }),
+        serde_json::json!({ "id": "tpl-002", "name": "Allow DNS", "category": "connectivity", "description": "Allow DNS resolution to kube-dns", "tags": ["dns", "essential"],
+          "yaml": "apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: allow-dns\nspec:\n  endpointSelector: {}\n  egress:\n  - toEndpoints:\n    - matchLabels:\n        k8s:io.kubernetes.pod.namespace: kube-system\n        k8s-app: kube-dns\n    toPorts:\n    - ports:\n      - port: \"53\"\n        protocol: UDP" }),
+        serde_json::json!({ "id": "tpl-003", "name": "Allow HTTP Ingress", "category": "connectivity", "description": "Allow HTTP/HTTPS ingress from any source", "tags": ["http", "ingress"],
+          "yaml": "apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: allow-http\nspec:\n  endpointSelector:\n    matchLabels:\n      app: web\n  ingress:\n  - toPorts:\n    - ports:\n      - port: \"80\"\n      - port: \"443\"" }),
+        serde_json::json!({ "id": "tpl-004", "name": "Namespace Isolation", "category": "security", "description": "Restrict traffic to same namespace only", "tags": ["isolation", "namespace"],
+          "yaml": "apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: namespace-isolation\nspec:\n  endpointSelector: {}\n  ingress:\n  - fromEndpoints:\n    - matchLabels:\n        io.kubernetes.pod.namespace: ${NAMESPACE}" }),
+        serde_json::json!({ "id": "tpl-005", "name": "Allow Monitoring", "category": "observability", "description": "Allow Prometheus scraping on metrics port", "tags": ["prometheus", "monitoring"],
+          "yaml": "apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: allow-monitoring\nspec:\n  endpointSelector: {}\n  ingress:\n  - fromEndpoints:\n    - matchLabels:\n        app: prometheus\n    toPorts:\n    - ports:\n      - port: \"9090\"" }),
+        serde_json::json!({ "id": "tpl-006", "name": "L7 HTTP Policy", "category": "l7", "description": "L7 policy allowing only GET and POST methods", "tags": ["l7", "http", "advanced"],
+          "yaml": "apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: l7-http\nspec:\n  endpointSelector:\n    matchLabels:\n      app: api\n  ingress:\n  - toPorts:\n    - ports:\n      - port: \"8080\"\n      rules:\n        http:\n        - method: GET\n        - method: POST" }),
+    ];
+    Json(paginate_json(items, &params, "templates"))
 }
 
 pub async fn apply_template(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
@@ -98,16 +100,19 @@ pub async fn audit_log(State(state): State<Arc<AppState>>) -> Json<serde_json::V
 
 // ── Alerts ──────────────────────────────────────────────────
 
-pub async fn list_alert_rules(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn list_alert_rules(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
+) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let rules = serde_json::json!([
-        { "id": "rule-001", "name": "High Drop Rate", "condition": "drop_rate > 5% for 5m", "severity": "critical", "enabled": true, "last_triggered": "2026-04-03T09:00:00Z", "trigger_count": 3, "channels": ["slack", "pagerduty"] },
-        { "id": "rule-002", "name": "DNS Resolution Failure", "condition": "dns_servfail > 10/min", "severity": "high", "enabled": true, "last_triggered": null, "trigger_count": 0, "channels": ["slack"] },
-        { "id": "rule-003", "name": "Policy Deny Spike", "condition": "policy_denied > 100/min", "severity": "warning", "enabled": true, "last_triggered": "2026-04-02T14:30:00Z", "trigger_count": 7, "channels": ["slack", "email"] },
-        { "id": "rule-004", "name": "Endpoint Unhealthy", "condition": "endpoint_status != ready", "severity": "high", "enabled": false, "last_triggered": "2026-04-01T08:00:00Z", "trigger_count": 2, "channels": ["pagerduty"] },
-        { "id": "rule-005", "name": "CT Table Near Full", "condition": "ct_entries > 90% max", "severity": "warning", "enabled": true, "last_triggered": null, "trigger_count": 0, "channels": ["slack"] }
-    ]);
-    Json(serde_json::json!({ "rules": rules }))
+    let items: Vec<serde_json::Value> = vec![
+        serde_json::json!({ "id": "rule-001", "name": "High Drop Rate", "condition": "drop_rate > 5% for 5m", "severity": "critical", "enabled": true, "last_triggered": "2026-04-03T09:00:00Z", "trigger_count": 3, "channels": ["slack", "pagerduty"] }),
+        serde_json::json!({ "id": "rule-002", "name": "DNS Resolution Failure", "condition": "dns_servfail > 10/min", "severity": "high", "enabled": true, "last_triggered": null, "trigger_count": 0, "channels": ["slack"] }),
+        serde_json::json!({ "id": "rule-003", "name": "Policy Deny Spike", "condition": "policy_denied > 100/min", "severity": "warning", "enabled": true, "last_triggered": "2026-04-02T14:30:00Z", "trigger_count": 7, "channels": ["slack", "email"] }),
+        serde_json::json!({ "id": "rule-004", "name": "Endpoint Unhealthy", "condition": "endpoint_status != ready", "severity": "high", "enabled": false, "last_triggered": "2026-04-01T08:00:00Z", "trigger_count": 2, "channels": ["pagerduty"] }),
+        serde_json::json!({ "id": "rule-005", "name": "CT Table Near Full", "condition": "ct_entries > 90% max", "severity": "warning", "enabled": true, "last_triggered": null, "trigger_count": 0, "channels": ["slack"] }),
+    ];
+    Json(paginate_json(items, &params, "rules"))
 }
 
 pub async fn alert_history(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
@@ -148,13 +153,16 @@ pub async fn service_map(State(state): State<Arc<AppState>>) -> Json<serde_json:
 
 // ── Packet Capture ──────────────────────────────────────────
 
-pub async fn list_capture_sessions(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn list_capture_sessions(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
+) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let sessions = serde_json::json!([
-        { "id": "cap-001", "name": "debug-dns", "target_pod": "coredns-abc", "namespace": "kube-system", "interface_name": "eth0", "filter": "port 53", "status": "completed", "packet_count": 4520, "size_bytes": 850_000, "started_at": "2026-04-03T09:00:00Z" },
-        { "id": "cap-002", "name": "api-traffic", "target_pod": "api-gateway-def456", "namespace": "default", "interface_name": "eth0", "filter": "port 8080", "status": "capturing", "packet_count": 12800, "size_bytes": 3_200_000, "started_at": "2026-04-03T10:00:00Z" }
-    ]);
-    Json(serde_json::json!({ "sessions": sessions }))
+    let items: Vec<serde_json::Value> = vec![
+        serde_json::json!({ "id": "cap-001", "name": "debug-dns", "target_pod": "coredns-abc", "namespace": "kube-system", "interface_name": "eth0", "filter": "port 53", "status": "completed", "packet_count": 4520, "size_bytes": 850_000, "started_at": "2026-04-03T09:00:00Z" }),
+        serde_json::json!({ "id": "cap-002", "name": "api-traffic", "target_pod": "api-gateway-def456", "namespace": "default", "interface_name": "eth0", "filter": "port 8080", "status": "capturing", "packet_count": 12800, "size_bytes": 3_200_000, "started_at": "2026-04-03T10:00:00Z" }),
+    ];
+    Json(paginate_json(items, &params, "sessions"))
 }
 
 pub async fn start_capture(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
@@ -200,28 +208,34 @@ pub async fn dns_stats(State(state): State<Arc<AppState>>) -> Json<serde_json::V
 
 // ── Identities ──────────────────────────────────────────────
 
-pub async fn list_identities(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn list_identities(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
+) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let identities = serde_json::json!([
-        { "id": 1, "labels": ["reserved:host"], "namespace": "kube-system", "endpoints_count": 3, "policy_count": 0, "created_at": "2026-03-01T00:00:00Z" },
-        { "id": 12345, "labels": ["app=frontend", "version=v2"], "namespace": "default", "endpoints_count": 3, "policy_count": 2, "created_at": "2026-03-15T10:00:00Z" },
-        { "id": 12346, "labels": ["app=backend", "version=v1"], "namespace": "default", "endpoints_count": 4, "policy_count": 3, "created_at": "2026-03-15T10:00:00Z" },
-        { "id": 12347, "labels": ["app=redis", "role=master"], "namespace": "default", "endpoints_count": 1, "policy_count": 1, "created_at": "2026-03-15T10:00:00Z" },
-        { "id": 10001, "labels": ["k8s-app=kube-dns"], "namespace": "kube-system", "endpoints_count": 2, "policy_count": 1, "created_at": "2026-03-01T00:00:00Z" },
-        { "id": 4, "labels": ["reserved:health"], "namespace": "kube-system", "endpoints_count": 3, "policy_count": 0, "created_at": "2026-03-01T00:00:00Z" }
-    ]);
-    Json(serde_json::json!({ "identities": identities }))
+    let items: Vec<serde_json::Value> = vec![
+        serde_json::json!({ "id": 1, "labels": ["reserved:host"], "namespace": "kube-system", "endpoints_count": 3, "policy_count": 0, "created_at": "2026-03-01T00:00:00Z" }),
+        serde_json::json!({ "id": 12345, "labels": ["app=frontend", "version=v2"], "namespace": "default", "endpoints_count": 3, "policy_count": 2, "created_at": "2026-03-15T10:00:00Z" }),
+        serde_json::json!({ "id": 12346, "labels": ["app=backend", "version=v1"], "namespace": "default", "endpoints_count": 4, "policy_count": 3, "created_at": "2026-03-15T10:00:00Z" }),
+        serde_json::json!({ "id": 12347, "labels": ["app=redis", "role=master"], "namespace": "default", "endpoints_count": 1, "policy_count": 1, "created_at": "2026-03-15T10:00:00Z" }),
+        serde_json::json!({ "id": 10001, "labels": ["k8s-app=kube-dns"], "namespace": "kube-system", "endpoints_count": 2, "policy_count": 1, "created_at": "2026-03-01T00:00:00Z" }),
+        serde_json::json!({ "id": 4, "labels": ["reserved:health"], "namespace": "kube-system", "endpoints_count": 3, "policy_count": 0, "created_at": "2026-03-01T00:00:00Z" }),
+    ];
+    Json(paginate_json(items, &params, "identities"))
 }
 
 // ── Cluster Mesh ────────────────────────────────────────────
 
-pub async fn list_mesh_peers(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn list_mesh_peers(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
+) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let peers = serde_json::json!([
-        { "name": "us-east-prod", "endpoint": "10.1.0.1:2379", "status": "connected", "connected_since": "2026-04-01T00:00:00Z", "synced_identities": 245, "synced_endpoints": 1200, "synced_services": 85, "latency_ms": 2.1 },
-        { "name": "eu-west-prod", "endpoint": "10.2.0.1:2379", "status": "connected", "connected_since": "2026-04-01T00:00:00Z", "synced_identities": 180, "synced_endpoints": 850, "synced_services": 62, "latency_ms": 45.3 }
-    ]);
-    Json(serde_json::json!({ "peers": peers }))
+    let items: Vec<serde_json::Value> = vec![
+        serde_json::json!({ "name": "us-east-prod", "endpoint": "10.1.0.1:2379", "status": "connected", "connected_since": "2026-04-01T00:00:00Z", "synced_identities": 245, "synced_endpoints": 1200, "synced_services": 85, "latency_ms": 2.1 }),
+        serde_json::json!({ "name": "eu-west-prod", "endpoint": "10.2.0.1:2379", "status": "connected", "connected_since": "2026-04-01T00:00:00Z", "synced_identities": 180, "synced_endpoints": 850, "synced_services": 62, "latency_ms": 45.3 }),
+    ];
+    Json(paginate_json(items, &params, "peers"))
 }
 
 pub async fn connect_mesh_peer(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
@@ -231,14 +245,17 @@ pub async fn connect_mesh_peer(State(state): State<Arc<AppState>>) -> Json<serde
 
 // ── BGP Peering ─────────────────────────────────────────────
 
-pub async fn list_bgp_peers(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn list_bgp_peers(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
+) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let peers = serde_json::json!([
-        { "name": "tor-switch-1", "peer_address": "10.0.0.1", "peer_asn": 65000, "local_asn": 65001, "state": "Established", "uptime": "15d 4h", "prefixes_received": 24, "prefixes_advertised": 12, "messages_received": 45200, "messages_sent": 44800 },
-        { "name": "tor-switch-2", "peer_address": "10.0.0.2", "peer_asn": 65000, "local_asn": 65001, "state": "Established", "uptime": "15d 4h", "prefixes_received": 24, "prefixes_advertised": 12, "messages_received": 45100, "messages_sent": 44700 },
-        { "name": "spine-switch", "peer_address": "10.0.0.254", "peer_asn": 64999, "local_asn": 65001, "state": "Idle", "uptime": "0s", "prefixes_received": 0, "prefixes_advertised": 0, "messages_received": 0, "messages_sent": 0 }
-    ]);
-    Json(serde_json::json!({ "peers": peers }))
+    let items: Vec<serde_json::Value> = vec![
+        serde_json::json!({ "name": "tor-switch-1", "peer_address": "10.0.0.1", "peer_asn": 65000, "local_asn": 65001, "state": "Established", "uptime": "15d 4h", "prefixes_received": 24, "prefixes_advertised": 12, "messages_received": 45200, "messages_sent": 44800 }),
+        serde_json::json!({ "name": "tor-switch-2", "peer_address": "10.0.0.2", "peer_asn": 65000, "local_asn": 65001, "state": "Established", "uptime": "15d 4h", "prefixes_received": 24, "prefixes_advertised": 12, "messages_received": 45100, "messages_sent": 44700 }),
+        serde_json::json!({ "name": "spine-switch", "peer_address": "10.0.0.254", "peer_asn": 64999, "local_asn": 65001, "state": "Idle", "uptime": "0s", "prefixes_received": 0, "prefixes_advertised": 0, "messages_received": 0, "messages_sent": 0 }),
+    ];
+    Json(paginate_json(items, &params, "peers"))
 }
 
 // ── Bandwidth ───────────────────────────────────────────────

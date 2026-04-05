@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// MTU-specific healing logic
 use super::*;
 
@@ -44,7 +43,7 @@ impl MTUHealer {
             applied: false,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
         }
     }

@@ -125,8 +125,6 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app: cilium-tui
-    - fromEndpoints:
-        - {}
 "#;
 
         self.k8s_client

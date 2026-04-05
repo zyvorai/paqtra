@@ -3,6 +3,7 @@ import { Copy, RefreshCw, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { fetchMirrorRules, createMirrorRule, deleteMirrorRule, MirrorRule } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 
 const STATUS_BADGE: Record<string, string> = { active: 'bg-green-500/15 text-green-400 border-green-500/30', paused: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' };
 
@@ -11,7 +12,7 @@ const TrafficMirror: React.FC = () => {
   const [rules, setRules] = useState<MirrorRule[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newSrc, setNewSrc] = useState('');

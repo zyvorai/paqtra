@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Native BPF Map Reader using Aya
 ///
 /// Reads Cilium's pinned BPF maps directly via `aya::maps` without

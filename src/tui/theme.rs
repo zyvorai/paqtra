@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // Theme colors for Cilium Vision TUI
 // Inspired by GuestKit's Coral-Terracotta Orange Theme (Pantone 7416 C)
 

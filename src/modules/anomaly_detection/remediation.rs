@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // Auto-Remediation Engine - Suggests and applies fixes
 use anyhow::Result;
 

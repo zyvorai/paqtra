@@ -1,6 +1,3 @@
-// allow(dead_code): AutoPolicy types and engine methods are consumed by the TUI
-// and module orchestration layer but appear unused in library-only builds.
-#![allow(dead_code)]
 /// AutoPolicy Module - Zero-Trust Policy Learning
 ///
 /// Automatically learns traffic patterns from eBPF and generates
@@ -172,7 +169,7 @@ impl<M: MapReader> AutoPolicy<M> {
     fn record_observation(&mut self, pattern: TrafficPattern) {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         if let Some(obs) = self.observations.get_mut(&pattern) {
@@ -498,6 +495,7 @@ mod tests {
     use crate::ebpf::MockMapReader;
 
     #[tokio::test]
+    #[ignore] // Requires a live Kubernetes cluster
     async fn test_autopolicy_creation() {
         let config = AutoPolicyConfig::default();
         let reader = MockMapReader;
@@ -508,6 +506,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // Requires a live Kubernetes cluster
     async fn test_start_learning() {
         let config = AutoPolicyConfig::default();
         let reader = MockMapReader;

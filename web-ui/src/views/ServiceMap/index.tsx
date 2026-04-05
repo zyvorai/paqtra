@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Map, RefreshCw, Loader2 } from 'lucide-react';
-import * as d3 from 'd3';
+import { select } from 'd3-selection';
+import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide, type SimulationNodeDatum, type SimulationLinkDatum } from 'd3-force';
+import { drag as d3Drag } from 'd3-drag';
 import { fetchServiceMap, ServiceNode, ServiceEdge } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
@@ -31,7 +33,7 @@ const ServiceMapView: React.FC = () => {
 
     const width = containerRef.current?.clientWidth ?? 800;
     const height = 500;
-    const svg = d3.select(svgRef.current);
+    const svg = select(svgRef.current);
     svg.selectAll('*').remove();
     svg.attr('viewBox', `0 0 ${width} ${height}`);
 
@@ -40,17 +42,17 @@ const ServiceMapView: React.FC = () => {
       .attr('markerWidth', 6).attr('markerHeight', 6).attr('orient', 'auto')
       .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', '#64748b');
 
-    interface SimNode extends d3.SimulationNodeDatum { id: string; data: ServiceNode }
-    interface SimLink extends d3.SimulationLinkDatum<SimNode> { data: ServiceEdge }
+    interface SimNode extends SimulationNodeDatum { id: string; data: ServiceNode }
+    interface SimLink extends SimulationLinkDatum<SimNode> { data: ServiceEdge }
 
     const simNodes: SimNode[] = nodes.map((n) => ({ id: n.name, data: n }));
     const simLinks: SimLink[] = edges.map((e) => ({ source: e.source, target: e.target, data: e }));
 
-    const simulation = d3.forceSimulation<SimNode>(simNodes)
-      .force('link', d3.forceLink<SimNode, SimLink>(simLinks).id((d) => d.id).distance(150))
-      .force('charge', d3.forceManyBody().strength(-400))
-      .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide().radius(50));
+    const simulation = forceSimulation<SimNode>(simNodes)
+      .force('link', forceLink<SimNode, SimLink>(simLinks).id((d) => d.id).distance(150))
+      .force('charge', forceManyBody().strength(-400))
+      .force('center', forceCenter(width / 2, height / 2))
+      .force('collision', forceCollide().radius(50));
 
     const linkGroup = svg.append('g');
     const link = linkGroup.selectAll('line').data(simLinks).enter().append('line')
@@ -62,7 +64,7 @@ const ServiceMapView: React.FC = () => {
 
     const nodeGroup = svg.append('g');
     const node = nodeGroup.selectAll('g').data(simNodes).enter().append('g')
-      .call(d3.drag<SVGGElement, SimNode>()
+      .call(d3Drag<SVGGElement, SimNode>()
         .on('start', (event, d) => { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
         .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
         .on('end', (event, d) => { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; })

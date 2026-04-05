@@ -10,14 +10,16 @@ Cilium Flow is a Rust-based terminal UI platform that provides real-time network
 |--------|-------|
 | Language | Rust + TypeScript |
 | Rust source files | 92 |
-| Rust lines of code | 11,400+ |
+| Rust lines of code | 32,000+ |
 | TUI tabs | 13 |
-| Rust tests | 969 passing |
+| Rust tests | 961 passing |
+| Web API tests | 26 passing |
 | Web UI views | 58 |
 | Web UI components | 25 |
-| Web UI tests | 74 passing |
-| Compiler warnings | 0 (Rust + TypeScript + ESLint) |
-| Release binary | 13 MB |
+| Web UI hooks | 5 |
+| Web UI tests | 68 passing |
+| Total tests | 1,055 |
+| Compiler warnings | 0 (Rust + TypeScript) |
 
 ## Module Status
 
@@ -70,9 +72,12 @@ Infrastructure           Cilium Agent, Kernel eBPF datapath
 2. **Sync/async split**: UI navigation is sync, engine operations are async
 3. **Confirmation workflow**: Destructive actions require y/n confirmation
 4. **Engine independence**: Chaos/Canary/MultiCluster engines are standalone (no MapReader dependency)
-5. **kill_on_drop**: Hubble port-forward process cleaned up automatically
+5. **kill_on_drop**: Hubble port-forward process stored in global OnceLock, cleaned up on exit
 6. **Safety validation**: All 7 chaos experiment types validated against configurable limits
 7. **tokio::process::Command**: All subprocess calls in async context use non-blocking I/O
+8. **Input validation**: RFC 1123 regex on kubectl-bound names/namespaces, flag injection prevention
+9. **JWT RBAC**: Claims injected into request extensions, `require_admin()` for destructive ops
+10. **Type-safe handlers**: All POST endpoints use typed `Deserialize` structs, no raw `Json<Value>`
 
 ## Recent Changes
 
@@ -82,9 +87,20 @@ Infrastructure           Cilium Agent, Kernel eBPF datapath
 - Connected all key handlers to actual engine methods
 - Added async handlers for chaos start/stop, canary promote/rollback, health checks
 - Completed safety validation for all 7 chaos experiment types
-- Eliminated all compiler warnings (0 warnings across 969 tests)
+- Eliminated all compiler warnings (0 warnings across all tests)
 - Fixed zero-trust policy generator to skip unknown L4 protocols
 - Removed resource leaks (orphaned cleanup tasks, unnecessary clones)
+- Security hardening: JWT RBAC, input validation, typed request structs, graceful shutdown
+- Fixed auth token storage mismatch (localStorage vs sessionStorage)
+- Fixed DropReason u32→u8 truncation, pattern_counts double-counting
+- Fixed port-forward process lifetime (global OnceLock)
+- Replaced RefCell with Mutex in async context
+- Added confirmation dialogs for destructive operations
+- Added auto-dismiss for success messages via useAutoDismiss hook
+- Removed dead code: unused i18n system, chartTheme, service worker, date-fns, react-table
+- Tree-shaken d3 imports (d3-selection, d3-force, d3-drag instead of full d3)
+- Consolidated duplicate HubbleService methods
+- Added accessibility: aria-labels, role="dialog", aria-modal on all modals
 
 ## Web Dashboard (web-ui)
 
@@ -93,13 +109,11 @@ Infrastructure           Cilium Agent, Kernel eBPF datapath
 | Framework | React 19 + TypeScript 5.6 |
 | Views | 58 (lazy-loaded) |
 | Components | 25 shared UI components |
-| Hooks | 4 custom hooks |
+| Hooks | 5 custom hooks |
 | Stores | 3 Zustand stores |
 | API types | 49 interfaces, 70+ functions |
-| Tests | 74 passing |
-| ESLint | 0 errors, 0 warnings |
-| Build time | ~6s |
-| Bundle (gzip) | ~220 KB |
+| Tests | 68 passing |
+| TypeScript | 0 errors |
 
 Design: Dark-first theme (HyperSDK-aligned) with gradient icon headers, card-glow effects, navbar with hover dropdowns, global search command palette, toggle switches, sortable tables, score gauges, and full light theme support.
 
@@ -108,18 +122,21 @@ Design: Dark-first theme (HyperSDK-aligned) with gradient icon headers, card-glo
 ```bash
 # TUI (Rust)
 cargo build --release   # 13 MB optimized binary
-cargo test              # 969 tests, 0 failures
+cargo test              # 961 tests, 0 failures
 cargo clippy            # 0 warnings
+
+# Web API (Axum)
+cd web-api
+cargo test              # 26 tests, 0 failures
 
 # Web UI (React)
 cd web-ui
 npm run build           # Production build
-npm run test            # 74 tests
-npm run lint            # 0 errors
+npm run test            # 68 tests
 ```
 
 ## Dependencies
 
 **Rust**: tokio, ratatui, crossterm, kube, k8s-openapi, anyhow, tracing, serde, uuid, chrono, serde_yaml, serde_json, libc. Optional: aya (eBPF), tonic/prost (gRPC).
 
-**Web UI**: React 19, TypeScript 5.6, Tailwind CSS 3.4, Zustand 5, TanStack React Query, Axios, Recharts 2.15, D3.js, Lucide React, Monaco Editor, Vite 6, Vitest.
+**Web UI**: React 19, TypeScript 5.8, Tailwind CSS 3.4, Zustand 5, TanStack React Query, Axios, Recharts 2.15, D3 (d3-force, d3-selection, d3-drag), Lucide React, Monaco Editor, Vite 6, Vitest.

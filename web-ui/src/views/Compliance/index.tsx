@@ -13,6 +13,7 @@ import {
 import { fetchFrameworks as apiFetchFrameworks, runAudit as apiRunAudit, fetchSecurityPosture as apiFetchSecurityPosture } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 
 interface FrameworkStatus {
   name: string;
@@ -57,7 +58,7 @@ const Compliance: React.FC = () => {
   const [posture, setPosture] = useState<{ score: number; trend: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [auditing, setAuditing] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {

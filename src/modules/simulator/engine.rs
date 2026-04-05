@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Simulation Engine
 ///
 /// Core policy simulation engine that evaluates flows against modified policies
@@ -329,15 +328,47 @@ impl SimulationEngine {
     }
 
     /// Apply default-deny to namespace
+    ///
+    /// NOTE: PolicyDecision does not currently carry a namespace field, so we
+    /// cannot filter removals by namespace alone. As a partial mitigation we
+    /// only remove wildcard-allow rules whose src_identity matches an identity
+    /// that was added via a policy scoped to this namespace (tracked in
+    /// `policy_sources`). If no namespace-scoped entries are found we fall back
+    /// to removing *all* wildcard-allow rules and log a warning.
     fn apply_default_deny(&mut self, namespace: &str) -> Result<()> {
         self.trace
             .push(format!("Applying default-deny to namespace: {}", namespace));
 
-        // Remove all wildcard allow rules
-        self.simulated_policies
-            .retain(|p| !(p.dst_identity == 0 && p.verdict == PolicyVerdict::Allow));
+        // Collect identities that belong to the target namespace based on
+        // policy_sources keyed as "namespace/name".
+        let ns_identities: std::collections::HashSet<u32> = self
+            .policy_sources
+            .iter()
+            .filter(|(key, _)| key.starts_with(&format!("{}/", namespace)))
+            .flat_map(|(_, decisions)| decisions.iter().map(|d| d.src_identity))
+            .collect();
 
-        self.trace.push("Removed wildcard allow rules".to_string());
+        if ns_identities.is_empty() {
+            // No namespace-specific identity information available – remove all
+            // wildcard allow rules (previous behaviour) and document the gap.
+            self.trace.push(format!(
+                "No namespace-scoped identities found for '{}'; removing all wildcard allow rules",
+                namespace
+            ));
+            self.simulated_policies
+                .retain(|p| !(p.dst_identity == 0 && p.verdict == PolicyVerdict::Allow));
+        } else {
+            self.simulated_policies.retain(|p| {
+                !(p.dst_identity == 0
+                    && p.verdict == PolicyVerdict::Allow
+                    && ns_identities.contains(&p.src_identity))
+            });
+        }
+
+        self.trace.push(format!(
+            "Removed wildcard allow rules for namespace '{}'",
+            namespace
+        ));
 
         Ok(())
     }
@@ -366,9 +397,10 @@ impl SimulationEngine {
             return true;
         }
 
-        // Wildcard matches
+        // Wildcard destination match – also check port and protocol when specified
         if decision.src_identity == flow.src_identity && decision.dst_identity == 0
-        // wildcard destination
+            && (decision.port == 0 || decision.port == flow.port)
+            && (decision.protocol == 0 || decision.protocol == flow.protocol)
         {
             return true;
         }
@@ -400,7 +432,7 @@ impl SimulationEngine {
             v.hash(&mut hasher);
         }
 
-        (hasher.finish() % 10000) as u32
+        (hasher.finish() % 1_000_000) as u32
     }
 
     /// Convert protocol string to number

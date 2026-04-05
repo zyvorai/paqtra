@@ -16,8 +16,8 @@ describe('NotFound', () => {
         <NotFound />
       </MemoryRouter>
     );
-    expect(screen.getByText('404')).toBeDefined();
-    expect(screen.getByText(/page not found/i)).toBeDefined();
+    expect(screen.getByText('404')).toBeInTheDocument();
+    expect(screen.getByText(/page not found/i)).toBeInTheDocument();
   });
 
   it('has a button to go to dashboard', () => {
@@ -27,7 +27,7 @@ describe('NotFound', () => {
       </MemoryRouter>
     );
     const button = screen.getByText('Go to Dashboard');
-    expect(button).toBeDefined();
+    expect(button).toBeInTheDocument();
     fireEvent.click(button);
     expect(mockNavigate).toHaveBeenCalledWith('/');
   });

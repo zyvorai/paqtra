@@ -15,10 +15,30 @@ const DEFAULT_SETTINGS: AppSettings = {
   darkMode: true,
 };
 
+function isValidApiBaseUrl(url: string): boolean {
+  // Allow relative paths starting with /
+  if (url.startsWith('/')) return true;
+  // Allow only http/https URLs pointing to same origin or known patterns
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function loadSettings(): AppSettings {
   try {
     const raw = localStorage.getItem('cilium-vision-settings');
-    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    if (raw) {
+      const merged = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+      // Validate API base URL to prevent SSRF
+      if (!isValidApiBaseUrl(merged.apiBaseUrl)) {
+        console.warn('[api] Invalid apiBaseUrl in settings, using default');
+        merged.apiBaseUrl = DEFAULT_SETTINGS.apiBaseUrl;
+      }
+      return merged;
+    }
   } catch {
     // ignore
   }
@@ -40,7 +60,7 @@ const api = axios.create({
 // --- Request interceptor ---------------------------------------------------
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   // Attach JWT token if available
-  const token = sessionStorage.getItem('cilium-vision-token');
+  const token = localStorage.getItem('cilium-vision-token');
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -53,7 +73,7 @@ api.interceptors.response.use(
   (error: AxiosError) => {
     if (error.response?.status === 401) {
       // Token expired or invalid – clear and let the UI handle it
-      sessionStorage.removeItem('cilium-vision-token');
+      localStorage.removeItem('cilium-vision-token');
       // In production, send to observability service (e.g., Sentry, Datadog)
       console.warn('[api] Unauthorized – token cleared');
     }
@@ -70,8 +90,7 @@ export interface FlowEndpoint {
   namespace: string;
   pod: string;
   ip: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface Flow {
@@ -82,8 +101,7 @@ export interface Flow {
   verdict: string;
   protocol: string;
   port: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface FlowStats {
@@ -92,8 +110,7 @@ export interface FlowStats {
   dropped: number;
   requests_per_second: number;
   avg_latency_ms: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export const fetchFlows = (params?: {
@@ -112,8 +129,7 @@ export interface Policy {
   namespace: string;
   created_at: string;
   status: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export const fetchPolicies = () =>
@@ -124,6 +140,12 @@ export const createPolicy = (body: {
   namespace: string;
   spec: unknown;
 }) => api.post('/policies', body);
+
+export const updatePolicy = (id: string, body: {
+  name: string;
+  namespace: string;
+  spec: unknown;
+}) => api.put(`/policies/${id}`, body);
 
 export const deletePolicy = (id: string) => api.delete(`/policies/${id}`);
 
@@ -146,8 +168,7 @@ export interface Anomaly {
   destination_pod: string | null;
   status: string;
   remediation: string | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export const fetchAnomalies = () =>
@@ -197,8 +218,7 @@ export interface K8sEvent {
   last_timestamp: string;
 
   last_seen?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface CiliumEndpoint {
@@ -211,8 +231,7 @@ export interface CiliumEndpoint {
   ipv6: string;
   labels: string[];
   policy_enforcement: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface K8sNode {
@@ -231,8 +250,7 @@ export interface K8sNode {
 
   pods_capacity?: number;
   pods_count?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ReplayRecording {
@@ -246,8 +264,7 @@ export interface ReplayRecording {
   size: number;
 
   size_bytes?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface HealerProblem {
@@ -260,8 +277,7 @@ export interface HealerProblem {
   detected_at: string;
   status: string;
   proposed_fix: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface PacketDrop {
@@ -274,8 +290,7 @@ export interface PacketDrop {
   root_cause: string;
   remediation: string;
   count: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ClusterInfo {
@@ -289,8 +304,7 @@ export interface ClusterInfo {
   latency: number;
   last_sync: string;
   cilium_version: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface HeatmapCell {
@@ -302,8 +316,7 @@ export interface HeatmapCell {
 
   destination_namespace?: string;
   avg_latency_ms?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ServiceDep {
@@ -315,8 +328,7 @@ export interface ServiceDep {
   error_rate: number;
   latency_p50: number;
   latency_p99: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface SecurityFinding {
@@ -329,8 +341,7 @@ export interface SecurityFinding {
   namespace: string;
   status: string;
   remediation: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ZeroTrustScore {
@@ -340,8 +351,7 @@ export interface ZeroTrustScore {
   encryption: number;
   least_privilege: number;
   monitoring: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface EbpfProgram {
@@ -356,8 +366,7 @@ export interface EbpfProgram {
   attach_point?: string;
   avg_run_time_ns?: number;
   map_count?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface EbpfMapInfo {
@@ -369,8 +378,7 @@ export interface EbpfMapInfo {
   max_entries: number;
   current_entries: number;
   flags: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface MetricsSummary {
@@ -383,8 +391,7 @@ export interface MetricsSummary {
   total_errors?: number;
   total_queries?: number;
   total_requests?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface HostInfo {
@@ -401,9 +408,7 @@ export interface HostInfo {
   disk_used_gb: number;
   uptime_seconds: number;
   load_average: number[];
-  network_interfaces: { name: string; ip: string; mac: string; speed: string; status: string   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
-}[];
+  network_interfaces: { name: string; ip: string; mac: string; speed: string; status: string }[];
 }
 
 export interface PolicyTemplate {
@@ -413,8 +418,7 @@ export interface PolicyTemplate {
   description: string;
   yaml: string;
   tags: string[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface DiagnosticTest {
@@ -422,8 +426,7 @@ export interface DiagnosticTest {
   status: string;
   message: string;
   duration_ms: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface AuditEntry {
@@ -435,8 +438,7 @@ export interface AuditEntry {
   namespace: string;
   details: string;
   outcome: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface AlertRule {
@@ -448,8 +450,7 @@ export interface AlertRule {
   channels: string[];
   trigger_count: number;
   last_triggered: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface AlertEvent {
@@ -465,8 +466,7 @@ export interface AlertEvent {
   rule_name?: string;
   fired_at?: string;
   resolved_at?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ServiceNode {
@@ -479,8 +479,7 @@ export interface ServiceNode {
   pods?: number;
   request_rate?: number;
   status?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ServiceEdge {
@@ -490,8 +489,7 @@ export interface ServiceEdge {
   port: number;
   request_rate: number;
   error_rate: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface CaptureSession {
@@ -507,8 +505,7 @@ export interface CaptureSession {
   started_at: string;
 
   size_bytes?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface DnsQuery {
@@ -521,8 +518,7 @@ export interface DnsQuery {
   response_code: string;
   response_ips: string[];
   latency_ms: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface DnsStats {
@@ -531,8 +527,7 @@ export interface DnsStats {
   nxdomain: number;
   servfail: number;
   avg_latency_ms: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface CiliumIdentity {
@@ -542,8 +537,7 @@ export interface CiliumIdentity {
   endpoints_count: number;
   policy_count: number;
   created_at: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface MeshPeer {
@@ -556,8 +550,7 @@ export interface MeshPeer {
   synced_endpoints: number;
   synced_services: number;
   latency: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface BgpPeer {
@@ -571,8 +564,7 @@ export interface BgpPeer {
   prefixes_advertised: number;
   messages_received: number;
   messages_sent: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface BandwidthEntry {
@@ -584,8 +576,7 @@ export interface BandwidthEntry {
   ingress_limit_mbps: number;
   total_bytes_tx: number;
   total_bytes_rx: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface CostBreakdown {
@@ -597,8 +588,7 @@ export interface CostBreakdown {
   total_cost: number;
 
   trend?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface CostSummary {
@@ -609,18 +599,14 @@ export interface CostSummary {
   cost_trend?: string;
   savings_potential?: number;
   trend?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ForecastResult {
   metric: string;
   unit: string;
   recommendation?: string;
-  points: { timestamp: string; actual?: number; predicted: number; upper_bound: number; lower_bound: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
-}[];
+  points: { timestamp: string; actual?: number; predicted: number; upper_bound: number; lower_bound: number; [key: string]: unknown }[];
 }
 
 export interface EncryptionStatus {
@@ -628,12 +614,10 @@ export interface EncryptionStatus {
   type: string;
   nodes_encrypted: number;
   nodes_total: number;
-  interfaces: { name: string; peer: string; endpoint: string; latest_handshake: string; tx_bytes: number; rx_bytes: number 
+  interfaces: { name: string; peer: string; endpoint: string; latest_handshake: string; tx_bytes: number; rx_bytes: number; interface?: string; public_key?: string; node?: string; stats?: Record<string, unknown>; [key: string]: unknown }[];
   key_rotation?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
-}[];
   key_rotation_at: string;
+  [key: string]: unknown;
 }
 
 export interface LBService {
@@ -644,9 +628,7 @@ export interface LBService {
   frontend_ip: string;
   frontend_port: number;
   protocol: string;
-  backends: { ip: string; port: number; weight: number; state: string   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
-}[];
+  backends: { ip: string; port: number; weight: number; state: string; address?: string }[];
   session_affinity: string;
   algorithm: string;
 }
@@ -660,8 +642,7 @@ export interface IngressRoute {
   tls: string;
   status: string;
   class_name: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface IPAMPool {
@@ -673,8 +654,7 @@ export interface IPAMPool {
 
   usage_pct?: number;
   utilization?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface IPAllocation {
@@ -683,8 +663,7 @@ export interface IPAllocation {
   namespace: string;
   node: string;
   pool: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface LatencyBreakdown {
@@ -700,8 +679,7 @@ export interface LatencyBreakdown {
   p95_ms?: number;
   p99_ms?: number;
   max_ms?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface MirrorRule {
@@ -717,8 +695,7 @@ export interface MirrorRule {
   mirror?: { service: string; namespace: string; port: number };
 
   stats?: Record<string, unknown>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ClusterHealthSummary {
@@ -734,8 +711,7 @@ export interface ClusterHealthSummary {
   cilium_version?: string;
   kubernetes_version?: string;
   cilium?: { version?: string; [key: string]: unknown };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface RBACBinding {
@@ -745,8 +721,8 @@ export interface RBACBinding {
   role_kind: string;
   namespace: string;
   permissions: string[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  subjects?: { name?: string; kind?: string; namespace?: string }[];
+  [key: string]: unknown;
 }
 
 export interface NetInterface {
@@ -767,8 +743,7 @@ export interface NetInterface {
   address?: string;
   addresses?: string[];
   stats?: Record<string, unknown>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface TroubleshootResult {
@@ -778,8 +753,7 @@ export interface TroubleshootResult {
   duration_ms: number;
 
   name?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface WireGuardPeer {
@@ -791,8 +765,7 @@ export interface WireGuardPeer {
   transfer_tx: number;
   persistent_keepalive: number;
   node: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface CiliumAgentStatus {
@@ -813,8 +786,7 @@ export interface CiliumAgentStatus {
   controllers_failing?: number;
   controllers_total?: number;
   kube_proxy_replacement?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ExportConfig {
@@ -826,8 +798,7 @@ export interface ExportConfig {
   status: string;
   exported_count: number;
   last_export: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface SLOTarget {
@@ -840,8 +811,7 @@ export interface SLOTarget {
   budget_total: number;
   window: string;
   status: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface Incident {
@@ -854,11 +824,9 @@ export interface Incident {
   duration: string;
   affected_services: string[];
   root_cause: string;
-  timeline: { time: string; event: string 
+  timeline: { time: string; event: string; actor?: string; [key: string]: unknown }[];
   duration_minutes?: number;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
-}[];
+  [key: string]: unknown;
 }
 
 export interface ChangeEntry {
@@ -870,8 +838,7 @@ export interface ChangeEntry {
   diff_summary: string;
   author: string;
   rollback_available: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface NodeDrainStatus {
@@ -881,8 +848,7 @@ export interface NodeDrainStatus {
   pods_remaining: number;
   started_at: string;
   cordon: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface PodSecurityReport {
@@ -892,9 +858,7 @@ export interface PodSecurityReport {
   warn_level: string;
   total_pods: number;
   compliant_pods: number;
-  violations: { pod: string; policy: string; message: string   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
-}[];
+  violations: { pod: string; policy: string; message: string; violation?: string }[];
 }
 
 export interface EgressPolicy {
@@ -905,8 +869,7 @@ export interface EgressPolicy {
   destination_cidrs: string[];
   selectors: string | string[];
   status: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface MeshService {
@@ -919,8 +882,7 @@ export interface MeshService {
   timeout: string;
   circuit_breaker: string;
   traffic_policy: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface KPRStatus {
@@ -937,8 +899,7 @@ export interface KPRStatus {
   ct_entries: number;
 
   node_port_range?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 // ─── Extended API Functions ────────────────────────────────────────────────────
@@ -953,67 +914,67 @@ export const fetchEndpoints = () => api.get<{ endpoints: CiliumEndpoint[] }>('/e
 export const fetchNodes = () => api.get<{ nodes: K8sNode[] }>('/nodes');
 
 // Replay / Recordings
-export const fetchRecordings = () => api.get<{ recordings: ReplayRecording[] }>('/recordings');
-export const startRecording = (body: unknown) => api.post('/recordings', body);
-export const stopRecording = (id: string) => api.post(`/recordings/${id}/stop`);
-export const fetchRecordingFlows = (id: string) => api.get(`/recordings/${id}/flows`);
+export const fetchRecordings = () => api.get<{ recordings: ReplayRecording[] }>('/modules/replay/recordings');
+export const startRecording = (body: unknown) => api.post('/modules/replay/start', body);
+export const stopRecording = (id: string) => api.post(`/modules/replay/${id}/stop`);
+export const fetchRecordingFlows = (id: string) => api.get(`/modules/replay/${id}/flows`);
 
 // Healer
-export const fetchHealerProblems = () => api.get<{ problems: HealerProblem[] }>('/healer/problems');
-export const applyHealerFix = (id: string) => api.post(`/healer/problems/${id}/fix`);
+export const fetchHealerProblems = () => api.get<{ problems: HealerProblem[] }>('/modules/healer/problems');
+export const applyHealerFix = (id: string) => api.post(`/modules/healer/${id}/fix`);
 
-// Packet Drops
-export const fetchPacketDrops = () => api.get<{ drops: PacketDrop[] }>('/packet-drops');
-export const analyzeDrops = (_body?: unknown) => api.post('/packet-drops/analyze');
+// Packet Drops / RootCause
+export const fetchPacketDrops = () => api.get<{ drops: PacketDrop[] }>('/modules/rootcause/drops');
+export const analyzeDrops = (_body?: unknown) => api.post('/modules/rootcause/analyze');
 
 // Clusters
-export const fetchClusters = () => api.get<{ clusters: ClusterInfo[] }>('/clusters');
-export const syncClusterPolicies = (name: string) => api.post(`/clusters/${name}/sync`);
+export const fetchClusters = () => api.get<{ clusters: ClusterInfo[] }>('/modules/multicluster/clusters');
+export const syncClusterPolicies = (name: string) => api.post(`/modules/multicluster/${name}/sync`);
 
 // Heatmap
 export const fetchHeatmapData = () => api.get<{ cells: HeatmapCell[]; namespaces?: string[] }>('/heatmap');
 
 // Service Dependencies
-export const fetchServiceDeps = () => api.get<{ dependencies: ServiceDep[] }>('/service-deps');
+export const fetchServiceDeps = () => api.get<{ dependencies: ServiceDep[] }>('/dependencies');
 
 // Security
 export const fetchSecurityFindings = () => api.get<{ findings: SecurityFinding[] }>('/security/findings');
 export const fetchZeroTrustScore = () => api.get<ZeroTrustScore>('/security/zero-trust');
 
 // eBPF
-export const fetchEbpfPrograms = () => api.get<{ programs: EbpfProgram[] }>('/ebpf/programs');
-export const fetchEbpfMaps = () => api.get<{ maps: EbpfMapInfo[] }>('/ebpf/maps');
+export const fetchEbpfPrograms = () => api.get<{ programs: EbpfProgram[] }>('/modules/ebpf/programs');
+export const fetchEbpfMaps = () => api.get<{ maps: EbpfMapInfo[] }>('/modules/ebpf/maps');
 
 // Metrics
 export const fetchPrometheusMetrics = () => api.get('/metrics/prometheus');
 export const fetchMetricsSummary = () => api.get<MetricsSummary>('/metrics/summary');
 
 // Host
-export const fetchHostInfo = () => api.get<HostInfo>('/host');
+export const fetchHostInfo = () => api.get<HostInfo>('/host/info');
 
 // Policy Templates
-export const fetchPolicyTemplates = () => api.get<{ templates: PolicyTemplate[] }>('/policy-templates');
-export const applyTemplate = (id: string, _body?: unknown) => api.post(`/policy-templates/${id}/apply`);
+export const fetchPolicyTemplates = () => api.get<{ templates: PolicyTemplate[] }>('/policies/templates');
+export const applyTemplate = (id: string, _body?: unknown) => api.post(`/policies/templates/${id}/apply`);
 
 // Diagnostics
-export const runDiagnostics = () => api.post<{ tests: DiagnosticTest[] }>('/diagnostics');
-export const fetchConnectivityTest = () => api.get('/diagnostics/connectivity');
+export const runDiagnostics = () => api.post<{ tests: DiagnosticTest[] }>('/diagnostics/run');
+export const fetchConnectivityTest = () => api.post('/diagnostics/connectivity');
 
 // Audit
-export const fetchAuditLog = () => api.get<{ entries: AuditEntry[] }>('/audit');
+export const fetchAuditLog = () => api.get<{ entries: AuditEntry[] }>('/audit/log');
 
 // Alerts
 export const fetchAlertRules = () => api.get<{ rules: AlertRule[] }>('/alerts/rules');
 export const fetchAlertHistory = () => api.get<{ alerts: AlertEvent[]; events?: AlertEvent[] }>('/alerts/history');
-export const toggleAlertRule = (id: string) => api.post(`/alerts/rules/${id}/toggle`);
+export const toggleAlertRule = (id: string) => api.put(`/alerts/rules/${id}`);
 
 // Service Map
-export const fetchServiceMap = () => api.get<{ nodes: ServiceNode[]; edges: ServiceEdge[] }>('/service-map');
+export const fetchServiceMap = () => api.get<{ nodes: ServiceNode[]; edges: ServiceEdge[] }>('/servicemap');
 
 // Packet Capture
-export const fetchCaptureSessions = () => api.get<{ sessions: CaptureSession[] }>('/captures');
-export const startCapture = (body: unknown) => api.post('/captures', body);
-export const stopCapture = (id: string) => api.post(`/captures/${id}/stop`);
+export const fetchCaptureSessions = () => api.get<{ sessions: CaptureSession[] }>('/modules/capture/sessions');
+export const startCapture = (body: unknown) => api.post('/modules/capture/start', body);
+export const stopCapture = (id: string) => api.post(`/modules/capture/${id}/stop`);
 
 // DNS
 export const fetchDnsQueries = (params?: { namespace?: string; query_name?: string }) =>
@@ -1024,8 +985,8 @@ export const fetchDnsStats = () => api.get<DnsStats>('/dns/stats');
 export const fetchIdentities = () => api.get<{ identities: CiliumIdentity[] }>('/identities');
 
 // Cluster Mesh
-export const fetchMeshPeers = () => api.get<{ peers: MeshPeer[] }>('/mesh/peers');
-export const connectMeshPeer = (body: unknown) => api.post('/mesh/peers', body);
+export const fetchMeshPeers = () => api.get<{ peers: MeshPeer[] }>('/clustermesh/peers');
+export const connectMeshPeer = (body: unknown) => api.post('/clustermesh/connect', body);
 
 // BGP
 export const fetchBgpPeers = () => api.get<{ peers: BgpPeer[] }>('/bgp/peers');
@@ -1034,44 +995,44 @@ export const fetchBgpPeers = () => api.get<{ peers: BgpPeer[] }>('/bgp/peers');
 export const fetchBandwidthData = () => api.get<{ entries: BandwidthEntry[] }>('/bandwidth');
 
 // Cost
-export const fetchCostBreakdown = () => api.get<{ breakdown: CostBreakdown[]; summary: CostSummary }>('/cost');
+export const fetchCostBreakdown = () => api.get<{ breakdown: CostBreakdown[]; summary: CostSummary }>('/costs/breakdown');
 
 // Forecast
 export const fetchForecast = (body: unknown) => api.post<ForecastResult>('/forecast', body);
 export const fetchForecastMetrics = () => api.get<{ metrics: string[] }>('/forecast/metrics');
 
 // Encryption
-export const fetchEncryptionStatus = () => api.get<EncryptionStatus>('/encryption');
+export const fetchEncryptionStatus = () => api.get<EncryptionStatus>('/encryption/status');
 
 // Load Balancing
-export const fetchLBServices = () => api.get<{ services: LBService[] }>('/lb/services');
+export const fetchLBServices = () => api.get<{ services: LBService[] }>('/loadbalancer/services');
 
 // Ingress
-export const fetchIngressRoutes = () => api.get<{ routes: IngressRoute[] }>('/ingress');
+export const fetchIngressRoutes = () => api.get<{ routes: IngressRoute[] }>('/ingress/routes');
 
 // IPAM
 export const fetchIPAMPools = () => api.get<{ pools: IPAMPool[] }>('/ipam/pools');
 export const fetchIPAllocations = () => api.get<{ allocations: IPAllocation[] }>('/ipam/allocations');
 
 // Latency
-export const fetchLatencyAnalysis = () => api.get<{ services: LatencyBreakdown[] }>('/latency');
+export const fetchLatencyAnalysis = () => api.get<{ services: LatencyBreakdown[] }>('/latency/analysis');
 
 // Mirror
-export const fetchMirrorRules = () => api.get<{ rules: MirrorRule[] }>('/mirror');
-export const createMirrorRule = (body: unknown) => api.post('/mirror', body);
-export const deleteMirrorRule = (id: string) => api.delete(`/mirror/${id}`);
+export const fetchMirrorRules = () => api.get<{ rules: MirrorRule[] }>('/modules/mirror/rules');
+export const createMirrorRule = (body: unknown) => api.post('/modules/mirror/rules', body);
+export const deleteMirrorRule = (id: string) => api.delete(`/modules/mirror/rules/${id}`);
 
 // Cluster Health
 export const fetchClusterHealth = () => api.get<ClusterHealthSummary>('/cluster/health');
 
 // RBAC
-export const fetchRBACBindings = () => api.get<{ bindings: RBACBinding[] }>('/rbac');
+export const fetchRBACBindings = () => api.get<{ bindings: RBACBinding[] }>('/rbac/bindings');
 
 // Network Interfaces
-export const fetchNetInterfaces = () => api.get<{ interfaces: NetInterface[] }>('/interfaces');
+export const fetchNetInterfaces = () => api.get<{ interfaces: NetInterface[] }>('/network/interfaces');
 
 // Troubleshoot
-export const runTroubleshoot = (body: unknown) => api.post<{ results: TroubleshootResult[] }>('/troubleshoot', body);
+export const runTroubleshoot = (body: unknown) => api.post<{ results: TroubleshootResult[] }>('/troubleshoot/run', body);
 
 // WireGuard
 export const fetchWireGuardPeers = () => api.get<{ peers: WireGuardPeer[] }>('/wireguard/peers');
@@ -1083,33 +1044,33 @@ export const fetchCiliumStatus = () => api.get<{ agents: CiliumAgentStatus[] }>(
 export const validatePolicy = (yaml: string) => api.post('/policies/validate', { yaml });
 
 // Export
-export const fetchExportConfigs = () => api.get<{ configs: ExportConfig[] }>('/export');
-export const createExportConfig = (body: unknown) => api.post('/export', body);
-export const deleteExportConfig = (id: string) => api.delete(`/export/${id}`);
+export const fetchExportConfigs = () => api.get<{ configs: ExportConfig[] }>('/flows/exports');
+export const createExportConfig = (body: unknown) => api.post('/flows/exports', body);
+export const deleteExportConfig = (id: string) => api.delete(`/flows/exports/${id}`);
 
 // SLOs
-export const fetchSLOs = () => api.get<{ slos: SLOTarget[] }>('/slos');
+export const fetchSLOs = () => api.get<{ slos: SLOTarget[] }>('/slo/targets');
 
 // Incidents
 export const fetchIncidents = () => api.get<{ incidents: Incident[] }>('/incidents');
 
 // Change Log
-export const fetchChangeLog = () => api.get<{ changes: ChangeEntry[]; entries?: ChangeEntry[] }>('/changelog');
-export const rollbackChange = (id: string) => api.post(`/changelog/${id}/rollback`);
+export const fetchChangeLog = () => api.get<{ changes: ChangeEntry[]; entries?: ChangeEntry[] }>('/changes');
+export const rollbackChange = (id: string) => api.post(`/changes/${id}/rollback`);
 
 // Node Drain
 export const fetchNodeDrainStatus = () => api.get<{ nodes: NodeDrainStatus[] }>('/nodes/drain');
-export const drainNode = (node: string) => api.post(`/nodes/${node}/drain`);
-export const uncordonNode = (node: string) => api.post(`/nodes/${node}/uncordon`);
+export const drainNode = (node: string) => api.post('/nodes/drain', { node });
+export const uncordonNode = (node: string) => api.post('/nodes/uncordon', { node });
 
 // Pod Security
-export const fetchPodSecurity = () => api.get<{ reports: PodSecurityReport[] }>('/pod-security');
+export const fetchPodSecurity = () => api.get<{ reports: PodSecurityReport[] }>('/security/pods');
 
 // Egress Policies
-export const fetchEgressPolicies = () => api.get<{ policies: EgressPolicy[] }>('/egress-policies');
+export const fetchEgressPolicies = () => api.get<{ policies: EgressPolicy[] }>('/egress/policies');
 
 // Mesh Services
-export const fetchMeshServices = () => api.get<{ services: MeshService[] }>('/mesh/services');
+export const fetchMeshServices = () => api.get<{ services: MeshService[] }>('/servicemesh/services');
 
 // KPR (Kube Proxy Replacement)
-export const fetchKPRStatus = () => api.get<KPRStatus>('/kpr');
+export const fetchKPRStatus = () => api.get<KPRStatus>('/kpr/status');

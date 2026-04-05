@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Packet Explainer - Interactive Packet Analysis
 ///
 /// Provides detailed explanations of network packets including:
@@ -34,6 +33,8 @@ pub struct PacketExplanation {
     pub confidence: f32,
     pub severity: String,
 }
+
+const MAX_CACHE_SIZE: usize = 1000;
 
 pub struct PacketExplainer {
     explanations_cache: HashMap<String, PacketExplanation>,
@@ -78,6 +79,15 @@ impl PacketExplainer {
         let explanation = self.generate_explanation(
             source_ns, source_pod, dest_ns, dest_pod, port, protocol, verdict,
         );
+
+        // Evict oldest entries if cache is too large
+        if self.explanations_cache.len() >= MAX_CACHE_SIZE {
+            // Simple eviction: clear half the cache
+            let keys: Vec<String> = self.explanations_cache.keys().take(MAX_CACHE_SIZE / 2).cloned().collect();
+            for key in keys {
+                self.explanations_cache.remove(&key);
+            }
+        }
 
         // Cache it
         self.explanations_cache

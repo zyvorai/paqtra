@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// BPF Data Structure Parsers
 ///
 /// Parses raw binary data from Cilium BPF maps into Rust structures
@@ -28,7 +27,7 @@ use super::{
 ///   u16 _pad;
 ///   u32 _pad2;
 /// }
-pub fn parse_policy_entry(key: &[u8], value: &[u8]) -> Result<PolicyDecision> {
+pub fn parse_policy_entry(key: &[u8], _value: &[u8]) -> Result<PolicyDecision> {
     if key.len() < 12 {
         anyhow::bail!("Policy key too short: {} bytes", key.len());
     }
@@ -38,17 +37,10 @@ pub fn parse_policy_entry(key: &[u8], value: &[u8]) -> Result<PolicyDecision> {
     let protocol = key[6];
     let _egress = key[7];
 
-    // Derive verdict from value (simplified)
-    let verdict = if value.len() >= 8 {
-        let packets = LittleEndian::read_u64(&value[0..8]);
-        if packets > 0 {
-            PolicyVerdict::Allow
-        } else {
-            PolicyVerdict::Deny
-        }
-    } else {
-        PolicyVerdict::Deny
-    };
+    // Entries in the Cilium policy map represent allowed traffic.
+    // The presence of an entry means the policy allows this traffic,
+    // regardless of the packet count.
+    let verdict = PolicyVerdict::Allow;
 
     Ok(PolicyDecision {
         src_identity,
@@ -129,6 +121,12 @@ pub fn parse_ct_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
         packets,
         bytes,
         last_seen: 0, // Would need timestamp from value
+        src_namespace: None,
+        src_pod: None,
+        src_labels: None,
+        dst_namespace: None,
+        dst_pod: None,
+        dst_labels: None,
     })
 }
 
@@ -156,18 +154,24 @@ pub fn parse_ct6_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
     // Protocol
     let protocol = key[36];
 
-    // Parse value (same as IPv4)
+    // Parse value (same heuristic as IPv4)
     let (packets, bytes, state) = if value.len() >= 32 {
         let rx_packets = LittleEndian::read_u64(&value[0..8]);
         let rx_bytes = LittleEndian::read_u64(&value[8..16]);
         let tx_packets = LittleEndian::read_u64(&value[16..24]);
         let tx_bytes = LittleEndian::read_u64(&value[24..32]);
 
-        (
-            rx_packets + tx_packets,
-            rx_bytes + tx_bytes,
-            ConntrackState::Established,
-        )
+        let total_packets = rx_packets + tx_packets;
+        let total_bytes = rx_bytes + tx_bytes;
+
+        // Derive state from packet count (same logic as IPv4)
+        let state = if total_packets > 10 {
+            ConntrackState::Established
+        } else {
+            ConntrackState::New
+        };
+
+        (total_packets, total_bytes, state)
     } else {
         (0, 0, ConntrackState::New)
     };
@@ -182,6 +186,12 @@ pub fn parse_ct6_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
         packets,
         bytes,
         last_seen: 0,
+        src_namespace: None,
+        src_pod: None,
+        src_labels: None,
+        dst_namespace: None,
+        dst_pod: None,
+        dst_labels: None,
     })
 }
 

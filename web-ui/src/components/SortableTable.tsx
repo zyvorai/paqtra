@@ -18,6 +18,7 @@ interface SortableTableProps<T> {
   sectionTitle?: string;
   sectionIcon?: React.ReactNode;
   count?: number;
+  rowKey?: keyof T & string;
 }
 
 function SortableTable<T extends Record<string, unknown>>({
@@ -29,6 +30,7 @@ function SortableTable<T extends Record<string, unknown>>({
   sectionTitle,
   sectionIcon,
   count,
+  rowKey,
 }: SortableTableProps<T>) {
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -105,7 +107,7 @@ function SortableTable<T extends Record<string, unknown>>({
               </tr>
             ) : sorted.map((row, i) => (
               <tr
-                key={i}
+                key={rowKey && row[rowKey] != null ? String(row[rowKey]) : `row-${i}`}
                 className={`border-b border-slate-700/30 table-row-hover ${onRowClick ? 'cursor-pointer' : ''}`}
                 onClick={() => onRowClick?.(row)}
               >

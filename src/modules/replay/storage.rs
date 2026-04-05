@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Recording Storage
 ///
 /// Handles persistence of recorded traffic to disk
@@ -69,14 +68,16 @@ impl RecordingStorage {
         let file_path_gz = file_path.with_extension("json.gz");
         let file = File::create(&file_path_gz)?;
         let encoder = GzEncoder::new(file, Compression::default());
-        let writer = BufWriter::new(encoder);
+        let mut writer = BufWriter::new(encoder);
 
         let data = RecordingData {
             metadata: recording.clone(),
             flows: flows.to_vec(),
         };
 
-        serde_json::to_writer(writer, &data)?;
+        serde_json::to_writer(&mut writer, &data)?;
+        let encoder = writer.into_inner().map_err(|e| anyhow::anyhow!("Failed to flush buffer: {}", e))?;
+        encoder.finish()?;
 
         Ok(())
     }
@@ -120,6 +121,11 @@ impl RecordingStorage {
 
     /// Load only metadata
     pub fn load_metadata(&self, recording_id: &str) -> Result<Recording> {
+        // Reject path traversal attempts
+        if recording_id.contains('/') || recording_id.contains('\\') || recording_id.contains("..") {
+            anyhow::bail!("Invalid recording_id: must not contain path separators or '..'");
+        }
+
         // Try both compressed and uncompressed
         let file_path = self.base_dir.join(format!("{}.json", recording_id));
         let file_path_gz = self.base_dir.join(format!("{}.json.gz", recording_id));
@@ -141,13 +147,13 @@ impl RecordingStorage {
             let decoder = GzDecoder::new(file);
             let reader = BufReader::new(decoder);
 
-            let data: RecordingData = serde_json::from_reader(reader)?;
+            let data: MetadataOnly = serde_json::from_reader(reader)?;
             Ok(data.metadata)
         } else {
             let file = File::open(file_path)?;
             let reader = BufReader::new(file);
 
-            let data: RecordingData = serde_json::from_reader(reader)?;
+            let data: MetadataOnly = serde_json::from_reader(reader)?;
             Ok(data.metadata)
         }
     }
@@ -192,6 +198,11 @@ impl RecordingStorage {
 
     /// Delete a recording
     pub fn delete(&self, recording_id: &str) -> Result<()> {
+        // Reject path traversal attempts
+        if recording_id.contains('/') || recording_id.contains('\\') || recording_id.contains("..") {
+            anyhow::bail!("Invalid recording_id: must not contain path separators or '..'");
+        }
+
         let file_path = self.base_dir.join(format!("{}.json", recording_id));
         let file_path_gz = self.base_dir.join(format!("{}.json.gz", recording_id));
 
@@ -255,6 +266,15 @@ impl RecordingStorage {
 struct RecordingData {
     metadata: Recording,
     flows: Vec<RecordedFlow>,
+}
+
+/// Lightweight struct that only deserializes metadata, skipping flows entirely.
+#[derive(serde::Deserialize)]
+struct MetadataOnly {
+    metadata: Recording,
+    #[serde(skip)]
+    #[allow(dead_code)]
+    flows: (),
 }
 
 #[cfg(test)]

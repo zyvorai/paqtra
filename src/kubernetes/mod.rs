@@ -87,9 +87,10 @@ impl K8sClient {
             Ok(_) => {
                 api.replace(name, &Default::default(), &configmap).await?;
             }
-            Err(_) => {
+            Err(kube::Error::Api(ae)) if ae.code == 404 => {
                 api.create(&Default::default(), &configmap).await?;
             }
+            Err(e) => return Err(e.into()),
         }
 
         Ok(())
@@ -111,9 +112,10 @@ impl K8sClient {
             Ok(_) => {
                 // Already exists, skip
             }
-            Err(_) => {
+            Err(kube::Error::Api(ae)) if ae.code == 404 => {
                 api.create(&Default::default(), &sa).await?;
             }
+            Err(e) => return Err(e.into()),
         }
 
         Ok(())
@@ -134,9 +136,10 @@ impl K8sClient {
             Ok(_) => {
                 // Already exists, skip
             }
-            Err(_) => {
+            Err(kube::Error::Api(ae)) if ae.code == 404 => {
                 api.create(&Default::default(), &crb).await?;
             }
+            Err(e) => return Err(e.into()),
         }
 
         Ok(())
@@ -226,9 +229,30 @@ impl K8sClient {
             anyhow::bail!("YAML missing required field: kind");
         }
 
+        // Allowlist of permitted resource kinds
+        const ALLOWED_KINDS: &[&str] = &[
+            "CiliumNetworkPolicy",
+            "CiliumClusterwideNetworkPolicy",
+            "NetworkPolicy",
+            "CiliumExternalWorkload",
+        ];
+
+        let kind = mapping
+            .get(&serde_yaml::Value::String("kind".to_string()))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        if !ALLOWED_KINDS.contains(&kind) {
+            anyhow::bail!(
+                "Resource kind '{}' is not allowed. Permitted kinds: {}",
+                kind,
+                ALLOWED_KINDS.join(", ")
+            );
+        }
+
         // Apply via kubectl with --validate flag for server-side validation
-        use std::io::Write;
-        use std::process::Command;
+        use tokio::io::AsyncWriteExt;
+        use tokio::process::Command;
 
         let mut child = Command::new("kubectl")
             .args(["apply", "--validate=true", "-f", "-"])
@@ -239,10 +263,10 @@ impl K8sClient {
             .context("Failed to spawn kubectl")?;
 
         if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(yaml.as_bytes())?;
+            stdin.write_all(yaml.as_bytes()).await?;
         }
 
-        let output = child.wait_with_output()?;
+        let output = child.wait_with_output().await?;
         if !output.status.success() {
             anyhow::bail!(
                 "Failed to apply resource: {}",

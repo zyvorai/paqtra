@@ -1,6 +1,5 @@
 // Cilium Vision Web API Server
 mod config;
-mod routes;
 pub mod handlers;
 mod models;
 mod services;
@@ -14,10 +13,11 @@ use axum::{
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::sync::atomic::AtomicU64;
 use tower_http::{
     trace::TraceLayer,
     compression::CompressionLayer,
+    services::{ServeDir, ServeFile},
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -56,8 +56,6 @@ async fn main() -> anyhow::Result<()> {
     let cache = CacheService::new(redis_conn.clone());
     tracing::info!("CacheService initialized");
 
-    let metrics = Arc::new(RwLock::new(AppMetrics::default()));
-
     // Build shared application state
     let app_state = Arc::new(AppState {
         config: config.clone(),
@@ -65,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
         hubble,
         k8s,
         cache,
-        metrics,
+        metrics: AppMetrics::default(),
     });
 
     // Build API router
@@ -256,12 +254,37 @@ async fn main() -> anyhow::Result<()> {
         // State
         .with_state(app_state.clone());
 
-    // Configure middleware
-    let app = api_routes
+    // Serve the web UI static files as a fallback after API routes.
+    // If UI_DIST_DIR is set and the directory exists, serve index.html for
+    // all non-API paths (SPA client-side routing).
+    let app = if let Some(ref ui_dir) = config.ui_dist_dir {
+        let ui_path = std::path::PathBuf::from(ui_dir);
+        if ui_path.join("index.html").exists() {
+            tracing::info!("Serving web UI from {}", ui_dir);
+            // Nest static file serving under "/" so it catches all non-API paths.
+            // ServeDir serves real files (JS, CSS, images); the fallback serves
+            // index.html for SPA client-side routes (e.g. /flows, /healer).
+            let index_path = ui_path.join("index.html");
+            let serve_dir = ServeDir::new(ui_dir)
+                .fallback(ServeFile::new(index_path));
+            api_routes.fallback_service(serve_dir)
+        } else {
+            tracing::warn!("UI_DIST_DIR set to '{}' but index.html not found", ui_dir);
+            api_routes
+        }
+    } else {
+        api_routes
+    };
+
+    // Configure middleware (outermost layer runs first)
+    let app = app
         .layer(CompressionLayer::new())
         .layer(axum::middleware::from_fn_with_state(
             app_state,
             middleware::auth::auth_middleware,
+        ))
+        .layer(axum::middleware::from_fn(
+            middleware::rate_limit::rate_limit_middleware,
         ))
         .layer(middleware::cors::cors_layer())
         .layer(TraceLayer::new_for_http());
@@ -272,37 +295,64 @@ async fn main() -> anyhow::Result<()> {
     let actual_addr = listener.local_addr()?;
     tracing::info!("Starting Cilium Vision API server on {}", actual_addr);
 
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
 
+    tracing::info!("Server shut down gracefully");
     Ok(())
 }
 
-/// Application-level metrics tracked in memory
-#[derive(Debug, Clone)]
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("Received Ctrl+C, shutting down"),
+        _ = terminate => tracing::info!("Received SIGTERM, shutting down"),
+    }
+}
+
+/// Application-level metrics tracked via lock-free atomic counters.
+#[derive(Debug)]
 pub struct AppMetrics {
-    pub total_requests: u64,
-    pub total_errors: u64,
-    pub flows_fetched: u64,
-    pub policies_created: u64,
-    pub policies_deleted: u64,
-    pub cache_hits: u64,
-    pub cache_misses: u64,
-    pub hubble_queries: u64,
-    pub k8s_queries: u64,
+    pub total_requests: AtomicU64,
+    pub total_errors: AtomicU64,
+    pub flows_fetched: AtomicU64,
+    pub policies_created: AtomicU64,
+    pub policies_deleted: AtomicU64,
+    pub cache_hits: AtomicU64,
+    pub cache_misses: AtomicU64,
+    pub hubble_queries: AtomicU64,
+    pub k8s_queries: AtomicU64,
 }
 
 impl Default for AppMetrics {
     fn default() -> Self {
         Self {
-            total_requests: 0,
-            total_errors: 0,
-            flows_fetched: 0,
-            policies_created: 0,
-            policies_deleted: 0,
-            cache_hits: 0,
-            cache_misses: 0,
-            hubble_queries: 0,
-            k8s_queries: 0,
+            total_requests: AtomicU64::new(0),
+            total_errors: AtomicU64::new(0),
+            flows_fetched: AtomicU64::new(0),
+            policies_created: AtomicU64::new(0),
+            policies_deleted: AtomicU64::new(0),
+            cache_hits: AtomicU64::new(0),
+            cache_misses: AtomicU64::new(0),
+            hubble_queries: AtomicU64::new(0),
+            k8s_queries: AtomicU64::new(0),
         }
     }
 }
@@ -314,5 +364,5 @@ pub struct AppState {
     pub hubble: HubbleService,
     pub k8s: K8sService,
     pub cache: CacheService,
-    pub metrics: Arc<RwLock<AppMetrics>>,
+    pub metrics: AppMetrics,
 }

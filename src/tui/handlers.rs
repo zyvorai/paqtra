@@ -4,16 +4,20 @@ use super::app::{ModuleContainer, TuiApp};
 use crossterm::event::KeyCode;
 
 /// Root-cause fix names displayed in the UI and used for navigation bounds.
-const FIX_NAMES: &[&str] = &[
+/// IMPORTANT: Keep in sync with TuiApp::get_fix_policy() in app.rs.
+pub(crate) const FIX_NAMES: &[&str] = &[
     "allow-8080 policy",
     "DNS egress policy",
     "MTU adjustment",
     "DB access policy",
 ];
 
+/// Number of available fixes (used for bounds checks).
+pub(crate) const FIX_COUNT: usize = FIX_NAMES.len();
+
 /// Handle keyboard events for the AutoPolicy tab (tab index 6).
 /// Returns `true` if the key was handled, `false` otherwise.
-pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
+pub(crate) async fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
     match key {
         KeyCode::Char('u') if !app.show_help && app.selected_tab == 6 => {
             // Update learning manually (AutoPolicy tab) - handled in async handler
@@ -119,7 +123,7 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
                     let policy_name = policy.name.clone();
                     let policy_yaml = policy.yaml.clone();
 
-                    match app.apply_policy_kubectl(&policy_name, &policy_yaml) {
+                    match app.apply_policy_kubectl(&policy_name, &policy_yaml).await {
                         Ok(_) => {
                             app.applied_policies.insert(policy_name.clone());
                             applied += 1;
@@ -160,7 +164,7 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             for policy_name in applied_names {
                 // Find the policy to get its namespace
                 if let Some(policy) = policies.iter().find(|p| p.name == policy_name) {
-                    match app.rollback_policy_kubectl(&policy.name, &policy.namespace) {
+                    match app.rollback_policy_kubectl(&policy.name, &policy.namespace).await {
                         Ok(_) => {
                             app.applied_policies.remove(&policy.name);
                             rolled_back += 1;
@@ -264,7 +268,8 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             };
 
             if !policies.is_empty() {
-                let policy_name = &policies[app.selected_policy_index].name;
+                let idx = app.selected_policy_index.min(policies.len() - 1);
+                let policy_name = &policies[idx].name;
                 if app.applied_policies.contains(policy_name) {
                     app.set_status_message(&format!("Policy '{}' already applied", policy_name));
                 } else {
@@ -289,12 +294,13 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             };
 
             if !policies.is_empty() {
-                let policy = &policies[app.selected_policy_index];
+                let idx = app.selected_policy_index.min(policies.len() - 1);
+                let policy = &policies[idx];
                 // Clone policy data to avoid borrow checker issues
                 let policy_name = policy.name.clone();
                 let policy_yaml = policy.yaml.clone();
 
-                match app.apply_policy_kubectl(&policy_name, &policy_yaml) {
+                match app.apply_policy_kubectl(&policy_name, &policy_yaml).await {
                     Ok(_) => {
                         app.applied_policies.insert(policy_name.clone());
                         app.set_status_message(&format!(
@@ -333,7 +339,8 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             };
 
             if !policies.is_empty() {
-                let policy_name = &policies[app.selected_policy_index].name;
+                let idx = app.selected_policy_index.min(policies.len() - 1);
+                let policy_name = &policies[idx].name;
                 if !app.applied_policies.contains(policy_name) {
                     app.set_status_message(&format!(
                         "Policy '{}' not applied, cannot rollback",
@@ -361,11 +368,12 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
             };
 
             if !policies.is_empty() {
-                let policy = &policies[app.selected_policy_index];
+                let idx = app.selected_policy_index.min(policies.len() - 1);
+                let policy = &policies[idx];
                 let policy_name = policy.name.clone();
                 let policy_namespace = policy.namespace.clone();
 
-                match app.rollback_policy_kubectl(&policy_name, &policy_namespace) {
+                match app.rollback_policy_kubectl(&policy_name, &policy_namespace).await {
                     Ok(_) => {
                         app.applied_policies.remove(&policy_name);
                         app.set_status_message(&format!(
@@ -396,7 +404,7 @@ pub(crate) fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bool {
 
 /// Handle keyboard events for the RootCause tab (tab index 7).
 /// Returns `true` if the key was handled, `false` otherwise.
-pub(crate) fn handle_rootcause_keys(app: &mut TuiApp, key: KeyCode) -> bool {
+pub(crate) async fn handle_rootcause_keys(app: &mut TuiApp, key: KeyCode) -> bool {
     match key {
         KeyCode::Up if !app.show_help && app.selected_tab == 7 => {
             // Navigate fixes up
@@ -432,7 +440,7 @@ pub(crate) fn handle_rootcause_keys(app: &mut TuiApp, key: KeyCode) -> bool {
 
             let (fix_name, policy_yaml) = app.get_fix_policy(app.selected_fix_index);
 
-            match app.apply_policy_kubectl(&fix_name, &policy_yaml) {
+            match app.apply_policy_kubectl(&fix_name, &policy_yaml).await {
                 Ok(_) => {
                     app.set_status_message(&format!("Applied fix: {}", fix_name));
                     tracing::info!("Applied RootCause fix policy: {}", fix_name);

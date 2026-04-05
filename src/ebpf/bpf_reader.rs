@@ -1,5 +1,3 @@
-// Many items used only with real eBPF hardware
-#![allow(dead_code)]
 /// Real Cilium BPF Map Reader
 ///
 /// Reads data directly from Cilium's pinned BPF maps in /sys/fs/bpf/
@@ -60,8 +58,8 @@ impl CiliumMapReader {
         };
 
         if available_maps.is_empty() && bpftool.is_none() && aya_reader.is_none() {
-            eprintln!(
-                "Warning: BPF filesystem not found at {:?} and no BPF reader available. \
+            tracing::warn!(
+                "BPF filesystem not found at {:?} and no BPF reader available. \
                  Some features will be limited.",
                 bpf_path
             );

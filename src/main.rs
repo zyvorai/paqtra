@@ -1,4 +1,7 @@
 #![allow(clippy::upper_case_acronyms)]
+// Many module types are intentionally defined but used only in specific
+// runtime paths (e.g., enriched vs. mock data, optional features).
+#![allow(dead_code)]
 
 mod bootstrap;
 mod cilium;

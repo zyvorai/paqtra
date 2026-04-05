@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Traffic Replay Module
 ///
 /// Records real network traffic and replays it in different contexts
@@ -126,7 +125,7 @@ impl<M: MapReader> ReplayEngine<M> {
             captured += 1;
 
             // Check size limits
-            if session.flows.len() * 1024 > self.config.max_recording_size {
+            if session.flows.len() * std::mem::size_of::<RecordedFlow>() > self.config.max_recording_size {
                 println!("⚠️  Recording size limit reached");
                 break;
             }

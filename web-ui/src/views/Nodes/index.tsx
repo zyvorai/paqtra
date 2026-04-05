@@ -1,23 +1,25 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Server, RefreshCw, Loader2, Cpu, MemoryStick, Box } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Server, Loader2, Cpu, MemoryStick, Box } from 'lucide-react';
 import { fetchNodes, K8sNode } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const Nodes: React.FC = () => {
   usePageTitle('Nodes');
   const [nodes, setNodes] = useState<K8sNode[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setNodes((await fetchNodes()).data.nodes ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to fetch nodes'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const totalCpu = nodes.reduce((a, n) => a + n.cpu_capacity, 0);
   const totalMem = nodes.reduce((a, n) => a + n.memory_capacity_gb, 0);
@@ -30,9 +32,11 @@ const Nodes: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-500/20"><Server className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Nodes</h1></div>
           <p className="text-sm text-slate-400 mt-1">Kubernetes cluster node overview</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          <ExportButton data={nodes as Record<string, unknown>[]} filename="nodes" />
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading}
+            autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn(v => !v)} intervalSecs={30} />
+        </div>
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
@@ -60,6 +64,9 @@ const Nodes: React.FC = () => {
       {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 
       {/* Node cards */}
+      {!loading && nodes.length === 0 && (
+        <div className="text-center py-12 text-slate-400">No nodes found</div>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {nodes.map((node) => {
           const cpuPct = (node.cpu_usage / node.cpu_capacity) * 100;

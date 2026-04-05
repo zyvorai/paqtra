@@ -3,10 +3,10 @@
 **Real-time Network Observability & Intelligence Platform for Kubernetes**
 
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/tests-969%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-961%20passing-brightgreen.svg)](#testing)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Cilium](https://img.shields.io/badge/cilium-1.14%2B-purple.svg)](https://cilium.io/)
-[![Lines of Code](https://img.shields.io/badge/LoC-11.4k%20Rust-informational.svg)](#)
+[![Lines of Code](https://img.shields.io/badge/LoC-32k%20Rust-informational.svg)](#)
 
 Cilium Flow is a terminal-based platform that turns Cilium's eBPF data plane into an intelligent observability and operations console. It combines live flow monitoring, ML-enhanced policy automation, chaos engineering, canary deployments, and multi-cluster orchestration in a single binary.
 
@@ -163,15 +163,18 @@ Progressive traffic shifting via Cilium L7 annotations:
 ## Testing
 
 ```bash
-cargo test          # 969 tests (unit + integration)
+cargo test          # 961 Rust tests (unit + integration)
 cargo clippy        # 0 warnings
-cargo build --release  # Optimized binary (13 MB)
+cargo build --release  # Optimized binary
+
+cd web-api && cargo test  # 26 API tests
+cd web-ui && npm test     # 68 UI tests
 ```
 
 | Suite | Tests | Notes |
 |-------|-------|-------|
-| Library unit tests | 369 | Core logic, parsers, engines |
-| Library (release) | 369 | Optimized build verification |
+| Library unit tests | 365 | Core logic, parsers, engines |
+| Library (release) | 365 | Optimized build verification |
 | Integration: modules | 51 | Cross-module interaction |
 | Integration: autopolicy | 27 | ML confidence, policy gen |
 | Integration: healer | 22 | Problem detection, fixes |
@@ -180,7 +183,9 @@ cargo build --release  # Optimized binary (13 MB)
 | Integration: cross-module | 24 | End-to-end workflows |
 | Integration: tui-tabs | 17 | Tab navigation, rendering |
 | Other suites | 48 | Remaining test files |
-| **Total** | **969** | **0 failures, 0 warnings** |
+| Web API tests | 26 | Config, auth, models |
+| Web UI tests | 68 | Components, stores, hooks |
+| **Total** | **1,055** | **0 failures** |
 
 ---
 
@@ -246,8 +251,8 @@ cilium-flow/
     endpoints/                 Endpoint discovery
   tests/                       9 integration test suites
   docs/                        Architecture, guides, status
-  web-api/                     REST API server (Actix-Web)
-  web-ui/                      React dashboard (58 views, 25 components)
+  web-api/                     REST API server (Axum + Redis + JWT auth)
+  web-ui/                      React dashboard (58 views, 25 components, 5 hooks)
 ```
 
 ---
@@ -262,10 +267,27 @@ Cilium Flow includes a full-featured web UI built with React 19, TypeScript, and
 cd web-ui
 npm install && npm run dev   # Dev server on port 3000
 npm run build                # Production build
-npm run test                 # 74 tests
+npm run test                 # 68 tests
 ```
 
 See [docs/WEB_APP_README.md](docs/WEB_APP_README.md) for full details.
+
+---
+
+## Security
+
+The platform includes defense-in-depth security controls:
+
+- **JWT authentication** with HS256 and minimum 32-char secret enforcement
+- **RBAC-ready** middleware — decoded claims injected into request context with `require_admin()` helper
+- **Input validation** on all kubectl-bound fields (RFC 1123 DNS name regex, flag injection prevention)
+- **Typed request structs** for all POST endpoints (no raw `Json<Value>` handlers)
+- **CORS** with explicit origin allowlist; credentials only enabled for non-localhost origins
+- **Graceful shutdown** with SIGTERM/SIGINT handling
+- **Secure temp files** via `tempfile::NamedTempFile` (no predictable paths)
+- **Confirmation dialogs** on destructive operations (node drain, chaos experiments)
+
+Set `AUTH_DISABLED=true` only for development. The flag is read once at startup and logged as a warning.
 
 ---
 

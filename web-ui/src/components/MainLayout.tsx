@@ -6,9 +6,9 @@ import {
   Bell, CircleDot, Server, Film, HeartPulse, ArrowDownRight, Globe, Grid3X3,
   Workflow, ShieldAlert, Cpu, BarChart3, Monitor, FileCode, Stethoscope,
   ScrollText, BellRing, Map, Radio, Globe2, Fingerprint, Link2, Route, Gauge,
-  DollarSign, TrendingUp, Lock, Scale, Timer, Copy, HeartPulse as Heart2,
+  DollarSign, TrendingUp, Lock, Scale, Timer, Copy,
   Users, Cable, Wrench, Activity, FileEdit, Download, Target, Siren,
-  History, ServerOff, Unplug, Hexagon, LogOut as LogOutIcon, ChevronDown, User,
+  History, ServerOff, Unplug, Hexagon, ChevronDown, User,
 } from 'lucide-react';
 import { useThemeStore } from '../stores/themeStore';
 import { useAuthStore } from '../stores/authStore';
@@ -29,7 +29,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Nodes', path: '/nodes', icon: Server },
       { label: 'Endpoints', path: '/endpoints', icon: CircleDot },
       { label: 'Host Info', path: '/host', icon: Monitor },
-      { label: 'Cluster Health', path: '/clusterhealth', icon: Heart2 },
+      { label: 'Cluster Health', path: '/clusterhealth', icon: HeartPulse },
       { label: 'Cilium Status', path: '/cilium-status', icon: Activity },
     ],
   },
@@ -56,6 +56,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Policies', path: '/policies', icon: Shield },
       { label: 'Templates', path: '/templates', icon: FileCode },
       { label: 'Policy Editor', path: '/policy-editor', icon: FileEdit },
+      { label: 'Rule Builder', path: '/rule-builder', icon: Wand2 },
       { label: 'Pod Security', path: '/pod-security', icon: ShieldCheck },
       { label: 'Anomalies', path: '/anomalies', icon: Bug },
       { label: 'Security', path: '/security', icon: ShieldAlert },
@@ -101,7 +102,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Load Balancer', path: '/loadbalancer', icon: Scale },
       { label: 'Ingress', path: '/ingress', icon: Globe },
-      { label: 'Egress GW', path: '/egress', icon: LogOutIcon },
+      { label: 'Egress GW', path: '/egress', icon: LogOut },
       { label: 'Service Mesh', path: '/service-mesh', icon: Hexagon },
       { label: 'KPR', path: '/kpr', icon: Unplug },
       { label: 'IPAM', path: '/ipam', icon: Network },
@@ -252,6 +253,7 @@ const MainLayout: React.FC = () => {
               onClick={toggleTheme}
               className="h-8 w-8 rounded-lg hover:bg-slate-800 flex items-center justify-center transition-colors text-slate-400 hover:text-slate-200"
               title={isDark ? 'Light mode' : 'Dark mode'}
+              aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
@@ -275,7 +277,7 @@ const MainLayout: React.FC = () => {
             </div>
 
             {/* Connection status */}
-            <div className="relative group">
+            <div className="relative group" role="status" aria-label={wsConnected ? 'WebSocket connected' : 'WebSocket disconnected'}>
               <span className={`block w-2.5 h-2.5 rounded-full ${
                 wsConnected
                   ? 'bg-green-400 shadow-green-400/50 shadow-sm'
@@ -290,6 +292,8 @@ const MainLayout: React.FC = () => {
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
               className="h-8 w-8 rounded-lg hover:bg-slate-800 flex md:hidden items-center justify-center transition-colors text-slate-400"
+              aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={mobileOpen}
             >
               {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
@@ -357,7 +361,7 @@ const MainLayout: React.FC = () => {
             <div className="modal-card w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
                 <h2 className="text-lg font-semibold text-white">Keyboard Shortcuts</h2>
-                <button onClick={() => setHelpOpen(false)} className="text-slate-400 hover:text-slate-200"><X className="w-5 h-5" /></button>
+                <button onClick={() => setHelpOpen(false)} className="text-slate-400 hover:text-slate-200" aria-label="Close keyboard shortcuts"><X className="w-5 h-5" /></button>
               </div>
               <div className="max-h-[60vh] overflow-y-auto p-4">
                 {['General', 'Navigation', 'Actions'].map((category) => (

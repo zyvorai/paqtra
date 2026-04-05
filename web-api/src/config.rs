@@ -10,6 +10,11 @@ pub struct Config {
     pub jwt_secret: String,
     pub hubble_address: String,
     pub k8s_context: Option<String>,
+    /// When true, authentication is completely disabled (dev/demo mode only).
+    /// Read once at startup from AUTH_DISABLED env var.
+    pub auth_disabled: bool,
+    /// Directory containing the built web UI static files (index.html, assets/, etc.)
+    pub ui_dist_dir: Option<String>,
 }
 
 impl Config {
@@ -31,6 +36,11 @@ impl Config {
             );
         }
 
+        let auth_disabled = env::var("AUTH_DISABLED").unwrap_or_default() == "true";
+        if auth_disabled {
+            tracing::warn!("AUTH_DISABLED=true — authentication is bypassed. Do NOT use in production.");
+        }
+
         Ok(Self {
             host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: env::var("PORT")
@@ -42,6 +52,8 @@ impl Config {
             hubble_address: env::var("HUBBLE_ADDRESS")
                 .unwrap_or_else(|_| "localhost:4245".to_string()),
             k8s_context: env::var("K8S_CONTEXT").ok(),
+            auth_disabled,
+            ui_dist_dir: env::var("UI_DIST_DIR").ok(),
         })
     }
 }

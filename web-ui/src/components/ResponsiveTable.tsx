@@ -14,9 +14,12 @@ interface ResponsiveTableProps {
   loading?: boolean;
   emptyMessage?: string;
   onRowClick?: (row: Record<string, unknown>) => void;
+  rowKey?: string;
 }
 
-const ResponsiveTable: React.FC<ResponsiveTableProps> = ({ columns, data, loading, emptyMessage, onRowClick }) => {
+const ResponsiveTable: React.FC<ResponsiveTableProps> = ({ columns, data, loading, emptyMessage, onRowClick, rowKey }) => {
+  const getKey = (row: Record<string, unknown>, index: number) =>
+    rowKey && row[rowKey] != null ? String(row[rowKey]) : `row-${index}`;
   return (
     <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 overflow-hidden">
       {/* Desktop table */}
@@ -35,7 +38,7 @@ const ResponsiveTable: React.FC<ResponsiveTableProps> = ({ columns, data, loadin
             {data.length === 0 && !loading ? (
               <tr><td colSpan={columns.length} className="px-4 py-12 text-center text-slate-400">{emptyMessage ?? 'No data'}</td></tr>
             ) : data.map((row, i) => (
-              <tr key={i} className={`border-b border-slate-700/30 table-row-hover ${onRowClick ? 'cursor-pointer' : ''}`} onClick={() => onRowClick?.(row)}>
+              <tr key={getKey(row, i)} className={`border-b border-slate-700/30 table-row-hover ${onRowClick ? 'cursor-pointer' : ''}`} onClick={() => onRowClick?.(row)}>
                 {columns.map((col) => (
                   <td key={col.key} className={`px-4 py-2.5 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}>
                     {col.render ? col.render(row[col.key], row) : String(row[col.key] ?? '')}
@@ -52,7 +55,7 @@ const ResponsiveTable: React.FC<ResponsiveTableProps> = ({ columns, data, loadin
         {data.length === 0 && !loading ? (
           <div className="px-4 py-12 text-center text-slate-400">{emptyMessage ?? 'No data'}</div>
         ) : data.map((row, i) => (
-          <div key={i} className="px-4 py-3 space-y-1" onClick={() => onRowClick?.(row)}>
+          <div key={getKey(row, i)} className="px-4 py-3 space-y-1" onClick={() => onRowClick?.(row)}>
             {columns.filter((c) => !c.hideOnMobile).map((col) => (
               <div key={col.key} className="flex items-center justify-between text-sm">
                 <span className="text-slate-400">{col.label}</span>

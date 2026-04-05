@@ -4,6 +4,7 @@ use axum::{
     response::Response,
 };
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use crate::AppState;
 
 /// Maximum time without a pong before considering the connection dead
@@ -62,14 +63,12 @@ async fn handle_flows_socket(mut socket: WebSocket, state: Arc<AppState>) {
     loop {
         tokio::select! {
             _ = flow_interval.tick() => {
-                let m = state.metrics.read().await;
                 let summary = serde_json::json!({
                     "type": "flow_summary",
                     "timestamp": chrono::Utc::now().to_rfc3339(),
-                    "flows_fetched": m.flows_fetched,
-                    "hubble_queries": m.hubble_queries,
+                    "flows_fetched": state.metrics.flows_fetched.load(Ordering::Relaxed),
+                    "hubble_queries": state.metrics.hubble_queries.load(Ordering::Relaxed),
                 });
-                drop(m);
                 if socket.send(Message::Text(summary.to_string().into())).await.is_err() {
                     tracing::debug!("Flow WebSocket client disconnected");
                     break;
@@ -103,18 +102,17 @@ async fn handle_metrics_socket(mut socket: WebSocket, state: Arc<AppState>) {
     loop {
         tokio::select! {
             _ = metrics_interval.tick() => {
-                let m = state.metrics.read().await;
+                let m = &state.metrics;
                 let metrics = serde_json::json!({
                     "timestamp": chrono::Utc::now().to_rfc3339(),
-                    "total_requests": m.total_requests,
-                    "total_errors": m.total_errors,
-                    "flows_fetched": m.flows_fetched,
-                    "cache_hits": m.cache_hits,
-                    "cache_misses": m.cache_misses,
-                    "hubble_queries": m.hubble_queries,
-                    "k8s_queries": m.k8s_queries,
+                    "total_requests": m.total_requests.load(Ordering::Relaxed),
+                    "total_errors": m.total_errors.load(Ordering::Relaxed),
+                    "flows_fetched": m.flows_fetched.load(Ordering::Relaxed),
+                    "cache_hits": m.cache_hits.load(Ordering::Relaxed),
+                    "cache_misses": m.cache_misses.load(Ordering::Relaxed),
+                    "hubble_queries": m.hubble_queries.load(Ordering::Relaxed),
+                    "k8s_queries": m.k8s_queries.load(Ordering::Relaxed),
                 });
-                drop(m);
 
                 if socket.send(Message::Text(metrics.to_string().into())).await.is_err() {
                     tracing::debug!("Metrics WebSocket client disconnected");

@@ -1,8 +1,24 @@
 use axum::{extract::State, Json};
-
+use serde::Deserialize;
 use std::sync::Arc;
 use crate::AppState;
 use super::track_request;
+
+#[derive(Debug, Deserialize)]
+pub struct CreateMirrorRequest {
+    #[serde(default = "default_mirror_name")]
+    pub name: String,
+}
+
+fn default_mirror_name() -> String { "new-rule".to_string() }
+
+#[derive(Debug, Deserialize)]
+pub struct TroubleshootRequest {
+    #[serde(default = "default_target")]
+    pub target: String,
+}
+
+fn default_target() -> String { "cluster".to_string() }
 
 // ── Cost Breakdown ─────────────────────────────────────────
 
@@ -311,10 +327,10 @@ pub async fn mirror_rules(State(state): State<Arc<AppState>>) -> Json<serde_json
 
 pub async fn create_mirror_rule(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<CreateMirrorRequest>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("new-rule");
+    let name = &body.name;
     Json(serde_json::json!({
         "id": "mirror-003",
         "name": name,
@@ -481,10 +497,10 @@ pub async fn net_interfaces(State(state): State<Arc<AppState>>) -> Json<serde_js
 
 pub async fn run_troubleshoot(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<TroubleshootRequest>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let target = body.get("target").and_then(|v| v.as_str()).unwrap_or("cluster");
+    let target = &body.target;
     Json(serde_json::json!({
         "target": target,
         "started_at": "2026-04-03T12:05:00Z",

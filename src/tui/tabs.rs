@@ -39,7 +39,7 @@ impl TabIndex {
 
     /// Returns the total number of tabs.
     pub fn count() -> usize {
-        13
+        Self::tab_names().len()
     }
 }
 

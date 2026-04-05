@@ -1,20 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { Cpu, RefreshCw, Loader2, Zap, Database } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Cpu, Zap, Database } from 'lucide-react';
 import { fetchEbpfPrograms, fetchEbpfMaps, EbpfProgram, EbpfMapInfo } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { formatCount } from '../../utils/formatters';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const EbpfProfiler: React.FC = () => {
   usePageTitle('eBPF Profiler');
   const [programs, setPrograms] = useState<EbpfProgram[]>([]);
   const [maps, setMaps] = useState<EbpfMapInfo[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'programs' | 'maps'>('programs');
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = useCallback(async () => {
     setError(null);
     try {
       const [progRes, mapRes] = await Promise.all([fetchEbpfPrograms(), fetchEbpfMaps()]);
@@ -22,12 +24,10 @@ const EbpfProfiler: React.FC = () => {
       setMaps(mapRes.data.maps ?? []);
     } catch (err) {
       setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to load eBPF data');
-    } finally {
-      setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { loadData(); }, []);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(loadData, 30000, autoRefreshOn);
 
   const totalRuns = programs.reduce((sum, p) => sum + p.run_count, 0);
   const totalMapEntries = maps.reduce((sum, m) => sum + m.current_entries, 0);
@@ -44,11 +44,7 @@ const EbpfProfiler: React.FC = () => {
           </div>
           <p className="text-sm text-slate-400 mt-1">Inspect loaded eBPF programs and maps</p>
         </div>
-        <button onClick={loadData} disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 transition-colors">
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          {loading ? 'Loading...' : 'Refresh'}
-        </button>
+        <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
@@ -85,6 +81,11 @@ const EbpfProfiler: React.FC = () => {
 
       {activeTab === 'programs' && (
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 overflow-hidden">
+          {programs.length > 0 && (
+            <div className="px-4 py-3 border-b border-slate-700/50 flex justify-end">
+              <ExportButton data={programs as unknown as Record<string, unknown>[]} filename="ebpf-programs" />
+            </div>
+          )}
           <table className="w-full text-sm">
             <thead className="bg-slate-900/50">
               <tr className="text-left text-slate-400">
@@ -115,6 +116,11 @@ const EbpfProfiler: React.FC = () => {
 
       {activeTab === 'maps' && (
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 overflow-hidden">
+          {maps.length > 0 && (
+            <div className="px-4 py-3 border-b border-slate-700/50 flex justify-end">
+              <ExportButton data={maps as unknown as Record<string, unknown>[]} filename="ebpf-maps" />
+            </div>
+          )}
           <table className="w-full text-sm">
             <thead className="bg-slate-900/50">
               <tr className="text-left text-slate-400">

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Replay Player
 ///
 /// Replays recorded flows in a target environment
@@ -154,7 +153,7 @@ impl<'a, M: MapReader> ReplayPlayer<'a, M> {
             verdict_matches,
             new_drops,
             fixed_flows,
-            success_rate: successful as f32 / total as f32,
+            success_rate: if total > 0 { successful as f32 / total as f32 } else { 1.0 },
         })
     }
 

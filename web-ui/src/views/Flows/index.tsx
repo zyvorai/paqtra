@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { fetchFlows as apiFetchFlows, fetchFlowStats as apiFetchFlowStats, Flow, FlowStats } from '../../services/api';
 import { isAxiosError } from 'axios';
-import { format, parseISO } from 'date-fns';
 import { usePageTitle } from '../../hooks/usePageTitle';
 
 type Verdict = 'ALL' | 'FORWARDED' | 'DROPPED' | 'AUDIT';
@@ -92,7 +91,7 @@ const Flows: React.FC = () => {
     : flows;
 
   const fmtTime = (ts: string) => {
-    try { return format(parseISO(ts), 'HH:mm:ss'); } catch { return ts; }
+    try { const d = new Date(ts); return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`; } catch { return ts; }
   };
 
   return (

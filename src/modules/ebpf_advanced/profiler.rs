@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // Performance Profiler - Kernel-level profiling using eBPF
 use anyhow::Result;
 use std::collections::HashMap;

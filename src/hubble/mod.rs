@@ -40,10 +40,19 @@ impl HubbleClient {
     }
 }
 
+/// Global handle to keep the port-forward process alive for the lifetime of the application.
+/// Uses Mutex<Option<>> instead of OnceLock to allow reconnection if the process dies.
+static PORT_FORWARD_HANDLE: std::sync::OnceLock<Mutex<Option<Arc<Mutex<tokio::process::Child>>>>> =
+    std::sync::OnceLock::new();
+
 /// Start Hubble port-forward and verify it is running.
 /// Returns the port on success, or an error if port-forward fails to start.
 pub async fn start_port_forward() -> Result<u16> {
-    let port: u16 = 4245;
+    start_port_forward_on(4245).await
+}
+
+/// Start Hubble port-forward on a specific port and verify it is running.
+pub async fn start_port_forward_on(port: u16) -> Result<u16> {
 
     // Check if an existing port-forward is already working on this port
     if tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
@@ -66,10 +75,11 @@ pub async fn start_port_forward() -> Result<u16> {
     let pid = child.id().unwrap_or(0);
     tracing::info!("Started hubble port-forward (pid: {})", pid);
 
-    // Wrap the child in Arc<Mutex> for safe shared access.
-    // Note: kill_on_drop(true) ensures the process is killed when the
-    // Child handle is dropped, so no separate Ctrl-C handler is needed.
+    // Wrap the child in Arc<Mutex> and store globally to prevent drop.
+    // kill_on_drop(true) ensures the process is killed when the app exits.
     let child = Arc::new(Mutex::new(child));
+    let handle_store = PORT_FORWARD_HANDLE.get_or_init(|| Mutex::new(None));
+    *handle_store.lock().await = Some(child.clone());
 
     // Wait and verify the port-forward is actually listening.
     // Port-forward setup involves discovering the hubble-relay pod and
@@ -144,6 +154,15 @@ impl CliHubbleClient {
             .await
             .context("Failed to execute cilium hubble observe")?;
 
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::warn!(
+                "cilium hubble observe exited with {}: {}",
+                output.status,
+                stderr
+            );
+        }
+
         let flows_json = String::from_utf8_lossy(&output.stdout);
         let flows: Vec<Flow> = flows_json
             .lines()
@@ -167,11 +186,13 @@ impl CliHubbleClient {
 
 #[cfg(not(feature = "grpc"))]
 impl CliHubbleClient {
+    /// Create a new CLI Hubble client.
+    /// The `_use_grpc` parameter is accepted for API compatibility with the grpc feature.
     pub async fn new(port: u16, _use_grpc: bool) -> Result<Self> {
         Ok(CliHubbleClient { _port: port })
     }
 
-    pub async fn get_flows(&self) -> Result<Vec<Flow>> {
+    pub async fn get_flows(&mut self) -> Result<Vec<Flow>> {
         Self::get_flows_impl().await
     }
 }

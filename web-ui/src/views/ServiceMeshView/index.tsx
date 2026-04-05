@@ -1,23 +1,25 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Hexagon, RefreshCw, Loader2, Lock, LockOpen, RotateCcw, Timer, Zap } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Hexagon, Loader2, Lock, LockOpen, RotateCcw, Timer, Zap } from 'lucide-react';
 import { fetchMeshServices, MeshService } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const ServiceMeshView: React.FC = () => {
   usePageTitle('Service Mesh');
   const [services, setServices] = useState<MeshService[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setServices((await fetchMeshServices()).data.services ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const mtlsCount = services.filter((s) => s.mtls).length;
 
@@ -28,7 +30,10 @@ const ServiceMeshView: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-500/20"><Hexagon className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Service Mesh</h1></div>
           <p className="text-sm text-slate-400 mt-1">Cilium service mesh configuration and traffic policies</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
+        <div className="flex items-center gap-3">
+          <ExportButton data={services as unknown as Record<string, unknown>[]} filename="service-mesh" />
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
+        </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
 
@@ -38,7 +43,11 @@ const ServiceMeshView: React.FC = () => {
         <div className="rounded-xl border border-slate-700/50 p-4 stat-card-purple card-glow-purple transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Circuit Breakers</div><div className="text-2xl font-bold text-white">{services.filter((s) => s.circuit_breaker).length}</div></div>
       </div>
 
-      {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+      {loading && services.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+
+      {!loading && services.length === 0 && !error && (
+        <div className="text-center py-12 text-slate-400">No service mesh services found.</div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {services.map((s) => (

@@ -3,6 +3,7 @@ import { Radio, RefreshCw, Loader2, Play, Square, Plus, HardDrive } from 'lucide
 import { fetchCaptureSessions, startCapture, CaptureSession } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 
 const STATUS_BADGE: Record<string, string> = { capturing: 'bg-red-500/15 text-red-400 border-red-500/30', completed: 'bg-green-500/15 text-green-400 border-green-500/30' };
 function formatBytes(b: number): string { return b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`; }
@@ -12,7 +13,7 @@ const PacketCapture: React.FC = () => {
   const [sessions, setSessions] = useState<CaptureSession[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPod, setNewPod] = useState('');

@@ -1,8 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Globe, RefreshCw, Loader2, Wifi, WifiOff, ArrowRightLeft, Clock } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Globe, Loader2, Wifi, WifiOff, ArrowRightLeft, Clock } from 'lucide-react';
 import { fetchClusters, syncClusterPolicies, ClusterInfo } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoDismiss } from '../../hooks/useAutoDismiss';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const STATUS_BADGE: Record<string, string> = {
   connected: 'bg-green-500/15 text-green-400 border-green-500/30',
@@ -13,19 +17,18 @@ const STATUS_BADGE: Record<string, string> = {
 const MultiCluster: React.FC = () => {
   usePageTitle('Multi-Cluster');
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useAutoDismiss<string | null>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setClusters((await fetchClusters()).data.clusters ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const handleSync = async (name: string) => {
     setSyncing(name); setError(null);
@@ -44,9 +47,10 @@ const MultiCluster: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-500/20"><Globe className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Multi-Cluster</h1></div>
           <p className="text-sm text-slate-400 mt-1">Cross-cluster topology, health checks, and policy sync</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-3">
+          {clusters.length > 0 && <ExportButton data={clusters as unknown as Record<string, unknown>[]} filename="clusters" />}
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
+        </div>
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
@@ -75,6 +79,13 @@ const MultiCluster: React.FC = () => {
       {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 
       {/* Cluster cards */}
+      {!loading && clusters.length === 0 && (
+        <div className="text-center py-12 text-slate-400">
+          <Globe className="w-12 h-12 mx-auto mb-3 text-blue-400" />
+          <div className="font-medium text-white">No clusters found</div>
+          <div className="text-sm">No remote clusters are currently configured.</div>
+        </div>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {clusters.map((c) => (
           <div key={c.name} className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-5">

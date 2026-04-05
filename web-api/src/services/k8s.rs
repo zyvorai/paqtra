@@ -5,7 +5,32 @@
 
 use crate::models::policy::{CreatePolicyRequest, Policy};
 use anyhow::{Context, Result};
+use regex::Regex;
+use std::sync::LazyLock;
 use tokio::process::Command;
+
+/// Kubernetes resource name validation: RFC 1123 DNS subdomain
+static K8S_NAME_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-z0-9][a-z0-9.\-]{0,252}$").unwrap());
+
+/// Validate a Kubernetes resource name
+fn validate_k8s_name(name: &str, field: &str) -> Result<()> {
+    if name.is_empty() {
+        anyhow::bail!("{} must not be empty", field);
+    }
+    if !K8S_NAME_RE.is_match(name) {
+        anyhow::bail!(
+            "{} '{}' is not a valid Kubernetes name (must match RFC 1123 DNS subdomain)",
+            field,
+            name
+        );
+    }
+    // Reject names that look like kubectl flags
+    if name.starts_with('-') {
+        anyhow::bail!("{} must not start with '-'", field);
+    }
+    Ok(())
+}
 
 pub struct K8sService {
     context: Option<String>,
@@ -80,6 +105,9 @@ impl K8sService {
 
     /// Create a CiliumNetworkPolicy from a request
     pub async fn create_policy(&self, req: &CreatePolicyRequest) -> Result<Policy> {
+        validate_k8s_name(&req.name, "policy name")?;
+        validate_k8s_name(&req.namespace, "namespace")?;
+
         let policy_manifest = serde_json::json!({
             "apiVersion": "cilium.io/v2",
             "kind": "CiliumNetworkPolicy",
@@ -132,6 +160,9 @@ impl K8sService {
         } else {
             ("default", id)
         };
+
+        validate_k8s_name(name, "policy name")?;
+        validate_k8s_name(namespace, "namespace")?;
 
         let mut cmd = self.kubectl(&["delete", "ciliumnetworkpolicy", name, "-n", namespace]);
 

@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Gauge, RefreshCw, Loader2, ArrowUp, ArrowDown } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Gauge, Loader2, ArrowUp, ArrowDown } from 'lucide-react';
 import { fetchBandwidthData, BandwidthEntry } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 function formatBytes(b: number): string {
   if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`;
@@ -19,17 +22,16 @@ function rateColor(rate: number, limit: number | null): string {
 const Bandwidth: React.FC = () => {
   usePageTitle('Bandwidth');
   const [entries, setEntries] = useState<BandwidthEntry[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setEntries((await fetchBandwidthData()).data.entries ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const totalTx = entries.reduce((a, e) => a + e.egress_rate_mbps, 0);
   const totalRx = entries.reduce((a, e) => a + e.ingress_rate_mbps, 0);
@@ -41,7 +43,11 @@ const Bandwidth: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-500/20"><Gauge className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Bandwidth Manager</h1></div>
           <p className="text-sm text-slate-400 mt-1">Per-pod bandwidth monitoring and rate limiting</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
+        <div className="flex items-center gap-2">
+          <ExportButton data={entries as Record<string, unknown>[]} filename="bandwidth" />
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading}
+            autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn(v => !v)} intervalSecs={30} />
+        </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
 
@@ -63,7 +69,9 @@ const Bandwidth: React.FC = () => {
             <th className="text-right px-4 py-3 font-semibold text-slate-400 uppercase tracking-wider">Total TX</th>
             <th className="text-right px-4 py-3 font-semibold text-slate-400 uppercase tracking-wider">Total RX</th>
           </tr></thead>
-          <tbody>{entries.map((e) => (
+          <tbody>{!loading && entries.length === 0 && (
+            <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400">No bandwidth data found</td></tr>
+          )}{entries.map((e) => (
             <tr key={e.pod} className="border-b border-slate-700/30 table-row-hover">
               <td className="px-4 py-2.5 font-mono text-white">{e.pod}</td>
               <td className="px-4 py-2.5"><span className="px-2 py-0.5 rounded border border-slate-700/50 text-xs">{e.namespace}</span></td>

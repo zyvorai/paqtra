@@ -101,7 +101,11 @@ impl TuiApp {
             .unwrap_or(0);
 
         // Generate explanation
-        let explanation = match self.packet_explainer.borrow_mut().explain_packet(
+        let mut explainer = match self.packet_explainer.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let explanation = match explainer.explain_packet(
             &flow.source.namespace,
             &flow.source.pod_name,
             &flow.destination.namespace,

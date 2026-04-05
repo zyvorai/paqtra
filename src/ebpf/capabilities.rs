@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// BPF Capability Detection
 ///
 /// Probes the runtime environment to determine what level of BPF access
@@ -117,7 +116,8 @@ impl BpfCapabilities {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
-            .is_ok()
+            .map(|s| s.success())
+            .unwrap_or(false)
     }
 
     /// Read the kernel version string.

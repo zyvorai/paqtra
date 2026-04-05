@@ -4,7 +4,7 @@
 // It attempts a gRPC connection first, then falls back to CLI invocation.
 
 use crate::models::flow::{Flow, FlowEndpoint, FlowStats};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use tokio::process::Command;
 
 pub struct HubbleService {
@@ -27,46 +27,21 @@ impl HubbleService {
         tokio::net::TcpStream::connect(&self.address).await.is_ok()
     }
 
-    /// Retrieve flows from Hubble. Attempts gRPC first, then falls back to CLI.
+    /// Retrieve flows from Hubble via the `hubble` CLI with `--server`.
+    /// Checks relay connectivity first, then falls back gracefully.
     pub async fn get_flows(
         &self,
         limit: usize,
         namespace: Option<&str>,
     ) -> Result<Vec<Flow>> {
-        // Try gRPC connection first
-        match self.get_flows_grpc(limit, namespace).await {
-            Ok(flows) => {
-                tracing::debug!("Retrieved {} flows via gRPC", flows.len());
-                return Ok(flows);
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "gRPC flow retrieval failed, falling back to CLI: {}",
-                    e
-                );
+        // Validate namespace to prevent flag injection
+        if let Some(ns) = namespace {
+            if ns.starts_with('-') || ns.contains(char::is_whitespace) {
+                anyhow::bail!("Invalid namespace: '{}'", ns);
             }
         }
 
-        // Fall back to CLI
-        self.get_flows_cli(limit, namespace).await
-    }
-
-    /// Attempt to get flows via the Hubble relay.
-    ///
-    /// Connects to the Hubble relay address and uses the `hubble` CLI with
-    /// `--server` pointing to the relay. This provides gRPC-equivalent
-    /// functionality without requiring a tonic-generated client.
-    async fn get_flows_grpc(
-        &self,
-        limit: usize,
-        namespace: Option<&str>,
-    ) -> Result<Vec<Flow>> {
-        // Verify connectivity first
-        tokio::net::TcpStream::connect(&self.address)
-            .await
-            .context("Cannot connect to Hubble relay")?;
-
-        // Use hubble CLI with the relay server address
+        // Build the hubble observe command
         let mut cmd = Command::new("hubble");
         cmd.arg("observe")
             .arg("--output")
@@ -80,17 +55,18 @@ impl HubbleService {
             cmd.arg("--namespace").arg(ns);
         }
 
-        let output = cmd
-            .output()
-            .await
-            .context("Failed to execute hubble CLI with relay server")?;
+        let output = match cmd.output().await {
+            Ok(out) => out,
+            Err(e) => {
+                tracing::debug!("hubble CLI not available: {}", e);
+                return Ok(Vec::new());
+            }
+        };
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!(
-                "hubble observe via relay failed: {}",
-                stderr.trim()
-            );
+            tracing::debug!("hubble observe returned non-zero: {}", stderr.trim());
+            return Ok(Vec::new());
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -103,53 +79,6 @@ impl HubbleService {
             .collect();
 
         Ok(flows)
-    }
-
-    /// Fall back to the `hubble` CLI binary
-    async fn get_flows_cli(
-        &self,
-        limit: usize,
-        namespace: Option<&str>,
-    ) -> Result<Vec<Flow>> {
-        let mut cmd = Command::new("hubble");
-        cmd.arg("observe")
-            .arg("--output")
-            .arg("json")
-            .arg("--last")
-            .arg(limit.to_string())
-            .arg("--server")
-            .arg(&self.address);
-
-        if let Some(ns) = namespace {
-            cmd.arg("--namespace").arg(ns);
-        }
-
-        let output = cmd.output().await;
-
-        match output {
-            Ok(out) if out.status.success() => {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                let flows: Vec<Flow> = stdout
-                    .lines()
-                    .filter(|l| !l.trim().is_empty())
-                    .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-                    .enumerate()
-                    .map(|(i, v)| hubble_json_to_flow(i, &v))
-                    .collect();
-                Ok(flows)
-            }
-            Ok(out) => {
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                tracing::debug!("hubble CLI returned non-zero: {}", stderr);
-                // Return empty list rather than error -- Hubble may not be installed
-                Ok(Vec::new())
-            }
-            Err(e) => {
-                tracing::debug!("hubble CLI not available: {}", e);
-                // Return empty list -- Hubble CLI not installed
-                Ok(Vec::new())
-            }
-        }
     }
 
     /// Compute aggregate flow statistics

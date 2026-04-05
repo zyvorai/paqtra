@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Policy Generator
 ///
 /// Generates CiliumNetworkPolicy resources from learned patterns

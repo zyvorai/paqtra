@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { ScrollText, RefreshCw, Loader2, Search } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { ScrollText, Loader2, Search } from 'lucide-react';
 import { fetchAuditLog, AuditEntry } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const ACTION_BADGE: Record<string, string> = {
   'policy.create': 'bg-green-500/15 text-green-400 border-green-500/30',
@@ -25,18 +28,17 @@ function formatTime(ts: string): string {
 const AuditLog: React.FC = () => {
   usePageTitle('Audit Log');
   const [entries, setEntries] = useState<AuditEntry[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setEntries((await fetchAuditLog()).data.entries ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const filtered = search ? entries.filter((e) => e.action.includes(search.toLowerCase()) || e.actor.toLowerCase().includes(search.toLowerCase()) || e.resource.toLowerCase().includes(search.toLowerCase()) || e.details.toLowerCase().includes(search.toLowerCase())) : entries;
 
@@ -47,9 +49,11 @@ const AuditLog: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-lg shadow-indigo-500/20"><ScrollText className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Audit Log</h1></div>
           <p className="text-sm text-slate-400 mt-1">Security audit trail of all actions</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          <ExportButton data={filtered as Record<string, unknown>[]} filename="audit-log" />
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading}
+            autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn(v => !v)} intervalSecs={30} />
+        </div>
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}

@@ -49,12 +49,12 @@ Cloud-native web application providing a real-time dashboard for Cilium network 
 - **State Management**: Zustand 5 (auth, theme, preferences)
 - **Data Fetching**: TanStack React Query 5.56 + Axios
 - **Routing**: React Router 6.28 with React.lazy code splitting
-- **Visualization**: Recharts 2.15, D3.js 7.9 (topology/service map)
+- **Visualization**: Recharts 2.15, D3 (d3-force, d3-selection, d3-drag)
 - **Code Editor**: Monaco Editor (YAML policy editing)
 - **Icons**: Lucide React
 - **Styling**: Tailwind CSS 3.4 (dark-first, class-based toggle)
 - **Build Tool**: Vite 6 (manual chunk splitting, sourcemaps)
-- **Testing**: Vitest 2 + React Testing Library (74 tests)
+- **Testing**: Vitest 2 + React Testing Library (68 tests)
 
 ## Frontend Architecture
 
@@ -200,7 +200,7 @@ cd web-ui
 npm install
 npm run dev        # Vite dev server (port 3000, proxies to :9191)
 npm run build      # Production build (tsc + vite)
-npm run test       # 74 tests (vitest)
+npm run test       # 68 tests (vitest)
 npm run lint       # ESLint (0 errors)
 
 # Backend
@@ -220,6 +220,6 @@ docker-compose up
 | Code splitting | 4 vendor chunks + per-view lazy loading |
 | TypeScript | Strict mode, 0 errors |
 | ESLint | 0 errors, 0 warnings |
-| Test suite | 74 tests, 9 files |
+| Test suite | 68 tests, 9 files |
 | Views | 58 lazy-loaded pages |
 | Components | 25 shared UI components |

@@ -1,5 +1,3 @@
-// Many items used only with real eBPF hardware
-#![allow(dead_code)]
 /// Enriched Map Reader
 ///
 /// Combines eBPF map reading with Kubernetes identity resolution

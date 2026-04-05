@@ -45,6 +45,14 @@ impl TuiApp {
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
+        // Install a panic hook that restores the terminal before printing the panic
+        let original_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |panic_info| {
+            let _ = disable_raw_mode();
+            let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+            original_hook(panic_info);
+        }));
+
         let res = self.run_app(&mut terminal).await;
 
         // Restore terminal
@@ -56,6 +64,9 @@ impl TuiApp {
         )?;
         terminal.show_cursor()?;
 
+        // Restore the default panic hook
+        let _ = std::panic::take_hook();
+
         if let Err(err) = res {
             println!("Error: {:?}", err);
         }
@@ -65,9 +76,17 @@ impl TuiApp {
 
     async fn run_app<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
         loop {
+            // Clear expired status messages (older than 5 seconds)
+            if self.status_message.is_some() && self.status_message_time.elapsed().as_secs() >= 5 {
+                self.status_message = None;
+            }
+
             // Fetch latest flows
             if let Ok(flows) = self.hubble_client.get_flows().await {
                 self.flows = flows;
+                if self.selected_flow_index >= self.flows.len() && !self.flows.is_empty() {
+                    self.selected_flow_index = self.flows.len() - 1;
+                }
             }
 
             // Update module data based on selected tab
@@ -126,7 +145,13 @@ impl TuiApp {
                     // RootCause - updates on-demand
                 }
                 8 => {
-                    // Simulator - updates via user interaction
+                    // Simulator - run simulation when triggered by user
+                    if self.simulator_view.should_simulate {
+                        self.simulator_view.should_simulate = false;
+                        // Run simulation using the simulator module
+                        // For now just mark as not running since the simulator needs wiring
+                        self.simulator_view.simulation_running = false;
+                    }
                 }
                 9 => {
                     // Replay - updates on-demand

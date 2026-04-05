@@ -3,6 +3,7 @@ import { ServerOff, RefreshCw, Loader2, Undo2, ShieldOff } from 'lucide-react';
 import { fetchNodeDrainStatus, drainNode, uncordonNode, NodeDrainStatus } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 
 const STATUS_BADGE: Record<string, string> = { ready: 'bg-green-500/15 text-green-400 border-green-500/30', draining: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', cordoned: 'bg-orange-500/15 text-orange-400 border-orange-500/30', drained: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
 
@@ -11,8 +12,9 @@ const NodeDrain: React.FC = () => {
   const [nodes, setNodes] = useState<NodeDrainStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [acting, setActing] = useState<string | null>(null);
+  const [confirmDrain, setConfirmDrain] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null);
@@ -23,7 +25,10 @@ const NodeDrain: React.FC = () => {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const confirmAndDrain = (node: string) => setConfirmDrain(node);
+
   const handleDrain = async (node: string) => {
+    setConfirmDrain(null);
     setActing(node); setError(null);
     try { await drainNode(node); setSuccess(`Drain initiated for ${node}`); fetchData(); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
@@ -65,7 +70,7 @@ const NodeDrain: React.FC = () => {
             </div>
             <div className="flex gap-2">
               {n.status === 'ready' && (
-                <button onClick={() => handleDrain(n.node)} disabled={acting === n.node} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-red-600 text-red-400-foreground text-sm hover:bg-red-600/90 disabled:opacity-50 transition-colors">
+                <button onClick={() => confirmAndDrain(n.node)} disabled={acting === n.node} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-600/90 disabled:opacity-50 transition-colors">
                   {acting === n.node ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldOff className="w-4 h-4" />} Drain
                 </button>
               )}
@@ -79,6 +84,21 @@ const NodeDrain: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {confirmDrain && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-label="Confirm node drain">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-white mb-2">Confirm Node Drain</h3>
+            <p className="text-sm text-slate-400 mb-4">
+              Are you sure you want to drain node <span className="text-white font-mono">{confirmDrain}</span>? This will evict all pods from the node.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirmDrain(null)} className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm hover:bg-slate-700 transition-colors">Cancel</button>
+              <button onClick={() => handleDrain(confirmDrain)} className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700 transition-colors">Drain Node</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

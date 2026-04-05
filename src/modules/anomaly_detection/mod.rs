@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // AI/ML-Powered Anomaly Detection Module
 // Experimental: Uses time-series analysis and ML for intelligent anomaly detection
 

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Replay View - Traffic Recording & Playback with Time-Travel Debugging
 use ratatui::{
     layout::{Constraint, Direction, Layout},

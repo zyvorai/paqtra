@@ -1,8 +1,3 @@
-// allow(dead_code): Chaos experiment types and engine methods are referenced by
-// the TUI for rendering and by integration entry points, but appear unused in
-// library-only builds. Suppressed at module level due to the large number of
-// structs and enum variants involved.
-#![allow(dead_code)]
 /// eBPF Chaos Engineering Module
 ///
 /// Controlled fault injection for resilience testing using eBPF.

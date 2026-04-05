@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use k8s_openapi::api::core::v1::{ConfigMap, ServiceAccount};
+use k8s_openapi::api::core::v1::ServiceAccount;
 use k8s_openapi::api::rbac::v1::{ClusterRoleBinding, RoleRef, Subject};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use std::collections::BTreeMap;
@@ -222,7 +222,12 @@ impl CiliumManager {
             .context("Failed to download checksum file")?;
 
         if !checksum_output.success() {
-            tracing::warn!("Failed to download checksum file, skipping verification");
+            // Clean up the downloaded file
+            let _ = std::fs::remove_file(format!("/tmp/{}", binary_name));
+            anyhow::bail!(
+                "Failed to download checksum file. Cannot verify download integrity. \
+                 Aborting installation for security."
+            );
         } else {
             // Verify checksum
             println!("Verifying download integrity...");
@@ -313,18 +318,13 @@ impl CiliumManager {
         data.insert("monitor-aggregation".to_string(), "medium".to_string());
         data.insert("enable-l7-proxy".to_string(), "true".to_string());
 
-        let configmap = ConfigMap {
-            metadata: ObjectMeta {
-                name: Some("cilium-config".to_string()),
-                namespace: Some("kube-system".to_string()),
-                ..Default::default()
-            },
-            data: Some(data),
-            ..Default::default()
-        };
+        // Use patch instead of replace to avoid overwriting existing Cilium config keys
+        let patch = serde_json::json!({
+            "data": data
+        });
 
         self.k8s_client
-            .create_or_update_configmap("kube-system", configmap)
+            .patch_configmap("kube-system", "cilium-config", &patch.to_string())
             .await?;
 
         Ok(())

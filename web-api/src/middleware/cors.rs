@@ -3,21 +3,29 @@ use axum::http::{HeaderValue, Method};
 use tower_http::cors::CorsLayer;
 
 /// Build a restrictive CORS layer.
-/// In production, ALLOWED_ORIGINS should be set to the actual frontend origin(s).
+/// In production, set ALLOWED_ORIGINS to the actual frontend origin(s).
 pub fn cors_layer() -> CorsLayer {
-    let origins_str = std::env::var("ALLOWED_ORIGINS")
-        .unwrap_or_else(|_| "http://localhost:3000,http://localhost:3001".to_string());
+    let origins_str = std::env::var("ALLOWED_ORIGINS").ok();
 
-    if origins_str.contains("localhost") {
-        tracing::warn!("CORS configured with localhost origins - not suitable for production. Set ALLOWED_ORIGINS env var.");
+    let is_localhost = origins_str.is_none()
+        || origins_str.as_ref().map_or(false, |s| s.contains("localhost"));
+
+    if is_localhost {
+        tracing::warn!(
+            "CORS configured with localhost origins — not suitable for production. \
+             Set ALLOWED_ORIGINS env var to your frontend origin."
+        );
     }
 
-    let origins: Vec<HeaderValue> = origins_str
+    let origins_raw = origins_str
+        .unwrap_or_else(|| "http://localhost:3000,http://localhost:3001".to_string());
+
+    let origins: Vec<HeaderValue> = origins_raw
         .split(',')
         .filter_map(|o| o.trim().parse().ok())
         .collect();
 
-    CorsLayer::new()
+    let mut layer = CorsLayer::new()
         .allow_origin(origins)
         .allow_methods([
             Method::GET,
@@ -31,6 +39,12 @@ pub fn cors_layer() -> CorsLayer {
             axum::http::header::AUTHORIZATION,
             axum::http::header::ACCEPT,
         ])
-        .allow_credentials(true)
-        .max_age(std::time::Duration::from_secs(3600))
+        .max_age(std::time::Duration::from_secs(3600));
+
+    // Only allow credentials when using explicit (non-localhost) origins
+    if !is_localhost {
+        layer = layer.allow_credentials(true);
+    }
+
+    layer
 }

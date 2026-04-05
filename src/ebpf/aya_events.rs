@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// BPF Event Streaming via Aya
 ///
 /// Provides real-time event streaming from Cilium's perf event arrays

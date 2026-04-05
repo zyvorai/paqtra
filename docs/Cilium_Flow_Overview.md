@@ -30,8 +30,8 @@ Built in Rust for maximum performance, it combines live eBPF datapath monitoring
 
 | Metric | Value |
 |--------|-------|
-| Tests passing | 969 (0 failures, 0 warnings) |
-| Lines of Rust | 11,400+ |
+| Tests passing | 1,055 (0 failures) |
+| Lines of Rust | 32,000+ |
 | Binary size | 13 MB |
 | Modules | 13 |
 | Interactive tabs | 13 |
@@ -153,13 +153,13 @@ Cross-cluster orchestration for multi-cloud and hybrid deployments:
 
 | Check | Result |
 |-------|--------|
-| Unit tests | 369 passing |
-| Integration tests | 600 passing |
-| Total tests | 969 passing, 0 failures |
+| Rust unit tests | 365 passing |
+| Rust integration tests | 596 passing |
+| Web API tests | 26 passing |
+| Web UI tests | 68 passing |
+| Total tests | 1,055 passing, 0 failures |
 | Compiler warnings | 0 |
 | Clippy lints | 0 |
-| Unsafe code | 0 blocks |
-| Code review passes | 4 (all issues resolved) |
 
 The test suite covers core logic, parsers, engine state machines, cross-module interaction, policy generation, simulation impact analysis, and tab navigation.
 

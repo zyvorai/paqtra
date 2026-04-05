@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // Security & Compliance Module - Zero-trust, compliance frameworks, threat intelligence
 // Experimental: Enterprise-grade security and compliance features
 

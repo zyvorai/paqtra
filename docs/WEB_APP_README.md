@@ -6,16 +6,16 @@ Modern, cloud-native web interface for Cilium Vision network observability platf
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | React 19 + TypeScript 5.6 |
+| Framework | React 19 + TypeScript 5.8 |
 | Build | Vite 6 with manual chunk splitting |
 | Styling | Tailwind CSS 3.4 (dark-first, class-based theme) |
 | State | Zustand 5 (auth, theme, preferences) |
-| Data Fetching | TanStack React Query 5.56 + Axios |
+| Data Fetching | TanStack React Query 5 + Axios |
 | Charts | Recharts 2.15 |
 | Icons | Lucide React |
-| Routing | React Router 6.28 (lazy-loaded views) |
+| Routing | React Router 6 (lazy-loaded views) |
 | Code Editor | Monaco Editor (YAML policy editing) |
-| Graphs | D3.js + D3-Force (topology, service map) |
+| Graphs | D3-Force + D3-Selection + D3-Drag (tree-shaken) |
 | Testing | Vitest 2 + React Testing Library |
 
 ## Project Structure
@@ -24,7 +24,7 @@ Modern, cloud-native web interface for Cilium Vision network observability platf
 web-ui/
   src/
     App.tsx                    Router + providers (QueryClient, Toast, ErrorBoundary)
-    main.tsx                   Entry point + service worker registration
+    main.tsx                   Entry point
     index.css                  Tailwind + custom utilities (gradients, glows, animations)
     components/                25 shared UI components
       MainLayout.tsx           Top navbar with hover dropdowns, mobile menu, WS status
@@ -66,9 +66,12 @@ web-ui/
     utils/
       formatters.ts            formatBytes, formatDuration, getStatusColor, etc.
       safe.ts                  Safe number handling (safeFixed, safePct, etc.)
-      chartTheme.ts            Theme-aware chart colors
-    i18n/
-      index.ts                 Simple i18n with 5 locale support
+    hooks/
+      useAutoDismiss.ts        Auto-clearing state for success/error messages
+      useKeyboardShortcuts.ts  Global keyboard shortcut handler
+      useMetricsHistory.ts     Rolling metrics buffer
+      usePageTitle.ts          Dynamic page title
+      useWebSocket.ts          WebSocket connection with auto-reconnect
     views/                     58 view components (lazy-loaded)
 ```
 
@@ -104,7 +107,7 @@ cd web-ui
 npm install
 npm run dev          # Dev server on port 3000
 npm run build        # Production build with tsc + vite
-npm run test         # 74 tests via Vitest
+npm run test         # 68 tests via Vitest
 npm run lint         # ESLint (0 errors, 0 warnings)
 ```
 

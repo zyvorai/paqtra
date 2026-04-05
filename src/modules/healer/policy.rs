@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Policy-specific healing logic
 use super::*;
 

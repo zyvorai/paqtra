@@ -1,6 +1,3 @@
-// allow(dead_code): Learner types are constructed and queried by the TUI and
-// autopolicy engine but appear unused in library-only builds.
-#![allow(dead_code)]
 /// Traffic Learning Engine
 ///
 /// Learns traffic patterns over time by observing connections
@@ -17,7 +14,7 @@ impl TrafficLearner {
     pub fn new(min_observations: u64) -> Self {
         let start_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         Self {
@@ -31,7 +28,7 @@ impl TrafficLearner {
     pub fn observe(&mut self, pattern: TrafficPattern, bytes: u64) {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         if let Some(obs) = self.observations.get_mut(&pattern) {
@@ -69,7 +66,7 @@ impl TrafficLearner {
     pub fn learning_duration(&self) -> Duration {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         Duration::from_secs(now - self.start_time)

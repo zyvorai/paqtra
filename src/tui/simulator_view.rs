@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Simulator View - What-If Scenario Testing
 use ratatui::{
     layout::{Constraint, Direction, Layout},

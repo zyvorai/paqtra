@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Kubernetes Identity Resolution
 ///
 /// Maps Cilium security identities to Kubernetes pod information
@@ -56,15 +55,11 @@ impl K8sIdentityResolver {
 
         let pod_list = pods.list(&lp).await?;
 
-        let mut cache = self
-            .cache
-            .write()
-            .map_err(|e| anyhow::anyhow!("Identity cache lock poisoned: {}", e))?;
-
-        // Clear stale entries before repopulating
-        cache.identities.clear();
-        cache.ip_to_identity.clear();
-        cache.pod_to_identity.clear();
+        // Build new maps locally before acquiring the write lock to minimize
+        // the window where readers see an empty/incomplete cache.
+        let mut new_identities = HashMap::new();
+        let mut new_ip_to_identity = HashMap::new();
+        let mut new_pod_to_identity = HashMap::new();
 
         let mut count = 0;
 
@@ -72,26 +67,32 @@ impl K8sIdentityResolver {
             if let Some(identity) = Self::extract_identity(&pod) {
                 let info = Self::pod_to_identity_info(&pod, identity);
 
-                // Update identity cache
-                cache.identities.insert(identity, info.clone());
+                new_identities.insert(identity, info.clone());
 
-                // Update IP mapping
                 if let Some(pod_ip) = pod.status.as_ref().and_then(|s| s.pod_ip.as_ref()) {
-                    cache.ip_to_identity.insert(pod_ip.clone(), identity);
+                    new_ip_to_identity.insert(pod_ip.clone(), identity);
                 }
 
-                // Update pod name mapping
                 let pod_key = format!(
                     "{}/{}",
                     pod.metadata.namespace.as_deref().unwrap_or("default"),
                     pod.metadata.name.as_deref().unwrap_or("unknown")
                 );
-                cache.pod_to_identity.insert(pod_key, identity);
+                new_pod_to_identity.insert(pod_key, identity);
 
                 count += 1;
             }
         }
 
+        // Swap in the fully-built maps under the write lock
+        let mut cache = self
+            .cache
+            .write()
+            .map_err(|e| anyhow::anyhow!("Identity cache lock poisoned: {}", e))?;
+
+        cache.identities = new_identities;
+        cache.ip_to_identity = new_ip_to_identity;
+        cache.pod_to_identity = new_pod_to_identity;
         cache.last_update = std::time::Instant::now();
 
         Ok(count)
@@ -244,6 +245,9 @@ impl K8sIdentityResolver {
         // Try to resolve source IP
         if let Some(src_identity) = self.resolve_ip(&entry.src_ip) {
             if let Some(info) = self.resolve_identity(src_identity) {
+                entry.src_namespace = Some(info.namespace.clone());
+                entry.src_pod = Some(info.pod_name.clone());
+                entry.src_labels = Some(info.labels.clone());
                 tracing::trace!("Source: {}/{}", info.namespace, info.pod_name);
             }
         }
@@ -251,6 +255,9 @@ impl K8sIdentityResolver {
         // Try to resolve destination IP
         if let Some(dst_identity) = self.resolve_ip(&entry.dst_ip) {
             if let Some(info) = self.resolve_identity(dst_identity) {
+                entry.dst_namespace = Some(info.namespace.clone());
+                entry.dst_pod = Some(info.pod_name.clone());
+                entry.dst_labels = Some(info.labels.clone());
                 tracing::trace!("Destination: {}/{}", info.namespace, info.pod_name);
             }
         }

@@ -1,7 +1,3 @@
-// allow(dead_code): Healer types and methods are used by the TUI for display
-// but appear unused in library-only builds. Suppressed at module level because
-// most structs, enums, and their fields would trigger warnings.
-#![allow(dead_code)]
 /// Self-Healer Module
 ///
 /// Automatically detects and fixes common network issues:
@@ -244,7 +240,7 @@ impl<M: MapReader> SelfHealer<M> {
                         applied: false,
                         timestamp: std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
+                            .unwrap_or_default()
                             .as_secs(),
                     });
                 }
@@ -264,7 +260,7 @@ impl<M: MapReader> SelfHealer<M> {
                         applied: false,
                         timestamp: std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
+                            .unwrap_or_default()
                             .as_secs(),
                     });
                 }
@@ -514,6 +510,7 @@ mod tests {
     use crate::ebpf::MockMapReader;
 
     #[tokio::test]
+    #[ignore] // Requires a live Kubernetes cluster
     async fn test_healer_creation() {
         let config = HealerConfig::default();
         let reader = MockMapReader;

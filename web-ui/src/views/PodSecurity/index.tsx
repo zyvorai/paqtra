@@ -1,25 +1,27 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { ShieldCheck, RefreshCw, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { ShieldCheck, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
 import { fetchPodSecurity, PodSecurityReport } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const LEVEL_BADGE: Record<string, string> = { privileged: 'bg-red-500/15 text-red-400 border-red-500/30', baseline: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', restricted: 'bg-green-500/15 text-green-400 border-green-500/30' };
 
 const PodSecurity: React.FC = () => {
   usePageTitle('Pod Security');
   const [reports, setReports] = useState<PodSecurityReport[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setReports((await fetchPodSecurity()).data.reports ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const totalViolations = reports.reduce((a, r) => a + r.violations.length, 0);
 
@@ -30,7 +32,10 @@ const PodSecurity: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500 to-emerald-700 flex items-center justify-center shadow-lg shadow-green-500/20"><ShieldCheck className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Pod Security Standards</h1></div>
           <p className="text-sm text-slate-400 mt-1">Pod Security Admission enforcement per namespace</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
+        <div className="flex items-center gap-3">
+          <ExportButton data={reports as unknown as Record<string, unknown>[]} filename="pod-security" />
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
+        </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
 
@@ -40,7 +45,11 @@ const PodSecurity: React.FC = () => {
         <div className="rounded-xl border border-slate-700/50 p-4 stat-card-red card-glow transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Violations</div><div className="text-2xl font-bold text-red-400">{totalViolations}</div></div>
       </div>
 
-      {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+      {loading && reports.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+
+      {!loading && reports.length === 0 && !error && (
+        <div className="text-center py-12 text-slate-400">No pod security reports available.</div>
+      )}
 
       <div className="space-y-4">
         {reports.map((r) => {

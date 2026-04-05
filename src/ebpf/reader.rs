@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// eBPF Map Reader Implementation
 ///
 /// Reads Cilium eBPF maps from /sys/fs/bpf/ using bpftool when available,

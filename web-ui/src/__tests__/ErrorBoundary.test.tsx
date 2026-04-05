@@ -15,7 +15,7 @@ describe('ErrorBoundary', () => {
         <WorkingComponent />
       </ErrorBoundary>
     );
-    expect(screen.getByText('Works fine')).toBeDefined();
+    expect(screen.getByText('Works fine')).toBeInTheDocument();
   });
 
   it('renders error UI when child throws', () => {
@@ -27,8 +27,8 @@ describe('ErrorBoundary', () => {
         <ThrowingComponent />
       </ErrorBoundary>
     );
-    expect(screen.getByText('Something went wrong')).toBeDefined();
-    expect(screen.getByText('Reload Page')).toBeDefined();
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.getByText('Reload Page')).toBeInTheDocument();
 
     consoleSpy.mockRestore();
   });

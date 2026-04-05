@@ -8,17 +8,20 @@ import {
   FlaskConical,
   X,
   Loader2,
+  Pencil,
+  CheckSquare,
 } from 'lucide-react';
 import {
   fetchPolicies as apiFetchPolicies,
   createPolicy as apiCreatePolicy,
   deletePolicy as apiDeletePolicy,
+  updatePolicy as apiUpdatePolicy,
   simulatePolicy as apiSimulatePolicy,
   Policy,
 } from '../../services/api';
 import { isAxiosError } from 'axios';
-import { format, parseISO } from 'date-fns';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 
 const STATUS_BADGE: Record<string, string> = {
   active: 'bg-green-500/15 text-green-400 border-green-500/30',
@@ -38,7 +41,7 @@ const Policies: React.FC = () => {
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useAutoDismiss<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -52,6 +55,18 @@ const Policies: React.FC = () => {
 
   const [simulating, setSimulating] = useState(false);
   const [simResult, setSimResult] = useState<SimulationResult | null>(null);
+
+  // Edit state
+  const [editPolicy, setEditPolicy] = useState<Policy | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editNs, setEditNs] = useState('');
+  const [editSpec, setEditSpec] = useState('');
+  const [editing, setEditing] = useState(false);
+
+  // Bulk operations state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
   const fetchPolicies = useCallback(async () => {
     setLoading(true); setError(null);
@@ -82,6 +97,28 @@ const Policies: React.FC = () => {
     finally { setDeleting(false); }
   };
 
+  const handleUpdate = async () => {
+    if (!editPolicy) return;
+    setEditing(true); setError(null);
+    try {
+      const spec = JSON.parse(editSpec);
+      await apiUpdatePolicy(editPolicy.id, { name: editName.trim(), namespace: editNs.trim(), spec });
+      setEditPolicy(null); setSuccess('Policy updated successfully'); fetchPolicies();
+    } catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : String(err)); }
+    finally { setEditing(false); }
+  };
+
+  const handleBulkDelete = async () => {
+    setBulkDeleting(true); setError(null);
+    try {
+      await Promise.all([...selectedIds].map(id => apiDeletePolicy(id)));
+      const count = selectedIds.size;
+      setSelectedIds(new Set()); setBulkDeleteConfirm(false);
+      setSuccess(`Deleted ${count} polic${count === 1 ? 'y' : 'ies'}`); fetchPolicies();
+    } catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Bulk delete failed'); }
+    finally { setBulkDeleting(false); }
+  };
+
   const handleSimulate = async () => {
     setSimulating(true); setError(null);
     try {
@@ -92,7 +129,30 @@ const Policies: React.FC = () => {
     finally { setSimulating(false); }
   };
 
-  const fmtTs = (ts: string) => { try { return format(parseISO(ts), 'yyyy-MM-dd HH:mm'); } catch { return ts || '-'; } };
+  const openEdit = (p: Policy) => {
+    setEditPolicy(p);
+    setEditName(p.name);
+    setEditNs(p.namespace);
+    setEditSpec(JSON.stringify(p.spec ?? { ingress: [], egress: [] }, null, 2));
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === policies.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(policies.map((p) => p.id)));
+    }
+  };
+
+  const fmtTs = (ts: string) => { try { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; } catch { return ts || '-'; } };
 
   const active = policies.filter((p) => p.status === 'active' || p.status === 'enforcing').length;
   const pending = policies.filter((p) => p.status === 'pending' || p.status === 'created').length;
@@ -117,6 +177,22 @@ const Policies: React.FC = () => {
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
+
+      {/* Bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-between animate-scale-in">
+          <span className="text-sm text-blue-400 flex items-center gap-2">
+            <CheckSquare className="w-4 h-4" />
+            {selectedIds.size} polic{selectedIds.size === 1 ? 'y' : 'ies'} selected
+          </span>
+          <div className="flex gap-2">
+            <button onClick={() => setSelectedIds(new Set())} className="px-3 py-1.5 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">Clear</button>
+            <button onClick={() => setBulkDeleteConfirm(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm hover:bg-red-600/90 transition-colors">
+              <Trash2 className="w-4 h-4" /> Delete Selected
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
@@ -150,6 +226,14 @@ const Policies: React.FC = () => {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-700/50 bg-slate-900/50">
+              <th className="px-4 py-3 w-10">
+                <input
+                  type="checkbox"
+                  checked={policies.length > 0 && selectedIds.size === policies.length}
+                  onChange={toggleSelectAll}
+                  className="rounded border-slate-600 bg-slate-900/50 text-blue-500 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+                />
+              </th>
               <th className="text-left px-4 py-3 font-semibold text-slate-400 uppercase tracking-wider">Name</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-400 uppercase tracking-wider">Namespace</th>
               <th className="text-left px-4 py-3 font-semibold text-slate-400 uppercase tracking-wider">Status</th>
@@ -159,9 +243,17 @@ const Policies: React.FC = () => {
           </thead>
           <tbody>
             {policies.length === 0 && !loading ? (
-              <tr><td colSpan={5} className="px-4 py-12 text-center text-slate-400">No policies found. Create one to get started.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-400">No policies found. Create one to get started.</td></tr>
             ) : policies.map((p) => (
               <tr key={p.id} className="border-b border-slate-700/30 table-row-hover">
+                <td className="px-4 py-2.5">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(p.id)}
+                    onChange={() => toggleSelect(p.id)}
+                    className="rounded border-slate-600 bg-slate-900/50 text-blue-500 focus:ring-blue-500 focus:ring-offset-0 cursor-pointer"
+                  />
+                </td>
                 <td className="px-4 py-2.5 font-medium text-white">{p.name}</td>
                 <td className="px-4 py-2.5"><span className="px-2 py-0.5 rounded border border-slate-700/50 text-xs">{p.namespace}</span></td>
                 <td className="px-4 py-2.5">
@@ -170,6 +262,7 @@ const Policies: React.FC = () => {
                 <td className="px-4 py-2.5 text-slate-400">{fmtTs(p.created_at)}</td>
                 <td className="px-4 py-2.5 text-right">
                   <button onClick={() => setDetailPolicy(p)} className="p-1.5 rounded hover:bg-slate-700/30 text-slate-400 hover:text-white" title="View"><Eye className="w-4 h-4" /></button>
+                  <button onClick={() => openEdit(p)} className="p-1.5 rounded hover:bg-slate-700/30 text-slate-400 hover:text-blue-400 ml-1" title="Edit"><Pencil className="w-4 h-4" /></button>
                   <button onClick={() => setDeleteId(p.id)} className="p-1.5 rounded hover:bg-slate-700/30 text-slate-400 hover:text-red-400 ml-1" title="Delete"><Trash2 className="w-4 h-4" /></button>
                 </td>
               </tr>
@@ -204,6 +297,34 @@ const Policies: React.FC = () => {
             <button onClick={() => setCreateOpen(false)} className="px-4 py-2 rounded-lg border border-slate-700/50 text-sm hover:bg-slate-700/30 transition-colors">Cancel</button>
             <button onClick={handleCreate} disabled={creating || !newName.trim()} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 transition-colors">
               {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit dialog */}
+      {editPolicy && (
+        <Modal title="Edit Network Policy" onClose={() => setEditPolicy(null)}>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-white mb-1">Policy Name</label>
+                <input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="my-network-policy" className="w-full px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/50 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-white mb-1">Namespace</label>
+                <input value={editNs} onChange={(e) => setEditNs(e.target.value)} placeholder="default" className="w-full px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/50 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-white mb-1">Policy Spec (JSON)</label>
+              <textarea value={editSpec} onChange={(e) => setEditSpec(e.target.value)} rows={10} className="w-full px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/50 text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-700/50">
+            <button onClick={() => setEditPolicy(null)} className="px-4 py-2 rounded-lg border border-slate-700/50 text-sm hover:bg-slate-700/30 transition-colors">Cancel</button>
+            <button onClick={handleUpdate} disabled={editing || !editName.trim()} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 transition-colors">
+              {editing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />} Update
             </button>
           </div>
         </Modal>
@@ -249,6 +370,21 @@ spec:
         </Modal>
       )}
 
+      {/* Bulk delete confirm */}
+      {bulkDeleteConfirm && (
+        <Modal title="Delete Selected Policies" onClose={() => setBulkDeleteConfirm(false)}>
+          <p className="text-sm text-slate-400 mb-6">
+            Are you sure you want to delete {selectedIds.size} polic{selectedIds.size === 1 ? 'y' : 'ies'}? This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setBulkDeleteConfirm(false)} className="px-4 py-2 rounded-lg border border-slate-700/50 text-sm hover:bg-slate-700/30 transition-colors">Cancel</button>
+            <button onClick={handleBulkDelete} disabled={bulkDeleting} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-600/90 disabled:opacity-50 transition-colors">
+              {bulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Delete {selectedIds.size}
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {/* Simulation result */}
       {simResult && (
         <Modal title="Simulation Result" onClose={() => setSimResult(null)}>
@@ -278,11 +414,11 @@ spec:
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 modal-backdrop animate-fade-in flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 modal-backdrop animate-fade-in flex items-center justify-center p-4" onClick={onClose} role="dialog" aria-modal="true" aria-label={title}>
       <div className="w-full max-w-lg bg-slate-800/50 border border-slate-700/50 rounded-xl shadow-2xl animate-scale-in" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/50">
           <h2 className="text-lg font-semibold text-white">{title}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="text-slate-400 hover:text-white" aria-label="Close"><X className="w-5 h-5" /></button>
         </div>
         <div className="px-6 py-4">{children}</div>
       </div>

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Traffic Recorder
 ///
 /// Helper utilities for recording traffic

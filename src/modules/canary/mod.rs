@@ -1,8 +1,3 @@
-// allow(dead_code): Canary deployment types and engine methods are consumed by
-// the TUI rendering layer but appear unused in library-only builds. Suppressed
-// at module level because the majority of structs, fields, and enum variants
-// would each trigger individual warnings.
-#![allow(dead_code)]
 /// Sidecarless Canary Deployment Module
 ///
 /// Progressive traffic shifting for canary deployments without sidecars.
@@ -316,10 +311,8 @@ impl CanaryEngine {
         // Annotate the Kubernetes service with the desired traffic weight.
         // Cilium's L7 load balancer reads the `cilium.io/canary-weight`
         // annotation to split traffic between stable and canary backends.
-        let annotation = format!(
-            "cilium.io/canary-weight={},cilium.io/canary-version={}",
-            new_canary_pct, canary.canary_version
-        );
+        let weight_annotation = format!("cilium.io/canary-weight={}", new_canary_pct);
+        let version_annotation = format!("cilium.io/canary-version={}", canary.canary_version);
         let svc = &canary.service_name;
         let ns = &canary.namespace;
 
@@ -330,7 +323,8 @@ impl CanaryEngine {
                 svc,
                 "-n",
                 ns,
-                &annotation,
+                &weight_annotation,
+                &version_annotation,
                 "--overwrite",
             ])
             .output()

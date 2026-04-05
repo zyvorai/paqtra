@@ -1,25 +1,27 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Route, RefreshCw, Loader2, Wifi, WifiOff } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Route, Loader2, Wifi, WifiOff } from 'lucide-react';
 import { fetchBgpPeers, BgpPeer } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const STATE_BADGE: Record<string, string> = { Established: 'bg-green-500/15 text-green-400 border-green-500/30', Idle: 'bg-red-500/15 text-red-400 border-red-500/30', Active: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', OpenSent: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
 
 const BgpPeering: React.FC = () => {
   usePageTitle('BGP Peering');
   const [peers, setPeers] = useState<BgpPeer[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setPeers((await fetchBgpPeers()).data.peers ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const established = peers.filter((p) => p.state === 'Established').length;
 
@@ -30,7 +32,10 @@ const BgpPeering: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center shadow-lg shadow-teal-500/20"><Route className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">BGP Peering</h1></div>
           <p className="text-sm text-slate-400 mt-1">BGP peer status and route advertisements</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
+        <div className="flex items-center gap-3">
+          <ExportButton data={peers as unknown as Record<string, unknown>[]} filename="bgp-peers" />
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
+        </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
 
@@ -40,7 +45,12 @@ const BgpPeering: React.FC = () => {
         <div className="rounded-xl border border-slate-700/50 p-4 stat-card-purple card-glow-purple transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Prefixes Advertised</div><div className="text-2xl font-bold text-white">{peers.reduce((a, p) => a + p.prefixes_advertised, 0)}</div></div>
       </div>
 
-      {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+      {loading && peers.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+
+      {!loading && peers.length === 0 && !error && (
+        <div className="text-center py-12 text-slate-400">No BGP peers found.</div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {peers.map((p) => (
           <div key={p.name} className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-5">

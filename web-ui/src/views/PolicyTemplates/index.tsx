@@ -3,6 +3,7 @@ import { FileCode, RefreshCw, Loader2, Copy, Play, Search, Tag } from 'lucide-re
 import { fetchPolicyTemplates, applyTemplate, PolicyTemplate } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 
 const CAT_COLOR: Record<string, string> = {
   security: 'bg-red-500/15 text-red-400 border-red-500/30',
@@ -16,7 +17,7 @@ const PolicyTemplates: React.FC = () => {
   const [templates, setTemplates] = useState<PolicyTemplate[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [applying, setApplying] = useState<string | null>(null);

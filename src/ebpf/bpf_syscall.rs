@@ -1,5 +1,3 @@
-// Many items used only with real eBPF hardware
-#![allow(dead_code)]
 /// BPF Map Access via syscalls and bpftool
 ///
 /// Provides BPF map reading through multiple methods:
@@ -97,7 +95,7 @@ impl BpfToolReader {
     /// Find map by name
     pub fn find_map_by_name(&self, name: &str) -> Result<Option<BpfMapInfo>> {
         let maps = self.list_maps()?;
-        Ok(maps.into_iter().find(|m| m.name.contains(name)))
+        Ok(maps.into_iter().find(|m| m.name == name))
     }
 
     /// Dump map contents
@@ -148,31 +146,27 @@ impl BpfToolReader {
         }
     }
 
-    /// Read Cilium conntrack map
+    /// Read Cilium conntrack map (both IPv4 and IPv6)
     pub fn read_cilium_ct_map(&self) -> Result<Vec<ConntrackEntry>> {
-        // Find CT4 or CT6 map
-        let (map, is_ipv6) = if let Some(m) = self.find_map_by_name("cilium_ct4_global")? {
-            (m, false)
-        } else if let Some(m) = self.find_map_by_name("cilium_ct6_global")? {
-            (m, true)
-        } else {
-            return Ok(Vec::new());
-        };
-
-        let entries = self.dump_map(map.id)?;
-
-        // Parse entries using proper parser
         let mut ct_entries = Vec::new();
 
-        for (key, value) in entries {
-            let entry = if is_ipv6 {
-                parse_ct6_entry(&key, &value)
-            } else {
-                parse_ct_entry(&key, &value)
-            };
+        // Read IPv4 conntrack map
+        if let Some(ct4_map) = self.find_map_by_name("cilium_ct4_global")? {
+            let entries = self.dump_map(ct4_map.id)?;
+            for (key, value) in entries {
+                if let Ok(ct) = parse_ct_entry(&key, &value) {
+                    ct_entries.push(ct);
+                }
+            }
+        }
 
-            if let Ok(ct) = entry {
-                ct_entries.push(ct);
+        // Read IPv6 conntrack map
+        if let Some(ct6_map) = self.find_map_by_name("cilium_ct6_global")? {
+            let entries = self.dump_map(ct6_map.id)?;
+            for (key, value) in entries {
+                if let Ok(ct) = parse_ct6_entry(&key, &value) {
+                    ct_entries.push(ct);
+                }
             }
         }
 
@@ -378,7 +372,9 @@ impl IdentityResolver {
                         for entry in &entries {
                             let cidr = entry.get("cidr").and_then(|v| v.as_str()).unwrap_or("");
                             // Match exact IP or CIDR prefix (e.g. "10.0.0.1/32")
-                            if cidr.starts_with(&ip_str) {
+                            // Use exact match on the IP portion before the '/'
+                            let cidr_ip = cidr.split('/').next().unwrap_or("");
+                            if cidr_ip == ip_str {
                                 if let Some(id) = entry.get("identity").and_then(|v| v.as_u64()) {
                                     return Some(id as u32);
                                 }
@@ -462,8 +458,8 @@ mod tests {
         let mut resolver = IdentityResolver::new();
         // Identity not in cache and cilium CLI likely not available
         let info = resolver.resolve_identity(99999).await;
-        // Without cilium CLI this returns None gracefully
-        assert!(info.is_none() || info.is_some());
+        // Without cilium CLI, the identity won't be found
+        assert!(info.is_none());
     }
 
     #[test]

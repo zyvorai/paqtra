@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Siren, RefreshCw, Loader2, ChevronDown, ChevronRight, Clock } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Siren, Loader2, ChevronDown, ChevronRight, Clock } from 'lucide-react';
 import { fetchIncidents, Incident } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { formatRelativeTime } from '../../utils/formatters';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const SEV_BADGE: Record<string, string> = { critical: 'bg-red-500/15 text-red-400 border-red-500/30', high: 'bg-orange-500/15 text-orange-400 border-orange-500/30', medium: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', low: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
 const STATUS_BADGE: Record<string, string> = { active: 'bg-red-500/15 text-red-400 border-red-500/30', investigating: 'bg-orange-500/15 text-orange-400 border-orange-500/30', resolved: 'bg-green-500/15 text-green-400 border-green-500/30' };
@@ -11,18 +14,17 @@ const STATUS_BADGE: Record<string, string> = { active: 'bg-red-500/15 text-red-4
 const IncidentTimeline: React.FC = () => {
   usePageTitle('Incident Timeline');
   const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { const res = await fetchIncidents(); setIncidents(res.data.incidents ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to load incidents'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const toggle = (id: string) => {
     setExpanded((prev) => {
@@ -47,9 +49,10 @@ const IncidentTimeline: React.FC = () => {
           </div>
           <p className="text-sm text-slate-400 mt-1">Track and review incident history</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-3">
+          <ExportButton data={incidents as unknown as Record<string, unknown>[]} filename="incidents" />
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
+        </div>
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
@@ -69,7 +72,11 @@ const IncidentTimeline: React.FC = () => {
         </div>
       </div>
 
-      {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+      {loading && incidents.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+
+      {!loading && incidents.length === 0 && !error && (
+        <div className="text-center py-12 text-slate-400">No incidents recorded.</div>
+      )}
 
       <div className="relative">
         {incidents.length > 1 && <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-slate-700" />}
@@ -120,7 +127,7 @@ const IncidentTimeline: React.FC = () => {
                               <div key={idx} className="flex items-start gap-3 text-sm">
                                 <span className="text-xs text-slate-500 font-mono whitespace-nowrap mt-0.5">{evt.time}</span>
                                 <span className="text-slate-300">{evt.event}</span>
-                                {evt.actor && <span className="text-xs text-slate-500 ml-auto">{evt.actor}</span>}
+                                {evt.actor && <span className="text-xs text-slate-500 ml-auto">{String(evt.actor)}</span>}
                               </div>
                             ))}
                           </div>

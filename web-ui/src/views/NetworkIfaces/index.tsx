@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Cable, RefreshCw, Loader2, Search, ArrowUp, ArrowDown } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { Cable, Loader2, Search, ArrowUp, ArrowDown } from 'lucide-react';
 import { fetchNetInterfaces, NetInterface } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 function fmt(b: number): string { return b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${(b / 1e3).toFixed(1)} KB`; }
 function fmtPkts(n: number): string { return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n); }
@@ -12,18 +15,17 @@ const TYPE_BADGE: Record<string, string> = { physical: 'bg-blue-500/15 text-blue
 const NetworkIfaces: React.FC = () => {
   usePageTitle('Network Interfaces');
   const [ifaces, setIfaces] = useState<NetInterface[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setIfaces((await fetchNetInterfaces()).data.interfaces ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const filtered = search ? ifaces.filter((i) => (i.name ?? '').includes(search) || (i.node ?? '').includes(search) || (i.ipv4 ?? (Array.isArray(i.addresses) ? i.addresses[0] : i.address ?? '')).includes(search)) : ifaces;
 
@@ -34,13 +36,20 @@ const NetworkIfaces: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center shadow-lg shadow-teal-500/20"><Cable className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Network Interfaces</h1></div>
           <p className="text-sm text-slate-400 mt-1">Interface-level monitoring with traffic stats</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
+        <div className="flex items-center gap-3">
+          <ExportButton data={filtered as unknown as Record<string, unknown>[]} filename="network-interfaces" />
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
+        </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
 
       <div className="relative mb-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search interfaces, nodes, IPs..." className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
 
-      {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+      {loading && ifaces.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
+
+      {!loading && filtered.length === 0 && !error && (
+        <div className="text-center py-12 text-slate-400">No network interfaces found.</div>
+      )}
 
       <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 overflow-hidden">
         <div className="overflow-x-auto">

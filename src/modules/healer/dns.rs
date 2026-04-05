@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// DNS-specific healing logic
 use super::*;
 
@@ -19,8 +18,8 @@ impl DNSHealer {
 
         // Create problems for sources with many DNS drops
         for (src_ip, count) in dns_drops_by_source {
-            if count >= 3 {
-                // Threshold
+            if count > 5 {
+                // Threshold: more than 5 DNS drops (consistent with SelfHealer)
                 // Namespace cannot be resolved here because DNSHealer operates on raw
                 // DropReason data without access to IPCache. Use the enriched variant
                 // (SelfHealer::detect_problems_enriched) when pod context is needed.
@@ -48,7 +47,7 @@ impl DNSHealer {
             applied: false,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
         }
     }
@@ -79,26 +78,22 @@ mod tests {
 
     #[test]
     fn test_dns_drops_below_threshold() {
-        // Only 2 drops from same source - below threshold of 3
-        let drops = vec![make_dns_drop("10.0.0.1"), make_dns_drop("10.0.0.1")];
+        // Only 5 drops from same source - at threshold (> 5 needed)
+        let drops: Vec<DropReason> = (0..5).map(|_| make_dns_drop("10.0.0.1")).collect();
         let problems = DNSHealer::detect_dns_issues(&drops);
         assert!(problems.is_empty());
     }
 
     #[test]
-    fn test_dns_drops_at_threshold() {
-        // Exactly 3 drops from same source - at threshold
-        let drops = vec![
-            make_dns_drop("10.0.0.1"),
-            make_dns_drop("10.0.0.1"),
-            make_dns_drop("10.0.0.1"),
-        ];
+    fn test_dns_drops_above_threshold() {
+        // 6 drops from same source - above threshold
+        let drops: Vec<DropReason> = (0..6).map(|_| make_dns_drop("10.0.0.1")).collect();
         let problems = DNSHealer::detect_dns_issues(&drops);
         assert_eq!(problems.len(), 1);
         match &problems[0] {
             Problem::DNSDrops { pod, count, .. } => {
                 assert_eq!(pod, "10.0.0.1");
-                assert_eq!(*count, 3);
+                assert_eq!(*count, 6);
             }
             _ => panic!("Expected DNSDrops problem"),
         }
@@ -107,16 +102,18 @@ mod tests {
     #[test]
     fn test_dns_drops_multiple_sources() {
         let mut drops = Vec::new();
-        // 4 drops from source A
-        for _ in 0..4 {
+        // 7 drops from source A (above threshold)
+        for _ in 0..7 {
             drops.push(make_dns_drop("10.0.0.1"));
         }
-        // 5 drops from source B
-        for _ in 0..5 {
+        // 8 drops from source B (above threshold)
+        for _ in 0..8 {
             drops.push(make_dns_drop("10.0.0.2"));
         }
-        // 1 drop from source C (below threshold)
-        drops.push(make_dns_drop("10.0.0.3"));
+        // 3 drops from source C (below threshold)
+        for _ in 0..3 {
+            drops.push(make_dns_drop("10.0.0.3"));
+        }
 
         let problems = DNSHealer::detect_dns_issues(&drops);
         assert_eq!(problems.len(), 2); // Only A and B

@@ -184,4 +184,4 @@ Full-featured React 19 web application with 58 views and 25 shared components.
 StatCard, ChartContainer, SortableTable, Badge, ProgressBar, ScoreGauge, Accordion, ToggleSwitch, AlertsList, EmptyState, Toast, GlobalSearch, and more.
 
 ### Tech Stack
-React 19, TypeScript 5.6, Tailwind CSS 3.4, Zustand 5, TanStack React Query, Recharts, D3.js, Monaco Editor, Vite 6, Vitest (74 tests).
+React 19, TypeScript 5.8, Tailwind CSS 3.4, Zustand 5, TanStack React Query, Recharts, D3 (d3-force, d3-selection, d3-drag), Monaco Editor, Vite 6, Vitest (68 tests).

@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Bug,
-  RefreshCw,
   Wrench,
   AlertTriangle,
   AlertOctagon,
@@ -12,8 +11,11 @@ import {
 } from 'lucide-react';
 import { fetchAnomalies as apiFetchAnomalies, remediateAnomaly as apiRemediate, Anomaly } from '../../services/api';
 import { isAxiosError } from 'axios';
-import { format, parseISO } from 'date-fns';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoDismiss } from '../../hooks/useAutoDismiss';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const SEV_BADGE: Record<string, string> = {
   critical: 'bg-red-500/15 text-red-400 border-red-500/30',
@@ -42,32 +44,31 @@ const STATUS_BADGE: Record<string, string> = {
 const Anomalies: React.FC = () => {
   usePageTitle('Anomalies');
   const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [remId, setRemId] = useState<string | null>(null);
   const [remediating, setRemediating] = useState(false);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setAnomalies((await apiFetchAnomalies()).data.anomalies ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to fetch anomalies'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const handleRemediate = async () => {
     if (!remId) return;
     setRemediating(true); setError(null);
-    try { await apiRemediate(remId); setRemId(null); setSuccess('Remediation initiated'); fetchData(); }
+    try { await apiRemediate(remId); setRemId(null); setSuccess('Remediation initiated'); manualRefresh(); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Remediation failed'); }
     finally { setRemediating(false); }
   };
 
   const countSev = (s: string) => anomalies.filter((a) => a.severity === s).length;
   const totalOpen = anomalies.filter((a) => !['remediated', 'resolved', 'dismissed'].includes(a.status)).length;
-  const fmtTs = (ts: string) => { try { return format(parseISO(ts), 'yyyy-MM-dd HH:mm'); } catch { return ts; } };
+  const fmtTs = (ts: string) => { try { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; } catch { return ts; } };
 
   return (
     <div>
@@ -76,9 +77,7 @@ const Anomalies: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center shadow-lg shadow-red-500/20"><Bug className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Anomaly Detection</h1></div>
           <p className="text-sm text-slate-400 mt-1">ML-powered network anomaly detection</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
@@ -94,11 +93,14 @@ const Anomalies: React.FC = () => {
 
       {/* Table */}
       <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-700/50 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center shadow-lg shadow-red-500/20">
-            <Bug className="w-4 h-4 text-white" />
+        <div className="px-5 py-4 border-b border-slate-700/50 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center shadow-lg shadow-red-500/20">
+              <Bug className="w-4 h-4 text-white" />
+            </div>
+            <h2 className="text-lg font-semibold text-white">Detected Anomalies</h2>
           </div>
-          <h2 className="text-lg font-semibold text-white">Detected Anomalies</h2>
+          {anomalies.length > 0 && <ExportButton data={anomalies as unknown as Record<string, unknown>[]} filename="anomalies" />}
         </div>
         {loading && <div className="flex justify-center p-3"><Loader2 className="w-5 h-5 animate-spin text-blue-400" /></div>}
         <div className="overflow-x-auto">

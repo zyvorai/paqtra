@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // Request Replay - Replay recorded traffic for debugging
 use anyhow::Result;
 

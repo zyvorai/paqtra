@@ -41,6 +41,7 @@ fn clear_config_env() {
         std::env::remove_var("REDIS_URL");
         std::env::remove_var("HUBBLE_ADDRESS");
         std::env::remove_var("K8S_CONTEXT");
+        std::env::remove_var("AUTH_DISABLED");
     }
 }
 
@@ -101,7 +102,7 @@ fn test_config_load_with_valid_secret() {
 
     assert_eq!(config.jwt_secret, secret);
     assert_eq!(config.host, "0.0.0.0", "Default host should be 0.0.0.0");
-    assert_eq!(config.port, 0, "Default port should be 0");
+    assert_eq!(config.port, 9191, "Default port should be 9191");
     assert_eq!(
         config.redis_url, "redis://localhost:6379",
         "Default Redis URL should be redis://localhost:6379"

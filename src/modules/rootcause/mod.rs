@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 /// Root-Cause Engine Module
 ///
 /// Analyzes packet drops and provides human-readable explanations
@@ -156,14 +155,11 @@ impl<M: MapReader> RootCauseEngine<M> {
     fn update_history(&mut self, new_events: Vec<DropEvent>) {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
-        // Add new events
-        self.drop_history.extend(new_events);
-
-        // Update pattern counts
-        for event in &self.drop_history {
+        // Update pattern counts only for new events
+        for event in &new_events {
             let pattern = DropPattern {
                 reason: event.reason.clone(),
                 src_identity: event.identity_src,
@@ -174,9 +170,31 @@ impl<M: MapReader> RootCauseEngine<M> {
             *self.pattern_counts.entry(pattern).or_insert(0) += 1;
         }
 
-        // Clean old events
-        let cutoff = now - self.config.analysis_window_secs;
-        self.drop_history.retain(|e| e.timestamp >= cutoff);
+        // Add new events
+        self.drop_history.extend(new_events);
+
+        // Clean old events and decrement their pattern counts
+        let cutoff = now.saturating_sub(self.config.analysis_window_secs);
+        self.drop_history.retain(|e| {
+            if e.timestamp >= cutoff {
+                true
+            } else {
+                let pattern = DropPattern {
+                    reason: e.reason.clone(),
+                    src_identity: e.identity_src,
+                    dst_identity: e.identity_dst,
+                    dst_port: e.dst_port,
+                    protocol: e.protocol,
+                };
+                if let Some(count) = self.pattern_counts.get_mut(&pattern) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        self.pattern_counts.remove(&pattern);
+                    }
+                }
+                false
+            }
+        });
     }
 
     /// Find significant drops (above threshold)
@@ -458,6 +476,7 @@ mod tests {
     use crate::ebpf::MockMapReader;
 
     #[tokio::test]
+    #[ignore] // Requires a live Kubernetes cluster
     async fn test_rootcause_creation() {
         let config = RootCauseConfig::default();
         let reader = MockMapReader;

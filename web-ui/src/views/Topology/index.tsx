@@ -47,7 +47,7 @@ const Topology: React.FC = () => {
   useEffect(() => {
     if (!svgRef.current || namespaces.length === 0) return;
     const svg = svgRef.current;
-    svg.innerHTML = '';
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
     const width = svg.clientWidth || 800;
     const height = 400;
     const cx = width / 2;

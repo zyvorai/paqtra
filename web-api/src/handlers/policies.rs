@@ -1,14 +1,15 @@
 // Policy management endpoints
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
     Json,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use crate::AppState;
+use crate::error::ApiError;
 use crate::models::policy::CreatePolicyRequest;
 use super::{track_request, track_error, to_json};
 
@@ -22,16 +23,16 @@ pub struct PaginationParams {
 pub async fn list_policies(
     State(state): State<Arc<AppState>>,
     Query(params): Query<PaginationParams>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, ApiError> {
     tracing::info!("Listing policies");
 
-    track_request(&state, |m| m.k8s_queries += 1).await;
+    track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
     match state.k8s.list_policies().await {
         Ok(policies) => {
             let total = policies.len();
             let offset = params.offset.unwrap_or(0);
-            let limit = params.limit.unwrap_or(50);
+            let limit = params.limit.unwrap_or(50).min(1000);
             let page: Vec<_> = policies.into_iter().skip(offset).take(limit).collect();
             Ok(Json(json!({
                 "policies": page,
@@ -43,7 +44,7 @@ pub async fn list_policies(
         Err(e) => {
             tracing::error!("Failed to list policies: {}", e);
             track_error(&state).await;
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ApiError::InternalError(e.to_string()))
         }
     }
 }
@@ -51,23 +52,20 @@ pub async fn list_policies(
 pub async fn create_policy(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreatePolicyRequest>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, ApiError> {
     tracing::info!("Creating policy: {}/{}", req.namespace, req.name);
 
-    track_request(&state, |m| m.k8s_queries += 1).await;
+    track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
     match state.k8s.create_policy(&req).await {
         Ok(policy) => {
-            {
-                let mut m = state.metrics.write().await;
-                m.policies_created += 1;
-            }
+            state.metrics.policies_created.fetch_add(1, Ordering::Relaxed);
             Ok(Json(to_json(&policy)))
         }
         Err(e) => {
             tracing::error!("Failed to create policy: {}", e);
             track_error(&state).await;
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ApiError::InternalError(e.to_string()))
         }
     }
 }
@@ -75,10 +73,10 @@ pub async fn create_policy(
 pub async fn get_policy(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, ApiError> {
     tracing::info!("Getting policy: {}", id);
 
-    track_request(&state, |m| m.k8s_queries += 1).await;
+    track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
     // Fetch all and find by id
     match state.k8s.list_policies().await {
@@ -87,13 +85,13 @@ pub async fn get_policy(
                 Some(policy) => {
                     Ok(Json(to_json(&policy)))
                 }
-                None => Err(StatusCode::NOT_FOUND),
+                None => Err(ApiError::NotFound),
             }
         }
         Err(e) => {
             tracing::error!("Failed to get policy: {}", e);
             track_error(&state).await;
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ApiError::InternalError(e.to_string()))
         }
     }
 }
@@ -102,10 +100,10 @@ pub async fn update_policy(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(req): Json<CreatePolicyRequest>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, ApiError> {
     tracing::info!("Updating policy: {}", id);
 
-    track_request(&state, |m| m.k8s_queries += 1).await;
+    track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
     // kubectl apply is idempotent, so create == update
     match state.k8s.create_policy(&req).await {
@@ -117,7 +115,7 @@ pub async fn update_policy(
         Err(e) => {
             tracing::error!("Failed to update policy: {}", e);
             track_error(&state).await;
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ApiError::InternalError(e.to_string()))
         }
     }
 }
@@ -125,23 +123,20 @@ pub async fn update_policy(
 pub async fn delete_policy(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<axum::http::StatusCode, ApiError> {
     tracing::info!("Deleting policy: {}", id);
 
-    track_request(&state, |m| m.k8s_queries += 1).await;
+    track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
     match state.k8s.delete_policy(&id).await {
         Ok(()) => {
-            {
-                let mut m = state.metrics.write().await;
-                m.policies_deleted += 1;
-            }
-            Ok(StatusCode::NO_CONTENT)
+            state.metrics.policies_deleted.fetch_add(1, Ordering::Relaxed);
+            Ok(axum::http::StatusCode::NO_CONTENT)
         }
         Err(e) => {
             tracing::error!("Failed to delete policy: {}", e);
             track_error(&state).await;
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ApiError::InternalError(e.to_string()))
         }
     }
 }
@@ -149,10 +144,10 @@ pub async fn delete_policy(
 pub async fn simulate_policy(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreatePolicyRequest>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, ApiError> {
     tracing::info!("Simulating policy: {}", req.name);
 
-    track_request(&state, |m| m.k8s_queries += 1).await;
+    track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
     // Analyze the policy spec to produce a meaningful impact assessment
     let spec = &req.spec;
@@ -185,9 +180,7 @@ pub async fn simulate_policy(
             .unwrap_or(false);
 
     // Estimate affected flows based on namespace scope and rule count
-    let m = state.metrics.read().await;
-    let recent_flows = m.flows_fetched;
-    drop(m);
+    let recent_flows = state.metrics.flows_fetched.load(Ordering::Relaxed);
 
     // Rough heuristic: broader selectors affect more flows
     let estimated_affected = if has_endpoint_selector {

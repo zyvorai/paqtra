@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // Hot Loader - Load/unload eBPF programs without restart
 use anyhow::Result;
 use chrono::Utc;
@@ -188,6 +187,8 @@ impl HotLoader {
             "BPF program load requested but Aya is not enabled. \
              Build with --features aya-ebpf and run as root for real loading."
         );
+        // Return None-equivalent: fd will be stored as Some(-1) and
+        // skipped in unload/drop due to the `if fd >= 0` guard.
         Ok(-1)
     }
 
@@ -252,7 +253,9 @@ impl HotLoader {
             }
         }
 
-        Ok(0)
+        // Return -1 since we don't have a real FD from Aya's high-level API;
+        // Aya manages the FD internally. Using -1 prevents accidental close of fd 0 (stdin).
+        Ok(-1)
     }
 
     /// Attach a loaded program to its target.

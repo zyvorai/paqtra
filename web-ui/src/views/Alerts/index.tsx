@@ -1,8 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { BellRing, RefreshCw, Loader2, Bell, BellOff, Clock } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { BellRing, Loader2, Bell, BellOff, Clock } from 'lucide-react';
 import { fetchAlertRules, fetchAlertHistory, AlertRule, AlertEvent } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
+import ExportButton from '../../components/ExportButton';
 
 const SEV_BADGE: Record<string, string> = { critical: 'bg-red-500/15 text-red-400 border-red-500/30', high: 'bg-orange-500/15 text-orange-400 border-orange-500/30', warning: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' };
 const STATUS_BADGE: Record<string, string> = { firing: 'bg-red-500/15 text-red-400 border-red-500/30', resolved: 'bg-green-500/15 text-green-400 border-green-500/30' };
@@ -11,18 +14,17 @@ const Alerts: React.FC = () => {
   usePageTitle('Alerts');
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [history, setHistory] = useState<AlertEvent[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'rules' | 'history'>('rules');
+  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { const [r, h] = await Promise.all([fetchAlertRules(), fetchAlertHistory()]); setRules(r.data.rules ?? []); setHistory(h.data.alerts ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const firing = history.filter((a) => a.status === 'firing').length;
 
@@ -35,9 +37,9 @@ const Alerts: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           {firing > 0 && <span className="px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm animate-pulse-dot">{firing} firing</span>}
-          <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <ExportButton data={(tab === 'rules' ? rules : history) as Record<string, unknown>[]} filename={`alerts-${tab}`} />
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading}
+            autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn(v => !v)} intervalSecs={30} />
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
@@ -48,6 +50,7 @@ const Alerts: React.FC = () => {
       {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
       {tab === 'rules' && (
         <div className="space-y-3">
+          {!loading && rules.length === 0 && <div className="text-center py-12 text-slate-400">No alert rules found</div>}
           {rules.map((r) => (
             <div key={r.id} className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-4 flex items-center gap-4">
               {r.enabled ? <Bell className="w-5 h-5 text-blue-400" /> : <BellOff className="w-5 h-5 text-slate-400" />}
@@ -70,6 +73,7 @@ const Alerts: React.FC = () => {
       )}
       {tab === 'history' && (
         <div className="space-y-3">
+          {!loading && history.length === 0 && <div className="text-center py-12 text-slate-400">No alert history found</div>}
           {history.map((a) => (
             <div key={a.id} className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-4 card-glow transition-all hover:scale-[1.01]">
               <div className="flex items-center gap-2 mb-2">

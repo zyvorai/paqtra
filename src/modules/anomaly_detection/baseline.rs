@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // Baseline Learning - Establishes normal behavior patterns
 use anyhow::Result;
 use chrono::{DateTime, Datelike, Duration, Timelike, Utc};
@@ -140,14 +139,14 @@ impl BaselineLearner {
         let variance: f64 = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n as f64;
         let std_dev = variance.sqrt();
 
-        let median = if n.is_multiple_of(2) {
+        let median = if n % 2 == 0 {
             (sorted_values[n / 2 - 1] + sorted_values[n / 2]) / 2.0
         } else {
             sorted_values[n / 2]
         };
 
-        let percentile_95 = sorted_values[(n as f64 * 0.95) as usize];
-        let percentile_99 = sorted_values[(n as f64 * 0.99) as usize];
+        let percentile_95 = sorted_values[((n as f64 * 0.95) as usize).min(n - 1)];
+        let percentile_99 = sorted_values[((n as f64 * 0.99) as usize).min(n - 1)];
 
         BaselineStats {
             mean,
@@ -200,7 +199,11 @@ impl BaselineLearner {
                 .sum::<f64>()
                 / (data_points.len() - data_points.len() / 2) as f64;
 
-            (second_half - first_half) / first_half
+            if first_half.abs() < f64::EPSILON {
+                0.0
+            } else {
+                (second_half - first_half) / first_half
+            }
         } else {
             0.0
         };

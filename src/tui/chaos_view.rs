@@ -46,6 +46,7 @@ pub struct ChaosView {
     pub selected_preset_index: usize,
     pub show_presets: bool,
     pub confirmation_mode: bool,
+    pub confirmed: bool,
     pub circuit_breaker_confirm: bool,
 }
 
@@ -56,6 +57,7 @@ impl ChaosView {
             selected_preset_index: 0,
             show_presets: true,
             confirmation_mode: false,
+            confirmed: false,
             circuit_breaker_confirm: false,
         }
     }

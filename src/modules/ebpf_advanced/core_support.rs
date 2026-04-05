@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // CO-RE (Compile Once - Run Everywhere) Support
 use anyhow::Result;
 
@@ -87,8 +86,9 @@ impl COREHandler {
 
         // Write source to temp file
         let tmp_dir = std::env::temp_dir();
-        let src_path = tmp_dir.join(format!("{}.c", name));
-        let obj_path = tmp_dir.join(format!("{}.o", name));
+        let unique_id = uuid::Uuid::new_v4();
+        let src_path = tmp_dir.join(format!("{}_{}.c", name, unique_id));
+        let obj_path = tmp_dir.join(format!("{}_{}.o", name, unique_id));
 
         std::fs::write(&src_path, source_code)?;
 

@@ -63,6 +63,13 @@ pub struct ConntrackEntry {
     pub packets: u64,
     pub bytes: u64,
     pub last_seen: u64,
+    // Enrichment fields (populated by K8sIdentityResolver)
+    pub src_namespace: Option<String>,
+    pub src_pod: Option<String>,
+    pub src_labels: Option<Vec<String>>,
+    pub dst_namespace: Option<String>,
+    pub dst_pod: Option<String>,
+    pub dst_labels: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -138,7 +145,7 @@ pub enum DropReasonType {
 impl DropReasonType {
     pub fn from_code(code: u32) -> Self {
         match code {
-            0 => DropReasonType::PolicyDenied,
+            0 => DropReasonType::Other(0),
             1 => DropReasonType::PolicyDenied,
             2 => DropReasonType::InvalidPacket,
             3 => DropReasonType::NoRoute,
@@ -293,6 +300,12 @@ impl MapReader for MockMapReader {
                 packets: 150,
                 bytes: 48000,
                 last_seen: 1700000000,
+                src_namespace: None,
+                src_pod: None,
+                src_labels: None,
+                dst_namespace: None,
+                dst_pod: None,
+                dst_labels: None,
             },
             ConntrackEntry {
                 src_ip: "10.0.0.3".to_string(),
@@ -304,6 +317,12 @@ impl MapReader for MockMapReader {
                 packets: 320,
                 bytes: 128000,
                 last_seen: 1700000010,
+                src_namespace: None,
+                src_pod: None,
+                src_labels: None,
+                dst_namespace: None,
+                dst_pod: None,
+                dst_labels: None,
             },
             ConntrackEntry {
                 src_ip: "10.0.0.1".to_string(),
@@ -315,6 +334,12 @@ impl MapReader for MockMapReader {
                 packets: 2,
                 bytes: 128,
                 last_seen: 1700000020,
+                src_namespace: None,
+                src_pod: None,
+                src_labels: None,
+                dst_namespace: None,
+                dst_pod: None,
+                dst_labels: None,
             },
         ])
     }

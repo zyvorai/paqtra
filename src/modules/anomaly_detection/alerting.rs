@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // Alert Management - Intelligent alerting with noise reduction
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
@@ -110,9 +109,18 @@ impl AlertManager {
     }
 
     fn should_suppress(&self, anomaly: &Anomaly, history: &[Anomaly]) -> bool {
+        let key = format!("{:?}", anomaly.anomaly_type)
+            .chars()
+            .fold(String::new(), |mut acc, c| {
+                if c.is_uppercase() && !acc.is_empty() {
+                    acc.push('_');
+                }
+                acc.push(c.to_ascii_lowercase());
+                acc
+            });
         let rule = self
             .suppression_rules
-            .get(&format!("{:?}", anomaly.anomaly_type))
+            .get(&key)
             .or_else(|| self.suppression_rules.get("default"))
             .unwrap();
 
@@ -194,11 +202,9 @@ mod tests {
         let manager = AlertManager::new(0.8);
         let anomaly = make_anomaly(AnomalyType::TrafficSpike, "default", "web");
 
-        // Fill history with enough similar anomalies to trigger suppression
-        // The "default" rule allows max_alerts=5, but "traffic_spike" is matched
-        // via Debug format "TrafficSpike" -- however, the key lookup uses
-        // format!("{:?}", anomaly.anomaly_type) which yields "TrafficSpike",
-        // not "traffic_spike". So it falls back to "default" with max_alerts=5.
+        // Fill history with enough similar anomalies to trigger suppression.
+        // The "traffic_spike" rule has max_alerts=3, so 5 similar anomalies
+        // in the history window will trigger suppression.
         let history: Vec<Anomaly> = (0..5)
             .map(|_| make_anomaly(AnomalyType::TrafficSpike, "default", "web"))
             .collect();
