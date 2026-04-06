@@ -341,6 +341,9 @@
   <h3>Unsafe Code Audit</h3>
   <p>The application codebase contains <strong>no <code>unsafe</code> blocks</strong> in application logic. The only <code>unsafe</code> usage is a single <code>libc::close()</code> call for file descriptor cleanup, which is guarded by a validity check (fd &gt; 2) to prevent closing stdin/stdout/stderr.</p>
 
+  <h3>eBPF Data Queries</h3>
+  <p>Kernel eBPF data (programs, maps, conntrack, IP cache, load balancer, drops) is queried by spawning a <code>bpftool</code> subprocess with a <strong>5-second timeout</strong>. If the subprocess exceeds this timeout, it is terminated and the API returns a graceful error response. All bpftool output is parsed with proper error handling; malformed or unexpected output does not cause panics or undefined behavior.</p>
+
   <h3>Dependency Auditing</h3>
   <p>Dependencies are audited using <code>cargo-audit</code> against the RustSec Advisory Database. The CI pipeline fails on any known vulnerability in the dependency tree. <code>Cargo.lock</code> is committed to ensure reproducible builds.</p>
 </section>

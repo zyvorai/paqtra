@@ -83,6 +83,8 @@ ul.bullets li{margin-bottom:4px}
     <li><a href="#networking">Networking</a></li>
     <li class="cat">Operations</li>
     <li><a href="#operations">Operations</a></li>
+    <li class="cat">eBPF Data</li>
+    <li><a href="#ebpf-data">eBPF Data</a></li>
     <li class="cat">Real-time</li>
     <li><a href="#websocket">WebSocket</a></li>
   </ul>
@@ -464,7 +466,7 @@ cilium_vision_flows_total{verdict="FORWARDED"} 1489203</pre></div>
 }</pre></div>
 </div>
 
-<h3>eBPF Programs</h3>
+<h3>eBPF Programs (Legacy)</h3>
 
 <div class="endpoint">
   <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/ebpf/programs</span><span class="desc">List loaded eBPF programs</span></div>
@@ -804,6 +806,102 @@ cilium_vision_flows_total{verdict="FORWARDED"} 1489203</pre></div>
 }</pre></div>
 </div>
 
+<!-- ====== eBPF DATA ====== -->
+<h2 id="ebpf-data">eBPF Data <span style="font-size:13px;color:var(--text2);font-weight:400">(11 endpoints)</span></h2>
+
+<p>Real kernel eBPF data queried via <code>bpftool</code> subprocess with 5-second timeout. Returns live state from the running kernel.</p>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/ebpf/programs</span><span class="desc">List real kernel eBPF programs</span></div>
+  <div class="endpoint-body"><h5>Example Response</h5><pre>{
+  "programs": [
+    { "id": 142, "name": "cilium_from_container", "type": "sched_cls", "attach": "eth0", "loaded_at": "2026-04-04T06:00:00Z" }
+  ],
+  "total": 117
+}</pre></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/ebpf/programs/{id}</span><span class="desc">Program details</span></div>
+  <div class="endpoint-body"><h5>Example Response</h5><pre>{
+  "id": 142, "name": "cilium_from_container", "type": "sched_cls",
+  "tag": "a1b2c3d4e5f6", "jited": true, "bytes_xlated": 4096, "bytes_jited": 3200,
+  "loaded_at": "2026-04-04T06:00:00Z", "map_ids": [88, 91, 102]
+}</pre></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/ebpf/maps</span><span class="desc">List real kernel eBPF maps</span></div>
+  <div class="endpoint-body"><h5>Example Response</h5><pre>{
+  "maps": [
+    { "id": 88, "name": "cilium_ct4_global", "type": "hash", "max_entries": 524288, "entries_used": 31042 }
+  ],
+  "total": 132
+}</pre></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/ebpf/maps/{id}/entries</span><span class="desc">Browse map entries</span></div>
+  <div class="endpoint-body"><h5>Example Response</h5><pre>{
+  "map_id": 88, "map_name": "cilium_ct4_global",
+  "entries": [
+    { "key": "0a000142:1f90->0a000201:a3c4", "value": "lifetime=300 rx_packets=42 tx_packets=38 flags=0x0012" }
+  ],
+  "total_entries": 31042, "limit": 100, "offset": 0
+}</pre></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/ebpf/conntrack</span><span class="desc">Live conntrack table</span></div>
+  <div class="endpoint-body"><h5>Example Response</h5><pre>{
+  "entries": [
+    { "src": "10.0.1.66:8080", "dst": "10.0.2.1:41924", "protocol": "TCP", "flags": "SYN,ACK", "lifetime": 300, "rx_packets": 42 }
+  ],
+  "total": 12066
+}</pre></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/ebpf/ipcache</span><span class="desc">IP-to-identity cache</span></div>
+  <div class="endpoint-body"><h5>Example Response</h5><pre>{
+  "entries": [
+    { "cidr": "10.244.1.42/32", "identity": 48291, "tunnel_endpoint": "10.0.1.12", "encrypt_key": 3 }
+  ],
+  "total": 284
+}</pre></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/ebpf/lb</span><span class="desc">Load balancer backends</span></div>
+  <div class="endpoint-body"><h5>Example Response</h5><pre>{
+  "services": [
+    { "frontend": "10.96.0.14:80", "backends": ["10.244.1.10:8080", "10.244.2.20:8080"], "type": "ClusterIP", "algorithm": "maglev" }
+  ],
+  "total_services": 48, "total_backends": 142
+}</pre></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/ebpf/drops</span><span class="desc">Drop reason statistics</span></div>
+  <div class="endpoint-body"><h5>Example Response</h5><pre>{
+  "reasons": [
+    { "reason": "POLICY_DENIED", "count": 3120, "percentage": 78.2 },
+    { "reason": "CT_MAP_INSERTION_FAILED", "count": 412, "percentage": 10.3 }
+  ],
+  "total_drops": 3991
+}</pre></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/ebpf/summary</span><span class="desc">Aggregated eBPF summary</span></div>
+  <div class="endpoint-body"><h5>Example Response</h5><pre>{
+  "programs": 117, "maps": 132, "conntrack_entries": 12066,
+  "ipcache_entries": 284, "lb_services": 48, "total_drops": 3991
+}</pre></div>
+</div>
+
+<!-- Note: /api/v1/ebpf/programs and /api/v1/ebpf/maps in the Intelligence section above are the same endpoints listed here for completeness. Total unique eBPF data endpoints: 11 (including programs/{id}, maps/{id}/entries, conntrack, ipcache, lb, drops, summary). -->
+
 <!-- ====== WEBSOCKET ====== -->
 <h2 id="websocket">WebSocket <span style="font-size:13px;color:var(--text2);font-weight:400">(2 endpoints)</span></h2>
 
@@ -829,7 +927,7 @@ cilium_vision_flows_total{verdict="FORWARDED"} 1489203</pre></div>
 </div>
 
 <div style="margin-top:64px;padding-top:24px;border-top:1px solid var(--border);color:var(--text2);font-size:13px">
-  Cilium Vision API Reference v1.0 &mdash; 76 endpoints across 10 categories.<br>
+  Cilium Vision API Reference v1.0 &mdash; 75+ endpoints across 11 categories.<br>
   Generated for integration developers. Base URL: <code>http://&lt;host&gt;:9191</code>
 </div>
 

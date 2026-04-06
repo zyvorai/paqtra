@@ -162,7 +162,7 @@ Traffic shadowing, request replay, environment mirroring.
 
 ## Web Dashboard (web-ui)
 
-Full-featured React 19 web application with 59 views, 31 shared components, and 5 custom hooks.
+Full-featured React 19 web application with 64 views, 34 shared components, and 6 custom hooks.
 
 ### Design
 - Dark-first theme (slate-950 base) with light mode toggle
@@ -178,6 +178,7 @@ Full-featured React 19 web application with 59 views, 31 shared components, and 
 | Security | 15 | Policies, policy editor (Monaco), anomalies, encryption, RBAC, compliance |
 | Intelligence | 6 | AutoPolicy ML engine, healer, root cause, diagnostics, forecasting |
 | Operations | 11 | Chaos engineering, canary, replay, packet capture, multi-cluster, eBPF |
+| eBPF Data | 5 | Conntrack table, policy map, IP cache, LB map, drop analytics |
 | Networking | 8 | Load balancer, ingress/egress, service mesh, IPAM, cost analytics |
 
 ### Policy Management
@@ -193,7 +194,7 @@ Full-featured React 19 web application with 59 views, 31 shared components, and 
 - **Auto-Refresh**: 30-second refresh interval on all data views with DataFreshness indicator
 - **Export**: CSV and JSON export on all tabular data views
 
-### Reusable Components (31)
+### Reusable Components (34)
 StatCard, ChartContainer, SortableTable, Badge, ProgressBar, ScoreGauge, Accordion, ToggleSwitch, AlertsList, EmptyState, Toast, GlobalSearch, DataFreshness, and more.
 
 ### Tech Stack
@@ -201,9 +202,26 @@ React 19, TypeScript 5.8, Tailwind CSS 3.4, Zustand 5, TanStack React Query, Rec
 
 ---
 
-## Web API (64 REST Endpoints)
+## eBPF Kernel Data
 
-Rust/Axum backend serving the web dashboard with 64 REST API endpoints.
+Real kernel eBPF data views powered by bpftool queries (not mocked data):
+
+| View | Data Source | Details |
+|------|------------|---------|
+| **Conntrack Table** | `bpftool map dump` | 12,066 active connection tracking entries |
+| **Policy Map** | `bpftool map dump` | Per-endpoint policy verdict maps |
+| **IP Cache** | `bpftool map dump` | 35 identity-to-CIDR mappings |
+| **LB Map** | `bpftool map dump` | Load balancer service/backend maps |
+| **Drop Analytics** | `bpftool map dump` | 16 drop reason categories with counts |
+| **eBPF Profiler** | `bpftool prog/map list` | 117 programs, 132 maps, Map Explorer |
+
+All data is queried from the running kernel via 11 dedicated eBPF API endpoints.
+
+---
+
+## Web API (75+ REST Endpoints)
+
+Rust/Axum backend serving the web dashboard with 75+ REST API endpoints, including 11 eBPF-specific endpoints querying real kernel data via bpftool.
 
 ### Authentication & Authorization
 - **JWT Authentication**: Token-based auth on all protected endpoints
@@ -227,6 +245,7 @@ Rust/Axum backend serving the web dashboard with 64 REST API endpoints.
 | Policies | 10 | CRUD, bulk delete, templates, visual builder, ML generation |
 | Endpoints & Identity | 8 | Cilium endpoints, identity resolution, labels |
 | Intelligence | 10 | AutoPolicy, healer, root cause, simulator, anomaly detection |
+| eBPF Data | 11 | Conntrack, policy map, ipcache, LB map, drops, programs, maps |
 | Operations | 8 | Chaos experiments, canary deployments, replay |
 | Cluster & Infra | 8 | Multi-cluster, health checks, node status, agent info |
 | Auth & Admin | 4 | Login, token refresh, RBAC management |
@@ -241,9 +260,9 @@ Rust/Axum backend serving the web dashboard with 64 REST API endpoints.
 | Rust tests | 961 passing, 0 failures |
 | TUI tabs | 13 |
 | Rust lines of code | 32,000+ |
-| Web dashboard pages | 59 |
-| Web components | 31 |
-| Custom hooks | 5 |
-| REST API endpoints | 64 |
+| Web dashboard pages | 64 |
+| Web components | 34 |
+| Custom hooks | 6 |
+| REST API endpoints | 75+ |
 | Web UI tests | 68 passing |
 | Compiler warnings | 0 (Rust + TypeScript) |

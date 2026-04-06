@@ -10,7 +10,8 @@
 4. [Developer Experience Tools](#developer-experience-tools)
 5. [v2.0 Delivered Features](#v20-delivered-features)
 6. [Recently Delivered: Security Hardening & Visual Rule Builder](#recently-delivered-security-hardening--visual-rule-builder)
-7. [v3.0 Roadmap](#v30-roadmap-planned)
+7. [Recently Delivered: Real Kernel eBPF Data Views](#recently-delivered-real-kernel-ebpf-data-views)
+8. [v3.0 Roadmap](#v30-roadmap-planned)
 
 ---
 
@@ -356,7 +357,7 @@ All features are integrated into the Cilium Flow platform:
 
 All v2.0 features are **implemented and shipping**:
 
-- Full web dashboard (58 views, 25 components, React 19 + TypeScript)
+- Full web dashboard (64 views, 34 components, React 19 + TypeScript)
 - Real-time WebSocket metrics with live charts
 - Monaco YAML policy editor with validation
 - Interactive D3.js topology and service map visualization
@@ -387,6 +388,26 @@ The following features were delivered in the latest release cycle:
 ### Backend Improvements
 - **Concurrent health checks** with 3s timeout
 - **CT entry parsing** with real flags and lifetime fields
+
+---
+
+## Recently Delivered: Real Kernel eBPF Data Views
+
+The following features were delivered in the April 2026 release cycle:
+
+### Real Kernel eBPF Data (bpftool integration)
+- **Conntrack Table** -- 12,066 live connection tracking entries from kernel CT maps
+- **Policy Map** -- per-endpoint policy verdict maps showing allow/deny decisions
+- **IP Cache** -- 35 identity-to-CIDR mappings from Cilium's ipcache
+- **LB Map** -- load balancer service and backend map entries
+- **Drop Analytics** -- 16 drop reason categories with per-category counts and trends
+- **eBPF Profiler with Map Explorer** -- browse 117 programs and 132 maps, inspect map contents
+
+### Platform Updates
+- 11 new eBPF-specific REST API endpoints querying real kernel data via bpftool
+- New "eBPF Data" navigation group in sidebar (5 new pages + enhanced eBPF Profiler)
+- 64 total dashboard pages (was 59), 34 components (was 31), 75+ endpoints (was 64)
+- All eBPF data is real (queried from running kernel, not mocked)
 
 ---
 

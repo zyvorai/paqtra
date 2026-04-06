@@ -2,7 +2,7 @@
 
 ## Overview
 
-Cilium Flow is a Rust-based terminal UI platform that provides real-time network observability and intelligent operations for Kubernetes clusters running Cilium. It reads eBPF maps, streams Hubble flows, and exposes 13 interactive tabs covering everything from live packet inspection to chaos engineering and multi-cluster orchestration. A companion React web dashboard and Rust/Axum API server provide browser-based access with 64 REST endpoints.
+Cilium Flow is a Rust-based terminal UI platform that provides real-time network observability and intelligent operations for Kubernetes clusters running Cilium. It reads eBPF maps, streams Hubble flows, and exposes 13 interactive tabs covering everything from live packet inspection to chaos engineering and multi-cluster orchestration. A companion React web dashboard and Rust/Axum API server provide browser-based access with 75+ REST endpoints, including 11 eBPF-specific endpoints querying real kernel data via bpftool.
 
 ## By the Numbers
 
@@ -14,11 +14,11 @@ Cilium Flow is a Rust-based terminal UI platform that provides real-time network
 | TUI tabs | 13 |
 | Rust tests | 961 passing, 0 failures |
 | Web API tests | 26 passing |
-| Web UI views | 59 |
-| Web UI components | 31 |
-| Web UI hooks | 5 |
+| Web UI views | 64 |
+| Web UI components | 34 |
+| Web UI hooks | 6 |
 | Web UI tests | 68 passing |
-| REST API endpoints | 64 |
+| REST API endpoints | 75+ |
 | Total tests | 1,055 |
 | Compiler warnings | 0 (Rust + TypeScript) |
 
@@ -72,8 +72,8 @@ Terminal UI Layer        ratatui + crossterm, 13 tabs, 60 FPS
 Event Handler Layer      Sync handlers (navigation, confirmation)
                          Async handlers (engine operations)
 Engine Layer             8 engines with real K8s/kubectl integration
-Web API Layer            Axum, 64 endpoints, JWT auth, RBAC, Redis
-Web UI Layer             React 19, 59 views, WebSocket streaming
+Web API Layer            Axum, 75+ endpoints, JWT auth, RBAC, Redis
+Web UI Layer             React 19, 64 views, WebSocket streaming
 Data Layer               eBPF maps (Aya/bpftool), Hubble CLI, K8s API
 Infrastructure           Cilium Agent, Kernel eBPF datapath
 ```
@@ -120,14 +120,22 @@ Infrastructure           Cilium Agent, Kernel eBPF datapath
 - Tree-shaken d3 imports (d3-selection, d3-force, d3-drag instead of full d3)
 - Fixed auth token storage mismatch (localStorage vs sessionStorage)
 
+### eBPF Kernel Data Views
+- Real kernel eBPF data views with bpftool integration (not mocked)
+- 117 eBPF programs, 132 maps, 12,066 conntrack entries, 35 ipcache entries
+- 16 drop reason categories with per-category analytics
+- 11 dedicated eBPF API endpoints querying live kernel data
+- New pages: Conntrack Table, Policy Map, IP Cache, LB Map, Drop Analytics, eBPF Profiler with Map Explorer
+- New "eBPF Data" navigation group in sidebar
+
 ### Web UX Overhaul
-- 59 dashboard pages with dark-first HyperSDK-aligned theme
+- 64 dashboard pages with dark-first HyperSDK-aligned theme
 - Visual Rule Builder for form-based policy creation without YAML
 - Policy CRUD: create (YAML/visual/template/ML), edit/update, delete, bulk delete
 - Auto-refresh (30s) on all data views with DataFreshness indicator
 - Export CSV/JSON on all tabular data
 - WebSocket real-time streaming for flows and metrics
-- 31 shared components, 5 custom hooks
+- 34 shared components, 6 custom hooks
 - Added accessibility: aria-labels, role="dialog", aria-modal on all modals
 - Added auto-dismiss for success messages via useAutoDismiss hook
 
@@ -147,9 +155,9 @@ Infrastructure           Cilium Agent, Kernel eBPF datapath
 | Metric | Value |
 |--------|-------|
 | Framework | React 19 + TypeScript 5.8 |
-| Views | 59 (lazy-loaded) |
-| Components | 31 shared UI components |
-| Hooks | 5 custom hooks |
+| Views | 64 (lazy-loaded) |
+| Components | 34 shared UI components |
+| Hooks | 6 custom hooks |
 | Stores | 3 Zustand stores |
 | API types | 49 interfaces, 70+ functions |
 | Tests | 68 passing |

@@ -5,12 +5,12 @@
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 [![React](https://img.shields.io/badge/react-19-blue.svg)](https://react.dev/)
 [![Tests](https://img.shields.io/badge/tests-961%20passing-brightgreen.svg)](#testing)
-[![API](https://img.shields.io/badge/API-64%20endpoints-blueviolet.svg)](#web-api)
-[![Pages](https://img.shields.io/badge/dashboard-59%20pages-cyan.svg)](#web-dashboard)
+[![API](https://img.shields.io/badge/API-75%2B%20endpoints-blueviolet.svg)](#web-api)
+[![Pages](https://img.shields.io/badge/dashboard-64%20pages-cyan.svg)](#web-dashboard)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Cilium](https://img.shields.io/badge/cilium-1.14%2B-purple.svg)](https://cilium.io/)
 
-Cilium Vision is a full-stack observability and operations platform for Kubernetes networks powered by Cilium eBPF. It provides a **web dashboard** (59 pages), **REST API** (64 endpoints), and **terminal TUI** (13 tabs) in a single deployable package.
+Cilium Vision is a full-stack observability and operations platform for Kubernetes networks powered by Cilium eBPF. It provides a **web dashboard** (64 pages), **REST API** (75+ endpoints), and **terminal TUI** (13 tabs) in a single deployable package. The dashboard includes real kernel eBPF data views powered by bpftool, exposing live conntrack tables, policy maps, IP cache, LB maps, and drop analytics.
 
 ---
 
@@ -62,8 +62,8 @@ cilium-tui --skip-bootstrap              # Skip auto-setup
 
 | Interface | URL | Description |
 |-----------|-----|-------------|
-| **Web Dashboard** | `http://<host>:9191` | 59-page React dashboard |
-| **REST API** | `http://<host>:9191/api/v1/` | 64 JSON endpoints |
+| **Web Dashboard** | `http://<host>:9191` | 64-page React dashboard |
+| **REST API** | `http://<host>:9191/api/v1/` | 75+ JSON endpoints |
 | **WebSocket** | `ws://<host>:9191/api/v1/ws/metrics` | Real-time metrics stream |
 | **Health Check** | `http://<host>:9191/health` | API health + subsystem status |
 | **Presentation** | `http://<host>:9191/presentation.html` | Client presentation (13 slides) |
@@ -75,15 +75,17 @@ cilium-tui --skip-bootstrap              # Skip auto-setup
 ```
 +------------------------------------------------------------------+
 |                    Web Dashboard (React 19 + TypeScript)           |
-|  59 Pages | 31 Components | WebSocket | Dark/Light Theme         |
+|  64 Pages | 34 Components | WebSocket | Dark/Light Theme         |
 +------------------------------------------------------------------+
 |                    REST API (Rust + Axum)                          |
-|  64 Endpoints | JWT Auth | Redis Cache | Rate Limiting           |
+|  75+ Endpoints | JWT Auth | Redis Cache | Rate Limiting          |
 +------------------------------------------------------------------+
 |                    Terminal TUI (Rust + Ratatui)                   |
 |  13 Tabs | 32K Lines | Live Monitoring | Packet Explainer        |
 +------------------------------------------------------------------+
 |  eBPF Maps (Aya)  |  Hubble Relay  |  Kubernetes API  |  Redis   |
++------------------------------------------------------------------+
+|  bpftool (real kernel data: 117 progs, 132 maps, 12K CT entries) |
 +------------------------------------------------------------------+
 |              Cilium Agent  |  Linux Kernel eBPF Datapath          |
 +------------------------------------------------------------------+
@@ -93,7 +95,7 @@ cilium-tui --skip-bootstrap              # Skip auto-setup
 
 ## Web Dashboard
 
-59 pages organized in 6 navigation groups:
+64 pages organized in 7 navigation groups:
 
 ### Overview
 Dashboard, Flows, Topology, Endpoints, Nodes, Events, Metrics
@@ -109,6 +111,9 @@ AutoPolicy Engine, Chaos Engineering, Canary Deployments, Network Healer, Root C
 
 ### Operations
 Cluster Health, Alerts, Audit Log, SLO Dashboard, Incident Timeline, Change Log, Diagnostics, Troubleshooter, Node Drain, Settings
+
+### eBPF Data
+Conntrack Table (12K+ entries), Policy Map, IP Cache (35 entries), LB Map, Drop Analytics (16 categories), eBPF Profiler with Map Explorer (117 programs, 132 maps)
 
 ### Networking
 ClusterMesh, BGP Peering, Load Balancer, Ingress Gateway, Egress Gateway, IPAM, Encryption, WireGuard, Network Interfaces, Traffic Mirror, Packet Capture, Flow Exporter, Service Mesh, KubeProxy Replacement
@@ -139,7 +144,7 @@ Every view includes:
 
 ## REST API
 
-64 endpoints serving JSON over HTTP with JWT authentication.
+75+ endpoints serving JSON over HTTP with JWT authentication, including 11 eBPF-specific endpoints querying real kernel data via bpftool.
 
 ```bash
 # Health check

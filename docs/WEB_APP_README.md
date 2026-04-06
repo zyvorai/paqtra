@@ -26,7 +26,7 @@ web-ui/
     App.tsx                    Router + providers (QueryClient, Toast, ErrorBoundary)
     main.tsx                   Entry point
     index.css                  Tailwind + custom utilities (gradients, glows, animations)
-    components/                31 shared UI components
+    components/                34 shared UI components
       MainLayout.tsx           Top navbar with hover dropdowns, mobile menu, WS status
       LoginPage.tsx            Auth form with remember-me, show/hide password
       StatCard.tsx             Stat card with gradient icon box, glow, trend
@@ -78,10 +78,10 @@ web-ui/
       useMetricsHistory.ts     Rolling metrics buffer
       usePageTitle.ts          Dynamic page title
       useWebSocket.ts          WebSocket connection with auto-reconnect
-    views/                     59 view components (lazy-loaded)
+    views/                     64 view components (lazy-loaded)
 ```
 
-## Views (59 pages)
+## Views (64 pages)
 
 | Category | Views |
 |----------|-------|
@@ -90,6 +90,7 @@ web-ui/
 | **Security** | Policies, Templates, Policy Editor, Visual Rule Builder, Pod Security, Anomalies, Security, Encryption, WireGuard, Identities, RBAC, Compliance, Audit Log, Alerts, Incidents, Change Log |
 | **Intelligence** | AutoPolicy, Healer, Root Cause, Diagnostics, Troubleshoot, Forecasting |
 | **Operations** | Chaos, Canary, Replay, Capture, Mirroring, MultiCluster, Cluster Mesh, BGP, Node Drain, eBPF |
+| **eBPF Data** | Conntrack Table, Policy Map, IP Cache, LB Map, Drop Analytics |
 | **Networking** | Load Balancer, Ingress, Egress GW, Service Mesh, KPR, IPAM, Cost Analytics, Settings |
 
 ## Design System

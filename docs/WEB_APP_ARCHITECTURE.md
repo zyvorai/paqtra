@@ -15,8 +15,8 @@ Cloud-native web application providing a real-time dashboard for Cilium network 
 |  |   Frontend (React SPA)    |  |   Backend (Rust/Actix)   | |
 |  |   Port: 3000 (dev)        |  |   Port: 9191             | |
 |  |                            |  |                          | |
-|  |  31 shared components      |  |  REST API (/api/v1/*)   | |
-|  |  59 lazy-loaded views      |  |  WebSocket (/ws/*)      | |
+|  |  34 shared components      |  |  REST API (/api/v1/*)   | |
+|  |  64 lazy-loaded views      |  |  WebSocket (/ws/*)      | |
 |  |  Zustand state (3 stores)  |  |  JWT authentication     | |
 |  |  WebSocket real-time       |  |  Hubble gRPC proxy      | |
 |  +---------------------------+  +--------------------------+ |
@@ -58,7 +58,7 @@ Cloud-native web application providing a real-time dashboard for Cilium network 
 
 ## Frontend Architecture
 
-### Component Layer (31 components)
+### Component Layer (34 components)
 
 ```
 components/
@@ -92,7 +92,7 @@ components/
 | useAutoDismiss | Auto-clearing state for success/error messages |
 | usePageTitle | Dynamic document.title |
 
-### View Layer (59 views)
+### View Layer (64 views)
 
 All views are lazy-loaded via `React.lazy()` + `Suspense` for optimal code splitting.
 
@@ -145,7 +145,7 @@ Each with matching `card-glow-{color}` hover effect and `hover:scale-[1.02]`
 Full light theme support via `.light-theme` class + `html:not(.dark)` CSS variables.
 Toggle persisted in localStorage.
 
-## API Endpoints (64 total)
+## API Endpoints (75+ total)
 
 ### Health & Metrics
 | Method | Path | Description |
@@ -272,6 +272,21 @@ Toggle persisted in localStorage.
 | POST | `/api/v1/diagnostics/connectivity` | Connectivity test |
 | POST | `/api/v1/troubleshoot/run` | Troubleshooting |
 
+### eBPF Data (real kernel queries via bpftool)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/ebpf/programs` | List all eBPF programs (117 programs) |
+| GET | `/api/v1/ebpf/maps` | List all eBPF maps (132 maps) |
+| GET | `/api/v1/ebpf/conntrack` | Conntrack table entries (12,066 entries) |
+| GET | `/api/v1/ebpf/conntrack/stats` | Conntrack statistics and summary |
+| GET | `/api/v1/ebpf/policy-map` | Policy map entries per endpoint |
+| GET | `/api/v1/ebpf/ipcache` | IP cache identity mappings (35 entries) |
+| GET | `/api/v1/ebpf/lb` | Load balancer service/backend maps |
+| GET | `/api/v1/ebpf/drops` | Drop reason categories (16 categories) |
+| GET | `/api/v1/ebpf/drops/stats` | Drop statistics and trends |
+| GET | `/api/v1/ebpf/map/{id}` | Dump specific eBPF map by ID |
+| GET | `/api/v1/ebpf/profiler` | eBPF profiler with program/map metrics |
+
 ### WebSocket
 | Method | Path | Description |
 |--------|------|-------------|
@@ -306,9 +321,9 @@ docker-compose up
 | Code splitting | 4 vendor chunks + per-view lazy loading |
 | TypeScript | Strict mode, 0 errors |
 | ESLint | 0 errors, 0 warnings |
-| Views | 59 lazy-loaded pages |
-| Components | 31 shared UI components |
-| API Endpoints | 64 |
+| Views | 64 lazy-loaded pages |
+| Components | 34 shared UI components |
+| API Endpoints | 75+ |
 | Hooks | 6 custom hooks |
 
 ## Security
