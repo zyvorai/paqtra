@@ -18,7 +18,7 @@ mod render;
 mod render_flows;
 mod render_infra;
 mod render_modules;
-mod tabs;
+pub mod tabs;
 
 mod autopolicy_view;
 mod canary_view;

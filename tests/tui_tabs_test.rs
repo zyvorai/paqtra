@@ -1,115 +1,12 @@
 /// Integration tests for TUI tab management.
 ///
-/// Since the TUI tab system is defined inside the binary's `tui` module
-/// and uses hardcoded string arrays, these tests verify the tab index
-/// logic, display names, and boundary conditions by replicating the
-/// exact tab configuration from `src/tui/mod.rs`.
+/// These tests exercise the production `TabIndex` type from `src/tui/tabs.rs`
+/// to verify tab index logic, display names, and boundary conditions.
 
-/// The authoritative tab list from the TUI, kept in sync with
-/// `src/tui/mod.rs` line ~976.
-const TAB_NAMES: &[&str] = &[
-    "Flows",
-    "Connections",
-    "Endpoints",
-    "Policies",
-    "Metrics",
-    "Healer",
-    "AutoPolicy",
-    "RootCause",
-    "Simulator",
-    "Replay",
-    "Chaos",
-    "Canary",
-    "MultiCluster",
-];
+use cilium_tui::tui::tabs::TabIndex;
 
 /// Expected number of tabs in the TUI.
 const EXPECTED_TAB_COUNT: usize = 13;
-
-/// Simulated TabIndex for testing the usize-to-tab conversion logic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TabIndex {
-    Flows,
-    Connections,
-    Endpoints,
-    Policies,
-    Metrics,
-    Healer,
-    AutoPolicy,
-    RootCause,
-    Simulator,
-    Replay,
-    Chaos,
-    Canary,
-    MultiCluster,
-}
-
-impl TabIndex {
-    /// Convert from a raw `usize` (selected_tab) to a TabIndex.
-    /// Returns None if out of range.
-    fn from_usize(idx: usize) -> Option<Self> {
-        match idx {
-            0 => Some(TabIndex::Flows),
-            1 => Some(TabIndex::Connections),
-            2 => Some(TabIndex::Endpoints),
-            3 => Some(TabIndex::Policies),
-            4 => Some(TabIndex::Metrics),
-            5 => Some(TabIndex::Healer),
-            6 => Some(TabIndex::AutoPolicy),
-            7 => Some(TabIndex::RootCause),
-            8 => Some(TabIndex::Simulator),
-            9 => Some(TabIndex::Replay),
-            10 => Some(TabIndex::Chaos),
-            11 => Some(TabIndex::Canary),
-            12 => Some(TabIndex::MultiCluster),
-            _ => None,
-        }
-    }
-
-    /// Convert TabIndex to its display name (matching the TUI strings).
-    fn display_name(&self) -> &'static str {
-        match self {
-            TabIndex::Flows => "Flows",
-            TabIndex::Connections => "Connections",
-            TabIndex::Endpoints => "Endpoints",
-            TabIndex::Policies => "Policies",
-            TabIndex::Metrics => "Metrics",
-            TabIndex::Healer => "Healer",
-            TabIndex::AutoPolicy => "AutoPolicy",
-            TabIndex::RootCause => "RootCause",
-            TabIndex::Simulator => "Simulator",
-            TabIndex::Replay => "Replay",
-            TabIndex::Chaos => "Chaos",
-            TabIndex::Canary => "Canary",
-            TabIndex::MultiCluster => "MultiCluster",
-        }
-    }
-
-    /// Convert TabIndex to its integer index.
-    fn to_usize(&self) -> usize {
-        match self {
-            TabIndex::Flows => 0,
-            TabIndex::Connections => 1,
-            TabIndex::Endpoints => 2,
-            TabIndex::Policies => 3,
-            TabIndex::Metrics => 4,
-            TabIndex::Healer => 5,
-            TabIndex::AutoPolicy => 6,
-            TabIndex::RootCause => 7,
-            TabIndex::Simulator => 8,
-            TabIndex::Replay => 9,
-            TabIndex::Chaos => 10,
-            TabIndex::Canary => 11,
-            TabIndex::MultiCluster => 12,
-        }
-    }
-}
-
-impl std::fmt::Display for TabIndex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.display_name())
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Tests: tab names are all non-empty
@@ -117,7 +14,7 @@ impl std::fmt::Display for TabIndex {
 
 #[test]
 fn test_all_tab_names_are_nonempty() {
-    for (i, name) in TAB_NAMES.iter().enumerate() {
+    for (i, name) in TabIndex::tab_names().iter().enumerate() {
         assert!(
             !name.is_empty(),
             "Tab name at index {} must not be empty",
@@ -128,7 +25,7 @@ fn test_all_tab_names_are_nonempty() {
 
 #[test]
 fn test_all_tab_names_have_no_leading_trailing_whitespace() {
-    for (i, name) in TAB_NAMES.iter().enumerate() {
+    for (i, name) in TabIndex::tab_names().iter().enumerate() {
         assert_eq!(
             *name,
             name.trim(),
@@ -146,7 +43,7 @@ fn test_all_tab_names_have_no_leading_trailing_whitespace() {
 #[test]
 fn test_tab_count_matches_expected() {
     assert_eq!(
-        TAB_NAMES.len(),
+        TabIndex::count(),
         EXPECTED_TAB_COUNT,
         "There should be exactly {} tabs",
         EXPECTED_TAB_COUNT
@@ -155,8 +52,9 @@ fn test_tab_count_matches_expected() {
 
 #[test]
 fn test_tab_names_are_unique() {
+    let names = TabIndex::tab_names();
     let mut seen = std::collections::HashSet::new();
-    for name in TAB_NAMES {
+    for name in &names {
         assert!(seen.insert(name), "Duplicate tab name found: '{}'", name);
     }
 }
@@ -168,20 +66,25 @@ fn test_tab_names_are_unique() {
 #[test]
 fn test_tab_index_from_usize_valid_range() {
     for i in 0..EXPECTED_TAB_COUNT {
-        let tab = TabIndex::from_usize(i);
-        assert!(
-            tab.is_some(),
-            "TabIndex::from_usize({}) should return Some",
-            i
+        let tab = TabIndex::from(i);
+        let idx: usize = tab.into();
+        assert_eq!(
+            idx, i,
+            "TabIndex::from({}) should roundtrip back to {}",
+            i, i
         );
     }
 }
 
 #[test]
-fn test_tab_index_from_usize_out_of_range() {
-    assert_eq!(TabIndex::from_usize(EXPECTED_TAB_COUNT), None);
-    assert_eq!(TabIndex::from_usize(100), None);
-    assert_eq!(TabIndex::from_usize(usize::MAX), None);
+fn test_tab_index_from_usize_out_of_range_defaults_to_flows() {
+    // The production From<usize> maps out-of-range values to Flows
+    let tab = TabIndex::from(EXPECTED_TAB_COUNT);
+    assert_eq!(tab, TabIndex::Flows);
+    let tab = TabIndex::from(100);
+    assert_eq!(tab, TabIndex::Flows);
+    let tab = TabIndex::from(usize::MAX);
+    assert_eq!(tab, TabIndex::Flows);
 }
 
 #[test]
@@ -204,8 +107,8 @@ fn test_tab_index_roundtrip() {
     ];
 
     for tab in &all_tabs {
-        let idx = tab.to_usize();
-        let roundtripped = TabIndex::from_usize(idx).unwrap();
+        let idx: usize = (*tab).into();
+        let roundtripped = TabIndex::from(idx);
         assert_eq!(
             *tab, roundtripped,
             "TabIndex::{:?} should roundtrip through usize {}",
@@ -216,16 +119,17 @@ fn test_tab_index_roundtrip() {
 
 #[test]
 fn test_tab_index_covers_all_names() {
-    // Every TAB_NAMES entry should have a corresponding TabIndex
-    for (i, name) in TAB_NAMES.iter().enumerate() {
-        let tab = TabIndex::from_usize(i).unwrap();
+    // Every tab_names entry should have a corresponding TabIndex with matching Display
+    let names = TabIndex::tab_names();
+    for (i, name) in names.iter().enumerate() {
+        let tab = TabIndex::from(i);
         assert_eq!(
-            tab.display_name(),
+            format!("{}", tab),
             *name,
-            "TabIndex at {} should have name '{}', got '{}'",
+            "TabIndex at {} should display as '{}', got '{}'",
             i,
             name,
-            tab.display_name()
+            tab
         );
     }
 }
@@ -259,11 +163,12 @@ fn test_tab_index_display_matches_name_array() {
         TabIndex::MultiCluster,
     ];
 
-    for (tab, name) in all_tabs.iter().zip(TAB_NAMES.iter()) {
+    let names = TabIndex::tab_names();
+    for (tab, name) in all_tabs.iter().zip(names.iter()) {
         assert_eq!(
             format!("{}", tab),
             *name,
-            "Display of {:?} should match TAB_NAMES entry",
+            "Display of {:?} should match tab_names entry",
             tab
         );
     }
@@ -289,9 +194,10 @@ fn navigate_left(current: usize, count: usize) -> usize {
 
 #[test]
 fn test_tab_navigation_right_wraps() {
-    let last = EXPECTED_TAB_COUNT - 1;
+    let count = TabIndex::count();
+    let last = count - 1;
     assert_eq!(
-        navigate_right(last, EXPECTED_TAB_COUNT),
+        navigate_right(last, count),
         0,
         "Right from last tab should wrap to first"
     );
@@ -299,18 +205,20 @@ fn test_tab_navigation_right_wraps() {
 
 #[test]
 fn test_tab_navigation_left_wraps() {
+    let count = TabIndex::count();
     assert_eq!(
-        navigate_left(0, EXPECTED_TAB_COUNT),
-        EXPECTED_TAB_COUNT - 1,
+        navigate_left(0, count),
+        count - 1,
         "Left from first tab should wrap to last"
     );
 }
 
 #[test]
 fn test_tab_navigation_right_increments() {
-    for i in 0..(EXPECTED_TAB_COUNT - 1) {
+    let count = TabIndex::count();
+    for i in 0..(count - 1) {
         assert_eq!(
-            navigate_right(i, EXPECTED_TAB_COUNT),
+            navigate_right(i, count),
             i + 1,
             "Right from tab {} should go to {}",
             i,
@@ -321,9 +229,10 @@ fn test_tab_navigation_right_increments() {
 
 #[test]
 fn test_tab_navigation_left_decrements() {
-    for i in 1..EXPECTED_TAB_COUNT {
+    let count = TabIndex::count();
+    for i in 1..count {
         assert_eq!(
-            navigate_left(i, EXPECTED_TAB_COUNT),
+            navigate_left(i, count),
             i - 1,
             "Left from tab {} should go to {}",
             i,
@@ -334,9 +243,10 @@ fn test_tab_navigation_left_decrements() {
 
 #[test]
 fn test_full_right_cycle_returns_to_start() {
+    let count = TabIndex::count();
     let mut pos = 0;
-    for _ in 0..EXPECTED_TAB_COUNT {
-        pos = navigate_right(pos, EXPECTED_TAB_COUNT);
+    for _ in 0..count {
+        pos = navigate_right(pos, count);
     }
     assert_eq!(
         pos, 0,
@@ -346,9 +256,10 @@ fn test_full_right_cycle_returns_to_start() {
 
 #[test]
 fn test_full_left_cycle_returns_to_start() {
+    let count = TabIndex::count();
     let mut pos = 0;
-    for _ in 0..EXPECTED_TAB_COUNT {
-        pos = navigate_left(pos, EXPECTED_TAB_COUNT);
+    for _ in 0..count {
+        pos = navigate_left(pos, count);
     }
     assert_eq!(
         pos, 0,
@@ -362,14 +273,15 @@ fn test_full_left_cycle_returns_to_start() {
 
 #[test]
 fn test_known_tab_positions() {
+    let names = TabIndex::tab_names();
     // These match the indices used in src/tui/mod.rs for key handling
-    assert_eq!(TAB_NAMES[0], "Flows"); // tab 0: flow list, packet explainer
-    assert_eq!(TAB_NAMES[5], "Healer"); // tab 5: self-healer
-    assert_eq!(TAB_NAMES[6], "AutoPolicy"); // tab 6: policy learning
-    assert_eq!(TAB_NAMES[7], "RootCause"); // tab 7: root-cause analysis
-    assert_eq!(TAB_NAMES[8], "Simulator"); // tab 8: what-if simulator
-    assert_eq!(TAB_NAMES[9], "Replay"); // tab 9: traffic replay
-    assert_eq!(TAB_NAMES[10], "Chaos"); // tab 10: chaos engineering
-    assert_eq!(TAB_NAMES[11], "Canary"); // tab 11: canary deployments
-    assert_eq!(TAB_NAMES[12], "MultiCluster"); // tab 12: multi-cluster
+    assert_eq!(names[0], "Flows"); // tab 0: flow list, packet explainer
+    assert_eq!(names[5], "Healer"); // tab 5: self-healer
+    assert_eq!(names[6], "AutoPolicy"); // tab 6: policy learning
+    assert_eq!(names[7], "RootCause"); // tab 7: root-cause analysis
+    assert_eq!(names[8], "Simulator"); // tab 8: what-if simulator
+    assert_eq!(names[9], "Replay"); // tab 9: traffic replay
+    assert_eq!(names[10], "Chaos"); // tab 10: chaos engineering
+    assert_eq!(names[11], "Canary"); // tab 11: canary deployments
+    assert_eq!(names[12], "MultiCluster"); // tab 12: multi-cluster
 }

@@ -16,3 +16,4 @@ pub mod integration;
 pub mod kubernetes;
 pub mod modules;
 pub mod policies;
+pub mod tui;

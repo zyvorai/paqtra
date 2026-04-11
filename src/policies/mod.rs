@@ -18,7 +18,7 @@ pub struct PolicyManager {
 
 /// Validate a Kubernetes resource name (RFC 1123 label).
 /// Must be lowercase alphanumeric or '-', start/end with alphanumeric, max 63 chars.
-fn validate_k8s_name(name: &str, field: &str) -> Result<()> {
+pub fn validate_k8s_name(name: &str, field: &str) -> Result<()> {
     if name.is_empty() {
         bail!("{} must not be empty", field);
     }
@@ -38,7 +38,7 @@ fn validate_k8s_name(name: &str, field: &str) -> Result<()> {
 
 /// Validate a port number.
 #[allow(dead_code)]
-fn validate_port(port: u16) -> Result<()> {
+pub fn validate_port(port: u16) -> Result<()> {
     if port == 0 {
         bail!("Port must be between 1 and 65535");
     }

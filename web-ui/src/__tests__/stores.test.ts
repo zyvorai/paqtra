@@ -1,9 +1,23 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { useThemeStore } from '../stores/themeStore';
 import { useAuthStore } from '../stores/authStore';
 import { usePreferencesStore } from '../stores/preferencesStore';
 
 describe('Theme Store', () => {
+  let initialIsDark: boolean;
+
+  beforeEach(() => {
+    // Capture and restore the initial state before each test
+    initialIsDark = useThemeStore.getState().isDark;
+  });
+
+  afterEach(() => {
+    // Reset to the captured initial state after each test
+    if (useThemeStore.getState().isDark !== initialIsDark) {
+      useThemeStore.getState().toggle();
+    }
+  });
+
   it('has initial dark mode state', () => {
     expect(typeof useThemeStore.getState().isDark).toBe('boolean');
   });
@@ -12,7 +26,13 @@ describe('Theme Store', () => {
     const initial = useThemeStore.getState().isDark;
     useThemeStore.getState().toggle();
     expect(useThemeStore.getState().isDark).toBe(!initial);
-    useThemeStore.getState().toggle(); // reset
+  });
+
+  it('double toggle restores original state', () => {
+    const initial = useThemeStore.getState().isDark;
+    useThemeStore.getState().toggle();
+    useThemeStore.getState().toggle();
+    expect(useThemeStore.getState().isDark).toBe(initial);
   });
 });
 

@@ -3,37 +3,14 @@
 /// Validates that all generated CiliumNetworkPolicy YAML documents are
 /// well-formed, contain the required Kubernetes fields, and that input
 /// validation correctly rejects malformed data.
+///
+/// The `validate_k8s_name` and `validate_port` functions are imported
+/// directly from the production code in `src/policies/mod.rs`.
 
-/// Helper: validate a Kubernetes resource name per RFC 1123 label rules.
-/// Must be lowercase alphanumeric or '-', start/end with alphanumeric,
-/// and be at most 63 characters.
-fn validate_k8s_name(name: &str, field: &str) -> Result<(), String> {
-    if name.is_empty() {
-        return Err(format!("{} must not be empty", field));
-    }
-    if name.len() > 63 {
-        return Err(format!("{} must be at most 63 characters", field));
-    }
-    let re = regex::Regex::new(r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?$").unwrap();
-    if !re.is_match(name) {
-        return Err(format!(
-            "{} '{}' is invalid: must be lowercase alphanumeric or '-', \
-             and must start and end with an alphanumeric character",
-            field, name
-        ));
-    }
-    Ok(())
-}
-
-/// Helper: validate a port number (must be 1..=65535).
-fn validate_port(port: u16) -> Result<(), String> {
-    if port == 0 {
-        return Err("Port must be between 1 and 65535".to_string());
-    }
-    Ok(())
-}
+use cilium_tui::policies::{validate_k8s_name, validate_port};
 
 /// Generate an intra-namespace policy YAML string.
+/// Mirrors the YAML template in `src/policies/mod.rs` `PolicyManager::apply_intra_namespace_policy`.
 fn gen_intra_namespace_policy(namespace: &str) -> String {
     format!(
         r#"
@@ -52,6 +29,7 @@ spec:
 }
 
 /// Generate a DNS egress policy YAML string.
+/// Mirrors the YAML template in `src/policies/mod.rs` `PolicyManager::apply_dns_policy`.
 fn gen_dns_policy(namespace: &str) -> String {
     format!(
         r#"
@@ -75,6 +53,7 @@ spec:
 }
 
 /// Generate a best-practice ingress policy YAML string.
+/// Mirrors the YAML template in `src/policies/mod.rs` `PolicyManager::apply_best_practice_policy`.
 fn gen_best_practice_policy(namespace: &str, from_app: &str, to_app: &str, port: u16) -> String {
     format!(
         r#"
@@ -245,7 +224,7 @@ fn test_policy_namespace_propagates_correctly() {
 }
 
 // ---------------------------------------------------------------------------
-// Tests: input validation (RFC 1123 names)
+// Tests: input validation (RFC 1123 names) — uses production validate_k8s_name
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -274,7 +253,7 @@ fn test_empty_name_rejected() {
     let result = validate_k8s_name("", "namespace");
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().contains("must not be empty"),
+        result.unwrap_err().to_string().contains("must not be empty"),
         "Error should mention empty"
     );
 }
@@ -316,7 +295,7 @@ fn test_name_exceeding_63_chars_rejected() {
     let result = validate_k8s_name(&long_name, "namespace");
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().contains("63 characters"),
+        result.unwrap_err().to_string().contains("63 characters"),
         "Error should mention 63-char limit"
     );
 }
@@ -328,7 +307,7 @@ fn test_name_exactly_63_chars_accepted() {
 }
 
 // ---------------------------------------------------------------------------
-// Tests: port validation
+// Tests: port validation — uses production validate_port
 // ---------------------------------------------------------------------------
 
 #[test]

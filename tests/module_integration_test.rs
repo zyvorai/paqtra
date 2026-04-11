@@ -6,7 +6,7 @@
 use cilium_tui::ebpf::MockMapReader;
 use cilium_tui::kubernetes::K8sClient;
 use cilium_tui::modules::autopolicy::{
-    AutoPolicy, AutoPolicyConfig, LabelSet, LearningState, Protocol,
+    AutoPolicy, AutoPolicyConfig, LabelSet, Protocol,
 };
 use cilium_tui::modules::canary::{CanaryConfig, CanaryEngine, CanaryMetrics, TrafficSplit};
 use cilium_tui::modules::chaos::{ChaosConfig, ChaosEngine, ChaosExperiment, ChaosSeverity};
@@ -17,7 +17,7 @@ use cilium_tui::modules::multicluster::{
 use cilium_tui::modules::packet_explainer::PacketExplainer;
 use cilium_tui::modules::replay::{ReplayConfig, ReplayEngine, ReplayFilter};
 use cilium_tui::modules::rootcause::{DropReason, RootCauseConfig, RootCauseEngine};
-use cilium_tui::modules::simulator::{ImpactType, RiskLevel, Simulator, SimulatorConfig};
+use cilium_tui::modules::simulator::{RiskLevel, Simulator, SimulatorConfig};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -34,15 +34,8 @@ fn mock_k8s_client() -> K8sClient {
 // Tests: AutoPolicy learner can process mock connections
 // ---------------------------------------------------------------------------
 
-#[tokio::test]
-async fn test_autopolicy_initial_state_is_not_started() {
-    let config = AutoPolicyConfig::default();
-    let reader = MockMapReader;
-    let k8s = mock_k8s_client();
-
-    let ap = AutoPolicy::new(config, reader, k8s);
-    assert_eq!(*ap.state(), LearningState::NotStarted);
-}
+// test_autopolicy_initial_state_is_not_started: removed — covered by
+// tests/autopolicy_integration_test.rs::test_autopolicy_initial_state_not_started
 
 #[tokio::test]
 async fn test_autopolicy_observations_initially_empty() {
@@ -291,18 +284,8 @@ fn test_simulator_config_defaults() {
     );
 }
 
-#[test]
-fn test_risk_level_from_score() {
-    assert_eq!(RiskLevel::from_score(0), RiskLevel::Low);
-    assert_eq!(RiskLevel::from_score(1), RiskLevel::Low);
-    assert_eq!(RiskLevel::from_score(2), RiskLevel::Low);
-    assert_eq!(RiskLevel::from_score(3), RiskLevel::Medium);
-    assert_eq!(RiskLevel::from_score(5), RiskLevel::Medium);
-    assert_eq!(RiskLevel::from_score(6), RiskLevel::High);
-    assert_eq!(RiskLevel::from_score(8), RiskLevel::High);
-    assert_eq!(RiskLevel::from_score(9), RiskLevel::Critical);
-    assert_eq!(RiskLevel::from_score(10), RiskLevel::Critical);
-}
+// test_risk_level_from_score: removed — covered by more granular tests in
+// tests/simulator_integration_test.rs (test_risk_level_from_score_low/medium/high/critical)
 
 #[test]
 fn test_risk_level_ordering() {
@@ -319,14 +302,8 @@ fn test_risk_level_to_string() {
     assert_eq!(RiskLevel::Critical.to_string(), "Critical");
 }
 
-#[test]
-fn test_impact_type_equality() {
-    assert_eq!(ImpactType::FullyBlocked, ImpactType::FullyBlocked);
-    assert_eq!(ImpactType::PartiallyBlocked, ImpactType::PartiallyBlocked);
-    assert_eq!(ImpactType::Unaffected, ImpactType::Unaffected);
-    assert_eq!(ImpactType::PerformanceImpact, ImpactType::PerformanceImpact);
-    assert_ne!(ImpactType::FullyBlocked, ImpactType::Unaffected);
-}
+// test_impact_type_equality: removed — covered by
+// tests/simulator_integration_test.rs::test_impact_type_equality and test_impact_type_inequality
 
 // ---------------------------------------------------------------------------
 // Tests: Replay recorder can start/stop recording
@@ -345,19 +322,8 @@ async fn test_replay_engine_initial_state() {
     assert_eq!(stats.total_flows_recorded, 0);
 }
 
-#[test]
-fn test_replay_config_defaults() {
-    let config = ReplayConfig::default();
-    assert!(config.enabled);
-    assert!(config.compress);
-    assert_eq!(
-        config.replay_rate, 1.0,
-        "Default replay rate should be real-time"
-    );
-    assert!(config.max_recording_size > 0);
-    assert!(config.max_recording_duration > 0);
-    assert!(config.detailed_comparison);
-}
+// test_replay_config_defaults: removed — covered by more detailed version in
+// tests/replay_integration_test.rs::test_replay_config_defaults
 
 #[test]
 fn test_replay_filter_default_is_unfiltered() {

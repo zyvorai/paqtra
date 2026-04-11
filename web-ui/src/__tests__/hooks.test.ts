@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { shortcuts } from '../hooks/useKeyboardShortcuts';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { useKeyboardShortcuts, shortcuts } from '../hooks/useKeyboardShortcuts';
 
 describe('useKeyboardShortcuts', () => {
   it('exports shortcuts array', () => {
@@ -32,5 +33,60 @@ describe('useKeyboardShortcuts', () => {
   it('includes navigation shortcuts', () => {
     const nav = shortcuts.filter((s) => s.category === 'Navigation');
     expect(nav.length).toBeGreaterThan(5);
+  });
+
+  it('attaches keydown listener on mount and removes on unmount', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+
+    const { unmount } = renderHook(() =>
+      useKeyboardShortcuts({})
+    );
+
+    expect(addSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
+
+    unmount();
+
+    expect(removeSpy).toHaveBeenCalledWith('keydown', expect.any(Function));
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+
+  it('accepts handlers without throwing', () => {
+    const handlers = {
+      onToggleHelp: vi.fn(),
+      onToggleSearch: vi.fn(),
+      onRefresh: vi.fn(),
+      navigate: vi.fn(),
+    };
+
+    const { unmount } = renderHook(() => useKeyboardShortcuts(handlers));
+    // Hook should mount successfully with all handlers provided
+    unmount();
+  });
+
+  it('calls onToggleHelp when ? is pressed', () => {
+    const onToggleHelp = vi.fn();
+    const { unmount } = renderHook(() =>
+      useKeyboardShortcuts({ onToggleHelp })
+    );
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }));
+    expect(onToggleHelp).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
+
+  it('calls onRefresh when r is pressed', () => {
+    const onRefresh = vi.fn();
+    const { unmount } = renderHook(() =>
+      useKeyboardShortcuts({ onRefresh })
+    );
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' }));
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+
+    unmount();
   });
 });

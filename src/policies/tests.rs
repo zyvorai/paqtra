@@ -34,6 +34,12 @@ mod tests {
         assert!(validate_port(0).is_err());
     }
 
+    // NOTE: The following policy generation tests use inline format!() to produce
+    // YAML and verify it parses correctly. They do NOT call the actual
+    // PolicyManager::apply_* methods because those require a real K8s client.
+    // The YAML templates here mirror those in PolicyManager (see above) and
+    // serve to catch YAML formatting regressions.
+
     #[test]
     fn test_intra_namespace_policy_generation() {
         let namespace = "test-ns";
