@@ -126,7 +126,7 @@ async fn list_cilium_map_ids() -> Result<Vec<u64>, String> {
                 .map(|n| n.contains("cilium"))
                 .unwrap_or(false)
         })
-        .filter_map(|m| map_id(m))
+        .filter_map(map_id)
         .collect())
 }
 

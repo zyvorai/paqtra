@@ -303,7 +303,7 @@ impl<M: MapReader> RootCauseEngine<M> {
                 "Destination identity not found in identity map".to_string()
             }
             _ => {
-                format!("Drop reason: {}", event.reason.to_string())
+                format!("Drop reason: {}", event.reason)
             }
         }
     }
@@ -419,7 +419,7 @@ spec:
             }
 
             _ => Ok(SuggestedFix::ManualInvestigation {
-                reason: format!("Uncommon drop reason: {}", event.reason.to_string()),
+                reason: format!("Uncommon drop reason: {}", event.reason),
                 steps: vec![
                     "Check cilium monitor output".to_string(),
                     "Review Hubble flows".to_string(),

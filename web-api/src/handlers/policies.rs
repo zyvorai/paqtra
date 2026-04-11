@@ -57,7 +57,7 @@ pub async fn create_policy(
     check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
 
     // Validate spec size and depth
-    req.validate_spec().map_err(|e| ApiError::BadRequest(e))?;
+    req.validate_spec().map_err(ApiError::BadRequest)?;
 
     tracing::info!("Creating policy: {}/{}", req.namespace, req.name);
 
@@ -111,7 +111,7 @@ pub async fn update_policy(
     check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
 
     // Validate spec size and depth
-    req.validate_spec().map_err(|e| ApiError::BadRequest(e))?;
+    req.validate_spec().map_err(ApiError::BadRequest)?;
 
     tracing::info!("Updating policy: {}", id);
 
@@ -179,7 +179,7 @@ pub async fn simulate_policy(
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, ApiError> {
     // Validate spec size and depth
-    req.validate_spec().map_err(|e| ApiError::BadRequest(e))?;
+    req.validate_spec().map_err(ApiError::BadRequest)?;
 
     tracing::info!("Simulating policy: {}", req.name);
 

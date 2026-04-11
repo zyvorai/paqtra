@@ -314,7 +314,7 @@ impl SimulatorView {
             Safe to Apply: {}\n\
             Confidence:    {:.0}%\n\
             Factors:       {}",
-            result.risk.level.to_string(),
+            result.risk.level,
             result.risk.score,
             if result.risk.safe_to_apply {
                 "✅ YES"

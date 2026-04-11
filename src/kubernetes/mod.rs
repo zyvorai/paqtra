@@ -238,7 +238,7 @@ impl K8sClient {
         ];
 
         let kind = mapping
-            .get(&serde_yaml::Value::String("kind".to_string()))
+            .get(serde_yaml::Value::String("kind".to_string()))
             .and_then(|v| v.as_str())
             .unwrap_or("");
 

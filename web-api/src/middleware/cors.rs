@@ -8,7 +8,7 @@ pub fn cors_layer() -> CorsLayer {
     let origins_str = std::env::var("ALLOWED_ORIGINS").ok();
 
     let is_localhost = origins_str.is_none()
-        || origins_str.as_ref().map_or(false, |s| s.contains("localhost"));
+        || origins_str.as_ref().is_some_and(|s| s.contains("localhost"));
 
     if is_localhost {
         tracing::warn!(

@@ -75,25 +75,3 @@ pub async fn auth_middleware(
         }
     }
 }
-
-/// Check if the request has admin role (for destructive operations).
-/// Returns None if authorized, or Some(Response) with 403 if not.
-pub fn require_admin(claims: Option<&Claims>) -> Option<Response> {
-    match claims {
-        Some(c) if c.role == "admin" => None,
-        Some(_) => Some(
-            (
-                StatusCode::FORBIDDEN,
-                Json(json!({"error": "Admin role required for this operation"})),
-            )
-                .into_response(),
-        ),
-        None => Some(
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({"error": "Authentication required"})),
-            )
-                .into_response(),
-        ),
-    }
-}

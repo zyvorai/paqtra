@@ -187,7 +187,7 @@ impl DropExplainer {
             _ => {
                 format!(
                     "{} → {}:{}",
-                    event.reason.to_string(),
+                    event.reason,
                     event.dst_ip,
                     event.dst_port
                 )
@@ -209,7 +209,7 @@ Protocol:        {}
 Namespace:       {}
 Pod:             {}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"#,
-            event.reason.to_string(),
+            event.reason,
             event.timestamp,
             event.src_ip,
             event.identity_src,

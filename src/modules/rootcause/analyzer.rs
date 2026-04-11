@@ -124,7 +124,7 @@ impl DropAnalyzer {
 
         format!(
             "{} - identity {} → {} on port {} ({})",
-            pattern.reason.to_string(),
+            pattern.reason,
             pattern.src_identity,
             pattern.dst_identity,
             pattern.dst_port,

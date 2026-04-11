@@ -22,7 +22,7 @@ impl CacheService {
     pub async fn is_healthy(&self) -> bool {
         let mut conn = self.conn.clone();
         redis::cmd("PING")
-            .query_async::<_, String>(&mut conn)
+            .query_async::<String>(&mut conn)
             .await
             .is_ok()
     }

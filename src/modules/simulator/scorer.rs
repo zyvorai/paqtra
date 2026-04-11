@@ -219,7 +219,7 @@ impl RiskScorer {
     pub fn summarize_risk(&self, risk: &RiskAssessment) -> String {
         let mut summary = format!(
             "Risk Level: {} (Score: {}/10)\n",
-            risk.level.to_string(),
+            risk.level,
             risk.score
         );
 
@@ -272,7 +272,7 @@ impl RiskScorer {
             let description = format!(
                 "{:?} - Risk: {} ({})",
                 scenario,
-                risk.level.to_string(),
+                risk.level,
                 risk.score
             );
             rankings.push((idx, description));

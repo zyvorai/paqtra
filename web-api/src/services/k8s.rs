@@ -87,7 +87,7 @@ impl K8sService {
                     .map(|items| {
                         items
                             .iter()
-                            .map(|item| k8s_resource_to_policy(item))
+                            .map(k8s_resource_to_policy)
                             .collect()
                     })
                     .unwrap_or_default();
