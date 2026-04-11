@@ -10,11 +10,12 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy manifests and lock file for reproducible builds
+# Copy manifests and lock file for dependency caching
 COPY Cargo.toml Cargo.lock ./
-COPY src ./src
+RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release && rm -rf src
 
-# Build for release
+# Copy real source and build
+COPY src/ src/
 RUN cargo build --release
 
 # Stage 2: Runtime (same Debian release as builder)

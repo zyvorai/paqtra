@@ -95,6 +95,9 @@ impl<M: MapReader> AutoPolicy<M> {
         // Read current connections from eBPF
         let connections = self.ebpf_reader.read_conntrack_map()?;
 
+        // Pre-read IPCache once for all IP resolutions in this update cycle
+        let ipcache = self.ebpf_reader.read_ipcache_map().unwrap_or_default();
+
         let mut stats = LearningStats {
             connections_observed: connections.len(),
             ..Default::default()
@@ -102,7 +105,7 @@ impl<M: MapReader> AutoPolicy<M> {
 
         // Process each connection
         for conn in &connections {
-            if let Some(pattern) = self.connection_to_pattern(conn).await? {
+            if let Some(pattern) = self.connection_to_pattern(conn, &ipcache)? {
                 self.record_observation(pattern);
                 stats.patterns_learned += 1;
             }
@@ -121,37 +124,35 @@ impl<M: MapReader> AutoPolicy<M> {
         Ok(stats)
     }
 
-    /// Resolve an IP address to namespace and labels via IPCache
-    fn resolve_ip(&self, ip: &str) -> (String, HashMap<String, String>) {
-        if let Ok(ipcache) = self.ebpf_reader.read_ipcache_map() {
-            if let Some(entry) = ipcache.iter().find(|e| e.ip == ip) {
-                let namespace = if entry.namespace.is_empty() {
-                    "default".to_string()
-                } else {
-                    entry.namespace.clone()
-                };
-                let labels: HashMap<String, String> = entry
-                    .labels
-                    .iter()
-                    .filter_map(|l| {
-                        let parts: Vec<&str> = l.splitn(2, '=').collect();
-                        if parts.len() == 2 {
-                            Some((parts[0].to_string(), parts[1].to_string()))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                return (namespace, labels);
-            }
+    /// Resolve an IP address to namespace and labels via a pre-read IPCache
+    fn resolve_ip(&self, ip: &str, ipcache: &[crate::ebpf::IPCacheEntry]) -> (String, HashMap<String, String>) {
+        if let Some(entry) = ipcache.iter().find(|e| e.ip == ip) {
+            let namespace = if entry.namespace.is_empty() {
+                "default".to_string()
+            } else {
+                entry.namespace.clone()
+            };
+            let labels: HashMap<String, String> = entry
+                .labels
+                .iter()
+                .filter_map(|l| {
+                    let parts: Vec<&str> = l.splitn(2, '=').collect();
+                    if parts.len() == 2 {
+                        Some((parts[0].to_string(), parts[1].to_string()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            return (namespace, labels);
         }
         ("unknown".to_string(), HashMap::new())
     }
 
     /// Convert connection to traffic pattern
-    async fn connection_to_pattern(&self, conn: &ConntrackEntry) -> Result<Option<TrafficPattern>> {
-        let (src_namespace, src_labels) = self.resolve_ip(&conn.src_ip);
-        let (dst_namespace, dst_labels) = self.resolve_ip(&conn.dst_ip);
+    fn connection_to_pattern(&self, conn: &ConntrackEntry, ipcache: &[crate::ebpf::IPCacheEntry]) -> Result<Option<TrafficPattern>> {
+        let (src_namespace, src_labels) = self.resolve_ip(&conn.src_ip, ipcache);
+        let (dst_namespace, dst_labels) = self.resolve_ip(&conn.dst_ip, ipcache);
 
         let pattern = TrafficPattern {
             src_namespace,
@@ -176,6 +177,10 @@ impl<M: MapReader> AutoPolicy<M> {
             obs.count += 1;
             obs.last_seen = now;
         } else {
+            // Cap observations to prevent unbounded growth
+            if self.observations.len() >= 50_000 {
+                return;
+            }
             self.observations.insert(
                 pattern.clone(),
                 TrafficObservation {
@@ -196,7 +201,7 @@ impl<M: MapReader> AutoPolicy<M> {
 
             let elapsed = now - start;
             let total = self.config.learning_duration.as_secs();
-            let progress = (elapsed as f32 / total as f32).min(1.0);
+            let progress = if total == 0 { 1.0 } else { (elapsed as f32 / total as f32).min(1.0) };
 
             self.state = LearningState::Learning {
                 started_at: start,
@@ -412,6 +417,10 @@ spec:
 
     /// Calculate confidence score
     fn calculate_confidence(&self, observations: &[&TrafficObservation]) -> f32 {
+        if observations.is_empty() {
+            return 0.0;
+        }
+
         let total_obs: u64 = observations.iter().map(|o| o.count).sum();
 
         // More observations = higher confidence

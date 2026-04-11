@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::AppState;
-use super::{track_request, to_json};
+use super::{check_admin, track_request, to_json};
 
 /// Query parameters for paginated anomaly listings.
 #[derive(Debug, Deserialize)]
@@ -113,7 +113,7 @@ pub async fn list_anomalies(
     let anomalies = sample_anomalies();
     let total = anomalies.len();
     let offset = params.offset.unwrap_or(0);
-    let limit = params.limit.unwrap_or(50);
+    let limit = params.limit.unwrap_or(50).min(1000);
     let page: Vec<_> = anomalies.into_iter().skip(offset).take(limit).collect();
 
     Ok(Json(json!({
@@ -143,8 +143,10 @@ pub async fn get_anomaly(
 
 pub async fn remediate_anomaly(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
+    check_admin(&state, &claims).map_err(|_| StatusCode::FORBIDDEN)?;
     track_request(&state, |_| {}).await;
 
     // Check whether the anomaly exists in our sample set

@@ -7,6 +7,7 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import Pagination from '../../components/Pagination';
 
 interface IPCacheEntry {
   ip: string;
@@ -35,6 +36,8 @@ const IPCacheViewer: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [autoRefreshOn, setAutoRefreshOn] = useState(true);
   const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 100;
 
   const loadData = useCallback(async () => {
     setError(null);
@@ -53,6 +56,14 @@ const IPCacheViewer: React.FC = () => {
     const q = search.toLowerCase();
     return entries.filter((e) => (e.ip ?? e.cidr ?? '').toLowerCase().includes(q));
   }, [entries, search]);
+
+  // Reset to page 1 when search changes
+  useMemo(() => { setCurrentPage(1); }, [search]);
+
+  const paginatedFiltered = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, currentPage]);
 
   return (
     <div>
@@ -107,7 +118,7 @@ const IPCacheViewer: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
-              {filtered.map((e, i) => (
+              {paginatedFiltered.map((e, i) => (
                 <tr key={i} className="table-row-hover">
                   <td className="px-4 py-3 text-white font-mono text-xs">{e.ip || e.cidr}</td>
                   <td className="px-4 py-3">
@@ -123,6 +134,12 @@ const IPCacheViewer: React.FC = () => {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filtered.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+        />
       </div>
     </div>
   );

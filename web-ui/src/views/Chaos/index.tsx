@@ -14,6 +14,7 @@ import { fetchChaosExperiments, runChaosExperiment } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
+import { useAuthStore } from '../../stores/authStore';
 
 interface Experiment {
   id: string;
@@ -43,6 +44,8 @@ const STATUS_BADGE: Record<string, string> = {
 
 const Chaos: React.FC = () => {
   usePageTitle('Chaos Engineering');
+  const userRole = useAuthStore((s) => s.role);
+  const isAdmin = userRole === 'admin';
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +90,12 @@ const Chaos: React.FC = () => {
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
+      {!isAdmin && (
+        <div className="mb-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-sm">
+          Admin role required to run chaos experiments.
+        </div>
+      )}
+
       {/* Experiment presets */}
       <div className="flex items-center gap-2 mb-3"><div className="w-1 h-5 bg-gradient-to-b from-pink-400 to-rose-500 rounded-full" /><h2 className="text-lg font-semibold text-white">Experiment Presets</h2></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
@@ -99,8 +108,9 @@ const Chaos: React.FC = () => {
             <p className="text-sm text-slate-400 mb-4 flex-1">{p.desc}</p>
             <button
               onClick={() => confirmAndRun(p.type, p.name)}
-              disabled={running === p.type}
-              className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg border border-slate-700/50 text-sm hover:bg-slate-700/30 disabled:opacity-50 transition-colors"
+              disabled={running === p.type || !isAdmin}
+              className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg border border-slate-700/50 text-sm hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title={isAdmin ? '' : 'Admin role required'}
             >
               {running === p.type ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
               {running === p.type ? 'Starting...' : 'Run Experiment'}

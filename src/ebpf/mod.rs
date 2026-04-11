@@ -29,6 +29,8 @@ pub use aya_writer::AyaMapWriter;
 pub use bpf_reader::CiliumMapReader;
 pub use bpf_syscall::IdentityInfo;
 #[allow(unused_imports)]
+pub use reader::BasicMapReader;
+#[allow(unused_imports)]
 pub use capabilities::{BpfCapabilities, BpfCapability};
 pub use enriched_reader::{EnrichedConnectionInfo, EnrichedDropInfo, EnrichedMapReader};
 

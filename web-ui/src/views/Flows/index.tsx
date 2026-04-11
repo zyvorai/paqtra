@@ -155,6 +155,7 @@ const Flows: React.FC = () => {
             placeholder="Search pod, protocol, port..."
             className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-slate-900/50 border border-slate-700/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
+          <span className="text-xs text-gray-500">(filters current page)</span>
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
           <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} className="rounded" />

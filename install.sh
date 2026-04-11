@@ -14,8 +14,11 @@ SERVICE_USER="cilium-vision"
 API_PORT="${CILIUM_VISION_PORT:-9191}"
 UI_PORT="${CILIUM_VISION_UI_PORT:-3001}"
 
-
-
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
 
 
@@ -255,15 +258,21 @@ EOF
 
     sudo tee /usr/lib/systemd/system/cilium-vision-ui.service > /dev/null <<EOF
 [Unit]
-Description=Cilium Vision Web UI (nginx)
+Description=Cilium Vision Web UI (static file server)
 After=network-online.target cilium-vision-api.service
 Wants=cilium-vision-api.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 -m http.server ${UI_PORT} --directory ${DATA_DIR}/ui
+User=${SERVICE_USER}
+ExecStart=/usr/bin/python3 -m http.server ${UI_PORT} --bind 127.0.0.1 --directory ${DATA_DIR}/ui
 Restart=on-failure
 RestartSec=5
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=${LOG_DIR} ${DATA_DIR}
+PrivateTmp=yes
+NoNewPrivileges=yes
 
 [Install]
 WantedBy=multi-user.target

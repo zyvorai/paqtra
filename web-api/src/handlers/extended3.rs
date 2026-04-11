@@ -1,8 +1,8 @@
-use axum::{extract::State, Json};
+use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;
 use std::sync::Arc;
 use crate::AppState;
-use super::track_request;
+use super::{check_admin, track_request};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateMirrorRequest {
@@ -327,28 +327,32 @@ pub async fn mirror_rules(State(state): State<Arc<AppState>>) -> Json<serde_json
 
 pub async fn create_mirror_rule(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(body): Json<CreateMirrorRequest>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let name = &body.name;
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "id": "mirror-003",
         "name": name,
         "status": "created",
         "message": "Mirror rule created successfully"
-    }))
+    })))
 }
 
 pub async fn delete_mirror_rule(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "id": id,
         "status": "deleted",
         "message": "Mirror rule deleted successfully"
-    }))
+    })))
 }
 
 // ── Cluster Health ─────────────────────────────────────────
@@ -497,11 +501,13 @@ pub async fn net_interfaces(State(state): State<Arc<AppState>>) -> Json<serde_js
 
 pub async fn run_troubleshoot(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(body): Json<TroubleshootRequest>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let target = &body.target;
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "target": target,
         "started_at": "2026-04-03T12:05:00Z",
         "completed_at": "2026-04-03T12:05:12Z",
@@ -525,5 +531,5 @@ pub async fn run_troubleshoot(
             "failed": 0,
             "recommendation": "Consider increasing cilium-agent memory limit from 1.5Gi to 2Gi"
         }
-    }))
+    })))
 }

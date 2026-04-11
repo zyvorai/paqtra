@@ -22,6 +22,7 @@ import {
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
+import { useAuthStore } from '../../stores/authStore';
 
 const STATUS_BADGE: Record<string, string> = {
   active: 'bg-green-500/15 text-green-400 border-green-500/30',
@@ -38,6 +39,8 @@ interface SimulationResult {
 
 const Policies: React.FC = () => {
   usePageTitle('Policies');
+  const userRole = useAuthStore((s) => s.role);
+  const isAdmin = userRole === 'admin';
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,8 +83,15 @@ const Policies: React.FC = () => {
   const handleCreate = async () => {
     if (!newName.trim()) return;
     setCreating(true); setError(null);
+    let spec: unknown;
     try {
-      const spec = JSON.parse(newSpec);
+      spec = JSON.parse(newSpec);
+    } catch {
+      setError('Invalid JSON in policy spec. Please check syntax.');
+      setCreating(false);
+      return;
+    }
+    try {
       await apiCreatePolicy({ name: newName.trim(), namespace: newNs.trim() || 'default', spec });
       setCreateOpen(false); setNewName(''); setNewNs('default'); setNewSpec('{\n  "ingress": [],\n  "egress": []\n}');
       setSuccess('Policy created successfully'); fetchPolicies();
@@ -100,8 +110,15 @@ const Policies: React.FC = () => {
   const handleUpdate = async () => {
     if (!editPolicy) return;
     setEditing(true); setError(null);
+    let spec: unknown;
     try {
-      const spec = JSON.parse(editSpec);
+      spec = JSON.parse(editSpec);
+    } catch {
+      setError('Invalid JSON in policy spec. Please check syntax.');
+      setEditing(false);
+      return;
+    }
+    try {
       await apiUpdatePolicy(editPolicy.id, { name: editName.trim(), namespace: editNs.trim(), spec });
       setEditPolicy(null); setSuccess('Policy updated successfully'); fetchPolicies();
     } catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : String(err)); }
@@ -121,8 +138,15 @@ const Policies: React.FC = () => {
 
   const handleSimulate = async () => {
     setSimulating(true); setError(null);
+    let spec: unknown;
     try {
-      const spec = JSON.parse(newSpec);
+      spec = JSON.parse(newSpec);
+    } catch {
+      setError('Invalid JSON in policy spec. Please check syntax.');
+      setSimulating(false);
+      return;
+    }
+    try {
       const res = await apiSimulatePolicy({ name: newName.trim() || 'sim-test', namespace: newNs.trim() || 'default', spec });
       setSimResult(res.data);
     } catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Simulation failed'); }
@@ -169,7 +193,7 @@ const Policies: React.FC = () => {
           <button onClick={fetchPolicies} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
-          <button onClick={() => setCreateOpen(true)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm hover:from-blue-500 hover:to-blue-600 transition-colors">
+          <button onClick={() => setCreateOpen(true)} disabled={!isAdmin} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm hover:from-blue-500 hover:to-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title={isAdmin ? '' : 'Admin role required'}>
             <Plus className="w-4 h-4" /> Create Policy
           </button>
         </div>
@@ -177,6 +201,12 @@ const Policies: React.FC = () => {
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
+
+      {!isAdmin && (
+        <div className="mb-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-sm">
+          You have read-only access. Admin role is required for create, edit, and delete operations.
+        </div>
+      )}
 
       {/* Bulk action bar */}
       {selectedIds.size > 0 && (
@@ -187,7 +217,7 @@ const Policies: React.FC = () => {
           </span>
           <div className="flex gap-2">
             <button onClick={() => setSelectedIds(new Set())} className="px-3 py-1.5 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">Clear</button>
-            <button onClick={() => setBulkDeleteConfirm(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm hover:bg-red-600/90 transition-colors">
+            <button onClick={() => setBulkDeleteConfirm(true)} disabled={!isAdmin} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm hover:bg-red-600/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title={isAdmin ? '' : 'Admin role required'}>
               <Trash2 className="w-4 h-4" /> Delete Selected
             </button>
           </div>
@@ -262,8 +292,8 @@ const Policies: React.FC = () => {
                 <td className="px-4 py-2.5 text-slate-400">{fmtTs(p.created_at)}</td>
                 <td className="px-4 py-2.5 text-right">
                   <button onClick={() => setDetailPolicy(p)} className="p-1.5 rounded hover:bg-slate-700/30 text-slate-400 hover:text-white" title="View"><Eye className="w-4 h-4" /></button>
-                  <button onClick={() => openEdit(p)} className="p-1.5 rounded hover:bg-slate-700/30 text-slate-400 hover:text-blue-400 ml-1" title="Edit"><Pencil className="w-4 h-4" /></button>
-                  <button onClick={() => setDeleteId(p.id)} className="p-1.5 rounded hover:bg-slate-700/30 text-slate-400 hover:text-red-400 ml-1" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                  <button onClick={() => openEdit(p)} disabled={!isAdmin} className="p-1.5 rounded hover:bg-slate-700/30 text-slate-400 hover:text-blue-400 ml-1 disabled:opacity-50 disabled:cursor-not-allowed" title={isAdmin ? 'Edit' : 'Admin role required'}><Pencil className="w-4 h-4" /></button>
+                  <button onClick={() => setDeleteId(p.id)} disabled={!isAdmin} className="p-1.5 rounded hover:bg-slate-700/30 text-slate-400 hover:text-red-400 ml-1 disabled:opacity-50 disabled:cursor-not-allowed" title={isAdmin ? 'Delete' : 'Admin role required'}><Trash2 className="w-4 h-4" /></button>
                 </td>
               </tr>
             ))}

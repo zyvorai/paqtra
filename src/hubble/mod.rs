@@ -79,7 +79,17 @@ pub async fn start_port_forward_on(port: u16) -> Result<u16> {
     // kill_on_drop(true) ensures the process is killed when the app exits.
     let child = Arc::new(Mutex::new(child));
     let handle_store = PORT_FORWARD_HANDLE.get_or_init(|| Mutex::new(None));
-    *handle_store.lock().await = Some(child.clone());
+    // Kill the old process before replacing the handle to prevent a process leak
+    {
+        let mut guard = handle_store.lock().await;
+        if let Some(old_child) = guard.take() {
+            let mut old_guard = old_child.lock().await;
+            if let Err(e) = old_guard.kill().await {
+                tracing::warn!("Failed to kill old port-forward process: {}", e);
+            }
+        }
+        *guard = Some(child.clone());
+    }
 
     // Wait and verify the port-forward is actually listening.
     // Port-forward setup involves discovering the hubble-relay pod and

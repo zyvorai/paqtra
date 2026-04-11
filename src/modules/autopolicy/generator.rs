@@ -2,7 +2,7 @@
 ///
 /// Generates CiliumNetworkPolicy resources from learned patterns
 use super::*;
-use crate::modules::yaml_escape;
+use crate::modules::{sanitize_k8s_name, yaml_escape};
 
 pub struct PolicyGenerator {
     min_observations: u64,
@@ -116,8 +116,8 @@ spec:
   endpointSelector:
     matchLabels:
 "#,
-            yaml_escape(name),
-            yaml_escape(namespace),
+            sanitize_k8s_name(name),
+            sanitize_k8s_name(namespace),
             observations.len(),
             self.audit_mode
         ));

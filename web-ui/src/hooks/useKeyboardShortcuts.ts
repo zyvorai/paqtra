@@ -45,6 +45,8 @@ const NAV_MAP: Record<string, string> = {
 export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
   const gPrefixRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handlersRef = useRef(handlers);
+  useEffect(() => { handlersRef.current = handlers; });
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -61,7 +63,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
         const path = NAV_MAP[key];
         if (path) {
           e.preventDefault();
-          handlers.navigate?.(path);
+          handlersRef.current.navigate?.(path);
         }
         return;
       }
@@ -69,15 +71,15 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
       switch (key) {
         case '?':
           e.preventDefault();
-          handlers.onToggleHelp?.();
+          handlersRef.current.onToggleHelp?.();
           break;
         case '/':
           e.preventDefault();
-          handlers.onToggleSearch?.();
+          handlersRef.current.onToggleSearch?.();
           break;
         case 'r':
           e.preventDefault();
-          handlers.onRefresh?.();
+          handlersRef.current.onRefresh?.();
           break;
         case 'g':
           e.preventDefault();
@@ -88,7 +90,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers) {
           break;
       }
     },
-    [handlers],
+    [],
   );
 
   useEffect(() => {

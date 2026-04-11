@@ -63,10 +63,13 @@ impl<M: MapReader> RootCauseEngine<M> {
         // Read drops from eBPF
         let ebpf_drops = self.ebpf_reader.read_drop_map()?;
 
+        // Pre-read IPCache once for all IP resolutions in this analysis cycle
+        let ipcache = self.ebpf_reader.read_ipcache_map().unwrap_or_default();
+
         // Convert to drop events
         let mut new_events = Vec::new();
         for ebpf_drop in &ebpf_drops {
-            let event = self.ebpf_drop_to_event(ebpf_drop).await?;
+            let event = self.ebpf_drop_to_event(ebpf_drop, &ipcache).await?;
             new_events.push(event);
         }
 
@@ -87,40 +90,36 @@ impl<M: MapReader> RootCauseEngine<M> {
 
     /// Resolve labels for a security identity via IPCache.
     /// Falls back to a single "security.identity" label if not found.
-    fn resolve_labels_for_identity(&self, identity: u32) -> HashMap<String, String> {
-        if let Ok(entries) = self.ebpf_reader.read_ipcache_map() {
-            if let Some(entry) = entries.iter().find(|e| e.identity == identity) {
-                let labels: HashMap<String, String> = entry
-                    .labels
-                    .iter()
-                    .filter_map(|l| l.split_once('='))
-                    .map(|(k, v)| (k.to_string(), v.to_string()))
-                    .collect();
-                if !labels.is_empty() {
-                    return labels;
-                }
+    fn resolve_labels_for_identity(&self, identity: u32, ipcache: &[crate::ebpf::IPCacheEntry]) -> HashMap<String, String> {
+        if let Some(entry) = ipcache.iter().find(|e| e.identity == identity) {
+            let labels: HashMap<String, String> = entry
+                .labels
+                .iter()
+                .filter_map(|l| l.split_once('='))
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            if !labels.is_empty() {
+                return labels;
             }
         }
         HashMap::from([("security.identity".to_string(), identity.to_string())])
     }
 
-    /// Resolve an IP address to identity and namespace via IPCache
-    fn resolve_ip_info(&self, ip: &str) -> (u32, Option<String>) {
-        if let Ok(ipcache) = self.ebpf_reader.read_ipcache_map() {
-            if let Some(entry) = ipcache.iter().find(|e| e.ip == ip) {
-                let namespace = if entry.namespace.is_empty() {
-                    None
-                } else {
-                    Some(entry.namespace.clone())
-                };
-                return (entry.identity, namespace);
-            }
+    /// Resolve an IP address to identity and namespace via a pre-read IPCache
+    fn resolve_ip_info(&self, ip: &str, ipcache: &[crate::ebpf::IPCacheEntry]) -> (u32, Option<String>) {
+        if let Some(entry) = ipcache.iter().find(|e| e.ip == ip) {
+            let namespace = if entry.namespace.is_empty() {
+                None
+            } else {
+                Some(entry.namespace.clone())
+            };
+            return (entry.identity, namespace);
         }
         (0, None)
     }
 
     /// Convert eBPF drop to drop event
-    async fn ebpf_drop_to_event(&self, ebpf_drop: &EbpfDropReason) -> Result<DropEvent> {
+    async fn ebpf_drop_to_event(&self, ebpf_drop: &EbpfDropReason, ipcache: &[crate::ebpf::IPCacheEntry]) -> Result<DropEvent> {
         // Parse IP addresses, logging warnings on failure
         let src_ip: IpAddr = ebpf_drop.src_ip.parse().unwrap_or_else(|e| {
             tracing::warn!(ip = %ebpf_drop.src_ip, error = %e, "Failed to parse source IP in drop event");
@@ -131,9 +130,9 @@ impl<M: MapReader> RootCauseEngine<M> {
             IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)
         });
 
-        // Resolve IPs to pod info via IPCache
-        let (identity_src, src_ns) = self.resolve_ip_info(&ebpf_drop.src_ip);
-        let (identity_dst, dst_ns) = self.resolve_ip_info(&ebpf_drop.dst_ip);
+        // Resolve IPs to pod info via pre-read IPCache
+        let (identity_src, src_ns) = self.resolve_ip_info(&ebpf_drop.src_ip, ipcache);
+        let (identity_dst, dst_ns) = self.resolve_ip_info(&ebpf_drop.dst_ip, ipcache);
 
         let event = DropEvent {
             timestamp: ebpf_drop.timestamp,
@@ -315,6 +314,9 @@ impl<M: MapReader> RootCauseEngine<M> {
         event: &DropEvent,
         _related_policy: &Option<String>,
     ) -> Result<SuggestedFix> {
+        // Pre-read IPCache once for label resolution in this fix generation
+        let ipcache = self.ebpf_reader.read_ipcache_map().unwrap_or_default();
+
         match &event.reason {
             DropReason::PolicyDenied | DropReason::PortNotAllowed => {
                 // Suggest adding a policy rule
@@ -330,8 +332,8 @@ impl<M: MapReader> RootCauseEngine<M> {
                     .unwrap_or_else(|| "default".to_string());
 
                 // Resolve labels from IPCache; fall back to identity-based labels
-                let from_labels = self.resolve_labels_for_identity(event.identity_src);
-                let to_labels = self.resolve_labels_for_identity(event.identity_dst);
+                let from_labels = self.resolve_labels_for_identity(event.identity_src, &ipcache);
+                let to_labels = self.resolve_labels_for_identity(event.identity_dst, &ipcache);
 
                 // Build label selectors for the YAML from resolved labels
                 let from_label_yaml: String = from_labels

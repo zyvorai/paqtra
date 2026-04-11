@@ -22,6 +22,12 @@ HYPER_UI_NAME="cilium-vision-ui"
 HYPER_REDIS_NAME="cilium-vision-redis"
 HYPER_FIP="${HYPER_FIP:-}"
 
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
 info()  { echo "🔷 [INFO] $*"; }
 ok()    { echo "✅ [OK]   $*"; }
 warn()  { echo "⚠️  $*"; }
@@ -101,7 +107,7 @@ deploy_api() {
         -e "REDIS_URL=redis://redis:6379" \
         -e "JWT_SECRET=${jwt_secret}" \
         -e "RUST_LOG=info" \
-        -e "ALLOWED_ORIGINS=*" \
+        -e "ALLOWED_ORIGINS=http://${HYPER_FIP:-localhost}:${UI_PORT}" \
         -p "${API_PORT}:${API_PORT}" \
         "${COMBINED_IMAGE}"
 
@@ -225,7 +231,7 @@ services:
       REDIS_URL: "redis://redis:6379"
       JWT_SECRET: "$(openssl rand -hex 32)"
       RUST_LOG: "info"
-      ALLOWED_ORIGINS: "*"
+      ALLOWED_ORIGINS: "http://${HYPER_FIP:-localhost}:${UI_PORT}"
     ports:
       - "${API_PORT}:${API_PORT}"
 

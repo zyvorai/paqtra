@@ -94,9 +94,17 @@ cmd_k8s() {
     # Create namespace if missing
     kubectl create namespace "${K8S_NS}" --dry-run=client -o yaml | kubectl apply -f -
 
-    # Apply manifests in order
+    # Generate JWT secret dynamically instead of applying hardcoded secrets.yaml
+    local jwt_secret
+    jwt_secret=$(openssl rand -base64 48)
+    kubectl -n "${K8S_NS}" create secret generic cilium-vision-secrets \
+        --from-literal=jwt-secret="${jwt_secret}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+    green "  JWT secret generated and applied"
+
+    # Apply manifests in order (skip secrets.yaml — generated above)
     local k8s_dir="${ROOT}/deployments/k8s"
-    for f in secrets.yaml configmap.yaml rbac.yaml redis-deployment.yaml backend-deployment.yaml frontend-deployment.yaml ingress.yaml; do
+    for f in configmap.yaml rbac.yaml redis-deployment.yaml backend-deployment.yaml frontend-deployment.yaml ingress.yaml; do
         if [ -f "${k8s_dir}/${f}" ]; then
             kubectl apply -n "${K8S_NS}" -f "${k8s_dir}/${f}"
             green "  Applied ${f}"

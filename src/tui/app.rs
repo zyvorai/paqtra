@@ -110,7 +110,7 @@ pub struct TuiApp {
     pub(crate) selected_flow_index: usize,
     pub(crate) show_packet_explanation: bool,
     pub(crate) packet_explainer:
-        std::sync::Mutex<crate::modules::packet_explainer::PacketExplainer>,
+        tokio::sync::Mutex<crate::modules::packet_explainer::PacketExplainer>,
 
     // Pending async actions from sync confirmation handlers
     pub(crate) canary_pending_action: Option<super::canary_view::ConfirmationType>,
@@ -274,7 +274,7 @@ impl TuiApp {
             fix_apply_confirmation: false,
             selected_flow_index: 0,
             show_packet_explanation: false,
-            packet_explainer: std::sync::Mutex::new(
+            packet_explainer: tokio::sync::Mutex::new(
                 crate::modules::packet_explainer::PacketExplainer::new(),
             ),
             canary_pending_action: None,

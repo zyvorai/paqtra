@@ -7,6 +7,7 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import Pagination from '../../components/Pagination';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface DropEntry {
@@ -48,6 +49,8 @@ const DropDashboard: React.FC = () => {
   const [totalDrops, setTotalDrops] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [autoRefreshOn, setAutoRefreshOn] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 100;
 
   const loadData = useCallback(async () => {
     setError(null);
@@ -68,6 +71,11 @@ const DropDashboard: React.FC = () => {
   const invalidPacket = useMemo(() => drops.filter((d) => d.reason === 'InvalidPacket').reduce((s, d) => s + d.count, 0), [drops]);
 
   const chartData = useMemo(() => drops.slice(0, 10).map((d) => ({ name: d.reason, count: d.count })), [drops]);
+
+  const paginatedDrops = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return drops.slice(start, start + PAGE_SIZE);
+  }, [drops, currentPage]);
 
   return (
     <div>
@@ -145,7 +153,7 @@ const DropDashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
-              {drops.map((d, i) => (
+              {paginatedDrops.map((d, i) => (
                 <tr key={i} className="table-row-hover">
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${getDropBg(d.reason)}`}>{d.reason}</span>
@@ -161,6 +169,12 @@ const DropDashboard: React.FC = () => {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalItems={drops.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+        />
       </div>
     </div>
   );

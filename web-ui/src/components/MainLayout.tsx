@@ -157,12 +157,13 @@ const MainLayout: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Close dropdown on outside click
+  // Close dropdown on outside click — only attach when a dropdown is open
   useEffect(() => {
-    const handleClickOutside = () => setOpenGroup(null);
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
+    if (!openGroup) return;
+    const handler = () => setOpenGroup(null);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [openGroup]);
 
   // Close dropdown on route change
   useEffect(() => { setOpenGroup(null); setMobileOpen(false); }, [location.pathname]);

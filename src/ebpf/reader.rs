@@ -8,12 +8,12 @@ use std::path::Path;
 use super::bpf_syscall::BpfToolReader;
 use super::*;
 
-pub struct CiliumMapReader {
+pub struct BasicMapReader {
     map_root: String,
     bpftool: Option<BpfToolReader>,
 }
 
-impl CiliumMapReader {
+impl BasicMapReader {
     pub fn new() -> Self {
         let bpftool = BpfToolReader::new().ok();
         Self {
@@ -76,13 +76,13 @@ impl CiliumMapReader {
     }
 }
 
-impl Default for CiliumMapReader {
+impl Default for BasicMapReader {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl MapReader for CiliumMapReader {
+impl MapReader for BasicMapReader {
     fn read_policy_map(&self) -> Result<Vec<PolicyDecision>> {
         if let Some(ref tool) = self.bpftool {
             return tool.read_cilium_policy_map();
@@ -139,7 +139,7 @@ mod tests {
 
     #[test]
     fn test_map_reader_creation() {
-        let reader = CiliumMapReader::new();
+        let reader = BasicMapReader::new();
         // Map root should be set
         assert!(!reader.map_root.is_empty());
     }

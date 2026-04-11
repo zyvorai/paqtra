@@ -111,16 +111,24 @@ impl EndpointManager {
         })
     }
 
-    pub async fn get_endpoint_count(&self) -> Result<usize> {
+    /// Returns (total_count, running_count) from a single discover_endpoints() call.
+    pub async fn get_endpoint_counts(&self) -> Result<(usize, usize)> {
         let endpoints = self.discover_endpoints().await?;
-        Ok(endpoints.len())
+        let total = endpoints.len();
+        let running = endpoints
+            .iter()
+            .filter(|e| e.status == EndpointStatus::Running)
+            .count();
+        Ok((total, running))
+    }
+
+    pub async fn get_endpoint_count(&self) -> Result<usize> {
+        let (total, _) = self.get_endpoint_counts().await?;
+        Ok(total)
     }
 
     pub async fn get_running_count(&self) -> Result<usize> {
-        let endpoints = self.discover_endpoints().await?;
-        Ok(endpoints
-            .iter()
-            .filter(|e| e.status == EndpointStatus::Running)
-            .count())
+        let (_, running) = self.get_endpoint_counts().await?;
+        Ok(running)
     }
 }

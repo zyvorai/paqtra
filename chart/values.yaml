@@ -1,3 +1,6 @@
+nameOverride: ""
+fullnameOverride: ""
+
 # -- Global settings
 global:
   # -- Namespace to deploy into
@@ -129,7 +132,7 @@ ingress:
 
 # -- Monitoring configuration
 monitoring:
-  enabled: false
+  enabled: true
   serviceMonitor:
     interval: 30s
     scrapeTimeout: 10s

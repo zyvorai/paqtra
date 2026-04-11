@@ -1,7 +1,8 @@
 /** Shared formatting utilities — single source of truth */
 
 export function formatBytes(bytes: number | undefined | null): string {
-  if (!bytes || bytes === 0) return '0 B';
+  if (bytes === null || bytes === undefined || bytes === 0) return '0 B';
+  if (bytes < 0) return '-' + formatBytes(-bytes);
   if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(1)} TB`;
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
   if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Scale } from 'lucide-react';
 import { fetchEbpfLb } from '../../services/api';
 import { isAxiosError } from 'axios';
@@ -7,6 +7,7 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import Pagination from '../../components/Pagination';
 
 interface LBEntry {
   service_ip: string;
@@ -25,18 +26,25 @@ const LBMapViewer: React.FC = () => {
   const [entries, setEntries] = useState<LBEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [autoRefreshOn, setAutoRefreshOn] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 100;
 
   const loadData = useCallback(async () => {
     setError(null);
     try {
       const res = await fetchEbpfLb();
-      setEntries((res.data.entries ?? []) as LBEntry[]);
+      setEntries((res.data.entries ?? []) as unknown as LBEntry[]);
     } catch (err) {
       setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to load LB map data');
     }
   }, []);
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(loadData, 30000, autoRefreshOn);
+
+  const paginatedEntries = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return entries.slice(start, start + PAGE_SIZE);
+  }, [entries, currentPage]);
 
   return (
     <div>
@@ -83,7 +91,7 @@ const LBMapViewer: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
-              {entries.map((e, i) => (
+              {paginatedEntries.map((e, i) => (
                 <tr key={i} className="table-row-hover">
                   <td className="px-4 py-3 text-white font-mono text-xs">{e.service_ip}</td>
                   <td className="px-4 py-3 text-slate-300">{e.service_port}</td>
@@ -103,6 +111,12 @@ const LBMapViewer: React.FC = () => {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalItems={entries.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+        />
       </div>
     </div>
   );

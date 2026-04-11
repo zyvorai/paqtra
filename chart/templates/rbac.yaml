@@ -25,6 +25,7 @@ rules:
       - watch
       - create
       - update
+      - patch
       - delete
   - apiGroups: ["cilium.io"]
     resources:

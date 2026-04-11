@@ -18,6 +18,7 @@ spec:
           annotations:
             summary: "Cilium Vision API is down"
             description: "Cilium Vision API has been unreachable for more than 2 minutes."
+            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionapidown"
 
         - alert: CiliumVisionHighErrorRate
           expr: rate(cilium_vision_total_errors[5m]) / rate(cilium_vision_total_requests[5m]) > 0.05
@@ -27,6 +28,7 @@ spec:
           annotations:
             summary: "High error rate on Cilium Vision API"
             description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionhigherrorrate"
 
         - alert: CiliumVisionHighLatency
           expr: histogram_quantile(0.99, rate(cilium_vision_request_duration_seconds_bucket[5m])) > 2
@@ -36,6 +38,7 @@ spec:
           annotations:
             summary: "High P99 latency on Cilium Vision API"
             description: "P99 latency is {{ $value }}s over the last 5 minutes."
+            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionhighlatency"
 
         - alert: CiliumVisionCacheHitRateLow
           expr: cilium_vision_cache_hits / (cilium_vision_cache_hits + cilium_vision_cache_misses) < 0.5
@@ -45,6 +48,7 @@ spec:
           annotations:
             summary: "Low cache hit rate"
             description: "Cache hit rate is {{ $value | humanizePercentage }}. Check Redis connectivity."
+            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisioncachehitratelow"
 
         - alert: CiliumVisionRedisDown
           expr: up{job="cilium-vision-redis"} == 0
@@ -54,6 +58,7 @@ spec:
           annotations:
             summary: "Redis is down"
             description: "Redis used by Cilium Vision has been unreachable for more than 1 minute."
+            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionredisdown"
 
     - name: cilium-vision.network
       rules:
@@ -65,6 +70,7 @@ spec:
           annotations:
             summary: "High network drop rate detected"
             description: "Flow drop rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionhighdroprate"
 
         - alert: CiliumVisionPolicyDenialSpike
           expr: rate(cilium_vision_policy_denials[1m]) > 100
@@ -74,6 +80,7 @@ spec:
           annotations:
             summary: "Policy denial spike"
             description: "{{ $value }} policy denials per minute detected."
+            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionpolicydenialspike"
 
         - alert: CiliumVisionAnomalyDetected
           expr: cilium_vision_anomalies_open > 0
@@ -83,6 +90,7 @@ spec:
           annotations:
             summary: "Network anomaly detected"
             description: "{{ $value }} open anomalies detected by ML engine."
+            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionanomalydetected"
 
     - name: cilium-vision.resources
       rules:
@@ -94,6 +102,7 @@ spec:
           annotations:
             summary: "Cilium Vision API high memory usage"
             description: "Memory usage is at {{ $value | humanizePercentage }} of limit."
+            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionhighmemory"
 
         - alert: CiliumVisionHighCPU
           expr: rate(container_cpu_usage_seconds_total{container="cilium-vision-api"}[5m]) > 0.8
@@ -103,6 +112,7 @@ spec:
           annotations:
             summary: "Cilium Vision API high CPU usage"
             description: "CPU usage is {{ $value }} cores averaged over 5 minutes."
+            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionhighcpu"
 
         - alert: CiliumVisionPodRestarts
           expr: increase(kube_pod_container_status_restarts_total{container="cilium-vision-api"}[1h]) > 3
@@ -112,3 +122,4 @@ spec:
           annotations:
             summary: "Cilium Vision API pod restarting"
             description: "{{ $value }} restarts in the last hour."
+            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionpodrestarts"

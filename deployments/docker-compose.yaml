@@ -3,7 +3,7 @@ services:
     image: redis:7-alpine
     container_name: cilium-vision-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
@@ -25,7 +25,7 @@ services:
       - HOST=0.0.0.0
       - PORT=9191
       - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=${JWT_SECRET:-changeme-at-least-32-characters-long-secret}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET environment variable is required}
       - HUBBLE_ADDRESS=${HUBBLE_ADDRESS:-hubble-relay.kube-system.svc.cluster.local:4245}
       - RUST_LOG=${RUST_LOG:-info,cilium_vision_api=debug}
       - ALLOWED_ORIGINS=http://localhost:3001,http://localhost:3000,http://localhost:8080

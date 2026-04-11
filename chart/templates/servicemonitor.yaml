@@ -70,7 +70,33 @@ data:
       "dashboard": {
         "title": "Cilium Vision Overview",
         "uid": "cilium-vision",
-        "panels": []
+        "panels": [
+          {
+            "title": "Request Rate",
+            "type": "timeseries",
+            "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+            "targets": [{ "expr": "rate(cilium_vision_total_requests[5m])", "legendFormat": "req/s", "refId": "A" }],
+            "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" } }
+          },
+          {
+            "title": "Error Rate",
+            "type": "timeseries",
+            "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+            "targets": [{ "expr": "rate(cilium_vision_total_errors[5m]) / rate(cilium_vision_total_requests[5m]) * 100", "legendFormat": "error %", "refId": "A" }],
+            "fieldConfig": { "defaults": { "color": { "fixedColor": "red", "mode": "fixed" }, "unit": "percent" } }
+          },
+          {
+            "title": "Latency (P50/P95/P99)",
+            "type": "timeseries",
+            "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+            "targets": [
+              { "expr": "histogram_quantile(0.50, rate(cilium_vision_request_duration_seconds_bucket[5m]))", "legendFormat": "P50", "refId": "A" },
+              { "expr": "histogram_quantile(0.95, rate(cilium_vision_request_duration_seconds_bucket[5m]))", "legendFormat": "P95", "refId": "B" },
+              { "expr": "histogram_quantile(0.99, rate(cilium_vision_request_duration_seconds_bucket[5m]))", "legendFormat": "P99", "refId": "C" }
+            ],
+            "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" } }
+          }
+        ]
       }
     }
 {{- end }}

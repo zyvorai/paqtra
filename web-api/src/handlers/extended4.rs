@@ -131,8 +131,10 @@ pub async fn cilium_status(State(state): State<Arc<AppState>>) -> Json<serde_jso
 
 pub async fn validate_policy(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(body): Json<ValidatePolicyRequest>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let yaml = &body.yaml;
     let valid = !yaml.is_empty();
@@ -141,10 +143,10 @@ pub async fn validate_policy(
     } else {
         vec!["Empty policy YAML provided".to_string()]
     };
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "valid": valid,
         "errors": errors
-    }))
+    })))
 }
 
 // ── Flow Export Configs ───────────────────────────────────
@@ -191,32 +193,36 @@ pub async fn list_export_configs(
 
 pub async fn create_export_config(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(body): Json<CreateExportRequest>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let name = &body.name;
     let format = &body.format;
     let destination = &body.destination;
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "id": "exp-004",
         "name": name,
         "format": format,
         "destination": destination,
         "status": "active",
         "message": "Export configuration created successfully"
-    }))
+    })))
 }
 
 pub async fn delete_export_config(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "id": id,
         "status": "deleted",
         "message": "Export configuration deleted successfully"
-    }))
+    })))
 }
 
 // ── SLO Targets ───────────────────────────────────────────

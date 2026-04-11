@@ -36,7 +36,8 @@ const LoginPage: React.FC = () => {
         localStorage.removeItem('cilium-vision-remember');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid credentials. Please try again.');
+      void err; // Intentionally discard error details to avoid leaking server info
+      setError('Invalid credentials. Please try again.');
     } finally {
       setLoading(false);
     }

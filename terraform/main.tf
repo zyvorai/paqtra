@@ -3,6 +3,15 @@
 ################################################################################
 
 terraform {
+  # Uncomment and configure for production use:
+  # backend "s3" {
+  #   bucket         = "cilium-vision-terraform-state"
+  #   key            = "terraform.tfstate"
+  #   region         = "us-west-2"
+  #   dynamodb_table = "terraform-lock"
+  #   encrypt        = true
+  # }
+
   required_version = ">= 1.5.0"
   required_providers {
     aws = {
@@ -64,8 +73,9 @@ module "eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  cluster_endpoint_public_access  = true
-  cluster_endpoint_private_access = true
+  cluster_endpoint_public_access       = false
+  cluster_endpoint_public_access_cidrs = var.cluster_endpoint_public_access_cidrs
+  cluster_endpoint_private_access      = true
 
   eks_managed_node_groups = {
     cilium_vision = {

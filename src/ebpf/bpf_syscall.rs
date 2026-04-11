@@ -305,9 +305,10 @@ impl IdentityResolver {
         }
 
         // Query Cilium CLI for the identity
-        if let Ok(output) = Command::new("cilium")
+        if let Ok(output) = tokio::process::Command::new("cilium")
             .args(["identity", "get", &identity.to_string(), "-o", "json"])
             .output()
+            .await
         {
             if output.status.success() {
                 if let Ok(json_str) = String::from_utf8(output.stdout) {
@@ -358,13 +359,14 @@ impl IdentityResolver {
     ///
     /// Parses `cilium bpf ipcache list -o json` output, matching the
     /// requested IP to its assigned security identity.
-    pub fn resolve_ip(&self, ip: &IpAddr) -> Option<u32> {
+    pub async fn resolve_ip(&self, ip: &IpAddr) -> Option<u32> {
         let ip_str = ip.to_string();
 
         // Try `cilium bpf ipcache list -o json`
-        if let Ok(output) = Command::new("cilium")
+        if let Ok(output) = tokio::process::Command::new("cilium")
             .args(["bpf", "ipcache", "list", "-o", "json"])
             .output()
+            .await
         {
             if output.status.success() {
                 if let Ok(json_str) = String::from_utf8(output.stdout) {
@@ -462,12 +464,12 @@ mod tests {
         assert!(info.is_none());
     }
 
-    #[test]
-    fn test_resolve_ip_without_cilium() {
+    #[tokio::test]
+    async fn test_resolve_ip_without_cilium() {
         let resolver = IdentityResolver::new();
         let ip: IpAddr = "10.0.0.1".parse().unwrap();
         // Without cilium CLI, returns None gracefully
-        let result = resolver.resolve_ip(&ip);
+        let result = resolver.resolve_ip(&ip).await;
         assert!(result.is_none());
     }
 }

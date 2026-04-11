@@ -429,6 +429,11 @@ impl CanaryEngine {
 
         self.history.push(canary);
 
+        const MAX_HISTORY: usize = 10_000;
+        if self.history.len() > MAX_HISTORY {
+            self.history.drain(..1);
+        }
+
         Ok(())
     }
 
@@ -444,6 +449,11 @@ impl CanaryEngine {
         tracing::info!("⏮️  Canary rolled back: {}", canary.name);
 
         self.history.push(canary);
+
+        const MAX_HISTORY: usize = 10_000;
+        if self.history.len() > MAX_HISTORY {
+            self.history.drain(..1);
+        }
 
         Ok(())
     }

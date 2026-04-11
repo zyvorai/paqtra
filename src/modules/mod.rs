@@ -1,7 +1,20 @@
 /// Escape a string for safe interpolation into YAML values.
-/// Wraps the value in double quotes and escapes embedded backslashes and quotes.
+/// Wraps the value in double quotes and escapes embedded backslashes, quotes,
+/// newlines, carriage returns, and tabs.
 pub fn yaml_escape(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r").replace('\t', "\\t"))
+}
+
+/// Sanitize a string for use as a Kubernetes resource name.
+/// Lowercases, replaces non-alphanumeric characters (except hyphens and dots)
+/// with hyphens, and trims leading/trailing hyphens.
+pub fn sanitize_k8s_name(s: &str) -> String {
+    s.to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '.' { c } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
 }
 
 pub mod autopolicy;

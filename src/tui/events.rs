@@ -118,8 +118,16 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
         KeyCode::Down
             if !app.show_help && app.selected_tab == 9 && !app.replay_view.time_travel_mode =>
         {
-            // Navigate recordings down (max 4 recordings in demo)
-            app.replay_view.move_selection_down(4);
+            // Navigate recordings down
+            let recordings_count = match &mut app.modules {
+                ModuleContainer::Enriched { replay, .. } => {
+                    replay.list_recordings().map(|r| r.len()).unwrap_or(1)
+                }
+                ModuleContainer::Mock { replay, .. } => {
+                    replay.list_recordings().map(|r| r.len()).unwrap_or(1)
+                }
+            };
+            app.replay_view.move_selection_down(recordings_count.max(1));
         }
         KeyCode::Char('v') if !app.show_help && app.selected_tab == 10 => {
             // Toggle between presets and active experiments
@@ -291,7 +299,7 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
             if !app.show_help && app.selected_tab == 0 && !app.show_packet_explanation =>
         {
             // Navigate flows down
-            let max_index = app.flows.len().min(50).saturating_sub(1);
+            let max_index = app.flows.len().saturating_sub(1);
             if app.selected_flow_index < max_index {
                 app.selected_flow_index += 1;
             }

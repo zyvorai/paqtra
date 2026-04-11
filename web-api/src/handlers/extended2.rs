@@ -1,7 +1,7 @@
-use axum::{extract::{Path, Query, State}, Json};
+use axum::{extract::{Path, Query, State}, http::StatusCode, Json};
 use std::sync::Arc;
 use crate::AppState;
-use super::{track_request, PaginationQuery, paginate_json};
+use super::{check_admin, track_request, PaginationQuery, paginate_json};
 
 // ── Host Info ───────────────────────────────────────────────
 
@@ -56,15 +56,21 @@ pub async fn list_policy_templates(
 
 pub async fn apply_template(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "id": id, "status": "applied", "message": "Template applied successfully" }))
+    Ok(Json(serde_json::json!({ "id": id, "status": "applied", "message": "Template applied successfully" })))
 }
 
 // ── Diagnostics ─────────────────────────────────────────────
 
-pub async fn run_diagnostics(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn run_diagnostics(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let tests = serde_json::json!([
         { "name": "Cilium Agent Health", "status": "pass", "message": "All agents healthy on 3 nodes", "duration_ms": 120 },
@@ -78,12 +84,16 @@ pub async fn run_diagnostics(State(state): State<Arc<AppState>>) -> Json<serde_j
         { "name": "BPF Filesystem", "status": "pass", "message": "/sys/fs/bpf mounted correctly", "duration_ms": 15 },
         { "name": "Kernel Version", "status": "pass", "message": "Kernel 6.5.0 supports all required features", "duration_ms": 10 }
     ]);
-    Json(serde_json::json!({ "tests": tests }))
+    Ok(Json(serde_json::json!({ "tests": tests })))
 }
 
-pub async fn connectivity_test(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn connectivity_test(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "reachable": true, "latency_ms": 1.8, "hops": 2 }))
+    Ok(Json(serde_json::json!({ "reachable": true, "latency_ms": 1.8, "hops": 2 })))
 }
 
 // ── Audit Log ───────────────────────────────────────────────
@@ -129,10 +139,12 @@ pub async fn alert_history(State(state): State<Arc<AppState>>) -> Json<serde_jso
 
 pub async fn toggle_alert_rule(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "id": id, "status": "updated" }))
+    Ok(Json(serde_json::json!({ "id": id, "status": "updated" })))
 }
 
 // ── Service Map ─────────────────────────────────────────────
@@ -171,17 +183,23 @@ pub async fn list_capture_sessions(
     Json(paginate_json(items, &params, "sessions"))
 }
 
-pub async fn start_capture(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn start_capture(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "id": "cap-003", "status": "capturing", "message": "Capture started" }))
+    Ok(Json(serde_json::json!({ "id": "cap-003", "status": "capturing", "message": "Capture started" })))
 }
 
 pub async fn stop_capture(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "id": id, "status": "completed", "message": "Capture stopped" }))
+    Ok(Json(serde_json::json!({ "id": id, "status": "completed", "message": "Capture stopped" })))
 }
 
 // ── DNS Monitor ─────────────────────────────────────────────
@@ -247,9 +265,13 @@ pub async fn list_mesh_peers(
     Json(paginate_json(items, &params, "peers"))
 }
 
-pub async fn connect_mesh_peer(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn connect_mesh_peer(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "status": "connecting", "message": "Peer connection initiated" }))
+    Ok(Json(serde_json::json!({ "status": "connecting", "message": "Peer connection initiated" })))
 }
 
 // ── BGP Peering ─────────────────────────────────────────────

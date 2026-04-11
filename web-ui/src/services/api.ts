@@ -59,10 +59,11 @@ const api = axios.create({
 
 // --- Request interceptor ---------------------------------------------------
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  // Attach JWT token if available
-  const token = localStorage.getItem('cilium-vision-token');
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
+  // Attach JWT token from in-memory auth store (imported lazily to avoid circular deps)
+  // The token is set on api.defaults.headers.common by authStore.login()
+  // Add CSRF token header
+  if (config.headers) {
+    config.headers['X-CSRF-Token'] = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
   }
   return config;
 });
@@ -72,8 +73,8 @@ api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid – clear and let the UI handle it
-      localStorage.removeItem('cilium-vision-token');
+      // Token expired or invalid – clear the in-memory Authorization header
+      delete api.defaults.headers.common['Authorization'];
       // In production, send to observability service (e.g., Sentry, Datadog)
       console.warn('[api] Unauthorized – token cleared');
     }
@@ -1075,13 +1076,19 @@ export const fetchMeshServices = () => api.get<{ services: MeshService[] }>('/se
 // KPR (Kube Proxy Replacement)
 export const fetchKPRStatus = () => api.get<KPRStatus>('/kpr/status');
 
-// eBPF Real Data
-export const fetchRealEbpfPrograms = () => api.get<{ programs: unknown[]; total: number }>('/ebpf/programs');
-export const fetchRealEbpfMaps = () => api.get<{ maps: unknown[]; total: number }>('/ebpf/maps');
+// eBPF Real Data — typed interfaces
+
+export interface ConntrackEntry { src: string; dst: string; sport: number; dport: number; proto: string; state: string; [key: string]: unknown; }
+export interface IpCacheEntry { ip: string; identity: number; [key: string]: unknown; }
+export interface LbBackend { address: string; port: number; [key: string]: unknown; }
+export interface DropEntry { reason: string; count: number; [key: string]: unknown; }
+
+export const fetchRealEbpfPrograms = () => api.get<{ programs: EbpfProgram[]; total: number }>('/ebpf/programs');
+export const fetchRealEbpfMaps = () => api.get<{ maps: EbpfMapInfo[]; total: number }>('/ebpf/maps');
 export const fetchEbpfProgramStats = (id: string) => api.get(`/ebpf/programs/${id}`);
 export const fetchEbpfMapEntries = (id: number, limit?: number) => api.get(`/ebpf/maps/${id}/entries`, { params: { limit: limit || 50 } });
-export const fetchEbpfConntrack = () => api.get<{ entries: unknown[]; total: number }>('/ebpf/conntrack');
-export const fetchEbpfIpcache = () => api.get<{ entries: unknown[]; total: number }>('/ebpf/ipcache');
-export const fetchEbpfLb = () => api.get<{ entries: unknown[]; total: number }>('/ebpf/lb');
-export const fetchEbpfDrops = () => api.get<{ drops: unknown[]; total_drops: number }>('/ebpf/drops');
+export const fetchEbpfConntrack = () => api.get<{ entries: ConntrackEntry[]; total: number }>('/ebpf/conntrack');
+export const fetchEbpfIpcache = () => api.get<{ entries: IpCacheEntry[]; total: number }>('/ebpf/ipcache');
+export const fetchEbpfLb = () => api.get<{ entries: LbBackend[]; total: number }>('/ebpf/lb');
+export const fetchEbpfDrops = () => api.get<{ drops: DropEntry[]; total_drops: number }>('/ebpf/drops');
 export const fetchEbpfSummary = () => api.get('/ebpf/summary');

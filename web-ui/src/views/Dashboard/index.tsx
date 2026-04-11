@@ -203,9 +203,11 @@ const Dashboard: React.FC = () => {
   usePageTitle('Dashboard');
   const { history, addMetrics } = useMetricsHistory<MetricData>(60);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+  const [usingFallback, setUsingFallback] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const retryCount = useRef(0);
 
   // New state for added sections
   const [healthChecks, setHealthChecks] = useState<HealthCheck[]>(FALLBACK_HEALTH_CHECKS);
@@ -233,7 +235,7 @@ const Dashboard: React.FC = () => {
     const ws = new WebSocket(getWsUrl('/api/v1/ws/metrics'));
     wsRef.current = ws;
 
-    ws.onopen = () => { if (mountedRef.current) setStatus('connected'); };
+    ws.onopen = () => { if (mountedRef.current) { setStatus('connected'); retryCount.current = 0; } };
     ws.onmessage = (event) => {
       if (!mountedRef.current) return;
       try {
@@ -267,8 +269,10 @@ const Dashboard: React.FC = () => {
     ws.onclose = () => {
       if (mountedRef.current) setStatus('disconnected');
       wsRef.current = null;
-      if (mountedRef.current) {
-        timerRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
+      if (mountedRef.current && retryCount.current < 10) {
+        const delay = Math.min(RECONNECT_DELAY_MS * Math.pow(2, retryCount.current), 60000);
+        retryCount.current += 1;
+        timerRef.current = setTimeout(connect, delay);
       }
     };
   }, [addMetrics]);
@@ -286,6 +290,21 @@ const Dashboard: React.FC = () => {
     };
   }, [connect]);
 
+  // Reset pipeline counters every 60 seconds to show rate-based metrics
+  useEffect(() => {
+    const resetInterval = setInterval(() => {
+      pipelineCounts.current = { ingress: 0, policy: 0, forwarded: 0, dropped: 0, egress: 0 };
+      setPipelineStages([
+        { name: 'Ingress', count: 0, color: 'blue' },
+        { name: 'Policy Check', count: 0, color: 'purple' },
+        { name: 'Forwarded', count: 0, color: 'green' },
+        { name: 'Dropped', count: 0, color: 'red' },
+        { name: 'Egress', count: 0, color: 'cyan' },
+      ]);
+    }, 60000);
+    return () => clearInterval(resetInterval);
+  }, []);
+
   // -----------------------------------------------------------------------
   // Fetch API data on mount (with fallback)
   // -----------------------------------------------------------------------
@@ -294,10 +313,12 @@ const Dashboard: React.FC = () => {
     let cancelled = false;
 
     async function loadApiData() {
+      let anyApiSucceeded = false;
       // Cluster health -> health checks
       try {
         const res = await fetchClusterHealth();
         if (!cancelled && res.data?.components?.length) {
+          anyApiSucceeded = true;
           const checks: HealthCheck[] = res.data.components.map((c) => ({
             name: c.name,
             status: (c.status === 'ok' || c.status === 'healthy') ? 'healthy' as const
@@ -383,6 +404,7 @@ const Dashboard: React.FC = () => {
       try {
         const res = await fetchEvents();
         if (!cancelled && res.data?.events?.length) {
+          anyApiSucceeded = true;
           const items: FeedEvent[] = res.data.events.slice(0, 10).map((ev) => ({
             id: ev.id,
             timestamp: ev.last_timestamp || ev.first_timestamp,
@@ -396,6 +418,8 @@ const Dashboard: React.FC = () => {
           if (items.length > 0) setActivityEvents(items);
         }
       } catch { /* use fallback */ }
+
+      if (!cancelled) setUsingFallback(!anyApiSucceeded);
     }
 
     loadApiData();
@@ -459,6 +483,11 @@ const Dashboard: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* ── Demo Data Indicator ─────────────────────────────────────── */}
+      {usingFallback && (
+        <div className="mb-2 p-2 rounded bg-yellow-500/20 text-yellow-400 text-xs text-center">Demo data — API unreachable</div>
+      )}
 
       {/* ── Connection Status Banner ──────────────────────────────────── */}
       {hasConnectionIssue && (

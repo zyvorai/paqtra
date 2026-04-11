@@ -10,6 +10,7 @@ export function useAutoRefresh(
   fetchFn: () => Promise<void>,
   intervalMs: number,
   enabled: boolean,
+  initialFetch: boolean = true,
 ): UseAutoRefreshResult {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,10 +45,13 @@ export function useAutoRefresh(
     }
   }, []);
 
-  // Always fetch on mount regardless of `enabled` flag — the user expects
-  // data immediately.  The `enabled` flag only controls the recurring interval.
+  // Fetch on mount if initialFetch is true (default). The user typically
+  // expects data immediately. The `enabled` flag only controls the recurring interval.
   useEffect(() => {
-    doFetch();
+    if (initialFetch) {
+      doFetch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doFetch]);
 
   // Interval-based refresh when enabled

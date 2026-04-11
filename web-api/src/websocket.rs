@@ -1,12 +1,42 @@
 // WebSocket handlers for real-time updates
 use axum::{
-    extract::{ws::{WebSocket, WebSocketUpgrade, Message}, State},
+    extract::{ws::{WebSocket, WebSocketUpgrade, Message}, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+use serde::Deserialize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::AppState;
+use crate::middleware::auth::Claims;
+
+/// Query parameter for WebSocket token-based authentication.
+#[derive(Debug, Deserialize)]
+pub struct WsAuthQuery {
+    pub token: Option<String>,
+}
+
+/// Validate a JWT token from the WebSocket query string.
+/// Returns Ok(()) if auth is disabled or the token is valid.
+fn validate_ws_token(state: &AppState, query: &WsAuthQuery) -> Result<(), (StatusCode, String)> {
+    if state.config.auth_disabled {
+        return Ok(());
+    }
+    let token = query.token.as_deref().ok_or((
+        StatusCode::UNAUTHORIZED,
+        "Missing 'token' query parameter for WebSocket authentication".to_string(),
+    ))?;
+    let decoding_key = DecodingKey::from_secret(state.config.jwt_secret.as_bytes());
+    let validation = Validation::new(Algorithm::HS256);
+    decode::<Claims>(token, &decoding_key, &validation).map_err(|e| {
+        (
+            StatusCode::UNAUTHORIZED,
+            format!("Invalid or expired token: {}", e),
+        )
+    })?;
+    Ok(())
+}
 
 /// Maximum time without a pong before considering the connection dead
 const PING_INTERVAL_SECS: u64 = 30;
@@ -74,7 +104,11 @@ fn handle_ws_message(msg: Option<Result<Message, axum::Error>>, label: &str) -> 
 pub async fn flows_websocket(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
+    Query(auth_query): Query<WsAuthQuery>,
 ) -> Response {
+    if let Err((status, msg)) = validate_ws_token(&state, &auth_query) {
+        return (status, msg).into_response();
+    }
     let guard = match WsConnectionGuard::try_acquire() {
         Some(g) => g,
         None => return (StatusCode::SERVICE_UNAVAILABLE, "Too many WebSocket connections").into_response(),
@@ -127,7 +161,11 @@ async fn handle_flows_socket(mut socket: WebSocket, state: Arc<AppState>, _guard
 pub async fn metrics_websocket(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
+    Query(auth_query): Query<WsAuthQuery>,
 ) -> Response {
+    if let Err((status, msg)) = validate_ws_token(&state, &auth_query) {
+        return (status, msg).into_response();
+    }
     let guard = match WsConnectionGuard::try_acquire() {
         Some(g) => g,
         None => return (StatusCode::SERVICE_UNAVAILABLE, "Too many WebSocket connections").into_response(),

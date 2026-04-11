@@ -44,7 +44,9 @@ const STATUS_CFG: Record<string, { color: string; icon: React.ReactNode; label: 
 function scoreColor(s: number) { return s >= 80 ? 'text-green-400' : s >= 60 ? 'text-yellow-400' : 'text-red-400'; }
 function scoreBg(s: number) { return s >= 80 ? 'bg-green-400' : s >= 60 ? 'bg-yellow-400' : 'bg-red-400'; }
 
-const BREAKDOWN = [
+// TODO: Breakdown data should come from the API (e.g. /security/posture/breakdown).
+// These static values are used as a fallback until the backend provides this data.
+const STATIC_BREAKDOWN = [
   { label: 'Network Segmentation', value: 90 },
   { label: 'Policy Coverage', value: 85 },
   { label: 'Encryption (mTLS)', value: 78 },
@@ -60,6 +62,7 @@ const Compliance: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [auditing, setAuditing] = useState<string | null>(null);
+  const [breakdown, setBreakdown] = useState(STATIC_BREAKDOWN);
 
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null);
@@ -72,9 +75,13 @@ const Compliance: React.FC = () => {
           status: 'not_assessed' as const, score: 0, lastAudit: null, controls: { total: 0, passing: 0, failing: 0 },
         };
       }));
-      const postureData = posRes.data as { score?: number; trend?: string; posture?: { score?: number; trend?: string } };
+      const postureData = posRes.data as { score?: number; trend?: string; posture?: { score?: number; trend?: string }; breakdown?: { label: string; value: number }[] };
       const p = postureData.posture ?? postureData;
       setPosture({ score: p.score ?? 0, trend: p.trend ?? '-' });
+      // Derive breakdown from API if available, otherwise keep static fallback
+      if (postureData.breakdown && Array.isArray(postureData.breakdown) && postureData.breakdown.length > 0) {
+        setBreakdown(postureData.breakdown);
+      }
     } catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to load compliance data'); }
     finally { setLoading(false); }
   }, []);
@@ -136,7 +143,7 @@ const Compliance: React.FC = () => {
             <div className="md:col-span-2">
               <h3 className="text-sm font-medium text-slate-400 mb-3">Score Breakdown</h3>
               <div className="space-y-3">
-                {BREAKDOWN.map((item) => (
+                {breakdown.map((item) => (
                   <div key={item.label} className="flex items-center gap-3">
                     {item.value >= 80 ? <CheckCircle className="w-4 h-4 text-green-400" /> : item.value >= 60 ? <AlertTriangle className="w-4 h-4 text-yellow-400" /> : <XCircle className="w-4 h-4 text-red-400" />}
                     <span className="text-sm text-white flex-1">{item.label}</span>

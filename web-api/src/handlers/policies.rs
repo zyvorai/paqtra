@@ -55,6 +55,10 @@ pub async fn create_policy(
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, ApiError> {
     check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+
+    // Validate spec size and depth
+    req.validate_spec().map_err(|e| ApiError::BadRequest(e))?;
+
     tracing::info!("Creating policy: {}/{}", req.namespace, req.name);
 
     track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
@@ -105,15 +109,24 @@ pub async fn update_policy(
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, ApiError> {
     check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+
+    // Validate spec size and depth
+    req.validate_spec().map_err(|e| ApiError::BadRequest(e))?;
+
     tracing::info!("Updating policy: {}", id);
 
     track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
     // Verify the policy exists before updating (prevent IDOR)
+    // Also validate that the request body name matches the path ID
     match state.k8s.list_policies().await {
         Ok(policies) => {
             if !policies.iter().any(|p| p.id == id || p.name == id) {
                 return Err(ApiError::NotFound);
+            }
+            // Prevent IDOR: ensure the request body name is consistent with the path ID
+            if req.name != id && !policies.iter().any(|p| p.id == id && p.name == req.name) {
+                return Err(ApiError::BadRequest("Policy name does not match path ID".into()));
             }
         }
         Err(e) => {
@@ -165,6 +178,9 @@ pub async fn simulate_policy(
     State(state): State<Arc<AppState>>,
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    // Validate spec size and depth
+    req.validate_spec().map_err(|e| ApiError::BadRequest(e))?;
+
     tracing::info!("Simulating policy: {}", req.name);
 
     track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;

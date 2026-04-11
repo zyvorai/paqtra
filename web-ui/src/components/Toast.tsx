@@ -4,7 +4,7 @@ import { X, CheckCircle, AlertTriangle, XCircle, Info } from 'lucide-react';
 type ToastType = 'success' | 'error' | 'warning' | 'info';
 
 interface Toast {
-  id: number;
+  id: string;
   message: string;
   type: ToastType;
 }
@@ -18,7 +18,12 @@ const ToastContext = createContext<ToastContextValue>({ addToast: () => {} });
 // eslint-disable-next-line react-refresh/only-export-components
 export const useToast = () => useContext(ToastContext);
 
-let nextId = 0;
+function generateToastId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return Date.now().toString(36) + Math.random().toString(36);
+}
 
 const ICONS: Record<ToastType, React.ReactNode> = {
   success: <CheckCircle className="w-5 h-5 text-emerald-400" />,
@@ -38,14 +43,14 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const addToast = useCallback((message: string, type: ToastType = 'info') => {
-    const id = nextId++;
+    const id = generateToastId();
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
   }, []);
 
-  const dismiss = (id: number) => {
+  const dismiss = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 

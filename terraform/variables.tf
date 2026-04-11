@@ -50,6 +50,12 @@ variable "kubernetes_version" {
   default     = "1.29"
 }
 
+variable "cluster_endpoint_public_access_cidrs" {
+  description = "List of CIDR blocks allowed to access the EKS public endpoint"
+  type        = list(string)
+  default     = ["10.0.0.0/8"]
+}
+
 variable "node_instance_type" {
   description = "EC2 instance type for worker nodes"
   type        = string
@@ -115,9 +121,9 @@ variable "api_image_repository" {
 }
 
 variable "api_image_tag" {
-  description = "API Docker image tag"
+  description = "API Docker image tag — use versioned tags in production"
   type        = string
-  default     = "latest"
+  default     = "v1.0.0"
 }
 
 variable "ui_image_repository" {
@@ -127,9 +133,9 @@ variable "ui_image_repository" {
 }
 
 variable "ui_image_tag" {
-  description = "UI Docker image tag"
+  description = "UI Docker image tag — use versioned tags in production"
   type        = string
-  default     = "latest"
+  default     = "v1.0.0"
 }
 
 variable "api_replicas" {

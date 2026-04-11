@@ -101,9 +101,15 @@ impl TuiApp {
             .unwrap_or(0);
 
         // Generate explanation
-        let mut explainer = match self.packet_explainer.lock() {
+        let mut explainer = match self.packet_explainer.try_lock() {
             Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
+            Err(_) => {
+                let busy = Paragraph::new("Packet explainer is busy. Try again.\n\nPress Esc to return.")
+                    .style(Style::default().fg(WARNING_COLOR))
+                    .block(Block::default().borders(Borders::ALL).title("Packet Explanation"));
+                f.render_widget(busy, area);
+                return;
+            }
         };
         let explanation = match explainer.explain_packet(
             &flow.source.namespace,

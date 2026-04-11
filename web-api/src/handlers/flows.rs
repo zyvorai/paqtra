@@ -1,7 +1,6 @@
 // Flow monitoring endpoints
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
     Json,
 };
 use serde_json::{json, Value};
@@ -9,6 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use crate::AppState;
+use crate::error::ApiError;
 use crate::models::flow::{Flow, FlowQueryParams};
 use super::{track_request, track_error, to_json};
 
@@ -22,7 +22,7 @@ const MAX_LIMIT: usize = 1000;
 pub async fn list_flows(
     State(state): State<Arc<AppState>>,
     Query(params): Query<FlowQueryParams>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, ApiError> {
     tracing::info!("Fetching flows with params: {:?}", params);
 
     track_request(&state, |m| { m.hubble_queries.fetch_add(1, Ordering::Relaxed); }).await;
@@ -79,7 +79,7 @@ pub async fn list_flows(
         Err(e) => {
             tracing::error!("Failed to fetch flows from Hubble: {}", e);
             track_error(&state).await;
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            return Err(ApiError::InternalError(e.to_string()));
         }
     };
 
@@ -110,7 +110,7 @@ pub async fn list_flows(
 pub async fn get_flow(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, ApiError> {
     tracing::info!("Fetching flow: {}", id);
 
     track_request(&state, |m| { m.hubble_queries.fetch_add(1, Ordering::Relaxed); }).await;
@@ -127,7 +127,7 @@ pub async fn get_flow(
         Ok(f) => f,
         Err(e) => {
             tracing::error!("Failed to fetch flows from Hubble: {}", e);
-            return Err(StatusCode::SERVICE_UNAVAILABLE);
+            return Err(ApiError::InternalError(e.to_string()));
         }
     };
 
@@ -138,14 +138,14 @@ pub async fn get_flow(
             Ok(Json(to_json(&flow)))
         }
         None => {
-            Err(StatusCode::NOT_FOUND)
+            Err(ApiError::NotFound)
         }
     }
 }
 
 pub async fn flow_stats(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, ApiError> {
     track_request(&state, |m| { m.hubble_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
     // Try cache
@@ -168,7 +168,7 @@ pub async fn flow_stats(
         Err(e) => {
             tracing::error!("Failed to compute flow stats: {}", e);
             track_error(&state).await;
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ApiError::InternalError(e.to_string()))
         }
     }
 }

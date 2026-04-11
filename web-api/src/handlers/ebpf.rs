@@ -2,6 +2,7 @@
 
 use axum::{
     extract::{Path, Query, State},
+    http::StatusCode,
     Json,
 };
 use serde::Deserialize;
@@ -10,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::AppState;
-use super::{paginate_json, PaginationQuery};
+use super::{check_admin, paginate_json, PaginationQuery};
 
 // ---------------------------------------------------------------------------
 // Helper: run bpftool with a 5-second timeout, return parsed JSON
@@ -36,8 +37,8 @@ async fn run_bpftool(args: &[&str]) -> Result<Value, String> {
     serde_json::from_slice(&output.stdout).map_err(|e| format!("Parse error: {}", e))
 }
 
-fn error_response(msg: &str) -> Json<Value> {
-    Json(json!({ "error": msg }))
+fn error_response(status: StatusCode, msg: &str) -> (StatusCode, Json<Value>) {
+    (status, Json(json!({ "error": msg })))
 }
 
 // ---------------------------------------------------------------------------
@@ -113,22 +114,41 @@ fn map_id(m: &Value) -> Option<u64> {
     m.get("id").and_then(|v| v.as_u64())
 }
 
+/// List all Cilium map IDs for validation.
+async fn list_cilium_map_ids() -> Result<Vec<u64>, String> {
+    let maps = run_bpftool(&["map", "list", "-j"]).await?;
+    let arr = maps.as_array().ok_or("unexpected bpftool output")?;
+    Ok(arr
+        .iter()
+        .filter(|m| {
+            m.get("name")
+                .and_then(|n| n.as_str())
+                .map(|n| n.contains("cilium"))
+                .unwrap_or(false)
+        })
+        .filter_map(|m| map_id(m))
+        .collect())
+}
+
 // ---------------------------------------------------------------------------
 // (a) GET /api/v1/ebpf/programs — list real Cilium eBPF programs
 // ---------------------------------------------------------------------------
 
 pub async fn list_real_programs(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Query(params): Query<PaginationQuery>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    check_admin(&state, &claims)?;
+
     let progs = match run_bpftool(&["prog", "list", "-j"]).await {
         Ok(v) => v,
-        Err(e) => return error_response(&e),
+        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
     };
 
     let arr = match progs.as_array() {
         Some(a) => a,
-        None => return error_response("unexpected bpftool output"),
+        None => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, "unexpected bpftool output")),
     };
 
     let items: Vec<Value> = arr
@@ -158,7 +178,7 @@ pub async fn list_real_programs(
         })
         .collect();
 
-    Json(paginate_json(items, &params, "programs"))
+    Ok(Json(paginate_json(items, &params, "programs")))
 }
 
 // ---------------------------------------------------------------------------
@@ -166,17 +186,20 @@ pub async fn list_real_programs(
 // ---------------------------------------------------------------------------
 
 pub async fn list_real_maps(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Query(params): Query<PaginationQuery>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    check_admin(&state, &claims)?;
+
     let maps = match run_bpftool(&["map", "list", "-j"]).await {
         Ok(v) => v,
-        Err(e) => return error_response(&e),
+        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
     };
 
     let arr = match maps.as_array() {
         Some(a) => a,
-        None => return error_response("unexpected bpftool output"),
+        None => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, "unexpected bpftool output")),
     };
 
     let items: Vec<Value> = arr
@@ -199,7 +222,7 @@ pub async fn list_real_maps(
         })
         .collect();
 
-    Json(paginate_json(items, &params, "maps"))
+    Ok(Json(paginate_json(items, &params, "maps")))
 }
 
 // ---------------------------------------------------------------------------
@@ -207,13 +230,16 @@ pub async fn list_real_maps(
 // ---------------------------------------------------------------------------
 
 pub async fn get_program_stats(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<u32>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    check_admin(&state, &claims)?;
+
     let id_str = id.to_string();
     match run_bpftool(&["prog", "show", "id", &id_str, "-j"]).await {
-        Ok(v) => Json(v),
-        Err(e) => error_response(&e),
+        Ok(v) => Ok(Json(v)),
+        Err(e) => Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
     }
 }
 
@@ -227,14 +253,26 @@ pub struct MapEntriesQuery {
 }
 
 pub async fn dump_map_entries(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<u32>,
     Query(params): Query<MapEntriesQuery>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    check_admin(&state, &claims)?;
+
+    // Validate the requested map ID is a known Cilium map
+    let valid_ids = match list_cilium_map_ids().await {
+        Ok(ids) => ids,
+        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
+    };
+    if !valid_ids.contains(&(id as u64)) {
+        return Err(error_response(StatusCode::NOT_FOUND, "Map ID is not a known Cilium map"));
+    }
+
     let id_str = id.to_string();
     let data = match run_bpftool(&["map", "dump", "id", &id_str, "-j"]).await {
         Ok(v) => v,
-        Err(e) => return error_response(&e),
+        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
     };
 
     let limit = params.limit.unwrap_or(50).min(200);
@@ -252,11 +290,11 @@ pub async fn dump_map_entries(
         })
         .collect();
 
-    Json(json!({
+    Ok(Json(json!({
         "entries": entries,
         "total": data.as_array().map(|a| a.len()).unwrap_or(0),
         "limit": limit,
-    }))
+    })))
 }
 
 // ---------------------------------------------------------------------------
@@ -264,12 +302,15 @@ pub async fn dump_map_entries(
 // ---------------------------------------------------------------------------
 
 pub async fn get_conntrack(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Query(params): Query<PaginationQuery>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    check_admin(&state, &claims)?;
+
     let maps = match run_bpftool(&["map", "list", "-j"]).await {
         Ok(v) => v,
-        Err(e) => return error_response(&e),
+        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
     };
 
     let map_arr = maps.as_array().cloned().unwrap_or_default();
@@ -360,12 +401,12 @@ pub async fn get_conntrack(
     let total = all_entries.len();
     let page: Vec<Value> = all_entries.into_iter().skip(offset).take(limit).collect();
 
-    Json(json!({
+    Ok(Json(json!({
         "entries": page,
         "total": total,
         "limit": limit,
         "offset": offset,
-    }))
+    })))
 }
 
 // ---------------------------------------------------------------------------
@@ -373,28 +414,31 @@ pub async fn get_conntrack(
 // ---------------------------------------------------------------------------
 
 pub async fn get_ipcache(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Query(params): Query<PaginationQuery>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    check_admin(&state, &claims)?;
+
     let maps = match run_bpftool(&["map", "list", "-j"]).await {
         Ok(v) => v,
-        Err(e) => return error_response(&e),
+        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
     };
     let map_arr = maps.as_array().cloned().unwrap_or_default();
 
     let ipcache_map = match find_map_by_name(&map_arr, "cilium_ipcache") {
         Some(m) => m,
-        None => return error_response("cilium_ipcache map not found"),
+        None => return Err(error_response(StatusCode::NOT_FOUND, "cilium_ipcache map not found")),
     };
     let mid = match map_id(ipcache_map) {
         Some(id) => id,
-        None => return error_response("cannot read map id"),
+        None => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, "cannot read map id")),
     };
 
     let id_str = mid.to_string();
     let dump = match run_bpftool(&["map", "dump", "id", &id_str, "-j"]).await {
         Ok(v) => v,
-        Err(e) => return error_response(&e),
+        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
     };
 
     let entries_arr = dump.as_array().cloned().unwrap_or_default();
@@ -438,7 +482,7 @@ pub async fn get_ipcache(
         }));
     }
 
-    Json(paginate_json(items, &params, "entries"))
+    Ok(Json(paginate_json(items, &params, "entries")))
 }
 
 // ---------------------------------------------------------------------------
@@ -446,28 +490,31 @@ pub async fn get_ipcache(
 // ---------------------------------------------------------------------------
 
 pub async fn get_lb_backends(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Query(params): Query<PaginationQuery>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    check_admin(&state, &claims)?;
+
     let maps = match run_bpftool(&["map", "list", "-j"]).await {
         Ok(v) => v,
-        Err(e) => return error_response(&e),
+        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
     };
     let map_arr = maps.as_array().cloned().unwrap_or_default();
 
     let lb_map = match find_map_by_name(&map_arr, "cilium_lb4_serv") {
         Some(m) => m,
-        None => return error_response("cilium_lb4_serv map not found"),
+        None => return Err(error_response(StatusCode::NOT_FOUND, "cilium_lb4_serv map not found")),
     };
     let mid = match map_id(lb_map) {
         Some(id) => id,
-        None => return error_response("cannot read map id"),
+        None => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, "cannot read map id")),
     };
 
     let id_str = mid.to_string();
     let dump = match run_bpftool(&["map", "dump", "id", &id_str, "-j"]).await {
         Ok(v) => v,
-        Err(e) => return error_response(&e),
+        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
     };
 
     let entries_arr = dump.as_array().cloned().unwrap_or_default();
@@ -512,7 +559,7 @@ pub async fn get_lb_backends(
         }));
     }
 
-    Json(paginate_json(items, &params, "services"))
+    Ok(Json(paginate_json(items, &params, "services")))
 }
 
 // ---------------------------------------------------------------------------
@@ -538,28 +585,31 @@ fn drop_reason_name(code: u32) -> &'static str {
 }
 
 pub async fn get_drop_stats(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Query(params): Query<PaginationQuery>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    check_admin(&state, &claims)?;
+
     let maps = match run_bpftool(&["map", "list", "-j"]).await {
         Ok(v) => v,
-        Err(e) => return error_response(&e),
+        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
     };
     let map_arr = maps.as_array().cloned().unwrap_or_default();
 
     let metrics_map = match find_map_by_name(&map_arr, "cilium_metrics") {
         Some(m) => m,
-        None => return error_response("cilium_metrics map not found"),
+        None => return Err(error_response(StatusCode::NOT_FOUND, "cilium_metrics map not found")),
     };
     let mid = match map_id(metrics_map) {
         Some(id) => id,
-        None => return error_response("cannot read map id"),
+        None => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, "cannot read map id")),
     };
 
     let id_str = mid.to_string();
     let dump = match run_bpftool(&["map", "dump", "id", &id_str, "-j"]).await {
         Ok(v) => v,
-        Err(e) => return error_response(&e),
+        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
     };
 
     let entries_arr = dump.as_array().cloned().unwrap_or_default();
@@ -604,7 +654,7 @@ pub async fn get_drop_stats(
         }));
     }
 
-    Json(paginate_json(items, &params, "drops"))
+    Ok(Json(paginate_json(items, &params, "drops")))
 }
 
 // ---------------------------------------------------------------------------
@@ -612,8 +662,11 @@ pub async fn get_drop_stats(
 // ---------------------------------------------------------------------------
 
 pub async fn get_ebpf_summary(
-    State(_state): State<Arc<AppState>>,
-) -> Json<Value> {
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    check_admin(&state, &claims)?;
+
     // Programs
     let total_programs = match run_bpftool(&["prog", "list", "-j"]).await {
         Ok(v) => v
@@ -707,11 +760,11 @@ pub async fn get_ebpf_summary(
         }
     }
 
-    Json(json!({
+    Ok(Json(json!({
         "total_programs": total_programs,
         "total_maps": total_maps,
         "total_ct_entries": total_ct_entries,
         "total_drops": total_drops,
         "top_drop_reason": top_drop_reason,
-    }))
+    })))
 }

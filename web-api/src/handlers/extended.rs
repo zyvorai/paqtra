@@ -50,24 +50,28 @@ pub async fn list_recordings(
 
 pub async fn start_recording(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(body): Json<StartRecordingRequest>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let name = &body.name;
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "id": "rec-003",
         "name": name,
         "status": "recording",
         "message": "Recording started"
-    }))
+    })))
 }
 
 pub async fn stop_recording(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "id": id, "status": "stopped", "message": "Recording stopped" }))
+    Ok(Json(serde_json::json!({ "id": id, "status": "stopped", "message": "Recording stopped" })))
 }
 
 // ── Healer ──────────────────────────────────────────────────
@@ -175,9 +179,11 @@ pub async fn list_packet_drops(
 
 pub async fn analyze_drops(
     State(state): State<Arc<AppState>>,
-) -> Json<serde_json::Value> {
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "analysis": {
             "total_drops": 226,
             "unique_reasons": 2,
@@ -185,7 +191,7 @@ pub async fn analyze_drops(
             "top_source_namespace": "default",
             "recommendation": "Review CiliumNetworkPolicies in default namespace"
         }
-    }))
+    })))
 }
 
 // ── MultiCluster ────────────────────────────────────────────
@@ -225,10 +231,12 @@ pub async fn list_clusters(
 
 pub async fn sync_cluster(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(name): Path<String>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({ "cluster": name, "status": "syncing", "message": "Policy sync initiated" }))
+    Ok(Json(serde_json::json!({ "cluster": name, "status": "syncing", "message": "Policy sync initiated" })))
 }
 
 // ── Heatmap ─────────────────────────────────────────────────
@@ -346,74 +354,6 @@ pub async fn zero_trust_score(
         "least_privilege": 55,
         "monitoring": 88
     }))
-}
-
-// ── eBPF Profiler ───────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize)]
-pub struct EbpfProgram {
-    pub id: String,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub prog_type: String,
-    pub attach_point: String,
-    pub run_count: u64,
-    pub run_time_ns: u64,
-    pub avg_run_time_ns: u64,
-    pub map_count: u32,
-    pub loaded_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct EbpfMapInfo {
-    pub id: String,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub map_type: String,
-    pub key_size: u32,
-    pub value_size: u32,
-    pub max_entries: u32,
-    pub current_entries: u32,
-}
-
-pub async fn list_ebpf_programs(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<PaginationQuery>,
-) -> Json<serde_json::Value> {
-    track_request(&state, |_| {}).await;
-    let programs = vec![
-        EbpfProgram { id: "prog-1".into(), name: "cil_from_container".into(), prog_type: "tc".into(),
-            attach_point: "eth0 ingress".into(), run_count: 15_000_000, run_time_ns: 450_000_000,
-            avg_run_time_ns: 30, map_count: 8, loaded_at: "2026-04-01T00:00:00Z".into() },
-        EbpfProgram { id: "prog-2".into(), name: "cil_to_container".into(), prog_type: "tc".into(),
-            attach_point: "eth0 egress".into(), run_count: 12_000_000, run_time_ns: 360_000_000,
-            avg_run_time_ns: 30, map_count: 6, loaded_at: "2026-04-01T00:00:00Z".into() },
-        EbpfProgram { id: "prog-3".into(), name: "cil_from_host".into(), prog_type: "xdp".into(),
-            attach_point: "eth0".into(), run_count: 50_000_000, run_time_ns: 500_000_000,
-            avg_run_time_ns: 10, map_count: 4, loaded_at: "2026-04-01T00:00:00Z".into() },
-        EbpfProgram { id: "prog-4".into(), name: "cil_sock_ops".into(), prog_type: "sock_ops".into(),
-            attach_point: "cgroup/sock_ops".into(), run_count: 8_000_000, run_time_ns: 160_000_000,
-            avg_run_time_ns: 20, map_count: 3, loaded_at: "2026-04-01T00:00:00Z".into() },
-    ];
-    let items: Vec<_> = programs.into_iter().map(|p| serde_json::to_value(p).unwrap()).collect();
-    Json(paginate_json(items, &params, "programs"))
-}
-
-pub async fn list_ebpf_maps(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<PaginationQuery>,
-) -> Json<serde_json::Value> {
-    track_request(&state, |_| {}).await;
-    let maps = vec![
-        EbpfMapInfo { id: "map-1".into(), name: "cilium_ct_tcp4_global".into(), map_type: "hash".into(), key_size: 36, value_size: 64, max_entries: 524288, current_entries: 12850 },
-        EbpfMapInfo { id: "map-2".into(), name: "cilium_ct_any4_global".into(), map_type: "hash".into(), key_size: 36, value_size: 64, max_entries: 262144, current_entries: 4200 },
-        EbpfMapInfo { id: "map-3".into(), name: "cilium_ipcache".into(), map_type: "lpm_trie".into(), key_size: 24, value_size: 32, max_entries: 512000, current_entries: 256 },
-        EbpfMapInfo { id: "map-4".into(), name: "cilium_policy".into(), map_type: "hash".into(), key_size: 48, value_size: 24, max_entries: 65536, current_entries: 180 },
-        EbpfMapInfo { id: "map-5".into(), name: "cilium_lxc".into(), map_type: "hash".into(), key_size: 16, value_size: 96, max_entries: 65536, current_entries: 42 },
-        EbpfMapInfo { id: "map-6".into(), name: "cilium_metrics".into(), map_type: "percpu_hash".into(), key_size: 8, value_size: 16, max_entries: 1024, current_entries: 64 },
-    ];
-    let items: Vec<_> = maps.into_iter().map(|m| serde_json::to_value(m).unwrap()).collect();
-    Json(paginate_json(items, &params, "maps"))
 }
 
 // ── Metrics Summary ─────────────────────────────────────────

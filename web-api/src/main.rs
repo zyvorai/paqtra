@@ -9,6 +9,7 @@ mod error;
 
 use axum::{
     Router,
+    extract::DefaultBodyLimit,
     routing::{get, post},
 };
 use std::net::SocketAddr;
@@ -132,8 +133,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/security/zero-trust", get(handlers::extended::zero_trust_score))
 
         // eBPF Profiler (real kernel data via bpftool)
-        .route("/api/v1/modules/ebpf/programs", get(handlers::ebpf::list_real_programs))
-        .route("/api/v1/modules/ebpf/maps", get(handlers::ebpf::list_real_maps))
         .route("/api/v1/ebpf/programs", get(handlers::ebpf::list_real_programs))
         .route("/api/v1/ebpf/programs/{id}", get(handlers::ebpf::get_program_stats))
         .route("/api/v1/ebpf/maps", get(handlers::ebpf::list_real_maps))
@@ -287,6 +286,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Configure middleware (outermost layer runs first)
     let app = app
+        .layer(DefaultBodyLimit::max(1_048_576))
         .layer(CompressionLayer::new())
         .layer(axum::middleware::from_fn_with_state(
             app_state,
@@ -304,7 +304,7 @@ async fn main() -> anyhow::Result<()> {
     let actual_addr = listener.local_addr()?;
     tracing::info!("Starting Cilium Vision API server on {}", actual_addr);
 
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 

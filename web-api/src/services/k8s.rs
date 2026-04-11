@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use regex::Regex;
 use std::sync::LazyLock;
 use tokio::process::Command;
+use tokio::time::{timeout, Duration};
 
 /// Kubernetes resource name validation: RFC 1123 DNS subdomain
 static K8S_NAME_RE: LazyLock<Regex> =
@@ -60,9 +61,9 @@ impl K8sService {
     /// Check if Kubernetes API is reachable
     pub async fn is_healthy(&self) -> bool {
         let mut cmd = self.kubectl(&["cluster-info", "--request-timeout=2s"]);
-        match cmd.output().await {
-            Ok(out) => out.status.success(),
-            Err(_) => false,
+        match timeout(Duration::from_secs(30), cmd.output()).await {
+            Ok(Ok(out)) => out.status.success(),
+            _ => false,
         }
     }
 
@@ -70,7 +71,9 @@ impl K8sService {
     pub async fn list_policies(&self) -> Result<Vec<Policy>> {
         let mut cmd = self.kubectl(&["get", "ciliumnetworkpolicies", "--all-namespaces", "-o", "json"]);
 
-        let output = cmd.output().await;
+        let output = timeout(Duration::from_secs(30), cmd.output())
+            .await
+            .context("kubectl list policies timed out after 30 seconds")?;
 
         match output {
             Ok(out) if out.status.success() => {
@@ -136,7 +139,9 @@ impl K8sService {
             // drop stdin to close it
         }
 
-        let output = child.wait_with_output().await?;
+        let output = timeout(Duration::from_secs(30), child.wait_with_output())
+            .await
+            .context("kubectl apply timed out after 30 seconds")??;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -166,7 +171,9 @@ impl K8sService {
 
         let mut cmd = self.kubectl(&["delete", "ciliumnetworkpolicy", name, "-n", namespace]);
 
-        let output = cmd.output().await;
+        let output = timeout(Duration::from_secs(30), cmd.output())
+            .await
+            .context("kubectl delete timed out after 30 seconds")?;
 
         match output {
             Ok(out) if out.status.success() => Ok(()),

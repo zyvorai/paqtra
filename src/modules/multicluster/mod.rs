@@ -297,6 +297,12 @@ impl MultiClusterAutopilot {
 
         self.active_syncs.push(sync);
 
+        // Cap sync history to prevent unbounded growth
+        const MAX_HISTORY: usize = 10_000;
+        if self.sync_history.len() > MAX_HISTORY {
+            self.sync_history.drain(..1);
+        }
+
         Ok(id)
     }
 
@@ -375,7 +381,8 @@ impl MultiClusterAutopilot {
             }
 
             // Derive cluster state from node readiness
-            cluster.health.healthy = cluster.health.healthy_nodes == cluster.health.node_count;
+            // A cluster with zero nodes is not healthy
+            cluster.health.healthy = cluster.health.node_count > 0 && cluster.health.healthy_nodes == cluster.health.node_count;
 
             if cluster.health.healthy {
                 cluster.state = ClusterState::Active;

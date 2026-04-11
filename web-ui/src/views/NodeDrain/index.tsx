@@ -4,11 +4,14 @@ import { fetchNodeDrainStatus, drainNode, uncordonNode, NodeDrainStatus } from '
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
+import { useAuthStore } from '../../stores/authStore';
 
 const STATUS_BADGE: Record<string, string> = { ready: 'bg-green-500/15 text-green-400 border-green-500/30', draining: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', cordoned: 'bg-orange-500/15 text-orange-400 border-orange-500/30', drained: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
 
 const NodeDrain: React.FC = () => {
   usePageTitle('Node Drain');
+  const userRole = useAuthStore((s) => s.role);
+  const isAdmin = userRole === 'admin';
   const [nodes, setNodes] = useState<NodeDrainStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +56,11 @@ const NodeDrain: React.FC = () => {
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
+      {!isAdmin && (
+        <div className="mb-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-sm">
+          Admin role required to drain or uncordon nodes.
+        </div>
+      )}
       {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -70,12 +78,12 @@ const NodeDrain: React.FC = () => {
             </div>
             <div className="flex gap-2">
               {n.status === 'ready' && (
-                <button onClick={() => confirmAndDrain(n.node)} disabled={acting === n.node} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-600/90 disabled:opacity-50 transition-colors">
+                <button onClick={() => confirmAndDrain(n.node)} disabled={acting === n.node || !isAdmin} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-600/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" title={isAdmin ? '' : 'Admin role required'}>
                   {acting === n.node ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldOff className="w-4 h-4" />} Drain
                 </button>
               )}
               {(n.status === 'cordoned' || n.status === 'drained') && (
-                <button onClick={() => handleUncordon(n.node)} disabled={acting === n.node} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50 transition-colors">
+                <button onClick={() => handleUncordon(n.node)} disabled={acting === n.node || !isAdmin} className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" title={isAdmin ? '' : 'Admin role required'}>
                   {acting === n.node ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" />} Uncordon
                 </button>
               )}

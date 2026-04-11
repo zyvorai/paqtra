@@ -1,14 +1,14 @@
 // Simple in-memory rate limiter using a token bucket per IP.
 use axum::{
-    extract::Request,
+    extract::{ConnectInfo, Request},
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use std::collections::HashMap;
-use std::net::IpAddr;
-use std::sync::Mutex;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
+use tokio::sync::Mutex;
 
 /// Per-IP bucket state.
 struct Bucket {
@@ -40,18 +40,18 @@ impl RateLimiter {
     }
 
     /// Try to consume one token for the given IP. Returns true if allowed.
-    fn allow(&self, ip: IpAddr) -> bool {
+    async fn allow(&self, ip: IpAddr) -> bool {
         // Periodic cleanup every 60 seconds to prevent unbounded growth
         {
-            let mut last = self.last_cleanup.lock().unwrap_or_else(|e| e.into_inner());
+            let mut last = self.last_cleanup.lock().await;
             if last.elapsed().as_secs() >= 60 {
                 *last = Instant::now();
                 drop(last);
-                self.cleanup();
+                self.cleanup().await;
             }
         }
 
-        let mut buckets = self.buckets.lock().unwrap_or_else(|e| e.into_inner());
+        let mut buckets = self.buckets.lock().await;
         let now = Instant::now();
 
         let bucket = buckets.entry(ip).or_insert(Bucket {
@@ -73,8 +73,8 @@ impl RateLimiter {
     }
 
     /// Evict stale entries (call periodically to prevent unbounded growth).
-    pub fn cleanup(&self) {
-        let mut buckets = self.buckets.lock().unwrap_or_else(|e| e.into_inner());
+    pub async fn cleanup(&self) {
+        let mut buckets = self.buckets.lock().await;
         let now = Instant::now();
         buckets.retain(|_, b| now.duration_since(b.last_refill).as_secs() < 300);
     }
@@ -87,10 +87,11 @@ pub async fn rate_limit_middleware(
 ) -> Response {
     // Use the peer IP address for rate limiting.
     // NOTE: X-Forwarded-For is not trusted because it can be spoofed by clients.
-    // TODO: Add axum::extract::ConnectInfo<SocketAddr> to the router for real
-    //       peer IP extraction. Until then, fall back to 0.0.0.0 which applies a
-    //       single shared bucket (safe but coarse).
-    let ip = IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED);
+    let ip = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip())
+        .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
 
     // Skip rate limiting for health/metrics endpoints
     let path = request.uri().path();
@@ -102,7 +103,7 @@ pub async fn rate_limit_middleware(
     static LIMITER: std::sync::OnceLock<RateLimiter> = std::sync::OnceLock::new();
     let limiter = LIMITER.get_or_init(|| RateLimiter::new(100, 50));
 
-    if !limiter.allow(ip) {
+    if !limiter.allow(ip).await {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             [("retry-after", "1")],

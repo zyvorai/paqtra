@@ -674,6 +674,11 @@ impl ChaosEngine {
 
         self.history.push(result.clone());
 
+        const MAX_HISTORY: usize = 10_000;
+        if self.history.len() > MAX_HISTORY {
+            self.history.drain(..1);
+        }
+
         Ok(result)
     }
 

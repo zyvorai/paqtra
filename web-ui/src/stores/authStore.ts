@@ -4,6 +4,7 @@ import api from '../services/api';
 interface AuthState {
   token: string | null;
   username: string | null;
+  role: string | null;
   isAuthenticated: boolean;
   authRequired: boolean;
   login: (username: string, password: string) => Promise<void>;
@@ -12,25 +13,25 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  token: localStorage.getItem('cilium-vision-token'),
+  token: null,
   username: localStorage.getItem('cilium-vision-username'),
-  isAuthenticated: !!localStorage.getItem('cilium-vision-token'),
+  role: null,
+  isAuthenticated: false,
   authRequired: false,
 
   login: async (username: string, password: string) => {
     const response = await api.post('/auth/login', { username, password });
-    const { token } = response.data;
-    localStorage.setItem('cilium-vision-token', token);
+    const { token, role } = response.data;
     localStorage.setItem('cilium-vision-username', username);
     api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    set({ token, username, isAuthenticated: true });
+    set({ token, username, role: role ?? 'viewer', isAuthenticated: true });
   },
 
   logout: () => {
     localStorage.removeItem('cilium-vision-token');
     localStorage.removeItem('cilium-vision-username');
     delete api.defaults.headers.common['Authorization'];
-    set({ token: null, username: null, isAuthenticated: false });
+    set({ token: null, username: null, role: null, isAuthenticated: false });
   },
 
   checkSession: async () => {

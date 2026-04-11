@@ -64,9 +64,6 @@ impl TuiApp {
         )?;
         terminal.show_cursor()?;
 
-        // Restore the default panic hook
-        let _ = std::panic::take_hook();
-
         if let Err(err) = res {
             println!("Error: {:?}", err);
         }
@@ -75,18 +72,27 @@ impl TuiApp {
     }
 
     async fn run_app<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
+        let mut flow_fetch_timer = std::time::Instant::now();
         loop {
             // Clear expired status messages (older than 5 seconds)
             if self.status_message.is_some() && self.status_message_time.elapsed().as_secs() >= 5 {
                 self.status_message = None;
             }
 
-            // Fetch latest flows
-            if let Ok(flows) = self.hubble_client.get_flows().await {
-                self.flows = flows;
-                if self.selected_flow_index >= self.flows.len() && !self.flows.is_empty() {
-                    self.selected_flow_index = self.flows.len() - 1;
+            // Fetch latest flows every 2 seconds instead of every 250ms loop iteration
+            if flow_fetch_timer.elapsed().as_secs() >= 2 {
+                match self.hubble_client.get_flows().await {
+                    Ok(flows) => {
+                        self.flows = flows;
+                        if self.selected_flow_index >= self.flows.len() && !self.flows.is_empty() {
+                            self.selected_flow_index = self.flows.len() - 1;
+                        }
+                    }
+                    Err(e) => {
+                        self.set_status_message(&format!("Flow fetch failed: {}", e));
+                    }
                 }
+                flow_fetch_timer = std::time::Instant::now();
             }
 
             // Update module data based on selected tab

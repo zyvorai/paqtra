@@ -44,11 +44,12 @@ warn() { echo "  ⚠️  $*"; }
 
 # ─── SSH / rsync wrappers with sshpass support ───────────────
 
-SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
+SSH_OPTS="-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
 
 _ssh() {
     if [ -n "${TARGET_PASS}" ] && command -v sshpass &>/dev/null; then
-        sshpass -p "${TARGET_PASS}" ssh ${SSH_OPTS} "${TARGET_USER}@${TARGET_HOST}" "$@"
+        export SSHPASS="${TARGET_PASS}"
+        sshpass -e ssh ${SSH_OPTS} "${TARGET_USER}@${TARGET_HOST}" "$@"
     else
         ssh ${SSH_OPTS} "${TARGET_USER}@${TARGET_HOST}" "$@"
     fi
@@ -57,7 +58,8 @@ _ssh() {
 _rsync() {
     local rsync_opts="-az --delete --progress"
     if [ -n "${TARGET_PASS}" ] && command -v sshpass &>/dev/null; then
-        rsync ${rsync_opts} -e "sshpass -p '${TARGET_PASS}' ssh ${SSH_OPTS}" "$@"
+        export SSHPASS="${TARGET_PASS}"
+        rsync ${rsync_opts} -e "sshpass -e ssh ${SSH_OPTS}" "$@"
     else
         rsync ${rsync_opts} -e "ssh ${SSH_OPTS}" "$@"
     fi

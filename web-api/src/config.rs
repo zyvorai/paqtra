@@ -19,7 +19,10 @@ pub struct Config {
 
 impl Config {
     pub fn load() -> anyhow::Result<Self> {
-        dotenvy::dotenv().ok();
+        // Only load .env file in non-production environments
+        if env::var("ENVIRONMENT").unwrap_or_default() != "production" {
+            dotenvy::dotenv().ok();
+        }
 
         let jwt_secret = env::var("JWT_SECRET").map_err(|_| {
             anyhow::anyhow!(
@@ -38,7 +41,23 @@ impl Config {
 
         let auth_disabled = env::var("AUTH_DISABLED").unwrap_or_default() == "true";
         if auth_disabled {
-            tracing::warn!("AUTH_DISABLED=true — authentication is bypassed. Do NOT use in production.");
+            let environment = env::var("ENVIRONMENT").unwrap_or_default();
+            if environment != "development" && environment != "test" && !environment.is_empty() {
+                tracing::error!(
+                    "FATAL: AUTH_DISABLED=true is set but ENVIRONMENT='{}' is not 'development' or 'test'. \
+                     Refusing to start with authentication disabled in this environment.",
+                    environment
+                );
+                anyhow::bail!(
+                    "AUTH_DISABLED=true is not allowed when ENVIRONMENT='{}'. \
+                     Set ENVIRONMENT=development or ENVIRONMENT=test, or remove AUTH_DISABLED.",
+                    environment
+                );
+            }
+            tracing::warn!(
+                "!!! AUTH_DISABLED=true — authentication is completely bypassed !!! \
+                 This is only safe in development/test environments."
+            );
         }
 
         Ok(Self {

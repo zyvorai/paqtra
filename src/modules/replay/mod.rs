@@ -120,7 +120,7 @@ impl<M: MapReader> ReplayEngine<M> {
         let ipcache = self.ebpf_reader.read_ipcache_map().unwrap_or_default();
 
         for conn in &connections {
-            let flow = Self::conntrack_to_recorded_flow(conn, &start_time, &ipcache).await?;
+            let flow = Self::conntrack_to_recorded_flow(conn, &start_time, &ipcache)?;
             session.flows.push(flow);
             captured += 1;
 
@@ -206,7 +206,7 @@ impl<M: MapReader> ReplayEngine<M> {
     }
 
     /// Convert conntrack entry to recorded flow
-    async fn conntrack_to_recorded_flow(
+    fn conntrack_to_recorded_flow(
         conn: &ConntrackEntry,
         start_time: &SystemTime,
         ipcache: &[crate::ebpf::IPCacheEntry],

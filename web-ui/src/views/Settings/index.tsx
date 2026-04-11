@@ -58,6 +58,31 @@ const Settings: React.FC = () => {
   };
 
   const handleSave = () => {
+    // Validate API base URL before saving
+    const url = settings.apiUrl.trim();
+    if (url.startsWith('/')) {
+      // Relative paths are allowed
+    } else if (url.startsWith('http://') || url.startsWith('https://')) {
+      try {
+        const parsed = new URL(url);
+        if (parsed.origin !== window.location.origin) {
+          setError('API URL must be same-origin. Cross-origin URLs are not allowed.');
+          return;
+        }
+      } catch {
+        setError('Invalid API URL format.');
+        return;
+      }
+    } else {
+      setError('API URL must start with /, http://, or https://.');
+      return;
+    }
+    // Check for suspicious characters (e.g. javascript:, data:, whitespace, angle brackets)
+    if (/[<>"'`\s]|javascript:|data:/i.test(url)) {
+      setError('API URL contains invalid characters.');
+      return;
+    }
+
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
       setSaved(true); setError(null);

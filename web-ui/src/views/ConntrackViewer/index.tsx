@@ -7,6 +7,7 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import Pagination from '../../components/Pagination';
 
 interface ConntrackEntry {
   src_ip: string;
@@ -32,12 +33,14 @@ const ConntrackViewer: React.FC = () => {
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<SortField>('bytes');
   const [sortAsc, setSortAsc] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 100;
 
   const loadData = useCallback(async () => {
     setError(null);
     try {
       const res = await fetchEbpfConntrack();
-      setEntries((res.data.entries ?? []) as ConntrackEntry[]);
+      setEntries((res.data.entries ?? []) as unknown as ConntrackEntry[]);
     } catch (err) {
       setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to load conntrack data');
     }
@@ -59,6 +62,14 @@ const ConntrackViewer: React.FC = () => {
     });
     return result;
   }, [entries, search, sortField, sortAsc]);
+
+  // Reset to page 1 when search changes
+  useMemo(() => { setCurrentPage(1); }, [search]);
+
+  const paginatedFiltered = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, currentPage]);
 
   const tcpCount = entries.filter((e) => e.protocol === 6).length;
   const udpCount = entries.filter((e) => e.protocol === 17).length;
@@ -138,7 +149,7 @@ const ConntrackViewer: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
-              {filtered.map((e, i) => (
+              {paginatedFiltered.map((e, i) => (
                 <tr key={i} className="table-row-hover">
                   <td className="px-4 py-3 text-white font-mono text-xs">{e.src_ip}</td>
                   <td className="px-4 py-3 text-slate-300">{e.src_port}</td>
@@ -163,6 +174,12 @@ const ConntrackViewer: React.FC = () => {
             </tbody>
           </table>
         </div>
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filtered.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+        />
       </div>
     </div>
   );

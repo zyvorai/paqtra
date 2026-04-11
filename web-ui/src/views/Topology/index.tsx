@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GitBranch, Loader2, RefreshCw } from 'lucide-react';
-import { fetchFlowStats as apiFetchFlowStats, FlowStats } from '../../services/api';
+import { fetchFlowStats as apiFetchFlowStats, fetchEndpoints, FlowStats } from '../../services/api';
 import { usePageTitle } from '../../hooks/usePageTitle';
 
 interface NamespaceNode {
@@ -24,19 +24,44 @@ const Topology: React.FC = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiFetchFlowStats();
-      setStats(res.data);
-      const names = ['kube-system', 'default', 'monitoring', 'ingress-nginx', 'app-backend'];
-      setNamespaces(names.map((name, i) => ({
-        name,
-        podCount: Math.floor(Math.random() * 20) + 2,
-        serviceCount: Math.floor(Math.random() * 8) + 1,
-        forwardedFlows: Math.floor((res.data.forwarded || 0) / names.length),
-        droppedFlows: Math.floor((res.data.dropped || 0) / names.length),
-        color: COLORS[i % COLORS.length],
-      })));
+      const [statsRes, endpointsRes] = await Promise.allSettled([
+        apiFetchFlowStats(),
+        fetchEndpoints(),
+      ]);
+
+      let flowStats: FlowStats | null = null;
+      if (statsRes.status === 'fulfilled') {
+        flowStats = statsRes.value.data;
+        setStats(flowStats);
+      }
+
+      // Derive namespaces from real endpoint data instead of Math.random()
+      if (endpointsRes.status === 'fulfilled' && endpointsRes.value.data?.endpoints?.length) {
+        const nsMap: Record<string, { podCount: number; serviceCount: number }> = {};
+        for (const ep of endpointsRes.value.data.endpoints) {
+          const ns = ep.namespace || 'default';
+          if (!nsMap[ns]) nsMap[ns] = { podCount: 0, serviceCount: 0 };
+          nsMap[ns].podCount += 1;
+          // Approximate service count as 1 per unique identity
+          nsMap[ns].serviceCount = Math.max(nsMap[ns].serviceCount, 1);
+        }
+        const nsNames = Object.keys(nsMap);
+        const forwarded = flowStats?.forwarded || 0;
+        const dropped = flowStats?.dropped || 0;
+        setNamespaces(nsNames.map((name, i) => ({
+          name,
+          podCount: nsMap[name].podCount,
+          serviceCount: nsMap[name].serviceCount,
+          forwardedFlows: nsNames.length > 0 ? Math.floor(forwarded / nsNames.length) : 0,
+          droppedFlows: nsNames.length > 0 ? Math.floor(dropped / nsNames.length) : 0,
+          color: COLORS[i % COLORS.length],
+        })));
+      } else {
+        // Fall back to empty state if API fails
+        setNamespaces([]);
+      }
     } catch {
-      // non-critical
+      setNamespaces([]);
     } finally {
       setLoading(false);
     }

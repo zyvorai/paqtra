@@ -14,7 +14,12 @@ UI_REPLICAS="${UI_REPLICAS:-2}"
 NODE_PORT="${NODE_PORT:-30919}"
 TLS_ENABLED="${TLS_ENABLED:-false}"
 
-   
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
 info()  { echo "🔷 [INFO] $*"; }
 ok()    { echo "✅ [OK]   $*"; }
 err()   { echo "❌ [ERR]  $*" >&2; }

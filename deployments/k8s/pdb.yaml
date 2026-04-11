@@ -1,0 +1,21 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cilium-vision-api-pdb
+  namespace: cilium-vision
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: cilium-vision-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cilium-vision-ui-pdb
+  namespace: cilium-vision
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: cilium-vision-ui

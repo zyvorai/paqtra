@@ -23,9 +23,21 @@ spec:
         prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: cilium-vision-api
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - cilium-vision-api
+                topologyKey: kubernetes.io/hostname
       containers:
       - name: api
-        image: ghcr.io/ssahani/cilium-flow-api:latest
+        image: ghcr.io/ssahani/cilium-flow-api:latest  # TODO: Use versioned tags in production
         imagePullPolicy: Always
         ports:
         - name: http
@@ -76,6 +88,8 @@ spec:
           capabilities:
             drop:
             - ALL
+          seccompProfile:
+            type: RuntimeDefault
 ---
 apiVersion: v1
 kind: Service

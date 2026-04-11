@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import MainLayout from './components/MainLayout';
@@ -76,12 +76,6 @@ const DropDashboard = React.lazy(() => import('./views/DropDashboard'));
 const Settings = React.lazy(() => import('./views/Settings'));
 const NotFound = React.lazy(() => import('./views/NotFound'));
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { retry: 1, refetchOnWindowFocus: false },
-  },
-});
-
 /** Wrap each route element in its own ErrorBoundary so a single view crash
  *  doesn't take down the entire app. */
 function ViewBoundary({ children }: { children: React.ReactNode }) {
@@ -94,6 +88,11 @@ function V({ children }: { children: React.ReactNode }) {
 }
 
 const App: React.FC = () => {
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: {
+      queries: { retry: 1, refetchOnWindowFocus: false },
+    },
+  }));
   const { authRequired, checkSession } = useAuthStore();
   const isDark = useThemeStore((s) => s.isDark);
 
