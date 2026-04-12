@@ -428,13 +428,14 @@ fi
 # Generate self-signed TLS certificate if none exists
 if [ ! -f /etc/cilium-vision/tls.crt ]; then
     echo "  Generating self-signed TLS certificate..."
-    openssl req -x509 -newkey rsa:2048 -nodes \
+    sudo openssl req -x509 -newkey rsa:2048 -nodes \
         -keyout /etc/cilium-vision/tls.key \
         -out /etc/cilium-vision/tls.crt \
         -days 365 \
         -subj "/CN=cilium-vision/O=cilium-vision" \
         -addext "subjectAltName=IP:\$(hostname -I | awk '{print \$1}')"
-    chmod 600 /etc/cilium-vision/tls.key
+    sudo chmod 644 /etc/cilium-vision/tls.crt
+    sudo chmod 644 /etc/cilium-vision/tls.key
     echo "  ✅ TLS certificate generated"
 fi
 
