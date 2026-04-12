@@ -592,13 +592,25 @@ pub async fn dns_queries(
         .filter(|f| f.port == 53)
         .enumerate()
         .map(|(i, f)| {
+            // Map flow fields to DNS query format expected by frontend
+            let query_name = if !f.destination.pod.is_empty() {
+                format!("{}.{}.svc.cluster.local", f.destination.pod, f.destination.namespace)
+            } else if !f.destination.ip.is_empty() {
+                f.destination.ip.clone()
+            } else {
+                "unknown".to_string()
+            };
+            let response_code = if f.verdict == "FORWARDED" { "NOERROR" } else { "SERVFAIL" };
             serde_json::json!({
                 "id": format!("dns-{:03}", i + 1),
                 "timestamp": f.timestamp,
                 "source_pod": f.source.pod,
                 "namespace": f.source.namespace,
-                "destination": format!("{}:{}", f.destination.ip, f.port),
-                "protocol": f.protocol,
+                "query_name": query_name,
+                "query_type": if f.protocol == "UDP" { "A" } else { "AAAA" },
+                "response_code": response_code,
+                "response_ips": if f.verdict == "FORWARDED" { vec![&f.destination.ip] } else { vec![] },
+                "latency_ms": 0.0,
                 "verdict": f.verdict,
             })
         })

@@ -404,13 +404,36 @@ pub async fn rollback_change(
 
 // ── Node Drain ────────────────────────────────────────────
 
-pub async fn node_drain_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn node_drain_status(State(state): State<Arc<AppState>>) -> Json<serde_json::value::Value> {
     track_request(&state, |_| {}).await;
 
     let data = state
         .k8s
         .kubectl_json(&["get", "nodes", "-o", "json"])
         .await;
+
+    // Fetch all running pods to count per-node pods_remaining
+    let pods_data = state
+        .k8s
+        .kubectl_json(&[
+            "get", "pods", "--all-namespaces",
+            "--field-selector=status.phase=Running", "-o", "json",
+        ])
+        .await;
+
+    let mut node_pod_counts: std::collections::HashMap<String, u64> =
+        std::collections::HashMap::new();
+    if let Some(pod_items) = pods_data.get("items").and_then(|v| v.as_array()) {
+        for pod in pod_items {
+            if let Some(node_name) = pod
+                .get("spec")
+                .and_then(|s| s.get("nodeName"))
+                .and_then(|v| v.as_str())
+            {
+                *node_pod_counts.entry(node_name.to_string()).or_insert(0) += 1;
+            }
+        }
+    }
 
     let nodes: Vec<serde_json::Value> = data
         .get("items")
@@ -449,11 +472,23 @@ pub async fn node_drain_status(State(state): State<Arc<AppState>>) -> Json<serde
                         "not_ready"
                     };
 
+                    let started_at = meta
+                        .get("creationTimestamp")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    let pods_remaining = node_pod_counts
+                        .get(name)
+                        .copied()
+                        .unwrap_or(0);
+
                     serde_json::json!({
                         "node": name,
                         "status": node_status,
                         "cordon": unschedulable,
-                        "ready": ready,
+                        "pods_evicted": 0,
+                        "pods_remaining": pods_remaining,
+                        "started_at": started_at,
                     })
                 })
                 .collect()
@@ -526,6 +561,102 @@ pub async fn pod_security(State(state): State<Arc<AppState>>) -> Json<serde_json
         .kubectl_json(&["get", "namespaces", "-o", "json"])
         .await;
 
+    // Fetch all pods with their security contexts
+    let pods_data = state
+        .k8s
+        .kubectl_json(&["get", "pods", "--all-namespaces", "-o", "json"])
+        .await;
+
+    // Build per-namespace pod stats: (total, compliant, violations)
+    let mut ns_total: std::collections::HashMap<String, u64> =
+        std::collections::HashMap::new();
+    let mut ns_compliant: std::collections::HashMap<String, u64> =
+        std::collections::HashMap::new();
+    let mut ns_violations: std::collections::HashMap<String, Vec<serde_json::Value>> =
+        std::collections::HashMap::new();
+
+    if let Some(pod_items) = pods_data.get("items").and_then(|v| v.as_array()) {
+        for pod in pod_items {
+            let pod_ns = pod
+                .get("metadata")
+                .and_then(|m| m.get("namespace"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let pod_name = pod
+                .get("metadata")
+                .and_then(|m| m.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            *ns_total.entry(pod_ns.to_string()).or_insert(0) += 1;
+
+            let spec = pod.get("spec");
+            let host_network = spec
+                .and_then(|s| s.get("hostNetwork"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            // Check security context on pod level
+            let pod_run_as_user = spec
+                .and_then(|s| s.get("securityContext"))
+                .and_then(|sc| sc.get("runAsUser"))
+                .and_then(|v| v.as_u64());
+
+            // Check all containers
+            let containers = spec
+                .and_then(|s| s.get("containers"))
+                .and_then(|v| v.as_array());
+
+            let mut is_privileged = false;
+            let mut runs_as_root = pod_run_as_user == Some(0);
+
+            if let Some(ctrs) = containers {
+                for ctr in ctrs {
+                    let sc = ctr.get("securityContext");
+                    if sc
+                        .and_then(|s| s.get("privileged"))
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                    {
+                        is_privileged = true;
+                    }
+                    if !runs_as_root {
+                        if sc
+                            .and_then(|s| s.get("runAsUser"))
+                            .and_then(|v| v.as_u64())
+                            == Some(0)
+                        {
+                            runs_as_root = true;
+                        }
+                    }
+                }
+            }
+
+            let mut pod_violations = Vec::new();
+            if runs_as_root {
+                pod_violations.push("runs_as_root");
+            }
+            if is_privileged {
+                pod_violations.push("privileged_container");
+            }
+            if host_network {
+                pod_violations.push("host_network");
+            }
+
+            if pod_violations.is_empty() {
+                *ns_compliant.entry(pod_ns.to_string()).or_insert(0) += 1;
+            } else {
+                ns_violations
+                    .entry(pod_ns.to_string())
+                    .or_default()
+                    .push(serde_json::json!({
+                        "pod": pod_name,
+                        "issues": pod_violations,
+                    }));
+            }
+        }
+    }
+
     let reports: Vec<serde_json::Value> = ns_data
         .get("items")
         .and_then(|v| v.as_array())
@@ -550,11 +681,21 @@ pub async fn pod_security(State(state): State<Arc<AppState>>) -> Json<serde_json
                         .and_then(|v| v.as_str())
                         .unwrap_or("not-set");
 
+                    let total_pods = ns_total.get(name).copied().unwrap_or(0);
+                    let compliant_pods = ns_compliant.get(name).copied().unwrap_or(0);
+                    let violations = ns_violations
+                        .get(name)
+                        .cloned()
+                        .unwrap_or_default();
+
                     Some(serde_json::json!({
                         "namespace": name,
                         "enforce_level": enforce,
                         "audit_level": audit,
                         "warn_level": warn,
+                        "total_pods": total_pods,
+                        "compliant_pods": compliant_pods,
+                        "violations": violations,
                     }))
                 })
                 .collect()
@@ -637,6 +778,11 @@ pub async fn mesh_services(State(state): State<Arc<AppState>>) -> Json<serde_jso
                     "protocol": protocol,
                     "cluster_ip": spec.get("clusterIP").and_then(|v| v.as_str()).unwrap_or(""),
                     "ports": ports.cloned().unwrap_or_default(),
+                    "mtls": false,
+                    "retries": 0,
+                    "timeout_ms": 0,
+                    "circuit_breaker": false,
+                    "traffic_policy": "round-robin",
                 }))
             }).collect()
             })
@@ -684,6 +830,86 @@ pub async fn kpr_status(State(state): State<Arc<AppState>>) -> Json<serde_json::
         .get("node-port-range")
         .and_then(|v| v.as_str())
         .unwrap_or("30000-32767");
+    let graceful_termination = data
+        .get("enable-k8s-terminating-endpoint")
+        .and_then(|v| v.as_str())
+        .unwrap_or("false")
+        == "true";
+
+    // Count K8s services
+    let svc_data = state
+        .k8s
+        .kubectl_json(&["get", "services", "--all-namespaces", "-o", "json"])
+        .await;
+    let services_count = svc_data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+
+    // Count K8s endpoints (backends)
+    let ep_data = state
+        .k8s
+        .kubectl_json(&["get", "endpoints", "--all-namespaces", "-o", "json"])
+        .await;
+    let backends_count: usize = ep_data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .map(|ep| {
+                    ep.get("subsets")
+                        .and_then(|v| v.as_array())
+                        .map(|subsets| {
+                            subsets
+                                .iter()
+                                .map(|s| {
+                                    s.get("addresses")
+                                        .and_then(|v| v.as_array())
+                                        .map(|a| a.len())
+                                        .unwrap_or(0)
+                                })
+                                .sum::<usize>()
+                        })
+                        .unwrap_or(0)
+                })
+                .sum()
+        })
+        .unwrap_or(0);
+
+    // Query NAT and CT table entry counts from cilium-agent
+    use crate::services::k8s::K8sService;
+    let nat_output = K8sService::run_cmd(
+        "kubectl",
+        &[
+            "exec", "-n", "kube-system", "-l", "k8s-app=cilium",
+            "-c", "cilium-agent", "--",
+            "cilium", "bpf", "nat", "list",
+        ],
+    )
+    .await;
+    let nat_entries: usize = if nat_output.is_empty() {
+        0
+    } else {
+        // Each non-empty line is an entry; skip the header line
+        nat_output.lines().skip(1).filter(|l| !l.trim().is_empty()).count()
+    };
+
+    let ct_output = K8sService::run_cmd(
+        "kubectl",
+        &[
+            "exec", "-n", "kube-system", "-l", "k8s-app=cilium",
+            "-c", "cilium-agent", "--",
+            "cilium", "bpf", "ct", "list", "global",
+        ],
+    )
+    .await;
+    let ct_entries: usize = if ct_output.is_empty() {
+        0
+    } else {
+        ct_output.lines().skip(1).filter(|l| !l.trim().is_empty()).count()
+    };
 
     Json(serde_json::json!({
         "enabled": kpr != "disabled" && !kpr.is_empty(),
@@ -691,7 +917,12 @@ pub async fn kpr_status(State(state): State<Arc<AppState>>) -> Json<serde_json::
         "device": device,
         "dsr_mode": dsr,
         "session_affinity": session_affinity == "true",
+        "graceful_termination": graceful_termination,
         "node_port_range": node_port_range,
+        "services": services_count,
+        "backends": backends_count,
+        "nat_entries": nat_entries,
+        "ct_entries": ct_entries,
         "source": "cilium-config ConfigMap",
     }))
 }

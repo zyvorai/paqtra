@@ -724,7 +724,15 @@ pub async fn get_drop_stats(
         }));
     }
 
-    Ok(Json(paginate_json(items, &params, "drops")))
+    let mut result = paginate_json(items, &params, "drops");
+    // Add total_drops alias — the frontend expects this field alongside "total"
+    if let Some(total) = result.get("total").cloned() {
+        result
+            .as_object_mut()
+            .unwrap()
+            .insert("total_drops".to_string(), total);
+    }
+    Ok(Json(result))
 }
 
 // ---------------------------------------------------------------------------

@@ -320,10 +320,19 @@ pub async fn encryption_status(State(state): State<Arc<AppState>>) -> Json<serde
         .map(|a| a.len())
         .unwrap_or(0);
 
+    let nodes_encrypted = if enabled { nodes_total } else { 0 };
+
     Json(serde_json::json!({
         "enabled": enabled,
         "type": if enabled { &enc_type } else { "none" },
+        "nodes_encrypted": nodes_encrypted,
         "nodes_total": nodes_total,
+        "interfaces": [],
+        "key_rotation": null,
+        "stats": {
+            "bytes_encrypted": 0,
+            "bytes_decrypted": 0,
+        },
         "config_source": "cilium-config ConfigMap",
     }))
 }
