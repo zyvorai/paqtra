@@ -21,6 +21,12 @@ pub struct Config {
     /// Parsed from HUBBLE_ADDRESSES env var as comma-separated `name=host:port` pairs.
     /// Falls back to a single "local" entry derived from `hubble_address`.
     pub hubble_addresses: Vec<(String, String)>,
+    /// Optional OTLP HTTP endpoint for exporting trace spans (e.g. "http://localhost:4318").
+    /// Read from OTEL_EXPORTER_ENDPOINT env var. When unset, tracing export is disabled.
+    pub otel_endpoint: Option<String>,
+    /// Service name reported in exported spans. Defaults to "cilium-vision-api".
+    /// Read from OTEL_SERVICE_NAME env var.
+    pub otel_service_name: String,
 }
 
 impl Config {
@@ -108,6 +114,9 @@ impl Config {
             ui_dist_dir: env::var("UI_DIST_DIR").ok(),
             prometheus_url: env::var("PROMETHEUS_URL").ok(),
             hubble_addresses,
+            otel_endpoint: env::var("OTEL_EXPORTER_ENDPOINT").ok(),
+            otel_service_name: env::var("OTEL_SERVICE_NAME")
+                .unwrap_or_else(|_| "cilium-vision-api".to_string()),
         })
     }
 }

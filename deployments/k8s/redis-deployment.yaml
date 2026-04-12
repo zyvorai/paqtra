@@ -21,6 +21,16 @@ spec:
       containers:
       - name: redis
         image: redis:7-alpine
+        args:
+        - redis-server
+        - "--save"
+        - "60"
+        - "1000"
+        - "--save"
+        - "300"
+        - "100"
+        - "--dir"
+        - "/data"
         ports:
         - name: redis
           containerPort: 6379
@@ -58,7 +68,8 @@ spec:
           mountPath: /data
       volumes:
       - name: redis-data
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: redis-data
 ---
 apiVersion: v1
 kind: Service
@@ -78,3 +89,18 @@ spec:
   selector:
     app: cilium-vision
     component: redis
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: cilium-system
+  labels:
+    app: cilium-vision
+    component: redis
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

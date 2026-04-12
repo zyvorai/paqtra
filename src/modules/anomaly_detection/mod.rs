@@ -11,6 +11,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 /// Anomaly detection engine with ML-powered analysis
 pub struct AnomalyDetector {
@@ -19,6 +20,12 @@ pub struct AnomalyDetector {
     alerting: alerting::AlertManager,
     remediation: remediation::RemediationEngine,
     config: DetectionConfig,
+    /// Path where the baseline is persisted between restarts
+    baseline_path: PathBuf,
+    /// Number of metrics processed since the last baseline save
+    metrics_since_save: usize,
+    /// How often (in metric count) to auto-save the baseline
+    save_interval: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -166,24 +173,65 @@ impl Default for DetectionConfig {
 
 impl AnomalyDetector {
     pub fn new(config: DetectionConfig) -> Result<Self> {
+        Self::with_baseline_path(config, Path::new(baseline::DEFAULT_BASELINE_DIR).join("baseline.json"))
+    }
+
+    /// Create a detector with an explicit baseline file path.
+    ///
+    /// If a saved baseline exists at `baseline_path`, it is loaded and the
+    /// scorer's algorithm selection is adapted to the amount of historical
+    /// data.  Otherwise a fresh baseline is created.
+    pub fn with_baseline_path(config: DetectionConfig, baseline_path: PathBuf) -> Result<Self> {
+        let baseline = if baseline_path.exists() {
+            match baseline::BaselineLearner::load_baseline(&baseline_path) {
+                Ok(b) => {
+                    tracing::info!("Restored baseline from {}", baseline_path.display());
+                    b
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to load baseline from {}: {e}. Starting fresh.",
+                        baseline_path.display()
+                    );
+                    baseline::BaselineLearner::new(config.learning_period_hours)
+                }
+            }
+        } else {
+            baseline::BaselineLearner::new(config.learning_period_hours)
+        };
+
+        let mut scorer =
+            scoring::AnomalyScorer::new(config.sensitivity, config.algorithms.clone());
+        // Adapt algorithm selection to the amount of data we already have
+        scorer.select_algorithms(baseline.observation_count());
+
         Ok(Self {
-            baseline: baseline::BaselineLearner::new(config.learning_period_hours),
-            scorer: scoring::AnomalyScorer::new(config.sensitivity, config.algorithms.clone()),
+            baseline,
+            scorer,
             alerting: alerting::AlertManager::new(config.confidence_threshold),
             remediation: remediation::RemediationEngine::new(config.auto_remediation),
             config,
+            baseline_path,
+            metrics_since_save: 0,
+            save_interval: 500,
         })
     }
 
-    /// Process incoming metrics and detect anomalies
+    /// Process incoming metrics and detect anomalies.
+    ///
+    /// For each metric the baseline is updated (learning) and then the scorer
+    /// evaluates the metric against the learned baseline.  Algorithm selection
+    /// is automatically adapted as the baseline grows.  The baseline is
+    /// persisted to disk every `save_interval` metrics.
     pub async fn process_metrics(&mut self, metrics: &[Metric]) -> Result<Vec<Anomaly>> {
         let mut anomalies = Vec::new();
 
-        for metric in metrics {
-            // Update baseline
-            self.baseline.update(metric)?;
+        // Learn from the batch and adapt algorithms
+        let obs_count = self.baseline.learn(metrics)?;
+        self.scorer.select_algorithms(obs_count);
 
-            // Calculate anomaly score
+        for metric in metrics {
+            // Calculate anomaly score against the (just-updated) baseline
             if let Some(score) = self.scorer.score(metric, &self.baseline)? {
                 if score.confidence >= self.config.confidence_threshold {
                     // Generate anomaly
@@ -206,7 +254,20 @@ impl AnomalyDetector {
             self.alerting.send_alerts(&anomalies).await?;
         }
 
+        // Periodically persist the baseline
+        self.metrics_since_save += metrics.len();
+        if self.metrics_since_save >= self.save_interval {
+            self.save_baseline()?;
+        }
+
         Ok(anomalies)
+    }
+
+    /// Persist the current baseline to disk.
+    pub fn save_baseline(&mut self) -> Result<()> {
+        self.baseline.save_baseline(&self.baseline_path)?;
+        self.metrics_since_save = 0;
+        Ok(())
     }
 
     fn create_anomaly(&self, metric: &Metric, score: scoring::AnomalyScore) -> Result<Anomaly> {
@@ -296,11 +357,20 @@ mod tests {
         }
     }
 
+    /// Create a detector that writes its baseline to a temp directory
+    fn make_detector(config: DetectionConfig) -> AnomalyDetector {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("baseline.json");
+        // Leak the TempDir so it isn't removed while the detector lives
+        std::mem::forget(tmp);
+        AnomalyDetector::with_baseline_path(config, path).unwrap()
+    }
+
     #[test]
     fn test_anomaly_detector_creation() {
         let config = DetectionConfig::default();
-        let detector = AnomalyDetector::new(config);
-        assert!(detector.is_ok());
+        let detector = make_detector(config);
+        assert!(detector.get_baseline_stats().is_empty());
     }
 
     #[test]
@@ -316,8 +386,7 @@ mod tests {
 
     #[test]
     fn test_calculate_severity_critical() {
-        let config = DetectionConfig::default();
-        let detector = AnomalyDetector::new(config).unwrap();
+        let detector = make_detector(DetectionConfig::default());
         // confidence * deviation > 8.0
         let severity = detector.calculate_severity(1.0, 9.0);
         assert_eq!(severity, Severity::Critical);
@@ -325,8 +394,7 @@ mod tests {
 
     #[test]
     fn test_calculate_severity_high() {
-        let config = DetectionConfig::default();
-        let detector = AnomalyDetector::new(config).unwrap();
+        let detector = make_detector(DetectionConfig::default());
         // confidence * deviation > 5.0 but <= 8.0
         let severity = detector.calculate_severity(1.0, 6.0);
         assert_eq!(severity, Severity::High);
@@ -334,8 +402,7 @@ mod tests {
 
     #[test]
     fn test_calculate_severity_medium() {
-        let config = DetectionConfig::default();
-        let detector = AnomalyDetector::new(config).unwrap();
+        let detector = make_detector(DetectionConfig::default());
         // confidence * deviation > 3.0 but <= 5.0
         let severity = detector.calculate_severity(1.0, 4.0);
         assert_eq!(severity, Severity::Medium);
@@ -343,8 +410,7 @@ mod tests {
 
     #[test]
     fn test_calculate_severity_low() {
-        let config = DetectionConfig::default();
-        let detector = AnomalyDetector::new(config).unwrap();
+        let detector = make_detector(DetectionConfig::default());
         // confidence * deviation > 1.5 but <= 3.0
         let severity = detector.calculate_severity(1.0, 2.0);
         assert_eq!(severity, Severity::Low);
@@ -352,8 +418,7 @@ mod tests {
 
     #[test]
     fn test_calculate_severity_info() {
-        let config = DetectionConfig::default();
-        let detector = AnomalyDetector::new(config).unwrap();
+        let detector = make_detector(DetectionConfig::default());
         // confidence * deviation <= 1.5
         let severity = detector.calculate_severity(0.5, 1.0);
         assert_eq!(severity, Severity::Info);
@@ -361,16 +426,14 @@ mod tests {
 
     #[test]
     fn test_get_baseline_stats_initially_empty() {
-        let config = DetectionConfig::default();
-        let detector = AnomalyDetector::new(config).unwrap();
+        let detector = make_detector(DetectionConfig::default());
         let stats = detector.get_baseline_stats();
         assert!(stats.is_empty());
     }
 
     #[tokio::test]
     async fn test_process_metrics_builds_baseline() {
-        let config = DetectionConfig::default();
-        let mut detector = AnomalyDetector::new(config).unwrap();
+        let mut detector = make_detector(DetectionConfig::default());
 
         for i in 0..50 {
             let metric = make_metric(100.0 + (i as f64 % 10.0));
@@ -386,8 +449,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_anomaly_detection_with_spike() {
-        let config = DetectionConfig::default();
-        let mut detector = AnomalyDetector::new(config).unwrap();
+        let mut detector = make_detector(DetectionConfig::default());
 
         // Build baseline with 1000 normal metrics
         for i in 0..1000 {
@@ -416,5 +478,90 @@ mod tests {
     fn test_algorithm_equality() {
         assert_eq!(Algorithm::ZScore, Algorithm::ZScore);
         assert_ne!(Algorithm::ZScore, Algorithm::LSTM);
+    }
+
+    #[test]
+    fn test_baseline_save_and_load() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("baseline.json");
+
+        // Build a baseline with some data
+        let mut learner = baseline::BaselineLearner::new(168);
+        for v in [10.0, 20.0, 30.0, 40.0, 50.0] {
+            learner.update(&make_metric(v)).unwrap();
+        }
+
+        // Save
+        learner.save_baseline(&path).unwrap();
+        assert!(path.exists());
+
+        // Load
+        let loaded = baseline::BaselineLearner::load_baseline(&path).unwrap();
+        assert_eq!(loaded.observation_count(), 5);
+        let stats = loaded.get_stats();
+        assert_eq!(stats.len(), 1);
+        let (_, bs) = stats.iter().next().unwrap();
+        assert!((bs.mean - 30.0).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_baseline_persisted_after_interval() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("baseline.json");
+        let config = DetectionConfig::default();
+        let mut detector = AnomalyDetector::with_baseline_path(config, path.clone()).unwrap();
+
+        // Process enough metrics to trigger auto-save (save_interval=500)
+        for i in 0..600 {
+            let metric = make_metric(100.0 + (i as f64 % 10.0));
+            detector.process_metrics(&[metric]).await.unwrap();
+        }
+
+        assert!(path.exists(), "Baseline should be persisted after save_interval");
+    }
+
+    #[tokio::test]
+    async fn test_detector_loads_saved_baseline() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("baseline.json");
+
+        // First detector: build baseline and save
+        {
+            let config = DetectionConfig::default();
+            let mut d = AnomalyDetector::with_baseline_path(config, path.clone()).unwrap();
+            for i in 0..100 {
+                let metric = make_metric(100.0 + (i as f64 % 10.0));
+                d.process_metrics(&[metric]).await.unwrap();
+            }
+            d.save_baseline().unwrap();
+        }
+
+        // Second detector: should load from the saved file
+        let config2 = DetectionConfig::default();
+        let d2 = AnomalyDetector::with_baseline_path(config2, path).unwrap();
+        let stats = d2.get_baseline_stats();
+        assert!(!stats.is_empty(), "Loaded detector should have baseline data");
+    }
+
+    #[test]
+    fn test_learn_returns_observation_count() {
+        let mut learner = baseline::BaselineLearner::new(168);
+        let metrics: Vec<Metric> = (0..25).map(|i| make_metric(i as f64)).collect();
+        let count = learner.learn(&metrics).unwrap();
+        assert_eq!(count, 25);
+    }
+
+    #[test]
+    fn test_select_algorithms_small_dataset() {
+        let mut scorer =
+            scoring::AnomalyScorer::new(0.7, vec![Algorithm::ZScore, Algorithm::IsolationForest]);
+        scorer.select_algorithms(500);
+        // With < 1000 observations, only ZScore should remain
+        let learner = baseline::BaselineLearner::new(168);
+        let metric = make_metric(100.0);
+        // Scoring with no baseline returns None regardless, but we're testing
+        // that select_algorithms doesn't panic and the struct is valid.
+        let result = scorer.score(&metric, &learner).unwrap();
+        assert!(result.is_none());
     }
 }

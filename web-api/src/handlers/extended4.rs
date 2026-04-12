@@ -267,60 +267,16 @@ pub async fn list_incidents(
 
 // ── Change Log ────────────────────────────────────────────
 
+const CHANGES_PREFIX: &str = "cv:changes:";
+
 pub async fn list_changes(
     State(state): State<Arc<AppState>>,
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    // Query real K8s events for policy and config changes
-    let data = state.k8s.kubectl_json(&[
-        "get", "events", "--all-namespaces",
-        "--field-selector", "reason=Updated,reason=Created,reason=Deleted",
-        "--sort-by=.lastTimestamp", "-o", "json",
-    ]).await;
-
-    let items: Vec<serde_json::Value> = data
-        .get("items")
-        .and_then(|v| v.as_array())
-        .map(|events| {
-            events.iter().filter_map(|item| {
-                let involved = item.get("involvedObject")?;
-                let kind = involved.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-
-                // Only include CiliumNetworkPolicy and ConfigMap resources
-                if kind != "CiliumNetworkPolicy"
-                    && kind != "CiliumClusterwideNetworkPolicy"
-                    && kind != "ConfigMap"
-                {
-                    return None;
-                }
-
-                let meta = item.get("metadata").unwrap_or(item);
-                let uid = meta.get("uid").and_then(|v| v.as_str()).unwrap_or("");
-                let resource = involved.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let namespace = involved.get("namespace").and_then(|v| v.as_str()).unwrap_or("");
-                let reason = item.get("reason").and_then(|v| v.as_str()).unwrap_or("");
-                let message = item.get("message").and_then(|v| v.as_str()).unwrap_or("");
-                let timestamp = item.get("lastTimestamp")
-                    .or_else(|| item.get("firstTimestamp"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-
-                Some(serde_json::json!({
-                    "id": uid,
-                    "timestamp": timestamp,
-                    "type": kind,
-                    "resource": resource,
-                    "namespace": namespace,
-                    "reason": reason,
-                    "diff_summary": message,
-                    "rollback_available": kind.contains("CiliumNetworkPolicy"),
-                }))
-            }).collect()
-        })
-        .unwrap_or_default();
-
+    // Read changes stored by the background change tracker from Redis
+    let items = state.cache.list_values(CHANGES_PREFIX).await.unwrap_or_default();
     Json(paginate_json(items, &params, "changes"))
 }
 

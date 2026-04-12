@@ -110,25 +110,43 @@ redis:
     storageClass: ""
     accessModes:
       - ReadWriteOnce
+  backup:
+    enabled: false
+    schedule: "0 2 * * *"
+    storage:
+      size: 1Gi
+      storageClass: ""
 
 # -- Ingress configuration
 ingress:
   enabled: false
-  className: ""
+  className: ""  # nginx, cilium, traefik, etc.
   annotations: {}
+  # cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
-    - host: cilium-vision.local
+    - host: cilium-vision.example.com
       paths:
-        - path: /api
-          pathType: Prefix
-          service: api
         - path: /
           pathType: Prefix
-          service: ui
+          service: frontend
+          port: 3001
+        - path: /api
+          pathType: Prefix
+          service: backend
+          port: 9191
+        - path: /swagger-ui
+          pathType: Prefix
+          service: backend
+          port: 9191
   tls: []
-  #  - secretName: cilium-vision-tls
-  #    hosts:
-  #      - cilium-vision.local
+  # - secretName: cilium-vision-tls
+  #   hosts:
+  #     - cilium-vision.example.com
+
+# -- Authentication configuration
+auth:
+  jwtSecret: ""  # If empty, auto-generated
+  autoGenerate: true
 
 # -- Monitoring configuration
 monitoring:

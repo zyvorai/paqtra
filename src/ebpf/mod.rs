@@ -31,7 +31,10 @@ pub use bpf_syscall::IdentityInfo;
 #[allow(unused_imports)]
 pub use reader::BasicMapReader;
 #[allow(unused_imports)]
-pub use capabilities::{BpfCapabilities, BpfCapability};
+pub use capabilities::{
+    BpfCapabilities, BpfCapability, BpfKernelConfig, BpfMapTypes, CiliumMaps, FeatureTier,
+    KernelCapabilities, KernelVersion,
+};
 pub use enriched_reader::{EnrichedConnectionInfo, EnrichedDropInfo, EnrichedMapReader};
 
 /// Policy decision from eBPF map

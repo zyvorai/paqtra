@@ -3,10 +3,15 @@ use anyhow::Result;
 use chrono::{DateTime, Datelike, Duration, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
+use std::path::Path;
 
 use super::Metric;
 
+/// Default directory for persisted baselines
+pub const DEFAULT_BASELINE_DIR: &str = "/var/lib/cilium-vision/baselines/";
+
 /// Learns and maintains baseline behavior for metrics
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BaselineLearner {
     learning_period_hours: u64,
     baselines: HashMap<String, MetricBaseline>,
@@ -114,6 +119,51 @@ impl BaselineLearner {
             .iter()
             .map(|(k, v)| (k.clone(), v.stats.clone()))
             .collect()
+    }
+
+    /// Process a batch of flow metrics and build/update the baseline.
+    ///
+    /// This is the high-level entry point for baseline learning: it iterates
+    /// over a slice of metrics, updates the underlying statistical model for
+    /// each one, and returns the total number of observations across all
+    /// metric keys.
+    pub fn learn(&mut self, metrics: &[Metric]) -> Result<usize> {
+        for metric in metrics {
+            self.update(metric)?;
+        }
+        Ok(self.observation_count())
+    }
+
+    /// Total number of data points across all baselines
+    pub fn observation_count(&self) -> usize {
+        self.baselines
+            .values()
+            .map(|b| b.data_points.len())
+            .sum()
+    }
+
+    /// Serialize the learned baselines to a JSON file at `path`.
+    pub fn save_baseline(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let json = serde_json::to_string_pretty(self)?;
+        std::fs::write(path, json)?;
+        tracing::info!("Saved baseline ({} keys) to {}", self.baselines.len(), path.display());
+        Ok(())
+    }
+
+    /// Deserialize a `BaselineLearner` from a JSON file at `path`.
+    pub fn load_baseline(path: &Path) -> Result<Self> {
+        let json = std::fs::read_to_string(path)?;
+        let learner: Self = serde_json::from_str(&json)?;
+        tracing::info!(
+            "Loaded baseline ({} keys, {} observations) from {}",
+            learner.baselines.len(),
+            learner.observation_count(),
+            path.display()
+        );
+        Ok(learner)
     }
 
     fn get_metric_key(&self, metric: &Metric) -> String {

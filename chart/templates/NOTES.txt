@@ -14,8 +14,14 @@ Components:
 
 Access the application:
 {{- range .Values.ingress.hosts }}
-  UI:  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
-  API: http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/api
+  {{- $host := .host }}
+  {{- range .paths }}
+  {{ .service }}: http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- if .Values.ingress.tls }}
+
+TLS is enabled. Ensure your TLS secrets are provisioned (e.g., via cert-manager).
 {{- end }}
 {{- else }}
 

@@ -37,6 +37,30 @@ impl AnomalyScorer {
         }
     }
 
+    /// Select the best algorithms based on the number of observations in the
+    /// baseline data. This adapts the detection strategy to the maturity of the
+    /// learned baseline:
+    ///
+    /// - **Small datasets (< 1000)**: Z-Score only -- fast, low overhead, works
+    ///   well with limited data.
+    /// - **Medium datasets (1000..5000)**: Z-Score + MACD -- adds trend
+    ///   detection for developing baselines.
+    /// - **Large datasets (>= 5000)**: Z-Score + MACD + IsolationForest --
+    ///   full multivariate pattern detection.
+    pub fn select_algorithms(&mut self, observation_count: usize) {
+        self.algorithms = if observation_count < 1000 {
+            vec![Algorithm::ZScore]
+        } else if observation_count < 5000 {
+            vec![Algorithm::ZScore, Algorithm::MACD]
+        } else {
+            vec![
+                Algorithm::ZScore,
+                Algorithm::MACD,
+                Algorithm::IsolationForest,
+            ]
+        };
+    }
+
     /// Score a metric against its baseline using multiple algorithms
     pub fn score(
         &self,

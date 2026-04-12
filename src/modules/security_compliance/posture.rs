@@ -2,6 +2,7 @@
 use anyhow::Result;
 use chrono::Utc;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Command;
 
 use super::{
@@ -9,7 +10,18 @@ use super::{
     SecurityScore,
 };
 
-/// Calculates overall security posture
+/// File where the last posture score is persisted for trend comparison.
+const SCORE_HISTORY_FILE: &str = ".cilium-flow-posture-score";
+
+/// System namespaces excluded from network-policy coverage calculations.
+const SYSTEM_NAMESPACES: &[&str] = &["kube-system", "kube-public", "kube-node-lease"];
+
+/// Calculates overall security posture from four equally-weighted components:
+///
+/// 1. **Encryption** (25%) - WireGuard / IPsec via Cilium config
+/// 2. **RBAC coverage** (25%) - ServiceAccount RBAC bindings per namespace
+/// 3. **Network policy coverage** (25%) - CiliumNetworkPolicy per non-system namespace
+/// 4. **Hubble observability** (25%) - Hubble relay health
 #[derive(Default)]
 pub struct SecurityPosture {}
 
@@ -17,6 +29,10 @@ impl SecurityPosture {
     pub fn new() -> Result<Self> {
         Ok(Self {})
     }
+
+    // -----------------------------------------------------------------------
+    // kubectl helpers
+    // -----------------------------------------------------------------------
 
     /// Run a kubectl command and return (success, stdout).
     ///
@@ -36,171 +52,25 @@ impl SecurityPosture {
         Self::kubectl_check(&["cluster-info", "--request-timeout=2s"]).0
     }
 
-    fn assess_network_segmentation(&self) -> DimensionScore {
-        if !Self::kubectl_available() {
-            return DimensionScore {
-                score: 0.0,
-                weight: 0.25,
-                findings: vec!["kubectl not available - cannot assess".to_string()],
-            };
-        }
+    // -----------------------------------------------------------------------
+    // Component 1: Encryption (25%)
+    // -----------------------------------------------------------------------
 
-        let mut score: f64 = 0.0;
-        let mut findings = Vec::new();
-
-        // Check for network policies
-        let (ok, output) = Self::kubectl_check(&[
-            "get",
-            "ciliumnetworkpolicies,networkpolicies",
-            "--all-namespaces",
-            "-o",
-            "name",
-        ]);
-        let policy_count = if ok {
-            output.lines().filter(|l| !l.is_empty()).count()
-        } else {
-            0
-        };
-
-        if policy_count > 10 {
-            score += 40.0;
-            findings.push(format!(
-                "{} network policies (strong segmentation)",
-                policy_count
-            ));
-        } else if policy_count > 0 {
-            score += 20.0;
-            findings.push(format!(
-                "{} network policies (basic segmentation)",
-                policy_count
-            ));
-        } else {
-            findings.push("No network policies - flat network".to_string());
-        }
-
-        // Check for default-deny policies
-        let (ok, output) = Self::kubectl_check(&[
-            "get",
-            "ciliumnetworkpolicies",
-            "--all-namespaces",
-            "-o",
-            "json",
-        ]);
-        if ok && output.contains("endpointSelector") {
-            score += 30.0;
-            findings.push("Endpoint-level segmentation policies found".to_string());
-        }
-
-        // Check namespace count (more namespaces = better logical separation)
-        let (ok, output) = Self::kubectl_check(&["get", "namespaces", "-o", "name"]);
-        let ns_count = if ok {
-            output.lines().filter(|l| !l.is_empty()).count()
-        } else {
-            0
-        };
-        if ns_count > 3 {
-            score += 30.0;
-            findings.push(format!("{} namespaces for workload separation", ns_count));
-        } else if ns_count > 1 {
-            score += 15.0;
-            findings.push(format!("{} namespaces", ns_count));
-        }
-
-        DimensionScore {
-            score: score.min(100.0),
-            weight: 0.25,
-            findings,
-        }
-    }
-
-    fn assess_access_control(&self) -> DimensionScore {
-        if !Self::kubectl_available() {
-            return DimensionScore {
-                score: 0.0,
-                weight: 0.25,
-                findings: vec!["kubectl not available - cannot assess".to_string()],
-            };
-        }
-
-        let mut score: f64 = 0.0;
-        let mut findings = Vec::new();
-
-        // Check RBAC roles
-        let (ok, output) = Self::kubectl_check(&["get", "roles", "--all-namespaces", "-o", "name"]);
-        let role_count = if ok {
-            output.lines().filter(|l| !l.is_empty()).count()
-        } else {
-            0
-        };
-        if role_count > 0 {
-            score += 30.0;
-            findings.push(format!("{} RBAC roles defined", role_count));
-        } else {
-            findings.push("No custom RBAC roles found".to_string());
-        }
-
-        // Check for excessive cluster-admin bindings
-        let (ok, output) = Self::kubectl_check(&[
-            "get",
-            "clusterrolebindings",
-            "-o",
-            "jsonpath={.items[?(@.roleRef.name=='cluster-admin')].subjects[*].name}",
-        ]);
-        if ok {
-            let admins: Vec<&str> = output
-                .split_whitespace()
-                .filter(|s| !s.is_empty())
-                .collect();
-            if admins.len() <= 2 {
-                score += 40.0;
-                findings.push(format!(
-                    "cluster-admin access is restricted ({} bindings)",
-                    admins.len()
-                ));
-            } else {
-                score += 10.0;
-                findings.push(format!(
-                    "cluster-admin bound to {} subjects - too broad",
-                    admins.len()
-                ));
-            }
-        }
-
-        // Check pod security standards
-        let (ok, output) = Self::kubectl_check(&[
-            "get",
-            "namespaces",
-            "-o",
-            "jsonpath={.items[*].metadata.labels.pod-security\\.kubernetes\\.io/enforce}",
-        ]);
-        if ok && !output.trim().is_empty() {
-            score += 30.0;
-            findings.push("Pod Security Standards enforced on namespaces".to_string());
-        } else {
-            findings.push("No Pod Security Standards labels found on namespaces".to_string());
-        }
-
-        DimensionScore {
-            score: score.min(100.0),
-            weight: 0.25,
-            findings,
-        }
-    }
-
+    /// Score 100 if WireGuard **or** IPsec is enabled in the cilium-config
+    /// ConfigMap, 0 otherwise.
     fn assess_encryption(&self) -> DimensionScore {
         if !Self::kubectl_available() {
             return DimensionScore {
                 score: 0.0,
-                weight: 0.20,
-                findings: vec!["kubectl not available - cannot assess".to_string()],
+                weight: 0.25,
+                findings: vec!["kubectl not available - cannot assess encryption".to_string()],
             };
         }
 
-        let mut score: f64 = 0.0;
         let mut findings = Vec::new();
 
         // Check WireGuard
-        let (ok, output) = Self::kubectl_check(&[
+        let (wg_ok, wg_out) = Self::kubectl_check(&[
             "get",
             "configmap",
             "cilium-config",
@@ -208,14 +78,12 @@ impl SecurityPosture {
             "kube-system",
             "-o",
             "jsonpath={.data.enable-wireguard}",
+            "--request-timeout=2s",
         ]);
-        if ok && output.trim() == "true" {
-            score += 50.0;
-            findings.push("WireGuard encryption enabled for pod-to-pod traffic".to_string());
-        }
+        let wireguard_enabled = wg_ok && wg_out.trim() == "true";
 
         // Check IPsec
-        let (ok, output) = Self::kubectl_check(&[
+        let (ipsec_ok, ipsec_out) = Self::kubectl_check(&[
             "get",
             "configmap",
             "cilium-config",
@@ -223,58 +91,268 @@ impl SecurityPosture {
             "kube-system",
             "-o",
             "jsonpath={.data.encrypt-node}",
+            "--request-timeout=2s",
         ]);
-        if ok && output.trim() == "true" {
-            score += 50.0;
-            findings.push("Node-level encryption enabled".to_string());
-        }
+        let ipsec_enabled = ipsec_ok && ipsec_out.trim() == "true";
 
-        // Check TLS secrets (indicates TLS usage)
-        let (ok, output) = Self::kubectl_check(&[
-            "get",
-            "secrets",
-            "--all-namespaces",
-            "--field-selector=type=kubernetes.io/tls",
-            "-o",
-            "name",
-        ]);
-        let tls_count = if ok {
-            output.lines().filter(|l| !l.is_empty()).count()
+        let score = if wireguard_enabled || ipsec_enabled {
+            if wireguard_enabled {
+                findings
+                    .push("WireGuard encryption enabled for pod-to-pod traffic".to_string());
+            }
+            if ipsec_enabled {
+                findings.push("IPsec node-level encryption enabled".to_string());
+            }
+            100.0
         } else {
-            0
+            findings.push(
+                "No encryption detected - enable WireGuard or IPsec in Cilium config".to_string(),
+            );
+            0.0
         };
-        if tls_count > 0 {
-            score += 25.0;
-            findings.push(format!("{} TLS certificates in cluster", tls_count));
-        } else {
-            findings.push("No TLS certificates found".to_string());
-        }
-
-        if score == 0.0 {
-            findings.push("No encryption detected - enable WireGuard or IPsec".to_string());
-        }
 
         DimensionScore {
-            score: score.min(100.0),
-            weight: 0.20,
+            score,
+            weight: 0.25,
             findings,
         }
     }
 
-    fn assess_monitoring(&self) -> DimensionScore {
+    // -----------------------------------------------------------------------
+    // Component 2: RBAC coverage (25%)
+    // -----------------------------------------------------------------------
+
+    /// Score based on the percentage of non-system namespaces that have at
+    /// least one RBAC Role or RoleBinding.
+    fn assess_rbac_coverage(&self) -> DimensionScore {
         if !Self::kubectl_available() {
             return DimensionScore {
                 score: 0.0,
-                weight: 0.15,
-                findings: vec!["kubectl not available - cannot assess".to_string()],
+                weight: 0.25,
+                findings: vec!["kubectl not available - cannot assess RBAC".to_string()],
             };
         }
 
-        let mut score: f64 = 0.0;
         let mut findings = Vec::new();
 
-        // Check Hubble
-        let (ok, output) = Self::kubectl_check(&[
+        // List all namespaces
+        let (ns_ok, ns_out) =
+            Self::kubectl_check(&["get", "namespaces", "-o", "name", "--request-timeout=2s"]);
+        let all_namespaces: Vec<String> = if ns_ok {
+            ns_out
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.trim_start_matches("namespace/").to_string())
+                .collect()
+        } else {
+            findings.push("Failed to list namespaces".to_string());
+            return DimensionScore {
+                score: 0.0,
+                weight: 0.25,
+                findings,
+            };
+        };
+
+        let user_namespaces: Vec<&String> = all_namespaces
+            .iter()
+            .filter(|ns| !SYSTEM_NAMESPACES.contains(&ns.as_str()))
+            .collect();
+
+        if user_namespaces.is_empty() {
+            findings.push("No non-system namespaces found".to_string());
+            return DimensionScore {
+                score: 0.0,
+                weight: 0.25,
+                findings,
+            };
+        }
+
+        // Collect namespaces that have roles or rolebindings
+        let (rb_ok, rb_out) = Self::kubectl_check(&[
+            "get",
+            "roles,rolebindings",
+            "--all-namespaces",
+            "-o",
+            "custom-columns=NAMESPACE:.metadata.namespace",
+            "--no-headers",
+            "--request-timeout=2s",
+        ]);
+        let ns_with_rbac: std::collections::HashSet<String> = if rb_ok {
+            rb_out
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| l.trim().to_string())
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+
+        let covered = user_namespaces
+            .iter()
+            .filter(|ns| ns_with_rbac.contains(ns.as_str()))
+            .count();
+        let total = user_namespaces.len();
+        let pct = if total > 0 {
+            (covered as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        findings.push(format!(
+            "{}/{} non-system namespaces have RBAC roles/bindings ({:.0}%)",
+            covered, total, pct
+        ));
+
+        if pct < 100.0 {
+            let missing: Vec<String> = user_namespaces
+                .iter()
+                .filter(|ns| !ns_with_rbac.contains(ns.as_str()))
+                .map(|ns| ns.to_string())
+                .collect();
+            if !missing.is_empty() {
+                findings.push(format!(
+                    "Namespaces without RBAC: {}",
+                    missing.join(", ")
+                ));
+            }
+        }
+
+        DimensionScore {
+            score: pct,
+            weight: 0.25,
+            findings,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Component 3: Network policy coverage (25%)
+    // -----------------------------------------------------------------------
+
+    /// Score based on the percentage of non-system namespaces that have at
+    /// least one CiliumNetworkPolicy.
+    fn assess_network_policy_coverage(&self) -> DimensionScore {
+        if !Self::kubectl_available() {
+            return DimensionScore {
+                score: 0.0,
+                weight: 0.25,
+                findings: vec![
+                    "kubectl not available - cannot assess network policies".to_string(),
+                ],
+            };
+        }
+
+        let mut findings = Vec::new();
+
+        // List all namespaces
+        let (ns_ok, ns_out) =
+            Self::kubectl_check(&["get", "namespaces", "-o", "name", "--request-timeout=2s"]);
+        let all_namespaces: Vec<String> = if ns_ok {
+            ns_out
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.trim_start_matches("namespace/").to_string())
+                .collect()
+        } else {
+            findings.push("Failed to list namespaces".to_string());
+            return DimensionScore {
+                score: 0.0,
+                weight: 0.25,
+                findings,
+            };
+        };
+
+        let user_namespaces: Vec<&String> = all_namespaces
+            .iter()
+            .filter(|ns| !SYSTEM_NAMESPACES.contains(&ns.as_str()))
+            .collect();
+
+        if user_namespaces.is_empty() {
+            findings.push("No non-system namespaces found".to_string());
+            return DimensionScore {
+                score: 0.0,
+                weight: 0.25,
+                findings,
+            };
+        }
+
+        // Collect namespaces that have CiliumNetworkPolicies
+        let (cnp_ok, cnp_out) = Self::kubectl_check(&[
+            "get",
+            "ciliumnetworkpolicies",
+            "--all-namespaces",
+            "-o",
+            "custom-columns=NAMESPACE:.metadata.namespace",
+            "--no-headers",
+            "--request-timeout=2s",
+        ]);
+        let ns_with_policies: std::collections::HashSet<String> = if cnp_ok {
+            cnp_out
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| l.trim().to_string())
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+
+        let covered = user_namespaces
+            .iter()
+            .filter(|ns| ns_with_policies.contains(ns.as_str()))
+            .count();
+        let total = user_namespaces.len();
+        let pct = if total > 0 {
+            (covered as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        findings.push(format!(
+            "{}/{} non-system namespaces have CiliumNetworkPolicy ({:.0}%)",
+            covered, total, pct
+        ));
+
+        if pct < 100.0 {
+            let missing: Vec<String> = user_namespaces
+                .iter()
+                .filter(|ns| !ns_with_policies.contains(ns.as_str()))
+                .map(|ns| ns.to_string())
+                .collect();
+            if !missing.is_empty() {
+                findings.push(format!(
+                    "Namespaces without CiliumNetworkPolicy: {}",
+                    missing.join(", ")
+                ));
+            }
+        }
+
+        DimensionScore {
+            score: pct,
+            weight: 0.25,
+            findings,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Component 4: Hubble observability (25%)
+    // -----------------------------------------------------------------------
+
+    /// Score 100 if Hubble relay pods are Running, 50 if they exist but are
+    /// not in Running phase, 0 if not installed at all.
+    fn assess_hubble_observability(&self) -> DimensionScore {
+        if !Self::kubectl_available() {
+            return DimensionScore {
+                score: 0.0,
+                weight: 0.25,
+                findings: vec![
+                    "kubectl not available - cannot assess Hubble observability".to_string(),
+                ],
+            };
+        }
+
+        let mut findings = Vec::new();
+
+        // Check for Running hubble-relay pods
+        let (running_ok, running_out) = Self::kubectl_check(&[
             "get",
             "pods",
             "-n",
@@ -284,152 +362,143 @@ impl SecurityPosture {
             "--field-selector=status.phase=Running",
             "-o",
             "name",
+            "--request-timeout=2s",
         ]);
-        if ok && !output.trim().is_empty() {
-            score += 40.0;
-            findings.push("Hubble flow observability is running".to_string());
+        let running_count = if running_ok {
+            running_out.lines().filter(|l| !l.is_empty()).count()
         } else {
-            findings.push("Hubble not detected".to_string());
-        }
+            0
+        };
 
-        // Check for Hubble UI
-        let (ok, output) = Self::kubectl_check(&[
-            "get",
-            "pods",
-            "-n",
-            "kube-system",
-            "-l",
-            "k8s-app=hubble-ui",
-            "-o",
-            "name",
-        ]);
-        if ok && !output.trim().is_empty() {
-            score += 20.0;
-            findings.push("Hubble UI available for visual monitoring".to_string());
-        }
-
-        // Check for audit logging
-        let (ok, output) = Self::kubectl_check(&[
-            "get",
-            "configmap",
-            "cilium-config",
-            "-n",
-            "kube-system",
-            "-o",
-            "jsonpath={.data.monitor-aggregation}",
-        ]);
-        if ok && !output.trim().is_empty() {
-            score += 20.0;
-            findings.push(format!("Monitor aggregation: {}", output.trim()));
-        }
-
-        // Check Cilium agent health
-        let (ok, output) = Self::kubectl_check(&[
-            "get",
-            "pods",
-            "-n",
-            "kube-system",
-            "-l",
-            "k8s-app=cilium",
-            "--field-selector=status.phase=Running",
-            "-o",
-            "name",
-        ]);
-        if ok && !output.trim().is_empty() {
-            let agent_count = output.lines().filter(|l| !l.is_empty()).count();
-            score += 20.0;
-            findings.push(format!("{} Cilium agents running", agent_count));
-        }
-
-        DimensionScore {
-            score: score.min(100.0),
-            weight: 0.15,
-            findings,
-        }
-    }
-
-    fn assess_compliance(&self) -> DimensionScore {
-        if !Self::kubectl_available() {
+        if running_count > 0 {
+            findings.push(format!(
+                "Hubble relay is healthy ({} Running pod(s))",
+                running_count
+            ));
             return DimensionScore {
-                score: 0.0,
-                weight: 0.15,
-                findings: vec!["kubectl not available - cannot assess".to_string()],
+                score: 100.0,
+                weight: 0.25,
+                findings,
             };
         }
 
-        let mut score: f64 = 0.0;
-        let mut findings = Vec::new();
-
-        // Check for network policies (baseline compliance)
-        let (ok, output) = Self::kubectl_check(&[
+        // Relay not Running — check if pods exist at all (any phase)
+        let (exists_ok, exists_out) = Self::kubectl_check(&[
             "get",
-            "ciliumnetworkpolicies",
-            "--all-namespaces",
+            "pods",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=hubble-relay",
             "-o",
             "name",
+            "--request-timeout=2s",
         ]);
-        if ok && !output.trim().is_empty() {
-            score += 30.0;
-            findings.push("CiliumNetworkPolicies deployed".to_string());
+        let exists_count = if exists_ok {
+            exists_out.lines().filter(|l| !l.is_empty()).count()
+        } else {
+            0
+        };
+
+        if exists_count > 0 {
+            findings.push(format!(
+                "Hubble relay pods exist ({}) but none are Running",
+                exists_count
+            ));
+            return DimensionScore {
+                score: 50.0,
+                weight: 0.25,
+                findings,
+            };
         }
 
-        // Check RBAC
-        let (ok, output) =
-            Self::kubectl_check(&["get", "rolebindings", "--all-namespaces", "-o", "name"]);
-        if ok && !output.trim().is_empty() {
-            score += 30.0;
-            findings.push("RBAC role bindings configured".to_string());
-        }
-
-        // Check for resource quotas (operational discipline)
-        let (ok, output) =
-            Self::kubectl_check(&["get", "resourcequotas", "--all-namespaces", "-o", "name"]);
-        if ok && !output.trim().is_empty() {
-            score += 20.0;
-            findings.push("Resource quotas enforced".to_string());
-        }
-
-        // Check for limit ranges
-        let (ok, output) =
-            Self::kubectl_check(&["get", "limitranges", "--all-namespaces", "-o", "name"]);
-        if ok && !output.trim().is_empty() {
-            score += 20.0;
-            findings.push("Limit ranges configured".to_string());
-        }
-
-        if score == 0.0 {
-            findings.push("No compliance controls detected".to_string());
-        }
-
+        findings.push("Hubble relay is not installed".to_string());
         DimensionScore {
-            score: score.min(100.0),
-            weight: 0.15,
+            score: 0.0,
+            weight: 0.25,
             findings,
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Trend persistence
+    // -----------------------------------------------------------------------
+
+    /// Return the path used for persisting the last score. Uses
+    /// `$HOME/.cilium-flow-posture-score`, falling back to `/tmp`.
+    fn score_history_path() -> PathBuf {
+        std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/tmp"))
+            .join(SCORE_HISTORY_FILE)
+    }
+
+    /// Load the previously stored score (if any).
+    fn load_previous_score() -> Option<f64> {
+        let path = Self::score_history_path();
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|s| s.trim().parse::<f64>().ok())
+    }
+
+    /// Persist the current score so the next run can compute a trend.
+    fn save_current_score(score: f64) {
+        let path = Self::score_history_path();
+        if let Err(e) = std::fs::write(&path, format!("{:.2}", score)) {
+            tracing::warn!("Failed to persist posture score to {:?}: {}", path, e);
+        }
+    }
+
+    /// Compare `current` against an optional `previous` score.
+    /// A difference of more than 5 points is considered meaningful.
+    fn compare_scores(current: f64, previous: Option<f64>) -> ScoreTrend {
+        match previous {
+            Some(prev) => {
+                let delta = current - prev;
+                if delta > 5.0 {
+                    ScoreTrend::Improving
+                } else if delta < -5.0 {
+                    ScoreTrend::Declining
+                } else {
+                    ScoreTrend::Stable
+                }
+            }
+            // No history available — assume stable
+            None => ScoreTrend::Stable,
+        }
+    }
+
+    /// Determine the trend by comparing the current score to the last stored
+    /// score on disk.
+    fn determine_trend(current: f64) -> ScoreTrend {
+        Self::compare_scores(current, Self::load_previous_score())
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API
+    // -----------------------------------------------------------------------
 
     pub async fn calculate_score(&self) -> Result<SecurityScore> {
         let mut dimensions = HashMap::new();
 
-        dimensions.insert(
-            "Network Segmentation".to_string(),
-            self.assess_network_segmentation(),
-        );
-        dimensions.insert("Access Control".to_string(), self.assess_access_control());
         dimensions.insert("Encryption".to_string(), self.assess_encryption());
-        dimensions.insert("Monitoring & Logging".to_string(), self.assess_monitoring());
-        dimensions.insert("Compliance".to_string(), self.assess_compliance());
+        dimensions.insert("RBAC Coverage".to_string(), self.assess_rbac_coverage());
+        dimensions.insert(
+            "Network Policy Coverage".to_string(),
+            self.assess_network_policy_coverage(),
+        );
+        dimensions.insert(
+            "Hubble Observability".to_string(),
+            self.assess_hubble_observability(),
+        );
 
         let overall_score = dimensions.values().map(|d| d.score * d.weight).sum::<f64>();
 
-        // Determine trend (would compare with stored previous score in production)
-        let trend = if overall_score > 70.0 {
-            ScoreTrend::Improving
-        } else if overall_score > 30.0 {
-            ScoreTrend::Stable
-        } else {
-            ScoreTrend::Declining
-        };
+        // Compare with the last stored score to determine the trend
+        let trend = Self::determine_trend(overall_score);
+
+        // Persist the new score for next comparison
+        Self::save_current_score(overall_score);
 
         tracing::info!("Security posture score: {:.1}/100", overall_score);
 
@@ -442,19 +511,13 @@ impl SecurityPosture {
     }
 
     pub async fn get_recommendations(&self) -> Result<Vec<SecurityRecommendation>> {
-        let mut recs = vec![SecurityRecommendation {
-            priority: Priority::P2High,
-            category: RecommendationCategory::BestPractice,
-            title: "Review RBAC permissions".to_string(),
-            description: "Ensure service accounts follow least-privilege principle".to_string(),
-            impact: "Reduces blast radius of compromised accounts".to_string(),
-            effort: Effort::Medium,
-            auto_applicable: false,
-        }];
+        let mut recs = Vec::new();
 
-        // Add contextual recommendations based on current state
-        if Self::kubectl_available() {
-            let (ok, output) = Self::kubectl_check(&[
+        let cluster_ok = Self::kubectl_available();
+
+        // ---- Encryption recommendations ----
+        if cluster_ok {
+            let (wg_ok, wg_out) = Self::kubectl_check(&[
                 "get",
                 "configmap",
                 "cilium-config",
@@ -462,18 +525,129 @@ impl SecurityPosture {
                 "kube-system",
                 "-o",
                 "jsonpath={.data.enable-wireguard}",
+                "--request-timeout=2s",
             ]);
-            if !ok || output.trim() != "true" {
+            let wireguard = wg_ok && wg_out.trim() == "true";
+
+            let (ipsec_ok, ipsec_out) = Self::kubectl_check(&[
+                "get",
+                "configmap",
+                "cilium-config",
+                "-n",
+                "kube-system",
+                "-o",
+                "jsonpath={.data.encrypt-node}",
+                "--request-timeout=2s",
+            ]);
+            let ipsec = ipsec_ok && ipsec_out.trim() == "true";
+
+            if !wireguard && !ipsec {
                 recs.push(SecurityRecommendation {
-                    priority: Priority::P2High,
+                    priority: Priority::P1Critical,
                     category: RecommendationCategory::BestPractice,
-                    title: "Enable WireGuard encryption".to_string(),
-                    description: "Encrypt pod-to-pod traffic with WireGuard".to_string(),
-                    impact: "Protects data in transit within the cluster".to_string(),
+                    title: "Enable WireGuard or IPsec encryption".to_string(),
+                    description: "No in-transit encryption is configured. Enable WireGuard \
+                                  (recommended) or IPsec in the Cilium Helm values to encrypt \
+                                  pod-to-pod traffic."
+                        .to_string(),
+                    impact: "Protects all pod-to-pod data in transit within the cluster"
+                        .to_string(),
                     effort: Effort::Low,
                     auto_applicable: false,
                 });
             }
+        }
+
+        // ---- RBAC recommendations ----
+        if cluster_ok {
+            let rbac_dim = self.assess_rbac_coverage();
+            if rbac_dim.score < 100.0 {
+                recs.push(SecurityRecommendation {
+                    priority: Priority::P2High,
+                    category: RecommendationCategory::BestPractice,
+                    title: "Improve RBAC coverage across namespaces".to_string(),
+                    description: format!(
+                        "Only {:.0}% of non-system namespaces have RBAC roles/bindings. \
+                         Create Role and RoleBinding resources in uncovered namespaces to \
+                         enforce least-privilege access.",
+                        rbac_dim.score
+                    ),
+                    impact: "Reduces blast radius of compromised service accounts".to_string(),
+                    effort: Effort::Medium,
+                    auto_applicable: false,
+                });
+            }
+        }
+
+        // ---- Network policy recommendations ----
+        if cluster_ok {
+            let np_dim = self.assess_network_policy_coverage();
+            if np_dim.score < 100.0 {
+                recs.push(SecurityRecommendation {
+                    priority: Priority::P1Critical,
+                    category: RecommendationCategory::BestPractice,
+                    title: "Add CiliumNetworkPolicy to all namespaces".to_string(),
+                    description: format!(
+                        "Only {:.0}% of non-system namespaces have a CiliumNetworkPolicy. \
+                         Deploy at least a default-deny policy in every namespace to enforce \
+                         micro-segmentation.",
+                        np_dim.score
+                    ),
+                    impact: "Prevents lateral movement and limits blast radius of compromised pods"
+                        .to_string(),
+                    effort: Effort::Low,
+                    auto_applicable: true,
+                });
+            }
+        }
+
+        // ---- Hubble observability recommendations ----
+        if cluster_ok {
+            let hubble_dim = self.assess_hubble_observability();
+            if hubble_dim.score < 100.0 {
+                let (title, description) = if hubble_dim.score == 0.0 {
+                    (
+                        "Install Hubble relay for flow observability".to_string(),
+                        "Hubble is not installed. Enable it via the Cilium Helm chart \
+                         (hubble.enabled=true, hubble.relay.enabled=true) to gain full \
+                         network flow visibility."
+                            .to_string(),
+                    )
+                } else {
+                    (
+                        "Fix unhealthy Hubble relay pods".to_string(),
+                        "Hubble relay pods exist but are not Running. Check pod events \
+                         and logs to restore observability."
+                            .to_string(),
+                    )
+                };
+                recs.push(SecurityRecommendation {
+                    priority: Priority::P2High,
+                    category: RecommendationCategory::BestPractice,
+                    title,
+                    description,
+                    impact: "Enables real-time network flow monitoring and anomaly detection"
+                        .to_string(),
+                    effort: Effort::Low,
+                    auto_applicable: false,
+                });
+            }
+        }
+
+        // ---- Generic recommendation when kubectl is not available ----
+        if !cluster_ok {
+            recs.push(SecurityRecommendation {
+                priority: Priority::P2High,
+                category: RecommendationCategory::BestPractice,
+                title: "Connect to a Kubernetes cluster".to_string(),
+                description: "kubectl is not available or the cluster is unreachable. \
+                              Ensure KUBECONFIG is set and the cluster is accessible for \
+                              a complete posture assessment."
+                    .to_string(),
+                impact: "Required for any security posture assessment".to_string(),
+                effort: Effort::Low,
+                auto_applicable: false,
+            });
         }
 
         Ok(recs)
@@ -506,11 +680,10 @@ mod tests {
     async fn test_score_dimensions_present() {
         let posture = SecurityPosture::new().unwrap();
         let score = posture.calculate_score().await.unwrap();
-        assert!(score.dimensions.contains_key("Network Segmentation"));
-        assert!(score.dimensions.contains_key("Access Control"));
         assert!(score.dimensions.contains_key("Encryption"));
-        assert!(score.dimensions.contains_key("Monitoring & Logging"));
-        assert!(score.dimensions.contains_key("Compliance"));
+        assert!(score.dimensions.contains_key("RBAC Coverage"));
+        assert!(score.dimensions.contains_key("Network Policy Coverage"));
+        assert!(score.dimensions.contains_key("Hubble Observability"));
     }
 
     #[tokio::test]
@@ -529,6 +702,7 @@ mod tests {
     async fn test_all_dimensions_scored() {
         let posture = SecurityPosture::new().unwrap();
         let score = posture.calculate_score().await.unwrap();
+        assert_eq!(score.dimensions.len(), 4, "Should have exactly 4 dimensions");
         // Each dimension should have a score between 0 and 100
         for (name, dim) in &score.dimensions {
             assert!(
@@ -564,5 +738,88 @@ mod tests {
         let recs = posture.get_recommendations().await.unwrap();
         assert!(!recs.is_empty());
         assert_eq!(recs[0].category, RecommendationCategory::BestPractice);
+    }
+
+    #[test]
+    fn test_score_history_path_is_deterministic() {
+        let path1 = SecurityPosture::score_history_path();
+        let path2 = SecurityPosture::score_history_path();
+        assert_eq!(path1, path2);
+        assert!(
+            path1.to_string_lossy().contains(SCORE_HISTORY_FILE),
+            "Path should contain the score file name"
+        );
+    }
+
+    #[test]
+    fn test_save_and_load_score() {
+        // Save a known score
+        SecurityPosture::save_current_score(72.5);
+        let loaded = SecurityPosture::load_previous_score();
+        assert!(loaded.is_some());
+        let loaded = loaded.unwrap();
+        assert!(
+            (loaded - 72.5).abs() < 0.1,
+            "Loaded score should be ~72.5, got {}",
+            loaded
+        );
+        // Clean up
+        let _ = std::fs::remove_file(SecurityPosture::score_history_path());
+    }
+
+    #[test]
+    fn test_compare_scores_improving() {
+        let trend = SecurityPosture::compare_scores(60.0, Some(40.0));
+        assert_eq!(trend, ScoreTrend::Improving);
+    }
+
+    #[test]
+    fn test_compare_scores_declining() {
+        let trend = SecurityPosture::compare_scores(50.0, Some(80.0));
+        assert_eq!(trend, ScoreTrend::Declining);
+    }
+
+    #[test]
+    fn test_compare_scores_stable() {
+        let trend = SecurityPosture::compare_scores(77.0, Some(75.0));
+        assert_eq!(trend, ScoreTrend::Stable);
+    }
+
+    #[test]
+    fn test_compare_scores_no_history() {
+        let trend = SecurityPosture::compare_scores(50.0, None);
+        assert_eq!(trend, ScoreTrend::Stable);
+    }
+
+    #[test]
+    fn test_compare_scores_boundary_not_improving() {
+        // Exactly 5 points difference is NOT enough to trigger Improving
+        let trend = SecurityPosture::compare_scores(55.0, Some(50.0));
+        assert_eq!(trend, ScoreTrend::Stable);
+    }
+
+    #[test]
+    fn test_compare_scores_boundary_not_declining() {
+        // Exactly -5 points difference is NOT enough to trigger Declining
+        let trend = SecurityPosture::compare_scores(50.0, Some(55.0));
+        assert_eq!(trend, ScoreTrend::Stable);
+    }
+
+    #[test]
+    fn test_all_weights_equal() {
+        let posture = SecurityPosture::new().unwrap();
+        let dims = vec![
+            posture.assess_encryption(),
+            posture.assess_rbac_coverage(),
+            posture.assess_network_policy_coverage(),
+            posture.assess_hubble_observability(),
+        ];
+        for dim in &dims {
+            assert!(
+                (dim.weight - 0.25).abs() < f64::EPSILON,
+                "Each dimension weight should be 0.25, got {}",
+                dim.weight
+            );
+        }
     }
 }

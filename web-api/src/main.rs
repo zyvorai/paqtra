@@ -90,6 +90,27 @@ async fn main() -> anyhow::Result<()> {
     services::alerting::spawn_alerting_engine(app_state.clone());
     tracing::info!("Background alerting engine started");
 
+    // Start background GitOps change tracker
+    services::change_tracker::spawn_change_tracker(app_state.clone());
+    tracing::info!("Background change tracker started");
+
+    // Start OpenTelemetry span exporter
+    let span_exporter = Arc::new(services::tracing_svc::start_exporter(
+        config.otel_endpoint.clone(),
+        config.otel_service_name.clone(),
+    ));
+    if config.otel_endpoint.is_some() {
+        tracing::info!(
+            "OTEL span exporter started (endpoint: {:?}, service: {})",
+            config.otel_endpoint,
+            config.otel_service_name
+        );
+    } else {
+        tracing::info!(
+            "OTEL span exporter running in no-op mode (set OTEL_EXPORTER_ENDPOINT to enable export)"
+        );
+    }
+
     // Build API router
     let api_routes = Router::new()
         // Health checks (no auth required - handled by middleware)
@@ -313,6 +334,9 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Configure middleware (outermost layer runs first)
+    //
+    // Request flow order (outermost → innermost):
+    //   TraceLayer → CORS → correlation_id → otel_trace → rate_limit → auth → compression → body limit → handler
     let app = app
         .layer(DefaultBodyLimit::max(1_048_576))
         .layer(CompressionLayer::new())
@@ -323,6 +347,10 @@ async fn main() -> anyhow::Result<()> {
         .layer(axum::middleware::from_fn(
             middleware::rate_limit::rate_limit_middleware,
         ))
+        .layer(axum::middleware::from_fn(
+            middleware::otel_trace::otel_trace_middleware,
+        ))
+        .layer(axum::Extension(span_exporter))
         .layer(axum::middleware::from_fn(
             middleware::correlation::correlation_id_middleware,
         ))

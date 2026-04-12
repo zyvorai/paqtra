@@ -16,13 +16,7 @@ spec:
   {{- end }}
   {{- if .Values.ingress.tls }}
   tls:
-    {{- range .Values.ingress.tls }}
-    - secretName: {{ .secretName }}
-      hosts:
-        {{- range .hosts }}
-        - {{ . | quote }}
-        {{- end }}
-    {{- end }}
+    {{- toYaml .Values.ingress.tls | nindent 4 }}
   {{- end }}
   rules:
     {{- range .Values.ingress.hosts }}
@@ -34,15 +28,9 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                {{- if eq .service "api" }}
-                name: {{ include "cilium-vision.fullname" $ }}-api
+                name: {{ include "cilium-vision.fullname" $ }}-{{ .service }}
                 port:
-                  number: {{ $.Values.api.service.port }}
-                {{- else }}
-                name: {{ include "cilium-vision.fullname" $ }}-ui
-                port:
-                  number: {{ $.Values.ui.service.port }}
-                {{- end }}
+                  number: {{ .port }}
           {{- end }}
     {{- end }}
 {{- end }}
