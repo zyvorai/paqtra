@@ -317,7 +317,24 @@ async fn handle_live_flows(
         }
     };
 
-    let stdout = child.stdout.take().expect("stdout was piped");
+    let stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => {
+            tracing::error!("Failed to capture stdout from hubble observe process");
+            let _ = socket
+                .send(Message::Text(
+                    serde_json::json!({
+                        "type": "error",
+                        "message": "Internal error: failed to capture hubble output",
+                    })
+                    .to_string()
+                    .into(),
+                ))
+                .await;
+            let _ = child.kill().await;
+            return;
+        }
+    };
     let mut lines = BufReader::new(stdout).lines();
 
     let mut ping_interval =

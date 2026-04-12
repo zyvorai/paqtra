@@ -39,6 +39,7 @@ dotenvy = "0.15"
 uuid = { version = "1.6", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1.10"
+dashmap = "6"
 
 [profile.release]
 opt-level = 3

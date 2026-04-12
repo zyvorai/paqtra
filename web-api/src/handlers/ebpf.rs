@@ -72,19 +72,17 @@ fn bytes_to_u16_be(b: &[u8]) -> u16 {
 }
 
 fn bytes_to_u64_le(b: &[u8]) -> u64 {
-    if b.len() >= 8 {
-        u64::from_le_bytes(b[..8].try_into().unwrap())
-    } else {
-        0
-    }
+    b.get(..8)
+        .and_then(|s| <[u8; 8]>::try_from(s).ok())
+        .map(u64::from_le_bytes)
+        .unwrap_or(0)
 }
 
 fn bytes_to_u32_le(b: &[u8]) -> u32 {
-    if b.len() >= 4 {
-        u32::from_le_bytes(b[..4].try_into().unwrap())
-    } else {
-        0
-    }
+    b.get(..4)
+        .and_then(|s| <[u8; 4]>::try_from(s).ok())
+        .map(u32::from_le_bytes)
+        .unwrap_or(0)
 }
 
 fn protocol_name(p: u8) -> &'static str {

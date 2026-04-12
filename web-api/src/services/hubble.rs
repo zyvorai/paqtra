@@ -18,30 +18,32 @@ impl HubbleService {
     /// `clusters` is a list of `(cluster_name, host:port)` pairs for
     /// multi-cluster flow aggregation. Each address is validated at startup.
     ///
-    /// # Panics
-    /// Panics at startup if `address` or any cluster address is not in `host:port` format.
-    pub fn new(address: &str, clusters: Vec<(String, String)>) -> Self {
-        Self::validate_address(address);
+    /// # Errors
+    /// Returns an error if `address` or any cluster address is not in `host:port` format,
+    /// or if any cluster name is empty.
+    pub fn new(address: &str, clusters: Vec<(String, String)>) -> Result<Self> {
+        Self::validate_address(address)?;
         for (name, addr) in &clusters {
             if name.is_empty() {
-                panic!("Cluster name must not be empty");
+                anyhow::bail!("Cluster name must not be empty");
             }
-            Self::validate_address(addr);
+            Self::validate_address(addr)?;
         }
-        Self {
+        Ok(Self {
             address: address.to_string(),
             clusters,
-        }
+        })
     }
 
-    fn validate_address(address: &str) {
+    fn validate_address(address: &str) -> Result<()> {
         let parts: Vec<&str> = address.rsplitn(2, ':').collect();
         if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
-            panic!("Invalid Hubble address '{}': expected host:port format (e.g. hubble-relay:4245)", address);
+            anyhow::bail!("Invalid Hubble address '{}': expected host:port format (e.g. hubble-relay:4245)", address);
         }
         if parts[0].parse::<u16>().is_err() {
-            panic!("Invalid Hubble address '{}': port must be a valid u16", address);
+            anyhow::bail!("Invalid Hubble address '{}': port must be a valid u16", address);
         }
+        Ok(())
     }
 
     pub fn address(&self) -> &str {

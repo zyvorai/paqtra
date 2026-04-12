@@ -58,6 +58,9 @@ pub fn to_json<T: Serialize>(val: &T) -> Value {
 }
 
 /// Log an audit event to Redis.
+///
+/// If a `request_id` is provided (from the correlation middleware), it is
+/// included in the audit entry for end-to-end traceability.
 pub async fn audit_log(
     state: &AppState,
     action: &str,
@@ -67,8 +70,22 @@ pub async fn audit_log(
     actor: &str,
     outcome: &str,
 ) {
+    audit_log_with_request_id(state, action, resource, namespace, details, actor, outcome, None).await;
+}
+
+/// Like [`audit_log`] but accepts an optional correlation `request_id`.
+pub async fn audit_log_with_request_id(
+    state: &AppState,
+    action: &str,
+    resource: &str,
+    namespace: &str,
+    details: &str,
+    actor: &str,
+    outcome: &str,
+    request_id: Option<&str>,
+) {
     let id = format!("aud-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("000"));
-    let entry = serde_json::json!({
+    let mut entry = serde_json::json!({
         "id": id,
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "action": action,
@@ -78,6 +95,11 @@ pub async fn audit_log(
         "actor": actor,
         "outcome": outcome,
     });
+    if let Some(rid) = request_id {
+        if let Some(obj) = entry.as_object_mut() {
+            obj.insert("request_id".to_string(), serde_json::json!(rid));
+        }
+    }
     let _ = state.cache.set_persistent(&format!("cv:audit_log:{}", id), &entry).await;
 }
 

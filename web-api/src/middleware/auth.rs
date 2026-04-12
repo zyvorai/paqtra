@@ -36,6 +36,7 @@ pub async fn auth_middleware(
     let path = request.uri().path();
     if path == "/health" || path == "/ready" || path == "/metrics"
         || path.starts_with("/api/v1/ws/")
+        || path.starts_with("/api-docs/") || path == "/swagger-ui"
     {
         return next.run(request).await;
     }

@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 // Cilium Vision Web API Server
 mod config;
 pub mod handlers;
@@ -6,6 +7,7 @@ mod services;
 mod middleware;
 mod websocket;
 mod error;
+mod openapi;
 
 use axum::{
     Router,
@@ -49,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Connected to Redis");
 
     // Initialize services
-    let hubble = HubbleService::new(&config.hubble_address, config.hubble_addresses.clone());
+    let hubble = HubbleService::new(&config.hubble_address, config.hubble_addresses.clone())?;
     tracing::info!(
         "HubbleService initialized (relay: {}, clusters: {})",
         config.hubble_address,
@@ -93,6 +95,10 @@ async fn main() -> anyhow::Result<()> {
         // Health checks (no auth required - handled by middleware)
         .route("/health", get(handlers::health::health_check))
         .route("/ready", get(handlers::health::readiness_check))
+
+        // OpenAPI / Swagger UI (no auth required - handled by middleware)
+        .route("/api-docs/openapi.json", get(openapi::openapi_json))
+        .route("/swagger-ui", get(openapi::swagger_ui))
 
         // Flow monitoring
         .route("/api/v1/flows", get(handlers::flows::list_flows))
@@ -316,6 +322,9 @@ async fn main() -> anyhow::Result<()> {
         ))
         .layer(axum::middleware::from_fn(
             middleware::rate_limit::rate_limit_middleware,
+        ))
+        .layer(axum::middleware::from_fn(
+            middleware::correlation::correlation_id_middleware,
         ))
         .layer(middleware::cors::cors_layer())
         .layer(TraceLayer::new_for_http());
