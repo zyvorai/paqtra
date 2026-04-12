@@ -260,6 +260,14 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
         KeyCode::Char('h') if !app.show_help && app.selected_tab == 12 => {
             // Health check all clusters — handled in async handler
         }
+        KeyCode::Esc
+            if !app.show_help
+                && app.selected_tab == 8
+                && app.simulator_view.last_simulation.is_some() =>
+        {
+            // Exit simulation results view
+            app.simulator_view.clear_simulation();
+        }
         KeyCode::Char('s') if !app.show_help && app.selected_tab == 8 => {
             // Run simulation
             app.simulator_view.trigger_simulation();

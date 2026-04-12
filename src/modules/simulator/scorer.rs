@@ -20,12 +20,12 @@ impl RiskScorer {
         scenario: &SimulationScenario,
     ) -> RiskAssessment {
         let mut factors = Vec::new();
-        let mut score: u8 = 0;
+        let mut score: u16 = 0;
 
         // Factor 1: Service Availability Risk
         if !impact.critical_services.is_empty() {
             let severity = (impact.critical_services.len() as u8 * 2).min(10);
-            score += severity;
+            score += u16::from(severity);
 
             factors.push(RiskFactor {
                 category: RiskCategory::ServiceAvailability,
@@ -41,7 +41,7 @@ impl RiskScorer {
         if impact.blocked_flows > 0 {
             let percentage =
                 (impact.blocked_flows as f32 / impact.total_flows as f32 * 100.0) as u8;
-            let severity = if percentage > 50 {
+            let severity: u8 = if percentage > 50 {
                 8
             } else if percentage > 25 {
                 5
@@ -51,7 +51,7 @@ impl RiskScorer {
                 1
             };
 
-            score += severity;
+            score += u16::from(severity);
 
             factors.push(RiskFactor {
                 category: RiskCategory::DataPath,
@@ -72,7 +72,7 @@ impl RiskScorer {
 
         if critical_deps > 0 {
             let severity = (critical_deps as u8 * 2).min(10);
-            score += severity;
+            score += u16::from(severity);
 
             factors.push(RiskFactor {
                 category: RiskCategory::DataPath,
@@ -105,8 +105,8 @@ impl RiskScorer {
         // Factor 5: Scope of Change
         let namespaces_affected = affected.namespaces.len();
         if namespaces_affected > 3 {
-            let severity = 3;
-            score += severity;
+            let severity: u8 = 3;
+            score += u16::from(severity);
 
             factors.push(RiskFactor {
                 category: RiskCategory::DataPath,
@@ -115,8 +115,8 @@ impl RiskScorer {
             });
         }
 
-        // Cap score at 10
-        score = score.min(10);
+        // Cap score at 10 and narrow to u8
+        let score = score.min(10) as u8;
 
         // Determine risk level
         let level = RiskLevel::from_score(score);

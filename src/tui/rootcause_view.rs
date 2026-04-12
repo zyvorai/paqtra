@@ -49,15 +49,28 @@ impl RootCauseView {
         &self,
         f: &mut Frame,
         area: ratatui::layout::Rect,
-        _rootcause: Option<&RootCauseEngine<M>>,
+        rootcause: Option<&RootCauseEngine<M>>,
     ) {
-        let stats = "🔍 Root-Cause Analysis Engine\n\n\
-            Status:            Active\n\
-            Drops Analyzed:    142\n\
-            Issues Found:      8\n\
-            Patterns:          12\n\
-            Anomalies:         2\n\
-            Last Analysis:     Just now";
+        let stats = if let Some(engine) = rootcause {
+            let s = engine.get_stats();
+            format!(
+                "🔍 Root-Cause Analysis Engine\n\n\
+                Status:            Active\n\
+                Drops Analyzed:    {}\n\
+                Patterns:          {}\n\
+                Top Reason:        {}",
+                s.total_drops,
+                s.top_patterns.len(),
+                s.top_patterns
+                    .first()
+                    .map(|(reason, count)| format!("{:?} ({})", reason, count))
+                    .unwrap_or_else(|| "None".to_string()),
+            )
+        } else {
+            "🔍 Root-Cause Analysis Engine\n\n\
+            Status:            Not initialized"
+                .to_string()
+        };
 
         let content = Paragraph::new(stats)
             .style(Style::default().fg(ERROR_COLOR))

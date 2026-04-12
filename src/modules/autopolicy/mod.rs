@@ -306,9 +306,9 @@ impl<M: MapReader> AutoPolicy<M> {
 
         // Generate policy name
         let policy_name = if let Some(app) = labels.get("app") {
-            format!("auto-policy-{}", app)
+            crate::modules::sanitize_k8s_name(&format!("auto-policy-{}", app))
         } else {
-            format!("auto-policy-{}", namespace)
+            crate::modules::sanitize_k8s_name(&format!("auto-policy-{}", namespace))
         };
 
         // Build complete YAML
@@ -329,7 +329,7 @@ spec:
 {}
 "#,
             policy_name,
-            namespace,
+            crate::modules::yaml_escape(namespace),
             self.format_labels(labels, 6),
             egress_rules.join("\n"),
         );
@@ -360,12 +360,16 @@ spec:
 
         if !dst_labels.is_empty() {
             for (k, v) in dst_labels.iter() {
-                rule.push_str(&format!("            {}: \"{}\"\n", k, v));
+                rule.push_str(&format!(
+                    "            {}: \"{}\"\n",
+                    crate::modules::sanitize_k8s_name(k),
+                    crate::modules::yaml_escape(v)
+                ));
             }
         } else {
             rule.push_str(&format!(
                 "            k8s:io.kubernetes.pod.namespace: \"{}\"\n",
-                dst_namespace
+                crate::modules::yaml_escape(dst_namespace)
             ));
         }
 
@@ -410,7 +414,14 @@ spec:
         let spaces = " ".repeat(indent);
         labels
             .iter()
-            .map(|(k, v)| format!("{}{}: \"{}\"", spaces, k, v))
+            .map(|(k, v)| {
+                format!(
+                    "{}{}: \"{}\"",
+                    spaces,
+                    crate::modules::sanitize_k8s_name(k),
+                    crate::modules::yaml_escape(v)
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }

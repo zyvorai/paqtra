@@ -232,7 +232,8 @@ pub trait MapWriter {
     /// Delete a policy entry
     fn delete_policy_entry(&self, src_identity: u32, dst_port: u16, protocol: u8) -> Result<()>;
 
-    /// Write a load balancer service→backend mapping
+    /// Write a load balancer service→backend mapping.
+    /// `protocol` is the IP protocol number (6=TCP, 17=UDP).
     fn write_lb_entry(
         &self,
         service_ip: std::net::Ipv4Addr,
@@ -240,14 +241,17 @@ pub trait MapWriter {
         backend_ip: std::net::Ipv4Addr,
         backend_port: u16,
         slot: u16,
+        protocol: u8,
     ) -> Result<()>;
 
-    /// Delete a load balancer entry
+    /// Delete a load balancer entry.
+    /// `protocol` is the IP protocol number (6=TCP, 17=UDP).
     fn delete_lb_entry(
         &self,
         service_ip: std::net::Ipv4Addr,
         service_port: u16,
         slot: u16,
+        protocol: u8,
     ) -> Result<()>;
 
     /// Write an IP cache entry (IP → identity mapping)

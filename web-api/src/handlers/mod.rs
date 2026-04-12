@@ -51,7 +51,10 @@ pub async fn track_error(state: &AppState) {
 
 /// Serialize to JSON with empty-object fallback.
 pub fn to_json<T: Serialize>(val: &T) -> Value {
-    serde_json::to_value(val).unwrap_or_else(|_| serde_json::json!({}))
+    serde_json::to_value(val).unwrap_or_else(|e| {
+        tracing::warn!("JSON serialization failed: {}", e);
+        serde_json::json!({})
+    })
 }
 
 /// Shared pagination query params for list endpoints.
@@ -59,6 +62,11 @@ pub fn to_json<T: Serialize>(val: &T) -> Value {
 pub struct PaginationQuery {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+}
+
+/// Extract a string field from a JSON value, returning empty string if absent.
+pub fn jstr(v: &Value, key: &str) -> String {
+    v.get(key).and_then(|x| x.as_str()).unwrap_or("").to_string()
 }
 
 /// Apply pagination to a JSON array field and return the response with metadata.

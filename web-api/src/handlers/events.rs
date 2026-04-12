@@ -1,9 +1,9 @@
-use axum::{extract::State, Json};
+use axum::{extract::{Query, State}, Json};
 use serde::Serialize;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use crate::AppState;
-use super::track_request;
+use super::{track_request, jstr, PaginationQuery};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct K8sEvent {
@@ -21,36 +21,55 @@ pub struct K8sEvent {
 
 pub async fn list_events(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
-    let events = vec![
-        K8sEvent {
-            id: "evt-001".into(), event_type: "Normal".into(), reason: "Scheduled".into(),
-            object: "pod/frontend-abc123".into(), message: "Successfully assigned default/frontend-abc123 to node-1".into(),
-            namespace: "default".into(), count: 1, first_seen: "2026-04-03T10:00:00Z".into(), last_seen: "2026-04-03T10:00:00Z".into(),
-        },
-        K8sEvent {
-            id: "evt-002".into(), event_type: "Warning".into(), reason: "FailedMount".into(),
-            object: "pod/backend-xyz789".into(), message: "MountVolume.SetUp failed for volume \"config\"".into(),
-            namespace: "default".into(), count: 3, first_seen: "2026-04-03T09:55:00Z".into(), last_seen: "2026-04-03T10:01:00Z".into(),
-        },
-        K8sEvent {
-            id: "evt-003".into(), event_type: "Normal".into(), reason: "Pulled".into(),
-            object: "pod/monitoring-prom-0".into(), message: "Container image \"prom/prometheus:v2.50\" already present".into(),
-            namespace: "monitoring".into(), count: 1, first_seen: "2026-04-03T09:50:00Z".into(), last_seen: "2026-04-03T09:50:00Z".into(),
-        },
-        K8sEvent {
-            id: "evt-004".into(), event_type: "Warning".into(), reason: "Unhealthy".into(),
-            object: "pod/api-gateway-def456".into(), message: "Readiness probe failed: connection refused".into(),
-            namespace: "default".into(), count: 5, first_seen: "2026-04-03T09:45:00Z".into(), last_seen: "2026-04-03T10:02:00Z".into(),
-        },
-        K8sEvent {
-            id: "evt-005".into(), event_type: "Normal".into(), reason: "CiliumEndpointUpdated".into(),
-            object: "ciliumendpoint/frontend-abc123".into(), message: "Endpoint identity updated to 12345".into(),
-            namespace: "default".into(), count: 2, first_seen: "2026-04-03T10:00:00Z".into(), last_seen: "2026-04-03T10:00:30Z".into(),
-        },
-    ];
+    let data = state.k8s.kubectl_json(&[
+        "get", "events", "--all-namespaces", "--sort-by=.lastTimestamp", "-o", "json",
+    ]).await;
 
-    Json(serde_json::json!({ "events": events, "total": events.len() }))
+    let all_events: Vec<K8sEvent> = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter().map(|item| {
+                let meta = item.get("metadata").unwrap_or(item);
+                let involved = item.get("involvedObject").unwrap_or(item);
+
+                let kind = involved.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                let obj_name = involved.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let object = if kind.is_empty() {
+                    obj_name.to_string()
+                } else {
+                    format!("{}/{}", kind.to_lowercase(), obj_name)
+                };
+
+                K8sEvent {
+                    id: jstr(meta, "uid"),
+                    event_type: jstr(item, "type"),
+                    reason: jstr(item, "reason"),
+                    object,
+                    message: jstr(item, "message"),
+                    namespace: jstr(meta, "namespace"),
+                    count: item.get("count").and_then(|v| v.as_u64()).unwrap_or(1) as u32,
+                    first_seen: jstr(item, "firstTimestamp"),
+                    last_seen: jstr(item, "lastTimestamp"),
+                }
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    let total = all_events.len();
+    let offset = params.offset.unwrap_or(0);
+    let limit = params.limit.unwrap_or(50).min(500);
+    let page: Vec<_> = all_events.into_iter().skip(offset).take(limit).collect();
+
+    Json(serde_json::json!({
+        "events": page,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }))
 }
+

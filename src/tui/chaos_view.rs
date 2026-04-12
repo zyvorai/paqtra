@@ -309,10 +309,11 @@ impl ChaosView {
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_secs().saturating_sub(exp.started_at))
                         .unwrap_or(0);
+                    let truncated_id: String = exp.id.chars().take(14).collect();
                     let content = format!(
                         "{}{:<15} {:<25} [{:<8}] {}s ago",
                         prefix,
-                        &exp.id[..exp.id.len().min(14)],
+                        truncated_id,
                         exp.name,
                         status_str,
                         elapsed

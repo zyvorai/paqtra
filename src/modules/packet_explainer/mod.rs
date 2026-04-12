@@ -80,13 +80,9 @@ impl PacketExplainer {
             source_ns, source_pod, dest_ns, dest_pod, port, protocol, verdict,
         );
 
-        // Evict oldest entries if cache is too large
+        // Evict all entries when cache is full (simple but deterministic)
         if self.explanations_cache.len() >= MAX_CACHE_SIZE {
-            // Simple eviction: clear half the cache
-            let keys: Vec<String> = self.explanations_cache.keys().take(MAX_CACHE_SIZE / 2).cloned().collect();
-            for key in keys {
-                self.explanations_cache.remove(&key);
-            }
+            self.explanations_cache.clear();
         }
 
         // Cache it

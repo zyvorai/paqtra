@@ -3,7 +3,6 @@ use axum::{
     extract::{Path, Query, State},
     Json,
 };
-use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -13,16 +12,9 @@ use crate::error::ApiError;
 use crate::models::policy::CreatePolicyRequest;
 use super::{check_admin, track_request, track_error, to_json};
 
-/// Query parameters for paginated list endpoints.
-#[derive(Debug, Deserialize)]
-pub struct PaginationParams {
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
-}
-
 pub async fn list_policies(
     State(state): State<Arc<AppState>>,
-    Query(params): Query<PaginationParams>,
+    Query(params): Query<super::PaginationQuery>,
 ) -> Result<Json<Value>, ApiError> {
     tracing::info!("Listing policies");
 
@@ -176,8 +168,11 @@ pub async fn delete_policy(
 
 pub async fn simulate_policy(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+
     // Validate spec size and depth
     req.validate_spec().map_err(ApiError::BadRequest)?;
 

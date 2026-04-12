@@ -105,6 +105,7 @@ pub fn confidence_color(confidence: f64) -> Color {
 pub fn severity_color(severity: &str) -> Color {
     match severity.to_lowercase().as_str() {
         "critical" => CRITICAL_SEVERITY_COLOR,
+        "high" => ERROR_COLOR,
         "medium" => MEDIUM_SEVERITY_COLOR,
         "low" => LOW_SEVERITY_COLOR,
         _ => TEXT_COLOR,

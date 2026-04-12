@@ -14,10 +14,10 @@ use super::{
 ///
 /// Key format: struct policy_key {
 ///   u32 sec_label;     // Source security identity
-///   u32 dst_port;      // Destination port (network order)
+///   u16 dport;         // Destination port (network byte order)
 ///   u8  protocol;      // IP protocol
 ///   u8  egress;        // Direction (1=egress, 0=ingress)
-///   u16 _pad;
+///   u8  pad[4];
 /// }
 ///
 /// Value format: struct policy_entry {
@@ -99,9 +99,9 @@ pub fn parse_ct_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
         let tx_bytes = LittleEndian::read_u64(&value[24..32]);
         let lifetime = LittleEndian::read_u32(&value[32..36]);
 
-        // Total packets and bytes
-        let total_packets = rx_packets + tx_packets;
-        let total_bytes = rx_bytes + tx_bytes;
+        // Total packets and bytes (use saturating_add to prevent overflow)
+        let total_packets = rx_packets.saturating_add(tx_packets);
+        let total_bytes = rx_bytes.saturating_add(tx_bytes);
 
         // Derive state from flags
         // rx_closing = bit 0, tx_closing = bit 1
@@ -115,15 +115,15 @@ pub fn parse_ct_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
             ConntrackState::New
         };
 
-        (total_packets, total_bytes, lifetime as u64, state)
+        (total_packets, total_bytes, u64::from(lifetime), state)
     } else if value.len() >= 32 {
         let rx_packets = LittleEndian::read_u64(&value[0..8]);
         let rx_bytes = LittleEndian::read_u64(&value[8..16]);
         let tx_packets = LittleEndian::read_u64(&value[16..24]);
         let tx_bytes = LittleEndian::read_u64(&value[24..32]);
 
-        let total_packets = rx_packets + tx_packets;
-        let total_bytes = rx_bytes + tx_bytes;
+        let total_packets = rx_packets.saturating_add(tx_packets);
+        let total_bytes = rx_bytes.saturating_add(tx_bytes);
 
         let rx_closing = flags & 0x01 != 0;
         let tx_closing = flags & 0x02 != 0;
@@ -194,8 +194,8 @@ pub fn parse_ct6_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
         let tx_bytes = LittleEndian::read_u64(&value[24..32]);
         let lifetime = LittleEndian::read_u32(&value[32..36]);
 
-        let total_packets = rx_packets + tx_packets;
-        let total_bytes = rx_bytes + tx_bytes;
+        let total_packets = rx_packets.saturating_add(tx_packets);
+        let total_bytes = rx_bytes.saturating_add(tx_bytes);
 
         // Derive state from flags
         let rx_closing = flags & 0x01 != 0;
@@ -208,15 +208,15 @@ pub fn parse_ct6_entry(key: &[u8], value: &[u8]) -> Result<ConntrackEntry> {
             ConntrackState::New
         };
 
-        (total_packets, total_bytes, lifetime as u64, state)
+        (total_packets, total_bytes, u64::from(lifetime), state)
     } else if value.len() >= 32 {
         let rx_packets = LittleEndian::read_u64(&value[0..8]);
         let rx_bytes = LittleEndian::read_u64(&value[8..16]);
         let tx_packets = LittleEndian::read_u64(&value[16..24]);
         let tx_bytes = LittleEndian::read_u64(&value[24..32]);
 
-        let total_packets = rx_packets + tx_packets;
-        let total_bytes = rx_bytes + tx_bytes;
+        let total_packets = rx_packets.saturating_add(tx_packets);
+        let total_bytes = rx_bytes.saturating_add(tx_bytes);
 
         let rx_closing = flags & 0x01 != 0;
         let tx_closing = flags & 0x02 != 0;

@@ -64,7 +64,10 @@ impl ComplianceEngine {
         })
     }
 
-    /// Run a kubectl command and return (success, stdout)
+    /// Run a kubectl command and return (success, stdout).
+    ///
+    /// NOTE: This uses synchronous `std::process::Command`. The commands include
+    /// `--request-timeout=2s` to ensure they complete quickly.
     fn kubectl_check(args: &[&str]) -> (bool, String) {
         match Command::new("kubectl").args(args).output() {
             Ok(output) => (

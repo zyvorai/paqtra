@@ -31,9 +31,30 @@ pub struct NodeActionRequest {
 
 // ── WireGuard Peers ───────────────────────────────────────
 
-pub async fn wireguard_peers(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn wireguard_peers(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
+
+    // Try to get real WireGuard data from cilium
+    use crate::services::k8s::K8sService;
+    let wg_output = K8sService::run_cmd(
+        "kubectl",
+        &["exec", "-n", "kube-system", "-l", "k8s-app=cilium", "-c", "cilium-agent",
+          "--", "cilium", "encrypt", "status"],
+    ).await;
+
+    if !wg_output.is_empty() {
+        return Ok(Json(serde_json::json!({
+            "raw_status": wg_output,
+            "source": "cilium encrypt status",
+        })));
+    }
+
+    // Fallback to sample data if cilium is not available
+    Ok(Json(serde_json::json!({
         "peers": [
             {
                 "public_key": "aB3dEfGhIjKlMnOpQrStUvWxYz0123456789abc=",
@@ -66,65 +87,62 @@ pub async fn wireguard_peers(State(state): State<Arc<AppState>>) -> Json<serde_j
                 "node": "cilium-node-1"
             }
         ]
-    }))
+    })))
 }
 
 // ── Cilium Status ─────────────────────────────────────────
 
 pub async fn cilium_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "agents": [
-            {
-                "node": "cilium-node-1",
-                "status": "OK",
-                "version": "1.16.1",
-                "uptime": "14d 6h 32m",
-                "controllers_failing": 0,
-                "controllers_total": 42,
-                "endpoint_count": 58,
-                "policy_revision": 124,
-                "proxy_redirects": 12,
-                "identity_count": 87,
-                "datapath": "vxlan",
-                "masquerading": "BPF",
-                "encryption": "WireGuard",
-                "kube_proxy_replacement": "True"
-            },
-            {
-                "node": "cilium-node-2",
-                "status": "OK",
-                "version": "1.16.1",
-                "uptime": "14d 6h 30m",
-                "controllers_failing": 0,
-                "controllers_total": 42,
-                "endpoint_count": 46,
-                "policy_revision": 124,
-                "proxy_redirects": 8,
-                "identity_count": 87,
-                "datapath": "vxlan",
-                "masquerading": "BPF",
-                "encryption": "WireGuard",
-                "kube_proxy_replacement": "True"
-            },
-            {
-                "node": "cilium-node-3",
-                "status": "OK",
-                "version": "1.16.1",
-                "uptime": "14d 6h 28m",
-                "controllers_failing": 1,
-                "controllers_total": 42,
-                "endpoint_count": 38,
-                "policy_revision": 123,
-                "proxy_redirects": 6,
-                "identity_count": 87,
-                "datapath": "vxlan",
-                "masquerading": "BPF",
-                "encryption": "WireGuard",
-                "kube_proxy_replacement": "True"
-            }
-        ]
-    }))
+
+    // Query real cilium status via kubectl exec on cilium pods
+    use crate::services::k8s::K8sService;
+    let status_json = K8sService::run_cmd(
+        "kubectl",
+        &["exec", "-n", "kube-system", "-l", "k8s-app=cilium",
+          "--", "cilium", "status", "-o", "json", "--brief"],
+    ).await;
+
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&status_json) {
+        return Json(serde_json::json!({ "status": parsed }));
+    }
+
+    // Fallback: get cilium pods and their status
+    let pods = state.k8s.kubectl_json(&[
+        "get", "pods", "-n", "kube-system", "-l", "k8s-app=cilium", "-o", "json",
+    ]).await;
+
+    let agents: Vec<serde_json::Value> = pods
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter().map(|item| {
+                let meta = item.get("metadata").unwrap_or(item);
+                let status = item.get("status").unwrap_or(item);
+                let phase = status.get("phase").and_then(|v| v.as_str()).unwrap_or("Unknown");
+                let node = meta.get("labels")
+                    .and_then(|l| l.get("kubernetes.io/hostname"))
+                    .and_then(|v| v.as_str())
+                    .or_else(|| status.get("hostIP").and_then(|v| v.as_str()))
+                    .unwrap_or("unknown");
+                let ready = status.get("containerStatuses")
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|c| c.get("ready"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                serde_json::json!({
+                    "node": node,
+                    "pod": meta.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                    "status": if ready { "OK" } else { phase },
+                    "ready": ready,
+                    "host_ip": status.get("hostIP").and_then(|v| v.as_str()).unwrap_or(""),
+                })
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    Json(serde_json::json!({ "agents": agents }))
 }
 
 // ── Policy Validation ─────────────────────────────────────
@@ -137,57 +155,71 @@ pub async fn validate_policy(
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let yaml = &body.yaml;
-    let valid = !yaml.is_empty();
-    let errors: Vec<String> = if valid {
-        vec![]
-    } else {
-        vec!["Empty policy YAML provided".to_string()]
-    };
+    if yaml.is_empty() {
+        return Ok(Json(serde_json::json!({
+            "valid": false,
+            "errors": ["Empty policy YAML provided"]
+        })));
+    }
+
+    // Parse YAML locally for structure check
+    let mut errors: Vec<String> = Vec::new();
+    match serde_yaml::from_str::<serde_json::Value>(yaml) {
+        Ok(parsed) => {
+            if parsed.get("apiVersion").is_none() {
+                errors.push("Missing 'apiVersion' field".to_string());
+            }
+            if parsed.get("kind").is_none() {
+                errors.push("Missing 'kind' field".to_string());
+            }
+            if parsed.get("metadata").is_none() {
+                errors.push("Missing 'metadata' field".to_string());
+            }
+            if parsed.get("spec").is_none() {
+                errors.push("Missing 'spec' field".to_string());
+            }
+        }
+        Err(e) => {
+            errors.push(format!("Invalid YAML syntax: {}", e));
+        }
+    }
+
+    // If local parse passed, validate via kubectl dry-run (piping YAML to stdin)
+    let mut dry_run_output: Option<String> = None;
+    if errors.is_empty() {
+        use crate::services::k8s::K8sService;
+        let (ok, stdout, stderr) = K8sService::run_cmd_stdin(
+            "kubectl",
+            &["apply", "--dry-run=client", "-f", "-", "--validate=true"],
+            yaml,
+        ).await;
+        if !ok && !stderr.is_empty() {
+            errors.push(format!("kubectl dry-run failed: {}", stderr));
+        }
+        let output = if ok { stdout } else { stderr };
+        if !output.is_empty() {
+            dry_run_output = Some(output);
+        }
+    }
+
+    let valid = errors.is_empty();
     Ok(Json(serde_json::json!({
         "valid": valid,
-        "errors": errors
+        "errors": errors,
+        "dry_run_output": dry_run_output,
     })))
 }
 
 // ── Flow Export Configs ───────────────────────────────────
+
+const EXPORT_CONFIGS_PREFIX: &str = "cv:export_configs:";
 
 pub async fn list_export_configs(
     State(state): State<Arc<AppState>>,
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let items: Vec<serde_json::Value> = vec![
-        serde_json::json!({
-            "id": "exp-001",
-            "name": "production-s3-export",
-            "format": "json",
-            "destination": "s3://cilium-flows-prod/daily/",
-            "filter": "namespace=production",
-            "status": "active",
-            "exported_count": 1_842_500,
-            "last_export": "2026-04-03T11:55:00Z"
-        }),
-        serde_json::json!({
-            "id": "exp-002",
-            "name": "security-siem-feed",
-            "format": "cef",
-            "destination": "syslog://siem.internal:514",
-            "filter": "verdict=DROPPED",
-            "status": "active",
-            "exported_count": 34_210,
-            "last_export": "2026-04-03T11:59:30Z"
-        }),
-        serde_json::json!({
-            "id": "exp-003",
-            "name": "staging-debug",
-            "format": "csv",
-            "destination": "s3://cilium-flows-staging/debug/",
-            "filter": "namespace=staging",
-            "status": "paused",
-            "exported_count": 520_000,
-            "last_export": "2026-04-02T18:00:00Z"
-        }),
-    ];
+    let items = state.cache.list_values(EXPORT_CONFIGS_PREFIX).await.unwrap_or_default();
     Json(paginate_json(items, &params, "configs"))
 }
 
@@ -198,16 +230,23 @@ pub async fn create_export_config(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    let name = &body.name;
-    let format = &body.format;
-    let destination = &body.destination;
-    Ok(Json(serde_json::json!({
-        "id": "exp-004",
-        "name": name,
-        "format": format,
-        "destination": destination,
+
+    let id = format!("exp-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("000"));
+    let config = serde_json::json!({
+        "id": id,
+        "name": body.name,
+        "format": body.format,
+        "destination": body.destination,
         "status": "active",
-        "message": "Export configuration created successfully"
+        "created_at": chrono::Utc::now().to_rfc3339(),
+    });
+
+    let _ = state.cache.set_persistent(&format!("{}{}", EXPORT_CONFIGS_PREFIX, id), &config).await;
+
+    Ok(Json(serde_json::json!({
+        "id": id,
+        "status": "active",
+        "message": "Export configuration created successfully",
     })))
 }
 
@@ -218,20 +257,32 @@ pub async fn delete_export_config(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
+
+    let key = format!("{}{}", EXPORT_CONFIGS_PREFIX, id);
+    let _ = state.cache.delete(&key).await;
+
     Ok(Json(serde_json::json!({
         "id": id,
         "status": "deleted",
-        "message": "Export configuration deleted successfully"
+        "message": "Export configuration deleted",
     })))
 }
 
 // ── SLO Targets ───────────────────────────────────────────
+
+const SLOS_PREFIX: &str = "cv:slos:";
+const INCIDENTS_PREFIX: &str = "cv:incidents:";
 
 pub async fn list_slos(
     State(state): State<Arc<AppState>>,
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
+    let stored = state.cache.list_values(SLOS_PREFIX).await.unwrap_or_default();
+    if !stored.is_empty() {
+        return Json(paginate_json(stored, &params, "slos"));
+    }
+    // Seed defaults
     let items: Vec<serde_json::Value> = vec![
         serde_json::json!({
             "name": "api-availability",
@@ -278,6 +329,11 @@ pub async fn list_slos(
             "status": "breached"
         }),
     ];
+    for slo in &items {
+        if let Some(name) = slo.get("name").and_then(|v| v.as_str()) {
+            let _ = state.cache.set_persistent(&format!("{}{}", SLOS_PREFIX, name), slo).await;
+        }
+    }
     Json(paginate_json(items, &params, "slos"))
 }
 
@@ -288,6 +344,11 @@ pub async fn list_incidents(
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
+    let stored = state.cache.list_values(INCIDENTS_PREFIX).await.unwrap_or_default();
+    if !stored.is_empty() {
+        return Json(paginate_json(stored, &params, "incidents"));
+    }
+    // Seed defaults
     let items: Vec<serde_json::Value> = vec![
         serde_json::json!({
             "id": "inc-001",
@@ -324,6 +385,11 @@ pub async fn list_incidents(
             ]
         }),
     ];
+    for inc in &items {
+        if let Some(id) = inc.get("id").and_then(|v| v.as_str()) {
+            let _ = state.cache.set_persistent(&format!("{}{}", INCIDENTS_PREFIX, id), inc).await;
+        }
+    }
     Json(paginate_json(items, &params, "incidents"))
 }
 
@@ -398,34 +464,40 @@ pub async fn rollback_change(
 
 pub async fn node_drain_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "nodes": [
-            {
-                "node": "cilium-node-1",
-                "status": "ready",
-                "pods_evicted": 0,
-                "pods_remaining": 58,
-                "started_at": null,
-                "cordon": false
-            },
-            {
-                "node": "cilium-node-2",
-                "status": "ready",
-                "pods_evicted": 0,
-                "pods_remaining": 46,
-                "started_at": null,
-                "cordon": false
-            },
-            {
-                "node": "cilium-node-3",
-                "status": "cordoned",
-                "pods_evicted": 0,
-                "pods_remaining": 38,
-                "started_at": null,
-                "cordon": true
-            }
-        ]
-    }))
+
+    let data = state.k8s.kubectl_json(&["get", "nodes", "-o", "json"]).await;
+
+    let nodes: Vec<serde_json::Value> = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter().map(|item| {
+                let meta = item.get("metadata").unwrap_or(item);
+                let spec = item.get("spec").unwrap_or(item);
+                let status = item.get("status").unwrap_or(item);
+
+                let name = meta.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let unschedulable = spec.get("unschedulable").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                let ready = status.get("conditions")
+                    .and_then(|v| v.as_array())
+                    .and_then(|conds| conds.iter().find(|c| c.get("type").and_then(|v| v.as_str()) == Some("Ready")))
+                    .and_then(|c| c.get("status").and_then(|v| v.as_str()))
+                    .unwrap_or("Unknown") == "True";
+
+                let node_status = if unschedulable { "cordoned" } else if ready { "ready" } else { "not_ready" };
+
+                serde_json::json!({
+                    "node": name,
+                    "status": node_status,
+                    "cordon": unschedulable,
+                    "ready": ready,
+                })
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    Json(serde_json::json!({ "nodes": nodes }))
 }
 
 pub async fn drain_node(
@@ -465,145 +537,144 @@ pub async fn uncordon_node(
 
 pub async fn pod_security(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "reports": [
-            {
-                "namespace": "production",
-                "enforce_level": "restricted",
-                "audit_level": "restricted",
-                "warn_level": "restricted",
-                "total_pods": 42,
-                "compliant_pods": 42,
-                "violations": []
-            },
-            {
-                "namespace": "staging",
-                "enforce_level": "baseline",
-                "audit_level": "restricted",
-                "warn_level": "restricted",
-                "total_pods": 18,
-                "compliant_pods": 15,
-                "violations": [
-                    { "pod": "debug-tools-7f8a2b-xk4mn", "violation": "Container runs as root (UID 0)", "severity": "high" },
-                    { "pod": "legacy-worker-3c9d1e-pl2qr", "violation": "Privileged container detected", "severity": "critical" },
-                    { "pod": "test-runner-5a6b7c-ws4jk", "violation": "Host network namespace enabled", "severity": "high" }
-                ]
-            },
-            {
-                "namespace": "kube-system",
-                "enforce_level": "privileged",
-                "audit_level": "baseline",
-                "warn_level": "baseline",
-                "total_pods": 24,
-                "compliant_pods": 24,
-                "violations": []
-            }
-        ]
-    }))
+
+    // Query namespaces for PSA labels and pods for security context
+    let ns_data = state.k8s.kubectl_json(&["get", "namespaces", "-o", "json"]).await;
+
+    let reports: Vec<serde_json::Value> = ns_data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter().filter_map(|item| {
+                let meta = item.get("metadata")?;
+                let name = meta.get("name").and_then(|v| v.as_str())?;
+                let labels = meta.get("labels").and_then(|v| v.as_object());
+
+                let enforce = labels
+                    .and_then(|l| l.get("pod-security.kubernetes.io/enforce"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("not-set");
+                let audit = labels
+                    .and_then(|l| l.get("pod-security.kubernetes.io/audit"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("not-set");
+                let warn = labels
+                    .and_then(|l| l.get("pod-security.kubernetes.io/warn"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("not-set");
+
+                Some(serde_json::json!({
+                    "namespace": name,
+                    "enforce_level": enforce,
+                    "audit_level": audit,
+                    "warn_level": warn,
+                }))
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    Json(serde_json::json!({ "reports": reports, "total": reports.len() }))
 }
 
 // ── Egress Gateway ────────────────────────────────────────
 
 pub async fn egress_policies(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "policies": [
-            {
-                "name": "external-api-egress",
-                "namespace": "production",
-                "gateway_node": "cilium-node-1",
-                "egress_ip": "203.0.113.10",
-                "destination_cidrs": ["198.51.100.0/24", "203.0.113.0/24"],
-                "selectors": ["app=api-gateway", "role=backend"],
-                "status": "active"
-            },
-            {
-                "name": "db-egress",
-                "namespace": "production",
-                "gateway_node": "cilium-node-2",
-                "egress_ip": "203.0.113.11",
-                "destination_cidrs": ["10.100.0.0/16"],
-                "selectors": ["app=data-service"],
-                "status": "active"
-            },
-            {
-                "name": "monitoring-egress",
-                "namespace": "monitoring",
-                "gateway_node": "cilium-node-1",
-                "egress_ip": "203.0.113.12",
-                "destination_cidrs": ["0.0.0.0/0"],
-                "selectors": ["app=prometheus", "app=grafana"],
-                "status": "active"
-            }
-        ]
-    }))
+
+    // Query CiliumEgressGatewayPolicy resources
+    let data = state.k8s.kubectl_json(&[
+        "get", "ciliumegressgatewaypolicies", "--all-namespaces", "-o", "json",
+    ]).await;
+
+    let policies: Vec<serde_json::Value> = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter().map(|item| {
+                let meta = item.get("metadata").unwrap_or(item);
+                let spec = item.get("spec").unwrap_or(item);
+                serde_json::json!({
+                    "name": meta.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                    "namespace": meta.get("namespace").and_then(|v| v.as_str()).unwrap_or(""),
+                    "spec": spec,
+                    "created_at": meta.get("creationTimestamp").and_then(|v| v.as_str()).unwrap_or(""),
+                })
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    let total = policies.len();
+    Json(serde_json::json!({ "policies": policies, "total": total }))
 }
 
 // ── Service Mesh ──────────────────────────────────────────
 
 pub async fn mesh_services(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "services": [
-            {
-                "name": "api-gateway",
-                "namespace": "production",
-                "protocol": "HTTP/2",
-                "mtls": true,
-                "retries": 3,
-                "timeout_ms": 5000,
-                "circuit_breaker": true,
-                "traffic_policy": "round-robin"
-            },
-            {
-                "name": "frontend",
-                "namespace": "production",
-                "protocol": "HTTP/1.1",
-                "mtls": true,
-                "retries": 2,
-                "timeout_ms": 3000,
-                "circuit_breaker": false,
-                "traffic_policy": "least-connections"
-            },
-            {
-                "name": "grpc-backend",
-                "namespace": "staging",
-                "protocol": "gRPC",
-                "mtls": true,
-                "retries": 3,
-                "timeout_ms": 10000,
-                "circuit_breaker": true,
-                "traffic_policy": "round-robin"
-            },
-            {
-                "name": "redis-cache",
-                "namespace": "production",
-                "protocol": "TCP",
-                "mtls": false,
-                "retries": 1,
-                "timeout_ms": 1000,
-                "circuit_breaker": false,
-                "traffic_policy": "random"
-            }
-        ]
-    }))
+    // Query real K8s Services and infer protocol from ports/annotations
+    let data = state.k8s.kubectl_json(&[
+        "get", "services", "--all-namespaces", "-o", "json",
+    ]).await;
+
+    let services: Vec<serde_json::Value> = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter().filter_map(|item| {
+                let meta = item.get("metadata")?;
+                let spec = item.get("spec")?;
+                let name = meta.get("name").and_then(|v| v.as_str())?;
+                let ns = meta.get("namespace").and_then(|v| v.as_str()).unwrap_or("");
+
+                // Infer protocol from ports
+                let ports = spec.get("ports").and_then(|v| v.as_array());
+                let protocol = ports
+                    .and_then(|p| p.first())
+                    .and_then(|p| p.get("appProtocol").and_then(|v| v.as_str())
+                        .or_else(|| p.get("protocol").and_then(|v| v.as_str())))
+                    .unwrap_or("TCP");
+
+                Some(serde_json::json!({
+                    "name": name,
+                    "namespace": ns,
+                    "type": spec.get("type").and_then(|v| v.as_str()).unwrap_or("ClusterIP"),
+                    "protocol": protocol,
+                    "cluster_ip": spec.get("clusterIP").and_then(|v| v.as_str()).unwrap_or(""),
+                    "ports": ports.cloned().unwrap_or_default(),
+                }))
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    let total = services.len();
+    Json(serde_json::json!({ "services": services, "total": total }))
 }
 
 // ── KubeProxy Replacement Status ──────────────────────────
 
 pub async fn kpr_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
+
+    // Read KPR config from cilium-config ConfigMap
+    let cm = state.k8s.kubectl_json(&[
+        "get", "configmap", "cilium-config", "-n", "kube-system", "-o", "json",
+    ]).await;
+    let empty = serde_json::json!({});
+    let data = cm.get("data").unwrap_or(&empty);
+
+    let kpr = data.get("kube-proxy-replacement").and_then(|v| v.as_str()).unwrap_or("disabled");
+    let device = data.get("devices").and_then(|v| v.as_str()).unwrap_or("");
+    let dsr = data.get("loadbalancer-mode").and_then(|v| v.as_str()).unwrap_or("snat");
+    let session_affinity = data.get("enable-session-affinity").and_then(|v| v.as_str()).unwrap_or("false");
+    let node_port_range = data.get("node-port-range").and_then(|v| v.as_str()).unwrap_or("30000-32767");
+
     Json(serde_json::json!({
-        "enabled": true,
-        "mode": "strict",
-        "device": "eth0",
-        "dsr_mode": "geneve",
-        "session_affinity": true,
-        "graceful_termination": true,
-        "node_port_range": "30000-32767",
-        "services": 42,
-        "backends": 128,
-        "nat_entries": 8_452,
-        "ct_entries": 24_310
+        "enabled": kpr != "disabled" && !kpr.is_empty(),
+        "mode": kpr,
+        "device": device,
+        "dsr_mode": dsr,
+        "session_affinity": session_affinity == "true",
+        "node_port_range": node_port_range,
+        "source": "cilium-config ConfigMap",
     }))
 }

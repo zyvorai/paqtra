@@ -84,7 +84,9 @@ impl TuiApp {
                 match self.hubble_client.get_flows().await {
                     Ok(flows) => {
                         self.flows = flows;
-                        if self.selected_flow_index >= self.flows.len() && !self.flows.is_empty() {
+                        if self.flows.is_empty() {
+                            self.selected_flow_index = 0;
+                        } else if self.selected_flow_index >= self.flows.len() {
                             self.selected_flow_index = self.flows.len() - 1;
                         }
                     }

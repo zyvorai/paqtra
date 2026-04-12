@@ -11,12 +11,7 @@ use std::sync::Arc;
 use crate::AppState;
 use super::{check_admin, track_request, to_json};
 
-/// Query parameters for paginated anomaly listings.
-#[derive(Debug, Deserialize)]
-pub struct PaginationParams {
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
-}
+use super::PaginationQuery;
 
 /// Anomaly severity levels
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,7 +101,7 @@ fn sample_anomalies() -> Vec<Anomaly> {
 
 pub async fn list_anomalies(
     State(state): State<Arc<AppState>>,
-    Query(params): Query<PaginationParams>,
+    Query(params): Query<PaginationQuery>,
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 

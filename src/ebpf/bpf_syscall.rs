@@ -78,7 +78,7 @@ impl BpfToolReader {
             if let Some(name) = map.get("name").and_then(|v| v.as_str()) {
                 let id = map.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
                 result.push(BpfMapInfo {
-                    id: id as u32,
+                    id: u32::try_from(id).unwrap_or(0),
                     name: name.to_string(),
                     map_type: map
                         .get("type")
@@ -277,6 +277,9 @@ pub struct IdentityInfo {
     pub pod_name: String,
 }
 
+/// Maximum number of cached identities before eviction
+const MAX_IDENTITY_CACHE_SIZE: usize = 10_000;
+
 /// Identity resolver - maps Cilium identities to K8s labels
 #[allow(dead_code)]
 pub struct IdentityResolver {
@@ -304,12 +307,14 @@ impl IdentityResolver {
             return self.identity_cache.get(&identity);
         }
 
-        // Query Cilium CLI for the identity
-        if let Ok(output) = tokio::process::Command::new("cilium")
+        // Query Cilium CLI for the identity (with 5s timeout)
+        let cmd = tokio::process::Command::new("cilium")
             .args(["identity", "get", &identity.to_string(), "-o", "json"])
-            .output()
-            .await
-        {
+            .output();
+        if let Ok(Ok(output)) = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            cmd,
+        ).await {
             if output.status.success() {
                 if let Ok(json_str) = String::from_utf8(output.stdout) {
                     if let Ok(val) = serde_json::from_str::<Value>(&json_str) {
@@ -334,6 +339,14 @@ impl IdentityResolver {
                             .find_map(|l| l.strip_prefix("k8s:io.cilium.k8s.policy.name="))
                             .unwrap_or("unknown")
                             .to_string();
+
+                        // Evict oldest entries if cache is full
+                        if self.identity_cache.len() >= MAX_IDENTITY_CACHE_SIZE {
+                            let keys: Vec<u32> = self.identity_cache.keys().take(MAX_IDENTITY_CACHE_SIZE / 4).copied().collect();
+                            for k in keys {
+                                self.identity_cache.remove(&k);
+                            }
+                        }
 
                         self.identity_cache.insert(
                             identity,
@@ -362,12 +375,14 @@ impl IdentityResolver {
     pub async fn resolve_ip(&self, ip: &IpAddr) -> Option<u32> {
         let ip_str = ip.to_string();
 
-        // Try `cilium bpf ipcache list -o json`
-        if let Ok(output) = tokio::process::Command::new("cilium")
+        // Try `cilium bpf ipcache list -o json` (with 5s timeout)
+        let cmd = tokio::process::Command::new("cilium")
             .args(["bpf", "ipcache", "list", "-o", "json"])
-            .output()
-            .await
-        {
+            .output();
+        if let Ok(Ok(output)) = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            cmd,
+        ).await {
             if output.status.success() {
                 if let Ok(json_str) = String::from_utf8(output.stdout) {
                     if let Ok(entries) = serde_json::from_str::<Vec<Value>>(&json_str) {

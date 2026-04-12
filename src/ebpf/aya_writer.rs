@@ -160,8 +160,9 @@ impl MapWriter for AyaMapWriter {
         backend_ip: std::net::Ipv4Addr,
         backend_port: u16,
         slot: u16,
+        protocol: u8,
     ) -> Result<()> {
-        let key = Self::build_lb4_key(service_ip, service_port, slot, 6); // TCP
+        let key = Self::build_lb4_key(service_ip, service_port, slot, protocol);
 
         let mut value = [0u8; 8];
         value[0..4].copy_from_slice(&backend_ip.octets());
@@ -175,8 +176,9 @@ impl MapWriter for AyaMapWriter {
         service_ip: std::net::Ipv4Addr,
         service_port: u16,
         slot: u16,
+        protocol: u8,
     ) -> Result<()> {
-        let key = Self::build_lb4_key(service_ip, service_port, slot, 6);
+        let key = Self::build_lb4_key(service_ip, service_port, slot, protocol);
         self.delete_typed_entry::<11, 8>("cilium_lb4_services_v2", &key)
     }
 
@@ -228,9 +230,10 @@ impl MapWriter for AyaMapWriter {
 
         #[cfg(not(feature = "aya-ebpf"))]
         {
-            tracing::warn!("Cannot clear metrics: aya-ebpf feature not enabled");
+            anyhow::bail!("Cannot clear metrics: aya-ebpf feature not enabled");
         }
 
+        #[cfg(feature = "aya-ebpf")]
         Ok(())
     }
 }
@@ -290,6 +293,7 @@ mod tests {
         assert!(result.is_err());
 
         let result = writer.clear_metrics();
-        assert!(result.is_ok());
+        // Without aya-ebpf feature, clear_metrics should return an error
+        assert!(result.is_err());
     }
 }

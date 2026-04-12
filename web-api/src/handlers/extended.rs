@@ -31,20 +31,14 @@ pub struct ReplayRecording {
     pub size_bytes: u64,
 }
 
+const RECORDINGS_PREFIX: &str = "cv:recordings:";
+
 pub async fn list_recordings(
     State(state): State<Arc<AppState>>,
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let recordings = vec![
-        ReplayRecording { id: "rec-001".into(), name: "debug-dns-issue".into(), namespace: "default".into(),
-            start_time: "2026-04-03T08:00:00Z".into(), end_time: "2026-04-03T08:15:00Z".into(),
-            flow_count: 15420, status: "completed".into(), size_bytes: 2_500_000 },
-        ReplayRecording { id: "rec-002".into(), name: "prod-outage-capture".into(), namespace: "production".into(),
-            start_time: "2026-04-02T14:30:00Z".into(), end_time: "2026-04-02T15:00:00Z".into(),
-            flow_count: 89500, status: "completed".into(), size_bytes: 12_000_000 },
-    ];
-    let items: Vec<_> = recordings.into_iter().map(|r| serde_json::to_value(r).unwrap()).collect();
+    let items = state.cache.list_values(RECORDINGS_PREFIX).await.unwrap_or_default();
     Json(paginate_json(items, &params, "recordings"))
 }
 
@@ -55,12 +49,26 @@ pub async fn start_recording(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    let name = &body.name;
-    Ok(Json(serde_json::json!({
-        "id": "rec-003",
-        "name": name,
+
+    let id = format!("rec-{}", uuid::Uuid::new_v4());
+    let ns = body.namespace.as_deref().unwrap_or("default");
+    let now = chrono::Utc::now().to_rfc3339();
+    let recording = serde_json::json!({
+        "id": id,
+        "name": body.name,
+        "namespace": ns,
+        "start_time": now,
         "status": "recording",
-        "message": "Recording started"
+        "flow_count": 0,
+    });
+
+    let _ = state.cache.set_persistent(&format!("{}{}", RECORDINGS_PREFIX, id), &recording).await;
+
+    Ok(Json(serde_json::json!({
+        "id": id,
+        "name": body.name,
+        "status": "recording",
+        "message": "Recording started",
     })))
 }
 
@@ -71,7 +79,16 @@ pub async fn stop_recording(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Ok(Json(serde_json::json!({ "id": id, "status": "stopped", "message": "Recording stopped" })))
+
+    let key = format!("{}{}", RECORDINGS_PREFIX, id);
+    if let Ok(Some(mut rec)) = state.cache.get::<serde_json::Value>(&key).await {
+        rec["status"] = serde_json::json!("completed");
+        rec["end_time"] = serde_json::json!(chrono::Utc::now().to_rfc3339());
+        let _ = state.cache.set_persistent(&key, &rec).await;
+        Ok(Json(serde_json::json!({ "id": id, "status": "stopped", "message": "Recording stopped" })))
+    } else {
+        Ok(Json(serde_json::json!({ "id": id, "status": "not_found" })))
+    }
 }
 
 // ── Healer ──────────────────────────────────────────────────
@@ -95,31 +112,65 @@ pub async fn list_healer_problems(
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let problems = vec![
-        HealerProblem {
-            id: "heal-001".into(), problem_type: "policy_denial".into(), severity: "high".into(),
-            description: "Pods in namespace 'default' denied egress to kube-dns".into(),
-            affected_pods: vec!["frontend-abc123".into(), "backend-xyz789".into()],
-            namespace: "default".into(), detected_at: "2026-04-03T09:30:00Z".into(),
-            status: "open".into(), proposed_fix: "Add CiliumNetworkPolicy allowing UDP/53 egress to kube-system".into(),
-        },
-        HealerProblem {
-            id: "heal-002".into(), problem_type: "unreachable_backend".into(), severity: "medium".into(),
-            description: "Service 'redis-master' has no healthy endpoints".into(),
-            affected_pods: vec!["redis-master-0".into()],
-            namespace: "default".into(), detected_at: "2026-04-03T09:45:00Z".into(),
-            status: "investigating".into(), proposed_fix: "Restart pod redis-master-0 and verify readiness probe".into(),
-        },
-        HealerProblem {
-            id: "heal-003".into(), problem_type: "dns_failure".into(), severity: "critical".into(),
-            description: "CoreDNS pods failing to resolve external domains".into(),
-            affected_pods: vec!["coredns-abc".into(), "coredns-def".into()],
-            namespace: "kube-system".into(), detected_at: "2026-04-03T10:00:00Z".into(),
-            status: "open".into(), proposed_fix: "Check upstream DNS servers in CoreDNS ConfigMap".into(),
-        },
-    ];
-    let items: Vec<_> = problems.into_iter().map(|p| serde_json::to_value(p).unwrap()).collect();
-    Json(paginate_json(items, &params, "problems"))
+
+    // Detect real problems from Hubble dropped flows
+    let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
+
+    let mut problems = Vec::new();
+    let mut dns_drops: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut policy_drops: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+
+    for flow in &flows {
+        if flow.verdict != "DROPPED" { continue; }
+        let ns = if flow.source.namespace.is_empty() { "unknown" } else { &flow.source.namespace };
+
+        if flow.port == 53 {
+            dns_drops.entry(ns.to_string()).or_default().push(flow.source.pod.clone());
+        } else {
+            policy_drops.entry(ns.to_string()).or_default().push(flow.source.pod.clone());
+        }
+    }
+
+    let mut idx = 0;
+    for (ns, pods) in &dns_drops {
+        idx += 1;
+        let unique_pods: Vec<String> = {
+            let mut s: Vec<_> = pods.iter().cloned().collect::<std::collections::HashSet<_>>().into_iter().collect();
+            s.truncate(5);
+            s
+        };
+        problems.push(serde_json::json!({
+            "id": format!("heal-dns-{:03}", idx),
+            "type": "dns_blocked",
+            "severity": "high",
+            "description": format!("DNS traffic (port 53) blocked for {} pods in namespace '{}'", pods.len(), ns),
+            "affected_pods": unique_pods,
+            "namespace": ns,
+            "status": "open",
+            "proposed_fix": format!("Add CiliumNetworkPolicy allowing UDP/TCP port 53 egress to kube-system in namespace '{}'", ns),
+        }));
+    }
+
+    for (ns, pods) in &policy_drops {
+        idx += 1;
+        let unique_pods: Vec<String> = {
+            let mut s: Vec<_> = pods.iter().cloned().collect::<std::collections::HashSet<_>>().into_iter().collect();
+            s.truncate(5);
+            s
+        };
+        problems.push(serde_json::json!({
+            "id": format!("heal-pol-{:03}", idx),
+            "type": "policy_denial",
+            "severity": "medium",
+            "description": format!("{} dropped flows in namespace '{}'", pods.len(), ns),
+            "affected_pods": unique_pods,
+            "namespace": ns,
+            "status": "open",
+            "proposed_fix": format!("Review CiliumNetworkPolicies in namespace '{}' for missing allow rules", ns),
+        }));
+    }
+
+    Json(paginate_json(problems, &params, "problems"))
 }
 
 pub async fn apply_healer_fix(
@@ -153,27 +204,28 @@ pub async fn list_packet_drops(
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let drops = vec![
-        PacketDrop { id: "drop-001".into(), timestamp: "2026-04-03T10:01:00Z".into(),
-            source: "default/frontend-abc123".into(), destination: "kube-system/coredns".into(),
-            protocol: "UDP".into(), drop_reason: "POLICY_DENIED".into(),
-            root_cause: "Missing egress policy for DNS traffic".into(),
-            remediation: "Apply allow-dns CiliumNetworkPolicy".into(),
-            namespace: "default".into(), count: 142 },
-        PacketDrop { id: "drop-002".into(), timestamp: "2026-04-03T10:02:00Z".into(),
-            source: "default/backend-xyz789".into(), destination: "10.96.0.1:443".into(),
-            protocol: "TCP".into(), drop_reason: "CT_MAP_INSERTION_FAILED".into(),
-            root_cause: "Conntrack table full on node-2".into(),
-            remediation: "Increase bpf-ct-global-tcp-max in Cilium ConfigMap".into(),
-            namespace: "default".into(), count: 28 },
-        PacketDrop { id: "drop-003".into(), timestamp: "2026-04-03T10:03:00Z".into(),
-            source: "monitoring/prometheus-0".into(), destination: "default/api-gateway:8080".into(),
-            protocol: "TCP".into(), drop_reason: "POLICY_DENIED".into(),
-            root_cause: "Ingress policy on api-gateway blocks monitoring namespace".into(),
-            remediation: "Add ingress rule allowing monitoring namespace on port 8080".into(),
-            namespace: "monitoring".into(), count: 56 },
-    ];
-    let items: Vec<_> = drops.into_iter().map(|d| serde_json::to_value(d).unwrap()).collect();
+
+    // Get real dropped flows from Hubble
+    let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
+
+    let items: Vec<serde_json::Value> = flows
+        .iter()
+        .filter(|f| f.verdict == "DROPPED")
+        .enumerate()
+        .map(|(i, f)| {
+            serde_json::json!({
+                "id": format!("drop-{:03}", i + 1),
+                "timestamp": f.timestamp,
+                "source": format!("{}/{}", f.source.namespace, f.source.pod),
+                "destination": format!("{}/{}", f.destination.namespace, f.destination.pod),
+                "protocol": f.protocol,
+                "port": f.port,
+                "drop_reason": "POLICY_DENIED",
+                "namespace": f.source.namespace,
+            })
+        })
+        .collect();
+
     Json(paginate_json(items, &params, "drops"))
 }
 
@@ -183,13 +235,30 @@ pub async fn analyze_drops(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
+
+    let flows = state.hubble.get_flows(1000, None).await.unwrap_or_default();
+    let dropped: Vec<_> = flows.iter().filter(|f| f.verdict == "DROPPED").collect();
+    let total_drops = dropped.len();
+
+    // Count by source namespace
+    let mut by_ns: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for f in &dropped {
+        *by_ns.entry(&f.source.namespace).or_default() += 1;
+    }
+    let top_ns = by_ns.iter().max_by_key(|(_, c)| *c).map(|(ns, _)| *ns).unwrap_or("none");
+
     Ok(Json(serde_json::json!({
         "analysis": {
-            "total_drops": 226,
-            "unique_reasons": 2,
-            "top_reason": "POLICY_DENIED",
-            "top_source_namespace": "default",
-            "recommendation": "Review CiliumNetworkPolicies in default namespace"
+            "total_flows": flows.len(),
+            "total_drops": total_drops,
+            "drop_rate": if flows.is_empty() { 0.0 } else { total_drops as f64 / flows.len() as f64 * 100.0 },
+            "top_source_namespace": top_ns,
+            "namespaces_affected": by_ns.len(),
+            "recommendation": if total_drops > 0 {
+                format!("Review CiliumNetworkPolicies in {} namespace ({} drops)", top_ns, by_ns.get(top_ns).unwrap_or(&0))
+            } else {
+                "No drops detected in recent flows".to_string()
+            }
         }
     })))
 }
@@ -254,18 +323,30 @@ pub async fn heatmap_data(
     State(state): State<Arc<AppState>>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let namespaces = vec!["default", "kube-system", "monitoring", "cilium", "production"];
-    let cells = vec![
-        HeatmapCell { source_namespace: "default".into(), destination_namespace: "kube-system".into(), flow_count: 8500, dropped_count: 12, avg_latency_ms: 1.2 },
-        HeatmapCell { source_namespace: "default".into(), destination_namespace: "monitoring".into(), flow_count: 3200, dropped_count: 0, avg_latency_ms: 2.1 },
-        HeatmapCell { source_namespace: "default".into(), destination_namespace: "default".into(), flow_count: 45000, dropped_count: 85, avg_latency_ms: 0.8 },
-        HeatmapCell { source_namespace: "monitoring".into(), destination_namespace: "default".into(), flow_count: 12000, dropped_count: 56, avg_latency_ms: 1.5 },
-        HeatmapCell { source_namespace: "monitoring".into(), destination_namespace: "kube-system".into(), flow_count: 5600, dropped_count: 0, avg_latency_ms: 1.1 },
-        HeatmapCell { source_namespace: "kube-system".into(), destination_namespace: "default".into(), flow_count: 2100, dropped_count: 3, avg_latency_ms: 0.9 },
-        HeatmapCell { source_namespace: "production".into(), destination_namespace: "default".into(), flow_count: 28000, dropped_count: 200, avg_latency_ms: 3.2 },
-        HeatmapCell { source_namespace: "production".into(), destination_namespace: "kube-system".into(), flow_count: 4500, dropped_count: 8, avg_latency_ms: 1.3 },
-        HeatmapCell { source_namespace: "cilium".into(), destination_namespace: "kube-system".into(), flow_count: 9200, dropped_count: 0, avg_latency_ms: 0.5 },
-    ];
+
+    // Build heatmap from real Hubble flows
+    let flows = state.hubble.get_flows(1000, None).await.unwrap_or_default();
+
+    let mut ns_set = std::collections::HashSet::new();
+    let mut cell_map: std::collections::HashMap<(String, String), (u64, u64)> = std::collections::HashMap::new();
+
+    for flow in &flows {
+        let src_ns = if flow.source.namespace.is_empty() { "unknown" } else { &flow.source.namespace };
+        let dst_ns = if flow.destination.namespace.is_empty() { "unknown" } else { &flow.destination.namespace };
+        ns_set.insert(src_ns.to_string());
+        ns_set.insert(dst_ns.to_string());
+        let entry = cell_map.entry((src_ns.to_string(), dst_ns.to_string())).or_default();
+        entry.0 += 1; // flow_count
+        if flow.verdict == "DROPPED" {
+            entry.1 += 1; // dropped_count
+        }
+    }
+
+    let cells: Vec<HeatmapCell> = cell_map.into_iter().map(|((src, dst), (fc, dc))| {
+        HeatmapCell { source_namespace: src, destination_namespace: dst, flow_count: fc, dropped_count: dc, avg_latency_ms: 0.0 }
+    }).collect();
+
+    let namespaces: Vec<String> = ns_set.into_iter().collect();
     Json(serde_json::json!({ "cells": cells, "namespaces": namespaces }))
 }
 
@@ -288,15 +369,32 @@ pub async fn list_dependencies(
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let deps = vec![
-        ServiceDep { source: "frontend".into(), destination: "api-gateway".into(), protocol: "HTTP".into(), port: 8080, request_rate: 1200.0, error_rate: 0.5, latency_p50: 12.0, latency_p99: 85.0 },
-        ServiceDep { source: "api-gateway".into(), destination: "backend".into(), protocol: "gRPC".into(), port: 9090, request_rate: 800.0, error_rate: 0.2, latency_p50: 8.0, latency_p99: 45.0 },
-        ServiceDep { source: "backend".into(), destination: "redis".into(), protocol: "TCP".into(), port: 6379, request_rate: 3500.0, error_rate: 0.0, latency_p50: 0.5, latency_p99: 2.0 },
-        ServiceDep { source: "backend".into(), destination: "postgres".into(), protocol: "TCP".into(), port: 5432, request_rate: 600.0, error_rate: 0.1, latency_p50: 3.0, latency_p99: 25.0 },
-        ServiceDep { source: "api-gateway".into(), destination: "auth-service".into(), protocol: "HTTP".into(), port: 8081, request_rate: 400.0, error_rate: 1.2, latency_p50: 15.0, latency_p99: 120.0 },
-        ServiceDep { source: "frontend".into(), destination: "cdn".into(), protocol: "HTTPS".into(), port: 443, request_rate: 5000.0, error_rate: 0.0, latency_p50: 2.0, latency_p99: 10.0 },
-    ];
-    let items: Vec<_> = deps.into_iter().map(|d| serde_json::to_value(d).unwrap()).collect();
+
+    // Build dependencies from real Hubble flows
+    let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
+
+    let mut dep_map: std::collections::HashMap<(String, String, u16), (String, u64, u64)> = std::collections::HashMap::new();
+    for flow in &flows {
+        let src = if !flow.source.pod.is_empty() {
+            flow.source.pod.split('-').take(2).collect::<Vec<_>>().join("-")
+        } else { continue; };
+        let dst = if !flow.destination.pod.is_empty() {
+            flow.destination.pod.split('-').take(2).collect::<Vec<_>>().join("-")
+        } else { continue; };
+        if src == dst { continue; }
+        let entry = dep_map.entry((src, dst, flow.port)).or_insert((flow.protocol.clone(), 0, 0));
+        entry.1 += 1; // total
+        if flow.verdict == "DROPPED" { entry.2 += 1; } // errors
+    }
+
+    let items: Vec<serde_json::Value> = dep_map.into_iter().map(|((src, dst, port), (proto, total, errors))| {
+        let error_rate = if total > 0 { errors as f64 / total as f64 * 100.0 } else { 0.0 };
+        serde_json::json!({
+            "source": src, "destination": dst, "protocol": proto,
+            "port": port, "request_count": total, "error_rate": error_rate,
+        })
+    }).collect();
+
     Json(paginate_json(items, &params, "dependencies"))
 }
 
@@ -320,39 +418,93 @@ pub async fn list_security_findings(
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let findings = vec![
-        SecurityFinding { id: "sec-001".into(), category: "network_policy".into(), severity: "high".into(),
-            title: "Namespace without network policies".into(), description: "Namespace 'production' has no CiliumNetworkPolicy applied".into(),
-            resource: "namespace/production".into(), namespace: "production".into(),
-            remediation: "Apply default-deny ingress/egress policy".into(), status: "open".into() },
-        SecurityFinding { id: "sec-002".into(), category: "encryption".into(), severity: "medium".into(),
-            title: "Unencrypted pod-to-pod traffic".into(), description: "WireGuard encryption not enabled for inter-node traffic".into(),
-            resource: "ciliumconfig/cilium".into(), namespace: "kube-system".into(),
-            remediation: "Enable encryption.type=wireguard in Cilium Helm values".into(), status: "open".into() },
-        SecurityFinding { id: "sec-003".into(), category: "identity".into(), severity: "low".into(),
-            title: "Pods using default service account".into(), description: "12 pods in default namespace use default ServiceAccount".into(),
-            resource: "serviceaccount/default".into(), namespace: "default".into(),
-            remediation: "Create dedicated ServiceAccounts with RBAC bindings".into(), status: "acknowledged".into() },
-        SecurityFinding { id: "sec-004".into(), category: "least_privilege".into(), severity: "critical".into(),
-            title: "Allow-all egress policy detected".into(), description: "Policy 'legacy-allow-all' permits all egress from namespace default".into(),
-            resource: "ciliumnetworkpolicy/legacy-allow-all".into(), namespace: "default".into(),
-            remediation: "Replace with specific egress rules per service".into(), status: "open".into() },
-    ];
-    let items: Vec<_> = findings.into_iter().map(|f| serde_json::to_value(f).unwrap()).collect();
-    Json(paginate_json(items, &params, "findings"))
+
+    let mut findings = Vec::new();
+    let mut idx = 0;
+
+    // Check namespaces without policies
+    let policies = state.k8s.list_policies().await.unwrap_or_default();
+    let ns_with_policies: std::collections::HashSet<String> = policies.iter().map(|p| p.namespace.clone()).collect();
+
+    let ns_data = state.k8s.kubectl_json(&["get", "namespaces", "-o", "json"]).await;
+    if let Some(items) = ns_data.get("items").and_then(|v| v.as_array()) {
+        for item in items {
+            let name = item.get("metadata")
+                .and_then(|m| m.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if name.starts_with("kube-") || name == "cilium" { continue; }
+            if !ns_with_policies.contains(name) {
+                idx += 1;
+                findings.push(serde_json::json!({
+                    "id": format!("sec-{:03}", idx),
+                    "category": "network_policy",
+                    "severity": "high",
+                    "title": "Namespace without network policies",
+                    "description": format!("Namespace '{}' has no CiliumNetworkPolicy applied", name),
+                    "resource": format!("namespace/{}", name),
+                    "namespace": name,
+                    "remediation": "Apply default-deny ingress/egress policy",
+                    "status": "open",
+                }));
+            }
+        }
+    }
+
+    // Check for dropped flows indicating policy issues
+    let flows = state.hubble.get_flows(200, None).await.unwrap_or_default();
+    let drop_count = flows.iter().filter(|f| f.verdict == "DROPPED").count();
+    if drop_count > 0 {
+        idx += 1;
+        findings.push(serde_json::json!({
+            "id": format!("sec-{:03}", idx),
+            "category": "traffic_drops",
+            "severity": if drop_count > 50 { "critical" } else { "medium" },
+            "title": "Dropped traffic detected",
+            "description": format!("{} dropped flows observed in recent traffic", drop_count),
+            "resource": "hubble/flows",
+            "namespace": "",
+            "remediation": "Review dropped flows and add missing allow rules",
+            "status": "open",
+        }));
+    }
+
+    Json(paginate_json(findings, &params, "findings"))
 }
 
 pub async fn zero_trust_score(
     State(state): State<Arc<AppState>>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
+
+    // Compute real zero-trust scores from cluster state
+    let policies = state.k8s.list_policies().await.unwrap_or_default();
+    let ns_data = state.k8s.kubectl_json(&["get", "namespaces", "-o", "json"]).await;
+    let ns_count = ns_data.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(1);
+    let ns_with_policies: std::collections::HashSet<String> = policies.iter().map(|p| p.namespace.clone()).collect();
+
+    // Network segmentation: % of namespaces with policies
+    let segmentation = (ns_with_policies.len() as f64 / ns_count as f64 * 100.0).min(100.0) as u32;
+
+    // Identity verification: Cilium always uses identities (score based on identity count)
+    let id_data = state.k8s.kubectl_json(&["get", "ciliumidentities", "-o", "json"]).await;
+    let id_count = id_data.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+    let identity_score = if id_count > 0 { 80u32.min(50 + id_count as u32) } else { 20 };
+
+    // Monitoring: check if hubble is running
+    let hubble_ok = state.hubble.is_healthy().await;
+    let monitoring = if hubble_ok { 90 } else { 30 };
+
+    let overall = (segmentation + identity_score + monitoring) / 3;
+
     Json(serde_json::json!({
-        "overall": 68,
-        "network_segmentation": 75,
-        "identity_verification": 82,
-        "encryption": 45,
-        "least_privilege": 55,
-        "monitoring": 88
+        "overall": overall,
+        "network_segmentation": segmentation,
+        "identity_verification": identity_score,
+        "monitoring": monitoring,
+        "total_policies": policies.len(),
+        "total_namespaces": ns_count,
+        "total_identities": id_count,
     }))
 }
 

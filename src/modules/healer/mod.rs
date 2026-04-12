@@ -149,8 +149,9 @@ impl<M: MapReader> SelfHealer<M> {
 
         // Apply fixes (if auto_apply enabled and not dry_run)
         if self.config.auto_apply && !self.config.dry_run {
-            for fix in fixes {
+            for mut fix in fixes {
                 if self.apply_fix(&fix).await.is_ok() {
+                    fix.applied = true;
                     self.applied_fixes.push(fix);
                     stats.fixes_applied += 1;
                 }
@@ -488,8 +489,9 @@ impl SelfHealer<EnrichedMapReader> {
 
         // Apply fixes (if auto_apply enabled and not dry_run)
         if self.config.auto_apply && !self.config.dry_run {
-            for fix in fixes {
+            for mut fix in fixes {
                 if self.apply_fix(&fix).await.is_ok() {
+                    fix.applied = true;
                     self.applied_fixes.push(fix);
                     stats.fixes_applied += 1;
                 }

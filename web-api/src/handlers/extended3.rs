@@ -80,27 +80,29 @@ pub async fn forecast_data(
 
 pub async fn encryption_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
+
+    // Query Cilium ConfigMap for encryption settings
+    let cm = state.k8s.kubectl_json(&[
+        "get", "configmap", "cilium-config", "-n", "kube-system", "-o", "json",
+    ]).await;
+
+    let empty = serde_json::json!({});
+    let data = cm.get("data").unwrap_or(&empty);
+    let enc_type = data.get("encrypt-node").and_then(|v| v.as_str())
+        .or_else(|| data.get("encryption.type").and_then(|v| v.as_str()))
+        .unwrap_or("disabled")
+        .to_string();
+    let enabled = enc_type != "disabled" && !enc_type.is_empty();
+
+    // Count nodes
+    let nodes = state.k8s.kubectl_json(&["get", "nodes", "-o", "json"]).await;
+    let nodes_total = nodes.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+
     Json(serde_json::json!({
-        "enabled": true,
-        "type": "WireGuard",
-        "nodes_encrypted": 3,
-        "nodes_total": 3,
-        "interfaces": [
-            { "node": "cilium-node-1", "interface": "cilium_wg0", "public_key": "aB3dEfGhIjKlMnOpQrStUvWxYz0123456789abc=", "listen_port": 51871, "peer_count": 2 },
-            { "node": "cilium-node-2", "interface": "cilium_wg0", "public_key": "xY9wVuTsRqPoNmLkJiHgFeDcBa9876543210zyx=", "listen_port": 51871, "peer_count": 2 },
-            { "node": "cilium-node-3", "interface": "cilium_wg0", "public_key": "mN5oP6qR7sT8uV9wX0yZ1aB2cD3eF4gH5iJ6kL=", "listen_port": 51871, "peer_count": 2 }
-        ],
-        "key_rotation": {
-            "enabled": true,
-            "interval_hours": 24,
-            "last_rotation": "2026-04-03T02:00:00Z",
-            "next_rotation": "2026-04-04T02:00:00Z"
-        },
-        "stats": {
-            "bytes_encrypted": 984_532_100,
-            "bytes_decrypted": 756_210_400,
-            "handshakes_completed": 1842
-        }
+        "enabled": enabled,
+        "type": if enabled { &enc_type } else { "none" },
+        "nodes_total": nodes_total,
+        "config_source": "cilium-config ConfigMap",
     }))
 }
 
@@ -108,221 +110,191 @@ pub async fn encryption_status(State(state): State<Arc<AppState>>) -> Json<serde
 
 pub async fn lb_services(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "services": [
-            {
-                "id": "svc-001",
-                "name": "frontend-lb",
-                "namespace": "production",
-                "frontend": { "address": "10.96.0.10", "port": 80, "protocol": "TCP" },
-                "backends": [
-                    { "address": "10.244.1.15", "port": 8080, "weight": 50, "state": "active" },
-                    { "address": "10.244.2.22", "port": 8080, "weight": 30, "state": "active" },
-                    { "address": "10.244.3.8", "port": 8080, "weight": 20, "state": "active" }
-                ],
-                "algorithm": "weighted-round-robin",
-                "session_affinity": "none",
-                "active_connections": 342
-            },
-            {
-                "id": "svc-002",
-                "name": "api-gateway",
-                "namespace": "production",
-                "frontend": { "address": "10.96.0.20", "port": 443, "protocol": "TCP" },
-                "backends": [
-                    { "address": "10.244.1.30", "port": 9443, "weight": 50, "state": "active" },
-                    { "address": "10.244.2.31", "port": 9443, "weight": 50, "state": "active" }
-                ],
-                "algorithm": "round-robin",
-                "session_affinity": "client-ip",
-                "active_connections": 1205
-            },
-            {
-                "id": "svc-003",
-                "name": "grpc-backend",
-                "namespace": "staging",
-                "frontend": { "address": "10.96.0.35", "port": 9090, "protocol": "TCP" },
-                "backends": [
-                    { "address": "10.244.1.40", "port": 9090, "weight": 100, "state": "active" },
-                    { "address": "10.244.2.41", "port": 9090, "weight": 100, "state": "draining" }
-                ],
-                "algorithm": "maglev",
-                "session_affinity": "none",
-                "active_connections": 89
-            }
-        ]
-    }))
+
+    // Query real K8s Service resources of type LoadBalancer and ClusterIP
+    let data = state.k8s.kubectl_json(&[
+        "get", "services", "--all-namespaces", "-o", "json",
+    ]).await;
+
+    let services: Vec<serde_json::Value> = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter().map(|item| {
+                let meta = item.get("metadata").unwrap_or(item);
+                let spec = item.get("spec").unwrap_or(item);
+                let name = meta.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let ns = meta.get("namespace").and_then(|v| v.as_str()).unwrap_or("");
+                let svc_type = spec.get("type").and_then(|v| v.as_str()).unwrap_or("ClusterIP");
+                let cluster_ip = spec.get("clusterIP").and_then(|v| v.as_str()).unwrap_or("");
+                let ports: Vec<serde_json::Value> = spec
+                    .get("ports")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let session_affinity = spec.get("sessionAffinity").and_then(|v| v.as_str()).unwrap_or("None");
+
+                serde_json::json!({
+                    "name": name,
+                    "namespace": ns,
+                    "type": svc_type,
+                    "cluster_ip": cluster_ip,
+                    "ports": ports,
+                    "session_affinity": session_affinity,
+                })
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    let total = services.len();
+    Json(serde_json::json!({ "services": services, "total": total }))
 }
 
 // ── Ingress Routes ─────────────────────────────────────────
 
 pub async fn ingress_routes(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "routes": [
-            {
-                "id": "ing-001",
-                "name": "app-ingress",
-                "namespace": "production",
-                "host": "app.example.com",
-                "paths": [
-                    { "path": "/", "path_type": "Prefix", "backend_service": "frontend-lb", "backend_port": 80 },
-                    { "path": "/api", "path_type": "Prefix", "backend_service": "api-gateway", "backend_port": 443 }
-                ],
-                "tls": { "enabled": true, "secret": "app-tls-cert", "hosts": ["app.example.com"] },
-                "annotations": { "cilium.io/loadbalancer-mode": "shared" }
-            },
-            {
-                "id": "ing-002",
-                "name": "monitoring-ingress",
-                "namespace": "monitoring",
-                "host": "grafana.internal.example.com",
-                "paths": [
-                    { "path": "/", "path_type": "Prefix", "backend_service": "grafana", "backend_port": 3000 }
-                ],
-                "tls": { "enabled": true, "secret": "monitoring-tls", "hosts": ["grafana.internal.example.com"] },
-                "annotations": { "cilium.io/loadbalancer-mode": "dedicated" }
-            },
-            {
-                "id": "ing-003",
-                "name": "dev-ingress",
-                "namespace": "staging",
-                "host": "dev.example.com",
-                "paths": [
-                    { "path": "/", "path_type": "Prefix", "backend_service": "dev-app", "backend_port": 8080 }
-                ],
-                "tls": { "enabled": false },
-                "annotations": {}
-            }
-        ]
-    }))
+
+    let data = state.k8s.kubectl_json(&[
+        "get", "ingress", "--all-namespaces", "-o", "json",
+    ]).await;
+
+    let routes: Vec<serde_json::Value> = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter().map(|item| {
+                let meta = item.get("metadata").unwrap_or(item);
+                let spec = item.get("spec").unwrap_or(item);
+                let tls = spec.get("tls").cloned().unwrap_or(serde_json::json!([]));
+                let rules = spec.get("rules").cloned().unwrap_or(serde_json::json!([]));
+
+                serde_json::json!({
+                    "name": meta.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                    "namespace": meta.get("namespace").and_then(|v| v.as_str()).unwrap_or(""),
+                    "rules": rules,
+                    "tls": tls,
+                    "created_at": meta.get("creationTimestamp").and_then(|v| v.as_str()).unwrap_or(""),
+                })
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    let total = routes.len();
+    Json(serde_json::json!({ "routes": routes, "total": total }))
 }
 
 // ── IPAM Pools ─────────────────────────────────────────────
 
 pub async fn ipam_pools(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "pools": [
-            { "name": "default-pool", "cidr": "10.244.0.0/16", "allocated": 482, "available": 65054, "total": 65536, "utilization": "0.7%" },
-            { "name": "host-scope", "cidr": "10.0.0.0/24", "allocated": 3, "available": 253, "total": 256, "utilization": "1.2%" },
-            { "name": "external-pool", "cidr": "192.168.100.0/24", "allocated": 28, "available": 228, "total": 256, "utilization": "10.9%" }
-        ]
-    }))
+
+    // Query CiliumNode resources for IPAM pool info
+    let data = state.k8s.kubectl_json(&[
+        "get", "ciliumnodes", "-o", "json",
+    ]).await;
+
+    let pools: Vec<serde_json::Value> = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter().filter_map(|item| {
+                let meta = item.get("metadata")?;
+                let spec = item.get("spec")?;
+                let ipam = spec.get("ipam")?;
+                let name = meta.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let cidrs: Vec<String> = ipam.get("podCIDRs")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                Some(serde_json::json!({
+                    "node": name,
+                    "pod_cidrs": cidrs,
+                    "ipam": ipam,
+                }))
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    Json(serde_json::json!({ "pools": pools, "total": pools.len() }))
 }
 
 // ── IP Allocations ─────────────────────────────────────────
 
 pub async fn ip_allocations(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "allocations": [
-            { "ip": "10.244.1.15", "pod": "frontend-7b9d5c8f4-xk2lm", "namespace": "production", "node": "cilium-node-1", "pool": "default-pool", "allocated_at": "2026-04-02T10:15:00Z" },
-            { "ip": "10.244.1.30", "pod": "api-gateway-5c8d7f2a1-nq9rp", "namespace": "production", "node": "cilium-node-1", "pool": "default-pool", "allocated_at": "2026-04-02T10:16:00Z" },
-            { "ip": "10.244.2.22", "pod": "frontend-7b9d5c8f4-ht3mv", "namespace": "production", "node": "cilium-node-2", "pool": "default-pool", "allocated_at": "2026-04-02T10:15:30Z" },
-            { "ip": "10.244.2.31", "pod": "api-gateway-5c8d7f2a1-ws4jk", "namespace": "production", "node": "cilium-node-2", "pool": "default-pool", "allocated_at": "2026-04-02T10:16:15Z" },
-            { "ip": "10.244.3.8", "pod": "frontend-7b9d5c8f4-bc7zn", "namespace": "production", "node": "cilium-node-3", "pool": "default-pool", "allocated_at": "2026-04-02T10:15:45Z" },
-            { "ip": "10.244.1.40", "pod": "grpc-backend-6a4e9c1d3-pl2qr", "namespace": "staging", "node": "cilium-node-1", "pool": "default-pool", "allocated_at": "2026-04-02T11:00:00Z" }
-        ]
-    }))
+
+    // Get pod IPs from running pods
+    let data = state.k8s.kubectl_json(&[
+        "get", "pods", "--all-namespaces", "-o", "json",
+    ]).await;
+
+    let allocations: Vec<serde_json::Value> = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter().filter_map(|item| {
+                let meta = item.get("metadata")?;
+                let status = item.get("status")?;
+                let pod_ip = status.get("podIP").and_then(|v| v.as_str())?;
+                if pod_ip.is_empty() { return None; }
+                Some(serde_json::json!({
+                    "ip": pod_ip,
+                    "pod": meta.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                    "namespace": meta.get("namespace").and_then(|v| v.as_str()).unwrap_or(""),
+                    "node": status.get("hostIP").and_then(|v| v.as_str()).unwrap_or(""),
+                    "phase": status.get("phase").and_then(|v| v.as_str()).unwrap_or("Unknown"),
+                }))
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    let total = allocations.len();
+    Json(serde_json::json!({ "allocations": allocations, "total": total }))
 }
 
 // ── Latency Analysis ───────────────────────────────────────
 
 pub async fn latency_analysis(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "services": [
-            {
-                "service": "api-gateway",
-                "namespace": "production",
-                "p50_ms": 12.4,
-                "p90_ms": 28.7,
-                "p95_ms": 45.2,
-                "p99_ms": 120.8,
-                "max_ms": 350.0,
-                "sample_count": 54200,
-                "histogram": [
-                    { "bucket": "0-5ms", "count": 8200 },
-                    { "bucket": "5-10ms", "count": 15800 },
-                    { "bucket": "10-25ms", "count": 18400 },
-                    { "bucket": "25-50ms", "count": 7200 },
-                    { "bucket": "50-100ms", "count": 3100 },
-                    { "bucket": "100-250ms", "count": 1200 },
-                    { "bucket": "250ms+", "count": 300 }
-                ]
-            },
-            {
-                "service": "frontend",
-                "namespace": "production",
-                "p50_ms": 4.2,
-                "p90_ms": 8.5,
-                "p95_ms": 12.1,
-                "p99_ms": 25.3,
-                "max_ms": 85.0,
-                "sample_count": 128500,
-                "histogram": [
-                    { "bucket": "0-5ms", "count": 72000 },
-                    { "bucket": "5-10ms", "count": 38200 },
-                    { "bucket": "10-25ms", "count": 14800 },
-                    { "bucket": "25-50ms", "count": 2800 },
-                    { "bucket": "50-100ms", "count": 700 },
-                    { "bucket": "100-250ms", "count": 0 },
-                    { "bucket": "250ms+", "count": 0 }
-                ]
-            },
-            {
-                "service": "grpc-backend",
-                "namespace": "staging",
-                "p50_ms": 2.1,
-                "p90_ms": 5.8,
-                "p95_ms": 8.9,
-                "p99_ms": 18.4,
-                "max_ms": 62.0,
-                "sample_count": 32100,
-                "histogram": [
-                    { "bucket": "0-5ms", "count": 22400 },
-                    { "bucket": "5-10ms", "count": 7200 },
-                    { "bucket": "10-25ms", "count": 2000 },
-                    { "bucket": "25-50ms", "count": 400 },
-                    { "bucket": "50-100ms", "count": 100 },
-                    { "bucket": "100-250ms", "count": 0 },
-                    { "bucket": "250ms+", "count": 0 }
-                ]
-            }
-        ],
-        "measurement_window": "1h"
-    }))
+
+    // Derive per-service traffic volume from Hubble flows
+    // Note: L4 flows don't include latency; we report flow counts as a traffic volume proxy
+    let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
+
+    let mut svc_flows: std::collections::HashMap<(String, String), (u64, u64)> = std::collections::HashMap::new();
+    for flow in &flows {
+        let svc = if !flow.destination.pod.is_empty() {
+            flow.destination.pod.split('-').take(2).collect::<Vec<_>>().join("-")
+        } else { continue; };
+        let ns = if flow.destination.namespace.is_empty() { "unknown" } else { &flow.destination.namespace };
+        let entry = svc_flows.entry((svc, ns.to_string())).or_default();
+        entry.0 += 1; // total
+        if flow.verdict == "DROPPED" { entry.1 += 1; } // errors
+    }
+
+    let services: Vec<serde_json::Value> = svc_flows.into_iter().map(|((svc, ns), (total, errors))| {
+        serde_json::json!({
+            "service": svc,
+            "namespace": ns,
+            "sample_count": total,
+            "error_count": errors,
+            "error_rate": if total > 0 { errors as f64 / total as f64 * 100.0 } else { 0.0 },
+            "note": "Latency requires L7/Prometheus metrics; showing flow volume",
+        })
+    }).collect();
+
+    Json(serde_json::json!({ "services": services, "source": "hubble L4 flow counts" }))
 }
 
 // ── Traffic Mirror Rules ───────────────────────────────────
 
+const MIRROR_RULES_PREFIX: &str = "cv:mirror_rules:";
+
 pub async fn mirror_rules(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "rules": [
-            {
-                "id": "mirror-001",
-                "name": "production-tap",
-                "source": { "namespace": "production", "labels": { "app": "api-gateway" } },
-                "destination": { "namespace": "monitoring", "service": "traffic-analyzer", "port": 9999 },
-                "filter": { "protocols": ["TCP"], "ports": [80, 443] },
-                "sampling_rate": 0.1,
-                "enabled": true,
-                "created_at": "2026-03-28T09:00:00Z"
-            },
-            {
-                "id": "mirror-002",
-                "name": "security-audit",
-                "source": { "namespace": "default", "labels": {} },
-                "destination": { "namespace": "security", "service": "packet-capture", "port": 8443 },
-                "filter": { "protocols": ["TCP", "UDP"], "ports": [] },
-                "sampling_rate": 0.01,
-                "enabled": true,
-                "created_at": "2026-04-01T14:30:00Z"
-            }
-        ]
-    }))
+    let items = state.cache.list_values(MIRROR_RULES_PREFIX).await.unwrap_or_default();
+    Json(serde_json::json!({ "rules": items, "total": items.len() }))
 }
 
 pub async fn create_mirror_rule(
@@ -332,12 +304,20 @@ pub async fn create_mirror_rule(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    let name = &body.name;
+
+    let id = format!("mirror-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("000"));
+    let rule = serde_json::json!({
+        "id": id,
+        "name": body.name,
+        "enabled": true,
+        "created_at": chrono::Utc::now().to_rfc3339(),
+    });
+    let _ = state.cache.set_persistent(&format!("{}{}", MIRROR_RULES_PREFIX, id), &rule).await;
+
     Ok(Json(serde_json::json!({
-        "id": "mirror-003",
-        "name": name,
+        "id": id,
         "status": "created",
-        "message": "Mirror rule created successfully"
+        "message": "Mirror rule created",
     })))
 }
 
@@ -348,10 +328,12 @@ pub async fn delete_mirror_rule(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
+
+    let _ = state.cache.delete(&format!("{}{}", MIRROR_RULES_PREFIX, id)).await;
     Ok(Json(serde_json::json!({
         "id": id,
         "status": "deleted",
-        "message": "Mirror rule deleted successfully"
+        "message": "Mirror rule deleted"
     })))
 }
 
@@ -359,142 +341,177 @@ pub async fn delete_mirror_rule(
 
 pub async fn cluster_health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
+
+    // Query real component statuses
+    let cilium_pods = state.k8s.kubectl_json(&[
+        "get", "pods", "-n", "kube-system", "-l", "k8s-app=cilium", "-o", "json",
+    ]).await;
+
+    let components: Vec<serde_json::Value> = {
+        let mut comps = Vec::new();
+        // Check cilium agents
+        let agents = cilium_pods.get("items").and_then(|v| v.as_array());
+        let (total, ready) = agents.map(|arr| {
+            let t = arr.len();
+            let r = arr.iter().filter(|p| {
+                p.get("status")
+                    .and_then(|s| s.get("containerStatuses"))
+                    .and_then(|v| v.as_array())
+                    .map(|cs| cs.iter().all(|c| c.get("ready").and_then(|v| v.as_bool()).unwrap_or(false)))
+                    .unwrap_or(false)
+            }).count();
+            (t, r)
+        }).unwrap_or((0, 0));
+
+        comps.push(serde_json::json!({
+            "name": "cilium-agent",
+            "status": if total == ready && total > 0 { "healthy" } else { "degraded" },
+            "instances": total,
+            "ready": ready,
+        }));
+
+        // Check hubble-relay
+        let relay = state.k8s.kubectl_json(&[
+            "get", "pods", "-n", "kube-system", "-l", "k8s-app=hubble-relay", "-o", "json",
+        ]).await;
+        let relay_items = relay.get("items").and_then(|v| v.as_array());
+        let (rt, rr) = relay_items.map(|arr| (arr.len(), arr.iter().filter(|p| {
+            p.get("status").and_then(|s| s.get("phase")).and_then(|v| v.as_str()) == Some("Running")
+        }).count())).unwrap_or((0, 0));
+        comps.push(serde_json::json!({
+            "name": "hubble-relay", "instances": rt, "ready": rr,
+            "status": if rt == rr && rt > 0 { "healthy" } else if rt > 0 { "degraded" } else { "not_found" },
+        }));
+
+        comps
+    };
+
+    // K8s health
+    let k8s_healthy = state.k8s.is_healthy().await;
+
+    // Node status
+    let nodes = state.k8s.kubectl_json(&["get", "nodes", "-o", "json"]).await;
+    let node_items = nodes.get("items").and_then(|v| v.as_array());
+    let nodes_total = node_items.map(|a| a.len()).unwrap_or(0);
+    let nodes_ready = node_items.map(|arr| {
+        arr.iter().filter(|n| {
+            n.get("status").and_then(|s| s.get("conditions")).and_then(|v| v.as_array())
+                .and_then(|conds| conds.iter().find(|c| c.get("type").and_then(|v| v.as_str()) == Some("Ready")))
+                .and_then(|c| c.get("status")).and_then(|v| v.as_str()) == Some("True")
+        }).count()
+    }).unwrap_or(0);
+
+    let overall = if nodes_ready == nodes_total && nodes_total > 0 && k8s_healthy { "healthy" } else { "degraded" };
+
     Json(serde_json::json!({
-        "status": "healthy",
-        "components": [
-            { "name": "cilium-agent", "status": "healthy", "version": "1.16.1", "instances": 3, "ready": 3, "message": "All agents running" },
-            { "name": "hubble-relay", "status": "healthy", "version": "1.16.1", "instances": 1, "ready": 1, "message": "Relay connected to all agents" },
-            { "name": "hubble-ui", "status": "healthy", "version": "0.13.0", "instances": 1, "ready": 1, "message": "UI available" },
-            { "name": "cilium-operator", "status": "healthy", "version": "1.16.1", "instances": 2, "ready": 2, "message": "Leader election active" },
-            { "name": "clustermesh-apiserver", "status": "healthy", "version": "1.16.1", "instances": 1, "ready": 1, "message": "Serving 0 remote clusters" }
-        ],
+        "status": overall,
+        "components": components,
         "kubernetes": {
-            "version": "v1.30.2",
-            "platform": "EKS",
-            "nodes_total": 3,
-            "nodes_ready": 3,
-            "pods_total": 142,
-            "pods_running": 138,
-            "pods_pending": 2,
-            "pods_failed": 2
+            "healthy": k8s_healthy,
+            "nodes_total": nodes_total,
+            "nodes_ready": nodes_ready,
         },
-        "cilium": {
-            "version": "1.16.1",
-            "datapath_mode": "vxlan",
-            "ipam_mode": "cluster-pool",
-            "kube_proxy_replacement": "true",
-            "host_routing": "BPF",
-            "masquerading": "BPF",
-            "encryption": "WireGuard"
-        },
-        "last_check": "2026-04-03T12:00:00Z"
+        "last_check": chrono::Utc::now().to_rfc3339(),
     }))
 }
 
 // ── RBAC Bindings ──────────────────────────────────────────
 
-pub async fn rbac_bindings(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn rbac_bindings(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "bindings": [
-            {
-                "id": "rb-001",
-                "name": "cilium-admin",
-                "type": "ClusterRoleBinding",
-                "subjects": [
-                    { "kind": "ServiceAccount", "name": "cilium", "namespace": "kube-system" }
-                ],
-                "role": "cilium-admin",
-                "permissions": ["get", "list", "watch", "create", "update", "delete"],
-                "resources": ["ciliumnetworkpolicies", "ciliumendpoints", "ciliumnodes", "ciliumidentities"],
-                "created_at": "2026-03-01T00:00:00Z"
-            },
-            {
-                "id": "rb-002",
-                "name": "hubble-relay",
-                "type": "ClusterRoleBinding",
-                "subjects": [
-                    { "kind": "ServiceAccount", "name": "hubble-relay", "namespace": "kube-system" }
-                ],
-                "role": "hubble-relay",
-                "permissions": ["get", "list", "watch"],
-                "resources": ["pods", "namespaces", "services"],
-                "created_at": "2026-03-01T00:00:00Z"
-            },
-            {
-                "id": "rb-003",
-                "name": "network-viewer",
-                "type": "ClusterRoleBinding",
-                "subjects": [
-                    { "kind": "Group", "name": "network-ops", "namespace": "" }
-                ],
-                "role": "network-viewer",
-                "permissions": ["get", "list", "watch"],
-                "resources": ["ciliumnetworkpolicies", "services", "endpoints", "pods"],
-                "created_at": "2026-03-15T10:00:00Z"
-            }
-        ]
-    }))
+
+    let data = state.k8s.kubectl_json(&[
+        "get", "clusterrolebindings", "-o", "json",
+        "-l", "app.kubernetes.io/part-of=cilium",
+    ]).await;
+
+    let bindings: Vec<serde_json::Value> = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter().map(|item| {
+                let meta = item.get("metadata").unwrap_or(item);
+                let role_ref = item.get("roleRef").unwrap_or(item);
+                let subjects: Vec<serde_json::Value> = item
+                    .get("subjects")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                serde_json::json!({
+                    "name": meta.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                    "type": "ClusterRoleBinding",
+                    "role": role_ref.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                    "role_kind": role_ref.get("kind").and_then(|v| v.as_str()).unwrap_or(""),
+                    "subjects": subjects,
+                    "created_at": meta.get("creationTimestamp").and_then(|v| v.as_str()).unwrap_or(""),
+                })
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    // If no cilium-specific bindings found, get all
+    if bindings.is_empty() {
+        let all_data = state.k8s.kubectl_json(&[
+            "get", "clusterrolebindings", "-o", "json",
+        ]).await;
+        let all_bindings: Vec<serde_json::Value> = all_data
+            .get("items")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items.iter().take(20).map(|item| {
+                    let meta = item.get("metadata").unwrap_or(item);
+                    let role_ref = item.get("roleRef").unwrap_or(item);
+                    serde_json::json!({
+                        "name": meta.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                        "type": "ClusterRoleBinding",
+                        "role": role_ref.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                    })
+                }).collect()
+            })
+            .unwrap_or_default();
+        return Ok(Json(serde_json::json!({ "bindings": all_bindings, "total": all_bindings.len() })));
+    }
+
+    let total = bindings.len();
+    Ok(Json(serde_json::json!({ "bindings": bindings, "total": total })))
 }
 
 // ── Network Interfaces ─────────────────────────────────────
 
-pub async fn net_interfaces(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+pub async fn net_interfaces(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Json(serde_json::json!({
-        "interfaces": [
-            {
-                "name": "eth0",
-                "node": "cilium-node-1",
-                "type": "physical",
-                "mac": "02:42:0a:00:01:05",
-                "mtu": 1500,
-                "state": "up",
-                "addresses": ["10.0.1.5/24"],
-                "stats": { "rx_bytes": 48_920_345_600_i64, "tx_bytes": 32_108_765_400_i64, "rx_packets": 34_521_000, "tx_packets": 28_415_000, "rx_errors": 0, "tx_errors": 0, "rx_dropped": 12, "tx_dropped": 0 }
-            },
-            {
-                "name": "cilium_host",
-                "node": "cilium-node-1",
-                "type": "virtual",
-                "mac": "3e:9a:1c:ff:00:01",
-                "mtu": 1500,
-                "state": "up",
-                "addresses": ["10.244.0.1/32"],
-                "stats": { "rx_bytes": 12_450_200_000_i64, "tx_bytes": 10_280_100_000_i64, "rx_packets": 9_820_000, "tx_packets": 8_540_000, "rx_errors": 0, "tx_errors": 0, "rx_dropped": 0, "tx_dropped": 0 }
-            },
-            {
-                "name": "cilium_vxlan",
-                "node": "cilium-node-1",
-                "type": "vxlan",
-                "mac": "a2:b4:c6:d8:e0:f2",
-                "mtu": 1450,
-                "state": "up",
-                "addresses": ["10.244.0.1/32"],
-                "stats": { "rx_bytes": 8_320_500_000_i64, "tx_bytes": 7_150_300_000_i64, "rx_packets": 6_240_000, "tx_packets": 5_380_000, "rx_errors": 0, "tx_errors": 0, "rx_dropped": 3, "tx_dropped": 0 }
-            },
-            {
-                "name": "cilium_wg0",
-                "node": "cilium-node-1",
-                "type": "wireguard",
-                "mac": "00:00:00:00:00:00",
-                "mtu": 1420,
-                "state": "up",
-                "addresses": [],
-                "stats": { "rx_bytes": 984_532_100, "tx_bytes": 756_210_400, "rx_packets": 1_240_000, "tx_packets": 980_000, "rx_errors": 0, "tx_errors": 0, "rx_dropped": 0, "tx_dropped": 0 }
-            },
-            {
-                "name": "lxc_health",
-                "node": "cilium-node-1",
-                "type": "veth",
-                "mac": "fe:ed:ca:fe:00:01",
-                "mtu": 1500,
-                "state": "up",
-                "addresses": ["10.244.0.2/32"],
-                "stats": { "rx_bytes": 125_400, "tx_bytes": 98_200, "rx_packets": 1420, "tx_packets": 1180, "rx_errors": 0, "tx_errors": 0, "rx_dropped": 0, "tx_dropped": 0 }
-            }
-        ]
-    }))
+
+    // Get network interfaces from local system via /proc/net/dev
+    use crate::services::k8s::K8sService;
+    let proc_net = K8sService::run_cmd("sh", &["-c", "cat /proc/net/dev"]).await;
+
+    let mut interfaces = Vec::new();
+    for line in proc_net.lines().skip(2) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 11 { continue; }
+        let name = parts[0].trim_end_matches(':');
+        interfaces.push(serde_json::json!({
+            "name": name,
+            "rx_bytes": parts[1].parse::<u64>().unwrap_or(0),
+            "rx_packets": parts[2].parse::<u64>().unwrap_or(0),
+            "rx_errors": parts[3].parse::<u64>().unwrap_or(0),
+            "rx_dropped": parts[4].parse::<u64>().unwrap_or(0),
+            "tx_bytes": parts[9].parse::<u64>().unwrap_or(0),
+            "tx_packets": parts[10].parse::<u64>().unwrap_or(0),
+            "tx_errors": parts.get(11).and_then(|s| s.parse::<u64>().ok()).unwrap_or(0),
+            "tx_dropped": parts.get(12).and_then(|s| s.parse::<u64>().ok()).unwrap_or(0),
+        }));
+    }
+
+    Ok(Json(serde_json::json!({ "interfaces": interfaces, "total": interfaces.len(), "source": "local /proc/net/dev" })))
 }
 
 // ── Troubleshoot ───────────────────────────────────────────
@@ -507,29 +524,75 @@ pub async fn run_troubleshoot(
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let target = &body.target;
+
+    use crate::services::k8s::K8sService;
+    let mut steps = Vec::new();
+    let mut passed = 0u32;
+    let mut warnings = 0u32;
+    let mut failed = 0u32;
+
+    // Step 1: K8s API
+    let k8s_ok = state.k8s.is_healthy().await;
+    if k8s_ok { passed += 1; } else { failed += 1; }
+    steps.push(serde_json::json!({
+        "step": 1, "name": "Kubernetes API", "status": if k8s_ok { "pass" } else { "fail" },
+        "output": if k8s_ok { "API server reachable" } else { "API server unreachable" },
+    }));
+
+    // Step 2: Cilium agents
+    let agent_pods = state.k8s.kubectl_json(&["get", "pods", "-n", "kube-system", "-l", "k8s-app=cilium", "-o", "json"]).await;
+    let agent_count = agent_pods.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+    if agent_count > 0 { passed += 1; } else { failed += 1; }
+    steps.push(serde_json::json!({
+        "step": 2, "name": "Cilium Agents", "status": if agent_count > 0 { "pass" } else { "fail" },
+        "output": format!("{} cilium agent pods found", agent_count),
+    }));
+
+    // Step 3: Hubble
+    let hubble_ok = state.hubble.is_healthy().await;
+    if hubble_ok { passed += 1; } else { warnings += 1; }
+    steps.push(serde_json::json!({
+        "step": 3, "name": "Hubble Relay", "status": if hubble_ok { "pass" } else { "warn" },
+        "output": if hubble_ok { format!("Connected to {}", state.hubble.address()) } else { "Relay unreachable".to_string() },
+    }));
+
+    // Step 4: Network policies
+    let policies = state.k8s.list_policies().await.unwrap_or_default();
+    if !policies.is_empty() { passed += 1; } else { warnings += 1; }
+    steps.push(serde_json::json!({
+        "step": 4, "name": "Network Policies", "status": if !policies.is_empty() { "pass" } else { "warn" },
+        "output": format!("{} CiliumNetworkPolicies active", policies.len()),
+    }));
+
+    // Step 5: BPF filesystem
+    let bpf_mount = K8sService::run_cmd("sh", &["-c", "mountpoint -q /sys/fs/bpf && echo yes || echo no"]).await;
+    let bpf_ok = bpf_mount.trim() == "yes";
+    if bpf_ok { passed += 1; } else { warnings += 1; }
+    steps.push(serde_json::json!({
+        "step": 5, "name": "BPF Filesystem", "status": if bpf_ok { "pass" } else { "warn" },
+        "output": if bpf_ok { "/sys/fs/bpf mounted" } else { "/sys/fs/bpf not available" },
+    }));
+
+    // Step 6: Flows check
+    let flows = state.hubble.get_flows(100, None).await.unwrap_or_default();
+    let drops = flows.iter().filter(|f| f.verdict == "DROPPED").count();
+    if drops == 0 { passed += 1; } else { warnings += 1; }
+    steps.push(serde_json::json!({
+        "step": 6, "name": "Recent Traffic Health", "status": if drops == 0 { "pass" } else { "warn" },
+        "output": format!("{} flows observed, {} drops", flows.len(), drops),
+    }));
+
+    let total_steps = steps.len() as u32;
     Ok(Json(serde_json::json!({
         "target": target,
-        "started_at": "2026-04-03T12:05:00Z",
-        "completed_at": "2026-04-03T12:05:12Z",
+        "started_at": chrono::Utc::now().to_rfc3339(),
         "status": "completed",
-        "steps": [
-            { "step": 1, "name": "Check Cilium Agent Status", "status": "pass", "output": "All 3 agents healthy and running v1.16.1", "duration_ms": 450 },
-            { "step": 2, "name": "Verify BPF Programs", "status": "pass", "output": "82 BPF programs loaded, all valid", "duration_ms": 1200 },
-            { "step": 3, "name": "Test Pod Connectivity", "status": "pass", "output": "Intra-node: 0.5ms, Cross-node: 1.8ms", "duration_ms": 3200 },
-            { "step": 4, "name": "Validate Network Policies", "status": "pass", "output": "24 policies loaded, 0 errors, 0 conflicts", "duration_ms": 800 },
-            { "step": 5, "name": "Check Service Resolution", "status": "pass", "output": "All 42 services resolving correctly via kube-proxy replacement", "duration_ms": 1500 },
-            { "step": 6, "name": "Verify Encryption", "status": "pass", "output": "WireGuard active on all nodes, 6 peer connections established", "duration_ms": 600 },
-            { "step": 7, "name": "Inspect Hubble Flows", "status": "pass", "output": "Flow observation active, 2450 flows/sec average", "duration_ms": 900 },
-            { "step": 8, "name": "Check Resource Usage", "status": "warn", "output": "cilium-agent memory usage at 78% of limit (1.2Gi/1.5Gi)", "duration_ms": 350 },
-            { "step": 9, "name": "Validate IPAM", "status": "pass", "output": "482/65536 IPs allocated, no exhaustion risk", "duration_ms": 200 },
-            { "step": 10, "name": "DNS Proxy Health", "status": "pass", "output": "DNS proxy handling 120 queries/sec, avg latency 2.1ms", "duration_ms": 400 }
-        ],
+        "steps": steps,
         "summary": {
-            "total_steps": 10,
-            "passed": 9,
-            "warnings": 1,
-            "failed": 0,
-            "recommendation": "Consider increasing cilium-agent memory limit from 1.5Gi to 2Gi"
+            "total_steps": total_steps,
+            "passed": passed,
+            "warnings": warnings,
+            "failed": failed,
         }
     })))
 }

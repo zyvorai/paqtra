@@ -325,10 +325,10 @@ spec:
         namespace: "default".to_string(),
     };
 
-    // MockMapReader provides conntrack data, simulate should complete
+    // MockMapReader provides conntrack data, simulate should complete successfully
     let result = sim.simulate(scenario).await.unwrap();
-    // simulation_time_ms is u64, so just verify it exists
-    let _ = result.details.simulation_time_ms;
+    // Verify the simulation produced meaningful output
+    assert!(!result.details.flow_results.is_empty(), "Simulation should produce flow results");
 }
 
 #[tokio::test]

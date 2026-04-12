@@ -114,8 +114,10 @@ pub struct CanaryMetrics {
 
 pub async fn generate_autopolicy(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(req): Json<GenerateAutopolicyRequest>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     let namespace = &req.namespace;

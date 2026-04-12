@@ -95,8 +95,20 @@ impl RecordingStorage {
         Ok(flows)
     }
 
+    /// Maximum file size to load (256 MB)
+    const MAX_LOAD_SIZE: u64 = 256 * 1024 * 1024;
+
     /// Load uncompressed
     fn load_uncompressed(&self, file_path: &Path) -> Result<Vec<RecordedFlow>> {
+        let metadata = std::fs::metadata(file_path)?;
+        if metadata.len() > Self::MAX_LOAD_SIZE {
+            anyhow::bail!(
+                "Recording file too large ({} bytes, max {})",
+                metadata.len(),
+                Self::MAX_LOAD_SIZE
+            );
+        }
+
         let file = File::open(file_path)?;
         let reader = BufReader::new(file);
 
@@ -110,6 +122,15 @@ impl RecordingStorage {
         use flate2::read::GzDecoder;
 
         let file_path_gz = file_path.with_extension("json.gz");
+        let metadata = std::fs::metadata(&file_path_gz)?;
+        if metadata.len() > Self::MAX_LOAD_SIZE {
+            anyhow::bail!(
+                "Compressed recording file too large ({} bytes, max {})",
+                metadata.len(),
+                Self::MAX_LOAD_SIZE
+            );
+        }
+
         let file = File::open(&file_path_gz)?;
         let decoder = GzDecoder::new(file);
         let reader = BufReader::new(decoder);

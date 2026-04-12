@@ -237,8 +237,12 @@ fn sample_findings(framework: &str) -> Vec<AuditFinding> {
 
 pub async fn run_audit(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(req): Json<RunAuditRequest>,
 ) -> Result<Json<Value>, StatusCode> {
+    if super::check_admin(&state, &claims).is_err() {
+        return Err(StatusCode::FORBIDDEN);
+    }
     track_request(&state, |_| {}).await;
 
     let framework = &req.framework;
@@ -273,42 +277,64 @@ pub async fn run_audit(
 
 pub async fn security_posture(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
 ) -> Result<Json<Value>, StatusCode> {
+    if super::check_admin(&state, &claims).is_err() {
+        return Err(StatusCode::FORBIDDEN);
+    }
     track_request(&state, |_| {}).await;
 
+    // Query real cluster state for posture calculation
+    let ns_data = state.k8s.list_policies().await.unwrap_or_default();
+    let policies_count = ns_data.len();
+
+    // Get namespace count
+    let ns_json = state.k8s.kubectl_json(&["get", "namespaces", "-o", "json"]).await;
+    let namespaces_total = ns_json.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+
+    // Find namespaces with policies
+    let ns_with_policies: std::collections::HashSet<String> = ns_data.iter().map(|p| p.namespace.clone()).collect();
+    let all_ns: Vec<String> = ns_json.get("items").and_then(|v| v.as_array())
+        .map(|items| items.iter()
+            .filter_map(|i| i.get("metadata").and_then(|m| m.get("name")).and_then(|v| v.as_str()).map(String::from))
+            .collect())
+        .unwrap_or_default();
+    let ns_without: Vec<&str> = all_ns.iter()
+        .filter(|ns| !ns_with_policies.contains(ns.as_str()) && !ns.starts_with("kube-"))
+        .map(|s| s.as_str())
+        .collect();
+
+    let policy_coverage = if namespaces_total > 0 {
+        ((namespaces_total - ns_without.len()) as f64 / namespaces_total as f64 * 100.0 * 10.0).round() / 10.0
+    } else { 0.0 };
+
+    let score = policy_coverage; // Score reflects actual policy coverage percentage
+
     let posture = SecurityPosture {
-        score: 78.5,
-        trend: "improving".to_string(),
-        policy_coverage: 85.2,
-        encryption_coverage: 100.0,
-        namespace_isolation: 72.0,
-        last_audit: Some("2025-06-15T08:00:00Z".to_string()),
+        score,
+        trend: "current".to_string(),
+        policy_coverage,
+        encryption_coverage: 0.0,
+        namespace_isolation: policy_coverage,
+        last_audit: Some(chrono::Utc::now().to_rfc3339()),
     };
+
+    let mut recommendations = Vec::new();
+    if !ns_without.is_empty() {
+        recommendations.push(format!("Apply network policies to namespaces: {}", ns_without.join(", ")));
+    }
+    if policies_count == 0 {
+        recommendations.push("No CiliumNetworkPolicies found -- create least-privilege policies".to_string());
+    }
 
     Ok(Json(json!({
         "posture": to_json(&posture),
         "breakdown": {
-            "namespaces_total": 12,
-            "namespaces_with_default_deny": 9,
-            "namespaces_without_policies": ["dev", "sandbox", "load-test"],
-            "pods_total": 147,
-            "pods_with_cilium_identity": 143,
-            "pods_without_network_policy": 18,
-            "encryption": {
-                "wireguard_enabled": true,
-                "node_to_node": "encrypted",
-                "pod_to_pod": "encrypted",
-                "unencrypted_flows_24h": 0
-            },
-            "cilium_version": "1.15.4",
-            "hubble_enabled": true,
-            "hubble_relay_healthy": true
+            "namespaces_total": namespaces_total,
+            "namespaces_with_policies": ns_with_policies.len(),
+            "namespaces_without_policies": ns_without,
+            "total_policies": policies_count,
         },
-        "recommendations": [
-            "Apply default-deny ingress policies to namespaces: dev, sandbox, load-test",
-            "18 pods lack explicit network policies -- review and apply least-privilege rules",
-            "Increase Hubble flow-log retention from 1 hour to 90 days for compliance",
-            "Enable L7 visibility on api-gateway to detect application-layer threats"
-        ]
+        "recommendations": recommendations,
     })))
 }

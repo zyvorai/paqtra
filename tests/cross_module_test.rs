@@ -71,14 +71,17 @@ async fn test_rootcause_and_healer_consistent_run_on_mock() {
 
     // Run healer
     let mut healer = SelfHealer::new(HealerConfig::default(), MockMapReader, k8s.clone());
-    let _healer_stats = healer.run().await.unwrap();
+    let healer_stats = healer.run().await.unwrap();
 
     // Run rootcause analysis
     let mut rootcause = RootCauseEngine::new(RootCauseConfig::default(), MockMapReader, k8s);
     let _analyses = rootcause.analyze_drops().await.unwrap();
 
-    // Both should process mock data consistently
-    // MockMapReader has drops, so both should find something
+    // Both should process mock data consistently.
+    // MockMapReader has PolicyDenied drops, so healer detects problems.
+    assert!(healer_stats.problems_detected > 0, "Healer should detect problems from mock drops");
+    // RootCause processes mock drops without error. Mock timestamps are in the past,
+    // so they fall outside the analysis window and don't appear in history.
 }
 
 // ---------------------------------------------------------------------------
@@ -306,31 +309,39 @@ async fn test_healer_then_rootcause_lifecycle() {
 
     // Step 1: Healer runs and processes mock data
     let mut healer = SelfHealer::new(HealerConfig::default(), MockMapReader, k8s.clone());
-    let _healer_stats = healer.run().await.unwrap();
+    let healer_stats = healer.run().await.unwrap();
+    assert!(healer_stats.problems_detected > 0, "Healer should detect problems from mock drops");
 
-    // Step 2: RootCause analyzes the same mock data
+    // Step 2: RootCause analyzes the same mock data without error
     let mut rootcause = RootCauseEngine::new(RootCauseConfig::default(), MockMapReader, k8s);
-    let _analyses = rootcause.analyze_drops().await.unwrap();
+    rootcause.analyze_drops().await.unwrap();
 }
 
 #[tokio::test]
 async fn test_autopolicy_to_simulator_lifecycle() {
     let k8s = mock_k8s_client();
 
+    // Use a config with min_observations=1 so mock data (3 connections) meets the threshold
+    let mut config = AutoPolicyConfig::default();
+    config.min_observations = 1;
+
     // Step 1: AutoPolicy starts learning
-    let mut autopolicy = AutoPolicy::new(AutoPolicyConfig::default(), MockMapReader, k8s.clone());
+    let mut autopolicy = AutoPolicy::new(config, MockMapReader, k8s.clone());
     autopolicy.start_learning().await.unwrap();
     assert!(matches!(autopolicy.state(), LearningState::Learning { .. }));
 
     // Step 2: Update (MockMapReader has conntrack data)
-    let _learning_stats = autopolicy.update().await.unwrap();
+    let learning_stats = autopolicy.update().await.unwrap();
+    assert!(learning_stats.connections_observed > 0, "Should observe connections from MockMapReader");
 
     // Step 3: Generate policies
-    let _policies = autopolicy.generate_policies().unwrap();
+    let policies = autopolicy.generate_policies().unwrap();
+    assert!(!policies.is_empty(), "Should generate at least one policy from observed traffic");
 
     // Step 4: Simulator loads history from mock conntrack data
     let mut simulator = Simulator::new(SimulatorConfig::default(), MockMapReader, k8s);
-    let _loaded = simulator.load_history().await.unwrap();
+    let loaded = simulator.load_history().await.unwrap();
+    assert!(loaded > 0, "Simulator should load conntrack entries from MockMapReader");
 }
 
 #[tokio::test]
@@ -346,15 +357,17 @@ async fn test_replay_to_rootcause_lifecycle() {
     assert!(!rec_id.is_empty());
 
     // Step 2: Capture (MockMapReader has conntrack data)
-    let _captured = replay.capture().await.unwrap();
+    let captured = replay.capture().await.unwrap();
+    assert!(captured > 0, "Should capture flows from MockMapReader");
 
     // Step 3: Stop recording
     let recording = replay.stop_recording().await.unwrap();
     assert_eq!(recording.name, "lifecycle-test");
+    assert!(recording.flow_count > 0, "Recording should contain captured flows");
 
-    // Step 4: RootCause analyzes mock drops
+    // Step 4: RootCause analyzes mock drops without error
     let mut rootcause = RootCauseEngine::new(RootCauseConfig::default(), MockMapReader, k8s);
-    let _analyses = rootcause.analyze_drops().await.unwrap();
+    rootcause.analyze_drops().await.unwrap();
 }
 
 // ---------------------------------------------------------------------------

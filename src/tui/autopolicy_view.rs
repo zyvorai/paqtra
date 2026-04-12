@@ -232,7 +232,7 @@ impl AutoPolicyView {
         let gauge = Gauge::default()
             .block(bordered_block("Confidence"))
             .gauge_style(Style::default().fg(gauge_color))
-            .percent((readiness * 100.0) as u16)
+            .percent(((readiness * 100.0) as u16).min(100))
             .label(format!("{:.0}%", readiness * 100.0));
 
         f.render_widget(gauge, chunks[1]);

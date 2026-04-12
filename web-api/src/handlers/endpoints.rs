@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use crate::AppState;
-use super::track_request;
+use super::{track_request, jstr};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CiliumEndpoint {
@@ -23,38 +23,83 @@ pub async fn list_endpoints(
 ) -> Json<serde_json::Value> {
     track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
-    let endpoints = vec![
-        CiliumEndpoint {
-            id: "ep-001".into(), name: "frontend-abc123".into(), namespace: "default".into(),
-            identity: 12345, ipv4: "10.0.1.15".into(), ipv6: "fd00::1:f".into(),
-            status: "ready".into(), policy_enforcement: "default".into(),
-            labels: vec!["app=frontend".into(), "version=v2".into()],
-        },
-        CiliumEndpoint {
-            id: "ep-002".into(), name: "backend-xyz789".into(), namespace: "default".into(),
-            identity: 12346, ipv4: "10.0.1.20".into(), ipv6: "fd00::1:14".into(),
-            status: "ready".into(), policy_enforcement: "always".into(),
-            labels: vec!["app=backend".into(), "version=v1".into()],
-        },
-        CiliumEndpoint {
-            id: "ep-003".into(), name: "redis-master-0".into(), namespace: "default".into(),
-            identity: 12347, ipv4: "10.0.2.5".into(), ipv6: "fd00::2:5".into(),
-            status: "ready".into(), policy_enforcement: "always".into(),
-            labels: vec!["app=redis".into(), "role=master".into()],
-        },
-        CiliumEndpoint {
-            id: "ep-004".into(), name: "coredns-abc".into(), namespace: "kube-system".into(),
-            identity: 10001, ipv4: "10.0.0.10".into(), ipv6: "fd00::a".into(),
-            status: "ready".into(), policy_enforcement: "default".into(),
-            labels: vec!["k8s-app=kube-dns".into()],
-        },
-        CiliumEndpoint {
-            id: "ep-005".into(), name: "cilium-agent-node1".into(), namespace: "kube-system".into(),
-            identity: 1, ipv4: "10.0.0.1".into(), ipv6: "fd00::1".into(),
-            status: "ready".into(), policy_enforcement: "default".into(),
-            labels: vec!["k8s-app=cilium".into(), "reserved:host".into()],
-        },
-    ];
+    let data = state.k8s.kubectl_json(&[
+        "get", "ciliumendpoints", "--all-namespaces", "-o", "json",
+    ]).await;
 
-    Json(serde_json::json!({ "endpoints": endpoints, "total": endpoints.len() }))
+    let endpoints: Vec<CiliumEndpoint> = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items.iter().map(|item| {
+                let meta = item.get("metadata").unwrap_or(item);
+                let status = item.get("status").unwrap_or(item);
+                let identity_obj = status.get("identity").unwrap_or(status);
+                let networking = status.get("networking").unwrap_or(status);
+
+                let name = jstr(meta, "name");
+                let namespace = jstr(meta, "namespace");
+                let uid = jstr(meta, "uid");
+
+                let identity_id = identity_obj
+                    .get("id")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32;
+
+                let labels: Vec<String> = identity_obj
+                    .get("labels")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|l| l.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+
+                let ipv4 = networking
+                    .get("addressing")
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|a| a.get("ipv4"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let ipv6 = networking
+                    .get("addressing")
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|a| a.get("ipv6"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let state_str = status
+                    .get("state")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("ready")
+                    .to_string();
+
+                let policy = status
+                    .get("policy")
+                    .and_then(|v| v.get("realized"))
+                    .and_then(|v| v.get("policy-enabled"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("default")
+                    .to_string();
+
+                CiliumEndpoint {
+                    id: uid,
+                    name,
+                    namespace,
+                    identity: identity_id,
+                    ipv4,
+                    ipv6,
+                    status: state_str,
+                    policy_enforcement: policy,
+                    labels,
+                }
+            }).collect()
+        })
+        .unwrap_or_default();
+
+    let total = endpoints.len();
+    Json(serde_json::json!({ "endpoints": endpoints, "total": total }))
 }
+

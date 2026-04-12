@@ -30,9 +30,10 @@ fn validate_ws_token(state: &AppState, query: &WsAuthQuery) -> Result<(), (Statu
     let decoding_key = DecodingKey::from_secret(state.config.jwt_secret.as_bytes());
     let validation = Validation::new(Algorithm::HS256);
     decode::<Claims>(token, &decoding_key, &validation).map_err(|e| {
+        tracing::debug!("WebSocket token validation failed: {}", e);
         (
             StatusCode::UNAUTHORIZED,
-            format!("Invalid or expired token: {}", e),
+            "Invalid or expired token".to_string(),
         )
     })?;
     Ok(())

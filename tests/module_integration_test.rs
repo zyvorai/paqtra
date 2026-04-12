@@ -17,7 +17,7 @@ use cilium_tui::modules::multicluster::{
 use cilium_tui::modules::packet_explainer::PacketExplainer;
 use cilium_tui::modules::replay::{ReplayConfig, ReplayEngine, ReplayFilter};
 use cilium_tui::modules::rootcause::{DropReason, RootCauseConfig, RootCauseEngine};
-use cilium_tui::modules::simulator::{RiskLevel, Simulator, SimulatorConfig};
+use cilium_tui::modules::simulator::{Simulator, SimulatorConfig};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -271,36 +271,17 @@ async fn test_simulator_initial_state() {
     assert_eq!(stats.current_policies, 0, "No policies loaded yet");
 }
 
-#[test]
-fn test_simulator_config_defaults() {
-    let config = SimulatorConfig::default();
-    assert!(config.enabled);
-    assert!(config.replay_flow_count > 0, "Must replay at least 1 flow");
-    assert!(config.track_dependencies);
-    assert!(config.risk_scoring);
-    assert!(
-        config.min_confidence > 0.0 && config.min_confidence <= 1.0,
-        "Confidence must be in (0, 1]"
-    );
-}
+// test_simulator_config_defaults: removed — covered by
+// tests/simulator_integration_test.rs::test_simulator_config_defaults
 
 // test_risk_level_from_score: removed — covered by more granular tests in
 // tests/simulator_integration_test.rs (test_risk_level_from_score_low/medium/high/critical)
 
-#[test]
-fn test_risk_level_ordering() {
-    assert!(RiskLevel::Low < RiskLevel::Medium);
-    assert!(RiskLevel::Medium < RiskLevel::High);
-    assert!(RiskLevel::High < RiskLevel::Critical);
-}
+// test_risk_level_ordering: removed — covered by
+// tests/simulator_integration_test.rs::test_risk_level_ordering (with extra assertion)
 
-#[test]
-fn test_risk_level_to_string() {
-    assert_eq!(RiskLevel::Low.to_string(), "Low");
-    assert_eq!(RiskLevel::Medium.to_string(), "Medium");
-    assert_eq!(RiskLevel::High.to_string(), "High");
-    assert_eq!(RiskLevel::Critical.to_string(), "Critical");
-}
+// test_risk_level_to_string: removed — covered by
+// tests/simulator_integration_test.rs::test_risk_level_to_string
 
 // test_impact_type_equality: removed — covered by
 // tests/simulator_integration_test.rs::test_impact_type_equality and test_impact_type_inequality

@@ -197,10 +197,10 @@ impl MapReader for CiliumMapReader {
     fn read_policy_map(&self) -> Result<Vec<PolicyDecision>> {
         // Try Aya reader first (native, fastest)
         if let Some(ref aya) = self.aya_reader {
-            if let Ok(entries) = aya.read_policy_map() {
-                if !entries.is_empty() {
-                    return Ok(entries);
-                }
+            match aya.read_policy_map() {
+                Ok(entries) if !entries.is_empty() => return Ok(entries),
+                Ok(_) => {} // empty result, fall through
+                Err(e) => tracing::debug!("Aya policy map read failed, falling back to bpftool: {}", e),
             }
         }
 
@@ -214,10 +214,10 @@ impl MapReader for CiliumMapReader {
 
     fn read_conntrack_map(&self) -> Result<Vec<ConntrackEntry>> {
         if let Some(ref aya) = self.aya_reader {
-            if let Ok(entries) = aya.read_conntrack_map() {
-                if !entries.is_empty() {
-                    return Ok(entries);
-                }
+            match aya.read_conntrack_map() {
+                Ok(entries) if !entries.is_empty() => return Ok(entries),
+                Ok(_) => {}
+                Err(e) => tracing::debug!("Aya conntrack map read failed, falling back to bpftool: {}", e),
             }
         }
 
@@ -230,10 +230,10 @@ impl MapReader for CiliumMapReader {
 
     fn read_lb_map(&self) -> Result<Vec<LoadBalancerEntry>> {
         if let Some(ref aya) = self.aya_reader {
-            if let Ok(entries) = aya.read_lb_map() {
-                if !entries.is_empty() {
-                    return Ok(entries);
-                }
+            match aya.read_lb_map() {
+                Ok(entries) if !entries.is_empty() => return Ok(entries),
+                Ok(_) => {}
+                Err(e) => tracing::debug!("Aya LB map read failed, falling back to bpftool: {}", e),
             }
         }
 
@@ -246,10 +246,10 @@ impl MapReader for CiliumMapReader {
 
     fn read_ipcache_map(&self) -> Result<Vec<IPCacheEntry>> {
         if let Some(ref aya) = self.aya_reader {
-            if let Ok(entries) = aya.read_ipcache_map() {
-                if !entries.is_empty() {
-                    return Ok(entries);
-                }
+            match aya.read_ipcache_map() {
+                Ok(entries) if !entries.is_empty() => return Ok(entries),
+                Ok(_) => {}
+                Err(e) => tracing::debug!("Aya ipcache map read failed, falling back to bpftool: {}", e),
             }
         }
 
@@ -262,10 +262,10 @@ impl MapReader for CiliumMapReader {
 
     fn read_drop_map(&self) -> Result<Vec<DropReason>> {
         if let Some(ref aya) = self.aya_reader {
-            if let Ok(entries) = aya.read_drop_map() {
-                if !entries.is_empty() {
-                    return Ok(entries);
-                }
+            match aya.read_drop_map() {
+                Ok(entries) if !entries.is_empty() => return Ok(entries),
+                Ok(_) => {}
+                Err(e) => tracing::debug!("Aya drop map read failed, falling back to bpftool: {}", e),
             }
         }
 

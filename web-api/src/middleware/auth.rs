@@ -29,9 +29,12 @@ pub async fn auth_middleware(
     mut request: Request,
     next: Next,
 ) -> Response {
-    // Skip auth for health/metrics endpoints
+    // Skip auth for health/metrics endpoints and WebSocket upgrades
+    // (WebSocket handlers validate tokens via query parameter instead)
     let path = request.uri().path();
-    if path == "/health" || path == "/ready" || path == "/metrics" {
+    if path == "/health" || path == "/ready" || path == "/metrics"
+        || path.starts_with("/api/v1/ws/")
+    {
         return next.run(request).await;
     }
 

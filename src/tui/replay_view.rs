@@ -18,7 +18,6 @@ pub struct ReplayView {
     pub timeline_position: usize, // Current position in timeline (0-100)
     pub is_playing: bool,
     pub playback_speed: f32,
-    pub show_event_markers: bool,
 }
 
 impl ReplayView {
@@ -29,7 +28,6 @@ impl ReplayView {
             timeline_position: 0,
             is_playing: false,
             playback_speed: 1.0,
-            show_event_markers: true,
         }
     }
 

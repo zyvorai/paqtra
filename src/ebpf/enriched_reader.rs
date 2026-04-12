@@ -192,7 +192,7 @@ impl EnrichedConnectionInfo {
         self.src_labels
             .iter()
             .find(|label| label.starts_with(&format!("{}=", key)))
-            .and_then(|label| label.split('=').nth(1))
+            .and_then(|label| label.split_once('=').map(|x| x.1))
             .map(|s| s.to_string())
     }
 
@@ -201,7 +201,7 @@ impl EnrichedConnectionInfo {
         self.dst_labels
             .iter()
             .find(|label| label.starts_with(&format!("{}=", key)))
-            .and_then(|label| label.split('=').nth(1))
+            .and_then(|label| label.split_once('=').map(|x| x.1))
             .map(|s| s.to_string())
     }
 }

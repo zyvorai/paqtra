@@ -41,9 +41,15 @@ pub async fn list_flows(
 
     // Try cache first
     match state.cache.get::<Vec<Flow>>(&cache_key).await {
-        Ok(Some(cached_flows)) => {
+        Ok(Some(mut cached_flows)) => {
             tracing::debug!("Cache hit for flows (key={})", cache_key);
             state.metrics.cache_hits.fetch_add(1, Ordering::Relaxed);
+
+            // Re-apply verdict filter on cache hit for consistency
+            if let Some(ref verdict) = params.verdict {
+                cached_flows.retain(|f| f.verdict.eq_ignore_ascii_case(verdict));
+            }
+
             state.metrics.flows_fetched.fetch_add(cached_flows.len() as u64, Ordering::Relaxed);
 
             let total = cached_flows.len();

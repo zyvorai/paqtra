@@ -67,6 +67,71 @@ impl K8sService {
         }
     }
 
+    /// Run a kubectl command and return the parsed JSON output.
+    /// Returns an empty JSON object `{}` on failure.
+    pub async fn kubectl_json(&self, args: &[&str]) -> serde_json::Value {
+        let mut cmd = self.kubectl(args);
+        match timeout(Duration::from_secs(15), cmd.output()).await {
+            Ok(Ok(out)) if out.status.success() => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                serde_json::from_str(&stdout).unwrap_or(serde_json::json!({}))
+            }
+            Ok(Ok(out)) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                tracing::debug!("kubectl {:?} failed: {}", args.first(), stderr.trim());
+                serde_json::json!({})
+            }
+            _ => serde_json::json!({}),
+        }
+    }
+
+    /// Run an arbitrary CLI command and return stdout as a string.
+    pub async fn run_cmd(program: &str, args: &[&str]) -> String {
+        let mut cmd = Command::new(program);
+        for a in args {
+            cmd.arg(a);
+        }
+        match timeout(Duration::from_secs(10), cmd.output()).await {
+            Ok(Ok(out)) if out.status.success() => {
+                String::from_utf8_lossy(&out.stdout).trim().to_string()
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// Run a CLI command with data piped to stdin. Returns (success, stdout, stderr).
+    pub async fn run_cmd_stdin(program: &str, args: &[&str], stdin_data: &str) -> (bool, String, String) {
+        use tokio::io::AsyncWriteExt;
+        let mut cmd = Command::new(program);
+        for a in args {
+            cmd.arg(a);
+        }
+        cmd.stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        let child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(_) => return (false, String::new(), "Failed to spawn process".to_string()),
+        };
+
+        // We need to write to stdin before waiting, so split into parts
+        let mut child = child;
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(stdin_data.as_bytes()).await;
+            drop(stdin);
+        }
+
+        match timeout(Duration::from_secs(10), child.wait_with_output()).await {
+            Ok(Ok(out)) => {
+                let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                (out.status.success(), stdout, stderr)
+            }
+            _ => (false, String::new(), "Command timed out".to_string()),
+        }
+    }
+
     /// List CiliumNetworkPolicy resources across all namespaces
     pub async fn list_policies(&self) -> Result<Vec<Policy>> {
         let mut cmd = self.kubectl(&["get", "ciliumnetworkpolicies", "--all-namespaces", "-o", "json"]);

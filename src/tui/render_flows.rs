@@ -18,11 +18,19 @@ impl TuiApp {
             return;
         }
 
+        // Show flows starting from the selection to keep it visible
+        let visible_count = area.height.saturating_sub(2) as usize; // subtract borders
+        let start = if self.selected_flow_index >= visible_count {
+            self.selected_flow_index - visible_count + 1
+        } else {
+            0
+        };
         let items: Vec<ListItem> = self
             .flows
             .iter()
             .enumerate()
-            .take(50)
+            .skip(start)
+            .take(visible_count.max(1))
             .map(|(idx, flow)| {
                 let verdict_color = match flow.verdict.as_str() {
                     "FORWARDED" => FORWARDED_COLOR,

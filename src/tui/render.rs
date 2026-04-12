@@ -210,6 +210,7 @@ impl TuiApp {
                         ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
                     };
                     if !policies.is_empty()
+                        && self.selected_policy_index < policies.len()
                         && self
                             .applied_policies
                             .contains(&policies[self.selected_policy_index].name)

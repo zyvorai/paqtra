@@ -453,6 +453,13 @@ pub fn render_help_overlay(f: &mut Frame) {
             ),
             Span::raw("          Cycle views: Clusters → Topology → Syncs → Placements"),
         ]),
+        Line::from(vec![
+            Span::styled(
+                "  h",
+                Style::default().fg(ORANGE).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("          Health check all clusters"),
+        ]),
         Line::from(""),
         Line::from(vec![Span::styled(
             "═══════════════════════════════════════════════",
