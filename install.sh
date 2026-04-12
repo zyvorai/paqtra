@@ -242,13 +242,13 @@ Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
 TimeoutStopSec=30
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 # Security hardening
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=${LOG_DIR} ${DATA_DIR}
+ReadWritePaths=${LOG_DIR} ${DATA_DIR} ${CONFIG_DIR}
 PrivateTmp=yes
-NoNewPrivileges=yes
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 
