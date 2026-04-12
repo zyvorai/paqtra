@@ -32,6 +32,9 @@ use crate::services::prometheus::PrometheusService;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Install the default rustls CryptoProvider (required before any TLS operations)
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     // Initialize tracing
     tracing_subscriber::registry()
         .with(

@@ -227,11 +227,11 @@ ExecStart=/usr/local/bin/cilium-vision-api
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/var/log/cilium-vision /var/lib/cilium-vision
+ReadWritePaths=/var/log/cilium-vision /var/lib/cilium-vision /etc/cilium-vision
 PrivateTmp=yes
-NoNewPrivileges=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -483,7 +483,9 @@ sleep 3
 # Final health check
 echo ""
 echo "  === Final Health Check ==="
-curl -sf http://localhost:9191/health 2>/dev/null | python3 -m json.tool 2>/dev/null || curl -sf http://localhost:9191/health || echo "  API not responding yet"
+curl -sfk https://localhost:443/health 2>/dev/null | python3 -m json.tool 2>/dev/null \
+    || curl -sf http://localhost:9191/health 2>/dev/null | python3 -m json.tool 2>/dev/null \
+    || echo "  API not responding yet (may need a few seconds to start)"
 REMOTE
     ok "Full installation complete"
 }
