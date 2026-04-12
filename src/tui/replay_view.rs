@@ -1,9 +1,9 @@
 /// Replay View - Traffic Recording & Playback with Time-Travel Debugging
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
-    widgets::{Gauge, List, ListItem, Paragraph, Wrap},
+    widgets::{List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -108,7 +108,7 @@ impl ReplayView {
             self.render_header(f, chunks[0], replay);
 
             // Recordings
-            self.render_recordings(f, chunks[1]);
+            self.render_recordings(f, chunks[1], replay);
 
             // Latest Comparison
             self.render_comparison(f, chunks[2]);
@@ -148,18 +148,35 @@ impl ReplayView {
         f.render_widget(content, area);
     }
 
-    fn render_recordings(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let recordings = [
-            ("rec-prod-baseline", "1000", "5.2 MB", "2h ago"),
-            ("rec-policy-test", "450", "2.1 MB", "30m ago"),
-            ("rec-migration", "2500", "12 MB", "1d ago"),
-            ("rec-incident-123", "180", "890 KB", "3d ago"),
-        ];
+    fn render_recordings<M: MapReader>(
+        &self,
+        f: &mut Frame,
+        area: ratatui::layout::Rect,
+        replay: Option<&ReplayEngine<M>>,
+    ) {
+        let title = "Recordings [↑/↓: Select | t: Time-Travel | r: Refresh]";
+
+        let recordings = replay.map(|engine| engine.recordings());
+
+        if recordings.is_none() || recordings.is_some_and(|r| r.is_empty()) {
+            let empty_msg = Paragraph::new("No recordings. Press 'r' to start a new recording.")
+                .style(Style::default().fg(TEXT_COLOR))
+                .block(bordered_block(title));
+            f.render_widget(empty_msg, area);
+            return;
+        }
+
+        let recordings = recordings.unwrap();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
 
         let items: Vec<ListItem> = recordings
             .iter()
             .enumerate()
-            .map(|(idx, (name, flows, size, age))| {
+            .map(|(idx, rec)| {
                 let is_selected = idx == self.selected_recording_index;
                 let style = if is_selected {
                     selected_style()
@@ -168,56 +185,65 @@ impl ReplayView {
                 };
 
                 let prefix = if is_selected { "▶ " } else { "  " };
+
+                let duration = if rec.end_time > rec.start_time {
+                    let secs = rec.end_time - rec.start_time;
+                    if secs < 60 {
+                        format!("{}s", secs)
+                    } else if secs < 3600 {
+                        format!("{}m {}s", secs / 60, secs % 60)
+                    } else {
+                        format!("{}h {}m", secs / 3600, (secs % 3600) / 60)
+                    }
+                } else {
+                    "recording...".to_string()
+                };
+
+                let age = if rec.end_time > 0 && now > rec.end_time {
+                    let elapsed = now - rec.end_time;
+                    if elapsed < 60 {
+                        format!("{}s ago", elapsed)
+                    } else if elapsed < 3600 {
+                        format!("{}m ago", elapsed / 60)
+                    } else if elapsed < 86400 {
+                        format!("{}h ago", elapsed / 3600)
+                    } else {
+                        format!("{}d ago", elapsed / 86400)
+                    }
+                } else {
+                    "now".to_string()
+                };
+
                 let content = format!(
-                    "{}{:<23} Flows: {:>5}  Size: {:>8}  Age: {}",
-                    prefix, name, flows, size, age
+                    "{}{:<23} Flows: {:>5}  Duration: {:>10}  Age: {}",
+                    prefix, rec.name, rec.flow_count, duration, age
                 );
                 ListItem::new(Line::from(Span::styled(content, style)))
             })
             .collect();
 
-        let title = "Recordings [↑/↓: Select | t: Time-Travel | r: Refresh]";
         let list = List::new(items).block(bordered_block(title));
 
         f.render_widget(list, area);
     }
 
     fn render_comparison(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .split(area);
-
-        // Comparison Stats
-        let stats_text = "📊 Last Replay Comparison:\n\n\
-            Total Flows:       1000\n\
-            Identical:         950 (95%)\n\
-            Verdict Changed:   50\n\
-            New Drops:         30\n\
-            Fixed Drops:       20";
+        let stats_text = "Run a replay comparison to see results.\n\n\
+            Select a recording and replay it against current policies\n\
+            to compare flow verdicts.";
 
         let stats = Paragraph::new(stats_text)
             .style(Style::default().fg(TEXT_COLOR))
             .block(bordered_block("Comparison"));
 
-        f.render_widget(stats, chunks[0]);
-
-        // Similarity Gauge
-        let similarity = 0.95; // 95%
-        let gauge = Gauge::default()
-            .block(bordered_block("Similarity"))
-            .gauge_style(Style::default().fg(PROGRESS_NORMAL_COLOR))
-            .percent((similarity * 100.0) as u16)
-            .label(format!("{}%", (similarity * 100.0) as u16));
-
-        f.render_widget(gauge, chunks[1]);
+        f.render_widget(stats, area);
     }
 
     fn render_time_travel<M: MapReader>(
         &self,
         f: &mut Frame,
         area: ratatui::layout::Rect,
-        _replay: Option<&ReplayEngine<M>>,
+        replay: Option<&ReplayEngine<M>>,
     ) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -229,7 +255,7 @@ impl ReplayView {
             .split(area);
 
         // Timeline & Controls
-        self.render_timeline(f, chunks[0]);
+        self.render_timeline(f, chunks[0], replay);
 
         // Network State
         self.render_network_state(f, chunks[1]);
@@ -238,7 +264,12 @@ impl ReplayView {
         self.render_flow_events(f, chunks[2]);
     }
 
-    fn render_timeline(&self, f: &mut Frame, area: ratatui::layout::Rect) {
+    fn render_timeline<M: MapReader>(
+        &self,
+        f: &mut Frame,
+        area: ratatui::layout::Rect,
+        replay: Option<&ReplayEngine<M>>,
+    ) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -247,16 +278,33 @@ impl ReplayView {
             ])
             .split(area);
 
+        // Look up the selected recording from the engine
+        let selected = replay
+            .and_then(|engine| engine.recordings().get(self.selected_recording_index));
+
+        let (rec_name, flow_count) = match selected {
+            Some(rec) => (rec.name.as_str(), rec.flow_count),
+            None => ("(none)", 0),
+        };
+
+        let current_flow = if flow_count > 0 {
+            (self.timeline_position * flow_count) / 100
+        } else {
+            0
+        };
+
         // Header
         let playback_icon = if self.is_playing { "▶️" } else { "⏸️" };
         let header_text = format!(
             "⏱️  Time-Travel Debugging\n\n\
-            Recording:     rec-prod-baseline (1000 flows)\n\
+            Recording:     {} ({} flows)\n\
             Time:          {}% ({}/{})\n\
             Status:        {}  Speed: {}x",
+            rec_name,
+            flow_count,
             self.timeline_position,
-            self.timeline_position * 10, // Convert to flow number
-            1000,
+            current_flow,
+            flow_count,
             playback_icon,
             self.playback_speed
         );
@@ -308,20 +356,16 @@ impl ReplayView {
     }
 
     fn render_network_state(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        // Calculate the approximate flow index based on timeline position
-        let current_flow = (self.timeline_position * 10).min(1000);
-
         let state_text = format!(
-            "🌐 Network State at Flow #{}\n\n\
-            Active Connections:    23\n\
-            Allowed Flows:         18\n\
-            Dropped Flows:         5\n\
-            Unique Endpoints:      12\n\
-            Namespaces:            3 (default, prod, staging)\n\
-            Active Policies:       8\n\n\
-            Latest Event:          DROP at frontend → backend:8080\n\
-            Reason:                Policy denied (no matching rule)",
-            current_flow
+            "🌐 Network State Snapshot\n\n\
+            Timeline Position:     {}%\n\
+            Playback Speed:        {}x\n\
+            Playing:               {}\n\n\
+            Load a recording and enter time-travel mode to view\n\
+            state snapshots at each point in time.",
+            self.timeline_position,
+            self.playback_speed,
+            if self.is_playing { "Yes" } else { "No" },
         );
 
         let state = Paragraph::new(state_text)
@@ -333,71 +377,14 @@ impl ReplayView {
     }
 
     fn render_flow_events(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        // Show flows around current timeline position
-        let current_flow = (self.timeline_position * 10).min(1000);
+        let msg = Paragraph::new(
+            "Load a recording to view flow events.\n\n\
+            Select a recording from the list and enter time-travel mode\n\
+            to step through individual flow events.",
+        )
+        .style(Style::default().fg(TEXT_COLOR))
+        .block(bordered_block("Flow Events (Around Current Time)"));
 
-        let events = [
-            (
-                current_flow.saturating_sub(2),
-                "frontend → backend:8080",
-                "ALLOWED",
-                "TCP",
-                SUCCESS_COLOR,
-            ),
-            (
-                current_flow.saturating_sub(1),
-                "api → postgres:5432",
-                "ALLOWED",
-                "TCP",
-                SUCCESS_COLOR,
-            ),
-            (
-                current_flow,
-                "frontend → backend:8080",
-                "DROPPED",
-                "TCP",
-                ERROR_COLOR,
-            ),
-            (
-                current_flow + 1,
-                "frontend → redis:6379",
-                "ALLOWED",
-                "TCP",
-                SUCCESS_COLOR,
-            ),
-            (
-                current_flow + 2,
-                "api → external:443",
-                "ALLOWED",
-                "TCP",
-                SUCCESS_COLOR,
-            ),
-        ];
-
-        let items: Vec<ListItem> = events
-            .iter()
-            .map(|(flow_num, flow, verdict, proto, color)| {
-                let is_current = *flow_num == current_flow;
-                let prefix = if is_current { "▶ " } else { "  " };
-                let modifier = if is_current {
-                    Modifier::BOLD
-                } else {
-                    Modifier::empty()
-                };
-
-                let content = format!(
-                    "{}#{:<5} {:<35} [{:>7}] {}",
-                    prefix, flow_num, flow, verdict, proto
-                );
-                ListItem::new(Line::from(Span::styled(
-                    content,
-                    Style::default().fg(*color).add_modifier(modifier),
-                )))
-            })
-            .collect();
-
-        let list = List::new(items).block(bordered_block("Flow Events (Around Current Time)"));
-
-        f.render_widget(list, area);
+        f.render_widget(msg, area);
     }
 }

@@ -395,6 +395,11 @@ impl<M: MapReader> ReplayEngine<M> {
         Ok(())
     }
 
+    /// Get cached recordings (without refreshing from disk)
+    pub fn recordings(&self) -> &[Recording] {
+        &self.recordings
+    }
+
     /// Get statistics
     pub fn stats(&self) -> ReplayStats {
         ReplayStats {

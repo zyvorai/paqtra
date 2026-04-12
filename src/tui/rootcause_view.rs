@@ -9,7 +9,7 @@ use ratatui::{
 
 use super::theme::*;
 use crate::ebpf::MapReader;
-use crate::modules::rootcause::RootCauseEngine;
+use crate::modules::rootcause::{DropReason, RootCauseEngine};
 
 pub struct RootCauseView;
 
@@ -39,10 +39,10 @@ impl RootCauseView {
         self.render_header(f, chunks[0], rootcause);
 
         // Drop Analysis
-        self.render_drops(f, chunks[1]);
+        self.render_drops(f, chunks[1], rootcause);
 
         // Recommended Fixes
-        self.render_fixes(f, chunks[2], selected_fix_index, fix_apply_confirmation);
+        self.render_fixes(f, chunks[2], rootcause, selected_fix_index, fix_apply_confirmation);
     }
 
     fn render_header<M: MapReader>(
@@ -79,41 +79,72 @@ impl RootCauseView {
         f.render_widget(content, area);
     }
 
-    fn render_drops(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let drops = [
-            (
-                "Policy Denied",
-                "frontend → backend:8080",
-                "Critical",
-                "12 drops",
-            ),
-            ("DNS Blocked", "app → 8.8.8.8:53", "Critical", "45 drops"),
-            ("MTU Exceeded", "service-a → service-b", "Medium", "8 drops"),
-            ("Port Not Allowed", "api → db:5432", "Medium", "23 drops"),
-            ("Invalid Packet", "10.0.1.5 → 10.0.2.10", "Low", "3 drops"),
-        ];
-
-        let items: Vec<ListItem> = drops
-            .iter()
-            .map(|(reason, flow, severity, count)| {
-                let color = severity_color(severity);
-                let content = format!("{:<18} {:<30} [{:<8}] {}", reason, flow, severity, count);
-                ListItem::new(Line::from(Span::styled(
-                    content,
-                    Style::default().fg(color).add_modifier(Modifier::BOLD),
-                )))
-            })
-            .collect();
+    fn render_drops<M: MapReader>(
+        &self,
+        f: &mut Frame,
+        area: ratatui::layout::Rect,
+        rootcause: Option<&RootCauseEngine<M>>,
+    ) {
+        let items: Vec<ListItem> = if let Some(engine) = rootcause {
+            let stats = engine.get_stats();
+            if stats.top_patterns.is_empty() {
+                vec![ListItem::new(Line::from(Span::styled(
+                    "No drops detected",
+                    Style::default().fg(SUCCESS_COLOR),
+                )))]
+            } else {
+                stats
+                    .top_patterns
+                    .iter()
+                    .take(5)
+                    .map(|(pattern, count)| {
+                        let severity = Self::severity_for_reason(&pattern.reason);
+                        let color = severity_color(severity);
+                        let flow = format!(
+                            "identity:{}→identity:{}:{}",
+                            pattern.src_identity, pattern.dst_identity, pattern.dst_port
+                        );
+                        let content = format!(
+                            "{} {} [{severity}] {count} drops",
+                            pattern.reason, flow,
+                        );
+                        ListItem::new(Line::from(Span::styled(
+                            content,
+                            Style::default().fg(color).add_modifier(Modifier::BOLD),
+                        )))
+                    })
+                    .collect()
+            }
+        } else {
+            vec![ListItem::new(Line::from(Span::styled(
+                "No drops detected",
+                Style::default().fg(SUCCESS_COLOR),
+            )))]
+        };
 
         let list = List::new(items).block(bordered_block("Recent Packet Drops (Top 5)"));
 
         f.render_widget(list, area);
     }
 
-    fn render_fixes(
+    /// Map a drop reason to a severity label for display.
+    fn severity_for_reason(reason: &DropReason) -> &'static str {
+        match reason {
+            DropReason::PolicyDenied | DropReason::PortNotAllowed => "Critical",
+            DropReason::NoBackend
+            | DropReason::ServiceNotFound
+            | DropReason::CTStateMismatch
+            | DropReason::FragNeeded
+            | DropReason::LBError => "Medium",
+            _ => "Low",
+        }
+    }
+
+    fn render_fixes<M: MapReader>(
         &self,
         f: &mut Frame,
         area: ratatui::layout::Rect,
+        rootcause: Option<&RootCauseEngine<M>>,
         selected_fix_index: usize,
         fix_apply_confirmation: bool,
     ) {
@@ -122,34 +153,55 @@ impl RootCauseView {
             .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
             .split(area);
 
-        // Recommended Fixes (selectable list)
-        let fix_names = [
-            "Add allow-8080 policy",
-            "Enable DNS egress",
-            "Adjust MTU to 1450",
-            "Add DB access policy",
-        ];
+        // Build fix suggestions from real data
+        let fix_entries: Vec<(String, String)> = if let Some(engine) = rootcause {
+            let stats = engine.get_stats();
+            if stats.top_patterns.is_empty() {
+                Vec::new()
+            } else {
+                stats
+                    .top_patterns
+                    .iter()
+                    .take(5)
+                    .map(|(pattern, count)| {
+                        let (name, detail) =
+                            Self::fix_for_pattern(pattern, *count);
+                        (name, detail)
+                    })
+                    .collect()
+            }
+        } else {
+            Vec::new()
+        };
 
-        let items: Vec<ListItem> = fix_names
-            .iter()
-            .enumerate()
-            .map(|(idx, name)| {
-                let style = if idx == selected_fix_index {
-                    selected_style()
-                } else {
-                    Style::default().fg(SUCCESS_COLOR)
-                };
+        // Render the list panel
+        let items: Vec<ListItem> = if fix_entries.is_empty() {
+            vec![ListItem::new(Line::from(Span::styled(
+                "  No fixes needed",
+                Style::default().fg(SUCCESS_COLOR),
+            )))]
+        } else {
+            fix_entries
+                .iter()
+                .enumerate()
+                .map(|(idx, (name, _))| {
+                    let style = if idx == selected_fix_index {
+                        selected_style()
+                    } else {
+                        Style::default().fg(SUCCESS_COLOR)
+                    };
 
-                let prefix = if idx == selected_fix_index {
-                    "▶ "
-                } else {
-                    "  "
-                };
-                let content = format!("{}{}. {}", prefix, idx + 1, name);
+                    let prefix = if idx == selected_fix_index {
+                        "▶ "
+                    } else {
+                        "  "
+                    };
+                    let content = format!("{}{}. {}", prefix, idx + 1, name);
 
-                ListItem::new(Line::from(Span::styled(content, style)))
-            })
-            .collect();
+                    ListItem::new(Line::from(Span::styled(content, style)))
+                })
+                .collect()
+        };
 
         let fixes_title = if fix_apply_confirmation {
             "Fixes [CONFIRM: y/n]"
@@ -158,42 +210,15 @@ impl RootCauseView {
         };
 
         let fixes = List::new(items).block(bordered_block(fixes_title));
-
         f.render_widget(fixes, chunks[0]);
 
-        // Fix Details - Show YAML preview for selected fix
-        let details_text = match selected_fix_index {
-            0 => {
-                "📝 Policy: rootcause-fix-allow-8080\n\
-                Namespace: default\n\n\
-                Allows frontend → backend:8080 TCP\n\n\
-                This policy permits traffic from frontend\n\
-                pods to backend pods on port 8080,\n\
-                resolving the detected policy deny."
-            }
-            1 => {
-                "📝 Policy: rootcause-fix-dns-egress\n\
-                Namespace: default\n\n\
-                Enables DNS resolution for all pods\n\n\
-                This policy allows egress to kube-dns\n\
-                on port 53 UDP, resolving DNS blocks."
-            }
-            2 => {
-                "📝 Note: MTU Adjustment\n\
-                Namespace: default\n\n\
-                MTU exceeds detected on path\n\n\
-                Consider adjusting CNI MTU settings\n\
-                in cilium-config ConfigMap or\n\
-                disabling tunneling protocol."
-            }
-            3 => {
-                "📝 Policy: rootcause-fix-db-access\n\
-                Namespace: default\n\n\
-                Allows api → db:5432 TCP\n\n\
-                This policy permits API pods to\n\
-                access database pods on port 5432."
-            }
-            _ => "Select a fix to see details",
+        // Fix Details panel
+        let details_text = if fix_entries.is_empty() {
+            "No fixes needed — no drop patterns detected.".to_string()
+        } else if let Some((_, detail)) = fix_entries.get(selected_fix_index) {
+            detail.clone()
+        } else {
+            "Select a fix to see details".to_string()
         };
 
         let details = Paragraph::new(details_text)
@@ -201,5 +226,116 @@ impl RootCauseView {
             .block(bordered_block("Policy Details"));
 
         f.render_widget(details, chunks[1]);
+    }
+
+    /// Generate a fix name and detail description for a given drop pattern.
+    fn fix_for_pattern(
+        pattern: &crate::modules::rootcause::DropPattern,
+        count: u64,
+    ) -> (String, String) {
+        let proto = match pattern.protocol {
+            6 => "TCP",
+            17 => "UDP",
+            _ => "IP",
+        };
+
+        match &pattern.reason {
+            DropReason::PolicyDenied | DropReason::PortNotAllowed => {
+                // DNS-specific suggestion for port 53
+                if pattern.dst_port == 53 {
+                    let name = "Enable DNS egress".to_string();
+                    let detail = format!(
+                        "Policy: rootcause-fix-dns-egress\n\n\
+                        Enables DNS resolution (port 53 {proto})\n\
+                        from identity:{src} to identity:{dst}\n\n\
+                        Allow egress to kube-dns on port 53 {proto}\n\
+                        to resolve DNS-related drops.\n\n\
+                        Affected drops: {count}",
+                        src = pattern.src_identity,
+                        dst = pattern.dst_identity,
+                    );
+                    (name, detail)
+                } else {
+                    let name = format!(
+                        "Allow port {} {proto}",
+                        pattern.dst_port,
+                    );
+                    let detail = format!(
+                        "Policy: rootcause-fix-allow-{port}\n\n\
+                        Allows identity:{src} -> identity:{dst}:{port} {proto}\n\n\
+                        This policy permits traffic on port {port}\n\
+                        resolving the detected policy deny.\n\n\
+                        Affected drops: {count}",
+                        port = pattern.dst_port,
+                        src = pattern.src_identity,
+                        dst = pattern.dst_identity,
+                    );
+                    (name, detail)
+                }
+            }
+            DropReason::FragNeeded => {
+                let name = "Adjust MTU settings".to_string();
+                let detail = format!(
+                    "Note: MTU Adjustment\n\n\
+                    Fragment-needed drops detected on\n\
+                    identity:{src} -> identity:{dst}:{port}\n\n\
+                    Consider adjusting CNI MTU settings\n\
+                    in cilium-config ConfigMap or\n\
+                    disabling tunneling protocol.\n\n\
+                    Affected drops: {count}",
+                    src = pattern.src_identity,
+                    dst = pattern.dst_identity,
+                    port = pattern.dst_port,
+                );
+                (name, detail)
+            }
+            DropReason::CTStateMismatch => {
+                let name = "Check conntrack state".to_string();
+                let detail = format!(
+                    "Note: Connection Tracking\n\n\
+                    CT state mismatch on\n\
+                    identity:{src} -> identity:{dst}:{port}\n\n\
+                    Run: cilium bpf ct list global\n\
+                    Run: cilium bpf ct flush\n\n\
+                    Affected drops: {count}",
+                    src = pattern.src_identity,
+                    dst = pattern.dst_identity,
+                    port = pattern.dst_port,
+                );
+                (name, detail)
+            }
+            DropReason::NoBackend | DropReason::ServiceNotFound | DropReason::LBError => {
+                let name = format!("Fix service on port {}", pattern.dst_port);
+                let detail = format!(
+                    "Note: Service / LB Issue\n\n\
+                    {reason} on port {port}\n\
+                    identity:{src} -> identity:{dst}\n\n\
+                    Verify service endpoints are healthy\n\
+                    and the service is registered.\n\n\
+                    Affected drops: {count}",
+                    reason = pattern.reason,
+                    port = pattern.dst_port,
+                    src = pattern.src_identity,
+                    dst = pattern.dst_identity,
+                );
+                (name, detail)
+            }
+            other => {
+                let name = format!("Investigate: {other}");
+                let detail = format!(
+                    "Note: Manual Investigation\n\n\
+                    {other} drops on\n\
+                    identity:{src} -> identity:{dst}:{port} {proto}\n\n\
+                    Check cilium monitor output\n\
+                    Review Hubble flows\n\
+                    Inspect eBPF maps directly\n\n\
+                    Affected drops: {count}",
+                    src = pattern.src_identity,
+                    dst = pattern.dst_identity,
+                    port = pattern.dst_port,
+                );
+                (name, detail)
+            }
+        }
     }
 }

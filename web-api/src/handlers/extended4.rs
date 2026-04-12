@@ -333,7 +333,7 @@ pub async fn rollback_change(
         "id": id,
         "status": "rolled_back",
         "message": "Change successfully rolled back",
-        "rolled_back_at": "2026-04-03T12:10:00Z"
+        "rolled_back_at": chrono::Utc::now().to_rfc3339()
     })))
 }
 
@@ -389,8 +389,7 @@ pub async fn drain_node(
         "node": node,
         "status": "draining",
         "message": "Node drain initiated, pods being evicted gracefully",
-        "started_at": "2026-04-03T12:15:00Z",
-        "estimated_completion": "2026-04-03T12:20:00Z"
+        "started_at": chrono::Utc::now().to_rfc3339()
     })))
 }
 
