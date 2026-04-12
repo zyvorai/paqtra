@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use crate::AppState;
-use super::{track_request, jstr, PaginationQuery};
+use super::{track_request, jstr, PaginationQuery, has_namespace_access};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct K8sEvent {
@@ -21,6 +21,7 @@ pub struct K8sEvent {
 
 pub async fn list_events(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
@@ -59,6 +60,11 @@ pub async fn list_events(
             }).collect()
         })
         .unwrap_or_default();
+
+    // Apply namespace RBAC filter
+    let all_events: Vec<_> = all_events.into_iter()
+        .filter(|ev| has_namespace_access(&state, &claims, &ev.namespace))
+        .collect();
 
     let total = all_events.len();
     let offset = params.offset.unwrap_or(0);

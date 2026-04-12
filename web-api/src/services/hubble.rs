@@ -9,15 +9,32 @@ use tokio::process::Command;
 
 pub struct HubbleService {
     address: String,
+    clusters: Vec<(String, String)>, // (cluster_name, address)
 }
 
 impl HubbleService {
     /// Create a new HubbleService.
     ///
+    /// `clusters` is a list of `(cluster_name, host:port)` pairs for
+    /// multi-cluster flow aggregation. Each address is validated at startup.
+    ///
     /// # Panics
-    /// Panics at startup if `address` is not in `host:port` format.
-    pub fn new(address: &str) -> Self {
-        // Validate host:port format
+    /// Panics at startup if `address` or any cluster address is not in `host:port` format.
+    pub fn new(address: &str, clusters: Vec<(String, String)>) -> Self {
+        Self::validate_address(address);
+        for (name, addr) in &clusters {
+            if name.is_empty() {
+                panic!("Cluster name must not be empty");
+            }
+            Self::validate_address(addr);
+        }
+        Self {
+            address: address.to_string(),
+            clusters,
+        }
+    }
+
+    fn validate_address(address: &str) {
         let parts: Vec<&str> = address.rsplitn(2, ':').collect();
         if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
             panic!("Invalid Hubble address '{}': expected host:port format (e.g. hubble-relay:4245)", address);
@@ -25,18 +42,123 @@ impl HubbleService {
         if parts[0].parse::<u16>().is_err() {
             panic!("Invalid Hubble address '{}': port must be a valid u16", address);
         }
-        Self {
-            address: address.to_string(),
-        }
     }
 
     pub fn address(&self) -> &str {
         &self.address
     }
 
+    /// Return the configured cluster list.
+    pub fn clusters(&self) -> &[(String, String)] {
+        &self.clusters
+    }
+
     /// Check if Hubble relay is reachable via TCP
     pub async fn is_healthy(&self) -> bool {
         tokio::net::TcpStream::connect(&self.address).await.is_ok()
+    }
+
+    /// Check if a specific Hubble address is reachable via TCP
+    pub async fn is_address_healthy(address: &str) -> bool {
+        tokio::net::TcpStream::connect(address).await.is_ok()
+    }
+
+    /// Get flows from all configured clusters, tagged with cluster_name.
+    /// Each cluster is queried concurrently. Returns a Vec of (cluster_name, flows).
+    pub async fn get_flows_multi_cluster(
+        &self,
+        limit: usize,
+        namespace: Option<&str>,
+    ) -> Vec<(String, Vec<Flow>)> {
+        let mut handles = Vec::new();
+
+        for (name, addr) in &self.clusters {
+            let name = name.clone();
+            let addr = addr.clone();
+            let namespace = namespace.map(|s| s.to_string());
+
+            handles.push(tokio::spawn(async move {
+                let flows = Self::get_flows_from_address(
+                    &addr,
+                    limit,
+                    namespace.as_deref(),
+                    Some(&name),
+                )
+                .await
+                .unwrap_or_default();
+                (name, flows)
+            }));
+        }
+
+        let mut results = Vec::new();
+        for handle in handles {
+            if let Ok(result) = handle.await {
+                results.push(result);
+            }
+        }
+        results
+    }
+
+    /// Retrieve flows from a specific Hubble address, optionally tagging each
+    /// flow with a cluster name.
+    async fn get_flows_from_address(
+        address: &str,
+        limit: usize,
+        namespace: Option<&str>,
+        cluster_name: Option<&str>,
+    ) -> Result<Vec<Flow>> {
+        let limit = limit.min(10_000);
+
+        if let Some(ns) = namespace {
+            if ns.starts_with('-') || ns.contains(char::is_whitespace) {
+                anyhow::bail!("Invalid namespace: '{}'", ns);
+            }
+        }
+
+        let mut cmd = Command::new("hubble");
+        cmd.arg("observe")
+            .arg("--output")
+            .arg("json")
+            .arg("--last")
+            .arg(limit.to_string())
+            .arg("--server")
+            .arg(address);
+
+        if let Some(ns) = namespace {
+            cmd.arg("--namespace").arg(ns);
+        }
+
+        let output = match cmd.output().await {
+            Ok(out) => out,
+            Err(e) => {
+                tracing::debug!("hubble CLI not available for {}: {}", address, e);
+                return Ok(Vec::new());
+            }
+        };
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::debug!("hubble observe ({}) returned non-zero: {}", address, stderr.trim());
+            return Ok(Vec::new());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let cluster_tag = cluster_name.map(|s| s.to_string());
+        let flows: Vec<Flow> = stdout
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .enumerate()
+            .map(|(i, v)| {
+                let mut flow = hubble_json_to_flow(i, &v);
+                if cluster_tag.is_some() {
+                    flow.cluster = cluster_tag.clone();
+                }
+                flow
+            })
+            .collect();
+
+        Ok(flows)
     }
 
     /// Retrieve flows from Hubble via the `hubble` CLI with `--server`.
@@ -115,9 +237,35 @@ impl HubbleService {
 }
 
 /// Convert a raw Hubble JSON object into our canonical Flow struct
-fn hubble_json_to_flow(index: usize, v: &serde_json::Value) -> Flow {
+pub fn hubble_json_to_flow(index: usize, v: &serde_json::Value) -> Flow {
     let src = v.get("source").unwrap_or(v);
     let dst = v.get("destination").unwrap_or(v);
+
+    // Extract L7 HTTP fields if present
+    let l7_http = v.get("l7").and_then(|l7| {
+        l7.get("http").or_else(|| l7.get("Http")).or_else(|| l7.get("HTTP"))
+    });
+
+    let http_method = l7_http.and_then(|http| {
+        http.get("method")
+            .or_else(|| http.get("Method"))
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string())
+    });
+
+    let http_url = l7_http.and_then(|http| {
+        http.get("url")
+            .or_else(|| http.get("Url"))
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string())
+    });
+
+    let http_code = l7_http.and_then(|http| {
+        http.get("code")
+            .or_else(|| http.get("Code"))
+            .and_then(|x| x.as_u64())
+            .map(|c| c as u16)
+    });
 
     Flow {
         id: v
@@ -171,6 +319,13 @@ fn hubble_json_to_flow(index: usize, v: &serde_json::Value) -> Flow {
                     .and_then(|p| p.as_u64())
             })
             .unwrap_or(0) as u16,
+        http_method,
+        http_url,
+        http_code,
+        cluster: v
+            .get("cluster")
+            .and_then(|x| x.as_str())
+            .map(|s| s.to_string()),
     }
 }
 

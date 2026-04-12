@@ -10,10 +10,11 @@ use std::sync::atomic::Ordering;
 use crate::AppState;
 use crate::error::ApiError;
 use crate::models::policy::CreatePolicyRequest;
-use super::{check_admin, track_request, track_error, to_json};
+use super::{check_admin, track_request, track_error, to_json, audit_log, actor_from_claims, has_namespace_access};
 
 pub async fn list_policies(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Query(params): Query<super::PaginationQuery>,
 ) -> Result<Json<Value>, ApiError> {
     tracing::info!("Listing policies");
@@ -22,6 +23,10 @@ pub async fn list_policies(
 
     match state.k8s.list_policies().await {
         Ok(policies) => {
+            // Apply namespace RBAC filter
+            let policies: Vec<_> = policies.into_iter()
+                .filter(|p| has_namespace_access(&state, &claims, &p.namespace))
+                .collect();
             let total = policies.len();
             let offset = params.offset.unwrap_or(0);
             let limit = params.limit.unwrap_or(50).min(1000);
@@ -58,6 +63,7 @@ pub async fn create_policy(
     match state.k8s.create_policy(&req).await {
         Ok(policy) => {
             state.metrics.policies_created.fetch_add(1, Ordering::Relaxed);
+            audit_log(&state, "policy.create", &req.name, &req.namespace, "Policy created", &actor_from_claims(&claims), "success").await;
             Ok(Json(to_json(&policy)))
         }
         Err(e) => {
@@ -156,6 +162,7 @@ pub async fn delete_policy(
     match state.k8s.delete_policy(&id).await {
         Ok(()) => {
             state.metrics.policies_deleted.fetch_add(1, Ordering::Relaxed);
+            audit_log(&state, "policy.delete", &id, "", "Policy deleted", &actor_from_claims(&claims), "success").await;
             Ok(axum::http::StatusCode::NO_CONTENT)
         }
         Err(e) => {
@@ -236,6 +243,8 @@ pub async fn simulate_policy(
         // Namespace-wide -- assume multiple services
         std::cmp::max(total_rules, 3)
     };
+
+    audit_log(&state, "policy.simulate", &req.name, &req.namespace, "Policy simulated", &actor_from_claims(&claims), "success").await;
 
     Ok(Json(json!({
         "policy": req.name,

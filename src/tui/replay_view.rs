@@ -1,15 +1,15 @@
 /// Replay View - Traffic Recording & Playback with Time-Travel Debugging
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
 use super::theme::*;
-use crate::ebpf::MapReader;
-use crate::modules::replay::ReplayEngine;
+use crate::ebpf::{MapReader, PolicyVerdict};
+use crate::modules::replay::{RecordedFlow, ReplayEngine};
 
 pub struct ReplayView {
     // Time-travel state
@@ -18,6 +18,9 @@ pub struct ReplayView {
     pub timeline_position: usize, // Current position in timeline (0-100)
     pub is_playing: bool,
     pub playback_speed: f32,
+    // Loaded flow data for time-travel mode
+    pub loaded_flows: Vec<RecordedFlow>,
+    pub loaded_recording_name: String,
 }
 
 impl ReplayView {
@@ -28,6 +31,24 @@ impl ReplayView {
             timeline_position: 0,
             is_playing: false,
             playback_speed: 1.0,
+            loaded_flows: Vec::new(),
+            loaded_recording_name: String::new(),
+        }
+    }
+
+    /// Load flows from the selected recording into local state.
+    pub fn load_flows<M: MapReader>(&mut self, replay: &ReplayEngine<M>) {
+        if let Some(rec) = replay.recordings().get(self.selected_recording_index) {
+            match replay.load_recording_flows(&rec.id) {
+                Ok(flows) => {
+                    self.loaded_recording_name = rec.name.clone();
+                    self.loaded_flows = flows;
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load recording flows: {}", e);
+                    self.loaded_flows.clear();
+                }
+            }
         }
     }
 
@@ -35,11 +56,14 @@ impl ReplayView {
         self.time_travel_mode = true;
         self.timeline_position = 0;
         self.is_playing = false;
+        // Flows will be loaded from events.rs when entering time-travel
     }
 
     pub fn exit_time_travel(&mut self) {
         self.time_travel_mode = false;
         self.is_playing = false;
+        self.loaded_flows.clear();
+        self.loaded_recording_name.clear();
     }
 
     pub fn toggle_playback(&mut self) {
@@ -278,13 +302,16 @@ impl ReplayView {
             ])
             .split(area);
 
-        // Look up the selected recording from the engine
-        let selected = replay
-            .and_then(|engine| engine.recordings().get(self.selected_recording_index));
-
-        let (rec_name, flow_count) = match selected {
-            Some(rec) => (rec.name.as_str(), rec.flow_count),
-            None => ("(none)", 0),
+        // Use loaded flows when available, otherwise fall back to recording metadata
+        let (rec_name, flow_count) = if !self.loaded_flows.is_empty() {
+            (self.loaded_recording_name.as_str(), self.loaded_flows.len())
+        } else {
+            let selected = replay
+                .and_then(|engine| engine.recordings().get(self.selected_recording_index));
+            match selected {
+                Some(rec) => (rec.name.as_str(), rec.flow_count),
+                None => ("(none)", 0),
+            }
         };
 
         let current_flow = if flow_count > 0 {
@@ -356,17 +383,73 @@ impl ReplayView {
     }
 
     fn render_network_state(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let state_text = format!(
-            "🌐 Network State Snapshot\n\n\
-            Timeline Position:     {}%\n\
-            Playback Speed:        {}x\n\
-            Playing:               {}\n\n\
-            Load a recording and enter time-travel mode to view\n\
-            state snapshots at each point in time.",
-            self.timeline_position,
-            self.playback_speed,
-            if self.is_playing { "Yes" } else { "No" },
-        );
+        let state_text = if !self.loaded_flows.is_empty() {
+            // Compute real stats from loaded flows up to the current timeline position
+            let total = self.loaded_flows.len();
+            let flows_up_to = if total > 0 {
+                ((self.timeline_position as f64 / 100.0) * total as f64).ceil() as usize
+            } else {
+                0
+            }
+            .min(total);
+
+            let visible = &self.loaded_flows[..flows_up_to];
+
+            let allow_count = visible
+                .iter()
+                .filter(|f| f.verdict == PolicyVerdict::Allow)
+                .count();
+            let deny_count = visible
+                .iter()
+                .filter(|f| f.verdict == PolicyVerdict::Deny)
+                .count();
+
+            let mut src_endpoints: Vec<&str> =
+                visible.iter().map(|f| f.src_namespace.as_str()).collect();
+            let mut dst_endpoints: Vec<&str> =
+                visible.iter().map(|f| f.dst_namespace.as_str()).collect();
+            src_endpoints.sort_unstable();
+            src_endpoints.dedup();
+            dst_endpoints.sort_unstable();
+            dst_endpoints.dedup();
+
+            let mut all_ns: Vec<&str> = src_endpoints
+                .iter()
+                .chain(dst_endpoints.iter())
+                .copied()
+                .collect();
+            all_ns.sort_unstable();
+            all_ns.dedup();
+
+            format!(
+                "Network State Snapshot\n\n\
+                Flows (up to {}%):     {}/{}\n\
+                Verdicts:              Allow: {}  Deny: {}\n\
+                Source endpoints:      {}\n\
+                Destination endpoints: {}\n\
+                Namespaces:            {}",
+                self.timeline_position,
+                flows_up_to,
+                total,
+                allow_count,
+                deny_count,
+                src_endpoints.len(),
+                dst_endpoints.len(),
+                all_ns.join(", "),
+            )
+        } else {
+            format!(
+                "Network State Snapshot\n\n\
+                Timeline Position:     {}%\n\
+                Playback Speed:        {}x\n\
+                Playing:               {}\n\n\
+                Load a recording and enter time-travel mode to view\n\
+                state snapshots at each point in time.",
+                self.timeline_position,
+                self.playback_speed,
+                if self.is_playing { "Yes" } else { "No" },
+            )
+        };
 
         let state = Paragraph::new(state_text)
             .style(Style::default().fg(SUCCESS_COLOR))
@@ -377,14 +460,109 @@ impl ReplayView {
     }
 
     fn render_flow_events(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let msg = Paragraph::new(
-            "Load a recording to view flow events.\n\n\
-            Select a recording from the list and enter time-travel mode\n\
-            to step through individual flow events.",
-        )
-        .style(Style::default().fg(TEXT_COLOR))
-        .block(bordered_block("Flow Events (Around Current Time)"));
+        if self.loaded_flows.is_empty() {
+            let msg = Paragraph::new(
+                "Load a recording to view flow events.\n\n\
+                Select a recording from the list and enter time-travel mode\n\
+                to step through individual flow events.",
+            )
+            .style(Style::default().fg(TEXT_COLOR))
+            .block(bordered_block("Flow Events (Around Current Time)"));
 
-        f.render_widget(msg, area);
+            f.render_widget(msg, area);
+            return;
+        }
+
+        let total = self.loaded_flows.len();
+        let current_idx = if total > 0 {
+            ((self.timeline_position as f64 / 100.0) * (total.saturating_sub(1)) as f64) as usize
+        } else {
+            0
+        }
+        .min(total.saturating_sub(1));
+
+        // Show 5 flows centered around the current index
+        let window_half = 2usize;
+        let start = current_idx.saturating_sub(window_half);
+        let end = (current_idx + window_half + 1).min(total);
+
+        let items: Vec<ListItem> = self.loaded_flows[start..end]
+            .iter()
+            .enumerate()
+            .map(|(i, flow)| {
+                let flow_num = start + i;
+                let is_current = flow_num == current_idx;
+
+                let proto = match flow.protocol {
+                    1 => "ICMP",
+                    6 => "TCP",
+                    17 => "UDP",
+                    58 => "ICMPv6",
+                    _ => "OTHER",
+                };
+
+                let verdict_str = match flow.verdict {
+                    PolicyVerdict::Allow => "Allow",
+                    PolicyVerdict::Deny => "Deny",
+                    PolicyVerdict::Redirect => "Redirect",
+                    PolicyVerdict::Audit => "Audit",
+                };
+
+                let src_pod = flow
+                    .src_labels
+                    .get("app")
+                    .or_else(|| flow.src_labels.get("k8s:app"))
+                    .cloned()
+                    .unwrap_or_else(|| flow.src_ip.to_string());
+
+                let dst_pod = flow
+                    .dst_labels
+                    .get("app")
+                    .or_else(|| flow.dst_labels.get("k8s:app"))
+                    .cloned()
+                    .unwrap_or_else(|| flow.dst_ip.to_string());
+
+                let prefix = if is_current { "\u{25b6} " } else { "  " };
+
+                let content = format!(
+                    "{}#{} {}/{} -> {}/{}:{} [{}] {}",
+                    prefix,
+                    flow_num,
+                    flow.src_namespace,
+                    src_pod,
+                    flow.dst_namespace,
+                    dst_pod,
+                    flow.dst_port,
+                    verdict_str,
+                    proto,
+                );
+
+                let verdict_color = match flow.verdict {
+                    PolicyVerdict::Allow => SUCCESS_COLOR,
+                    PolicyVerdict::Deny => ERROR_COLOR,
+                    PolicyVerdict::Redirect => INFO_COLOR,
+                    PolicyVerdict::Audit => WARNING_COLOR,
+                };
+
+                let style = if is_current {
+                    Style::default()
+                        .fg(verdict_color)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(verdict_color)
+                };
+
+                ListItem::new(Line::from(Span::styled(content, style)))
+            })
+            .collect();
+
+        let title = format!(
+            "Flow Events (Around Current Time) [{}/{}]",
+            current_idx + 1,
+            total
+        );
+        let list = List::new(items).block(bordered_block(&title));
+
+        f.render_widget(list, area);
     }
 }

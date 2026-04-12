@@ -19,6 +19,8 @@ pub struct Claims {
     pub exp: usize,
     pub iat: usize,
     pub role: String,
+    #[serde(default)]
+    pub namespaces: Vec<String>,  // Empty = all namespaces (for backwards compat)
 }
 
 /// JWT authentication middleware that validates Bearer tokens.

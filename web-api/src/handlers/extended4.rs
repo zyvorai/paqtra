@@ -2,7 +2,7 @@ use axum::{extract::{Query, State}, http::StatusCode, Json};
 use serde::Deserialize;
 use std::sync::Arc;
 use crate::AppState;
-use super::{check_admin, track_request, PaginationQuery, paginate_json};
+use super::{check_admin, track_request, PaginationQuery, paginate_json, audit_log, actor_from_claims};
 
 #[derive(Debug, Deserialize)]
 pub struct ValidatePolicyRequest {
@@ -212,6 +212,7 @@ pub async fn create_export_config(
     });
 
     let _ = state.cache.set_persistent(&format!("{}{}", EXPORT_CONFIGS_PREFIX, id), &config).await;
+    audit_log(&state, "export.create", &id, "", "Export config created", &actor_from_claims(&claims), "success").await;
 
     Ok(Json(serde_json::json!({
         "id": id,
@@ -230,6 +231,7 @@ pub async fn delete_export_config(
 
     let key = format!("{}{}", EXPORT_CONFIGS_PREFIX, id);
     let _ = state.cache.delete(&key).await;
+    audit_log(&state, "export.delete", &id, "", "Export config deleted", &actor_from_claims(&claims), "success").await;
 
     Ok(Json(serde_json::json!({
         "id": id,
@@ -329,6 +331,7 @@ pub async fn rollback_change(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
+    audit_log(&state, "change.rollback", &id, "", "Change rolled back", &actor_from_claims(&claims), "success").await;
     Ok(Json(serde_json::json!({
         "id": id,
         "status": "rolled_back",
@@ -385,6 +388,7 @@ pub async fn drain_node(
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let node = &body.node;
+    audit_log(&state, "node.drain", node, "", "Node drain initiated", &actor_from_claims(&claims), "success").await;
     Ok(Json(serde_json::json!({
         "node": node,
         "status": "draining",
@@ -401,6 +405,7 @@ pub async fn uncordon_node(
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let node = &body.node;
+    audit_log(&state, "node.uncordon", node, "", "Node uncordoned", &actor_from_claims(&claims), "success").await;
     Ok(Json(serde_json::json!({
         "node": node,
         "status": "ready",

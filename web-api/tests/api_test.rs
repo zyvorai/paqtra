@@ -169,6 +169,10 @@ fn test_flow_model_serialization() {
         verdict: "FORWARDED".to_string(),
         protocol: "TCP".to_string(),
         port: 8080,
+        http_method: None,
+        http_url: None,
+        http_code: None,
+        cluster: None,
     };
 
     let restored: Flow = roundtrip_json(&flow);
@@ -354,6 +358,10 @@ fn test_flow_list_serialization() {
             verdict: "FORWARDED".to_string(),
             protocol: "TCP".to_string(),
             port: 80,
+            http_method: None,
+            http_url: None,
+            http_code: None,
+            cluster: None,
         },
         Flow {
             id: "f2".to_string(),
@@ -371,6 +379,10 @@ fn test_flow_list_serialization() {
             verdict: "DROPPED".to_string(),
             protocol: "UDP".to_string(),
             port: 53,
+            http_method: None,
+            http_url: None,
+            http_code: None,
+            cluster: None,
         },
     ];
 
@@ -479,6 +491,7 @@ fn test_valid_jwt_claims() {
         exp: now + 3600,
         iat: now,
         role: "admin".to_string(),
+        namespaces: vec![],
     };
 
     assert_eq!(claims.sub, "user-42");
@@ -495,6 +508,7 @@ fn test_claims_serialization() {
         exp: 1700003600,
         iat: 1700000000,
         role: "viewer".to_string(),
+        namespaces: vec![],
     };
 
     let restored: Claims = roundtrip_json(&claims);
@@ -513,6 +527,7 @@ fn test_claims_json_keys() {
         exp: 0,
         iat: 0,
         role: "r".to_string(),
+        namespaces: vec![],
     };
 
     let value = serde_json::to_value(&claims).expect("serialize claims");
@@ -522,7 +537,8 @@ fn test_claims_json_keys() {
     assert!(obj.contains_key("exp"), "Claims must have 'exp' field");
     assert!(obj.contains_key("iat"), "Claims must have 'iat' field");
     assert!(obj.contains_key("role"), "Claims must have 'role' field");
-    assert_eq!(obj.len(), 4, "Claims should serialize to exactly 4 JSON keys");
+    assert!(obj.contains_key("namespaces"), "Claims must have 'namespaces' field");
+    assert_eq!(obj.len(), 5, "Claims should serialize to exactly 5 JSON keys");
 }
 
 /// Claims deserialization must fail when required fields are missing.
@@ -546,6 +562,7 @@ fn test_jwt_encode_decode_roundtrip() {
         exp: 9999999999, // Far future so the token does not expire during the test
         iat: 1700000000,
         role: "editor".to_string(),
+        namespaces: vec![],
     };
 
     // Encode
@@ -581,6 +598,7 @@ fn test_jwt_decode_wrong_secret() {
         exp: 9999999999,
         iat: 1700000000,
         role: "admin".to_string(),
+        namespaces: vec![],
     };
 
     let token = encode(
@@ -611,6 +629,7 @@ fn test_jwt_decode_expired_token() {
         exp: 1, // Expired in 1970
         iat: 0,
         role: "viewer".to_string(),
+        namespaces: vec![],
     };
 
     let token = encode(

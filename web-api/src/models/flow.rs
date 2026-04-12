@@ -10,6 +10,14 @@ pub struct Flow {
     pub verdict: String,
     pub protocol: String,
     pub port: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_method: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_code: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

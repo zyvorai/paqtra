@@ -10,7 +10,7 @@ use std::sync::atomic::Ordering;
 use crate::AppState;
 use crate::error::ApiError;
 use crate::models::flow::{Flow, FlowQueryParams};
-use super::{track_request, track_error, to_json};
+use super::{track_request, track_error, to_json, has_namespace_access};
 
 /// Cache key prefix for flow queries
 const FLOWS_CACHE_PREFIX: &str = "flows";
@@ -21,6 +21,7 @@ const MAX_LIMIT: usize = 1000;
 
 pub async fn list_flows(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Query(params): Query<FlowQueryParams>,
 ) -> Result<Json<Value>, ApiError> {
     tracing::info!("Fetching flows with params: {:?}", params);
@@ -49,6 +50,9 @@ pub async fn list_flows(
             if let Some(ref verdict) = params.verdict {
                 cached_flows.retain(|f| f.verdict.eq_ignore_ascii_case(verdict));
             }
+
+            // Apply namespace RBAC filter
+            cached_flows.retain(|f| has_namespace_access(&state, &claims, &f.source.namespace));
 
             state.metrics.flows_fetched.fetch_add(cached_flows.len() as u64, Ordering::Relaxed);
 
@@ -93,6 +97,9 @@ pub async fn list_flows(
     if let Some(ref verdict) = params.verdict {
         flows.retain(|f| f.verdict.eq_ignore_ascii_case(verdict));
     }
+
+    // Apply namespace RBAC filter
+    flows.retain(|f| has_namespace_access(&state, &claims, &f.source.namespace));
 
     // Store in cache (best-effort)
     if let Err(e) = state.cache.set(&cache_key, &flows, FLOWS_CACHE_TTL).await {

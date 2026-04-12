@@ -2,7 +2,7 @@ use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;
 use std::sync::Arc;
 use crate::AppState;
-use super::{check_admin, track_request};
+use super::{check_admin, track_request, audit_log, actor_from_claims};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateMirrorRequest {
@@ -145,9 +145,62 @@ pub async fn forecast_data(
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    // Fetch recent Hubble flows and aggregate counts by hour
-    let flows = state.hubble.get_flows(5000, None).await.unwrap_or_default();
     let now = chrono::Utc::now();
+
+    // If Prometheus is configured, use query_range for historical metric data
+    if state.prometheus.is_configured() {
+        let promql = match metric.as_str() {
+            "cpu_usage" => "rate(container_cpu_usage_seconds_total[5m])",
+            "memory_usage" => "container_memory_working_set_bytes",
+            "network_throughput" => "rate(container_network_transmit_bytes_total[5m])",
+            "pod_count" => "count(kube_pod_info)",
+            _ => "up",
+        };
+
+        let end = now.to_rfc3339();
+        let start = (now - chrono::Duration::hours(24)).to_rfc3339();
+        let step = "300"; // 5-minute intervals
+
+        if let Ok(result) = state.prometheus.query_range(promql, &start, &end, step).await {
+            // Extract data points from the Prometheus range response
+            let points: Vec<serde_json::Value> = result
+                .get("data")
+                .and_then(|d| d.get("result"))
+                .and_then(|r| r.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|series| series.get("values"))
+                .and_then(|v| v.as_array())
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(|pair| {
+                            let arr = pair.as_array()?;
+                            let ts = arr.first()?.as_f64()?;
+                            let val = arr.get(1)?.as_str()?.parse::<f64>().ok()?;
+                            Some(serde_json::json!({
+                                "timestamp": ts,
+                                "value": val,
+                            }))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            return Json(serde_json::json!({
+                "metric": metric,
+                "data_type": "prometheus_range",
+                "source": "prometheus",
+                "promql": promql,
+                "total_points": points.len(),
+                "points": points,
+                "observed_at": now.to_rfc3339(),
+            }));
+        }
+        // If the Prometheus query failed, fall through to Hubble-based aggregation
+    }
+
+    // Fallback: fetch recent Hubble flows and aggregate counts by hour
+    let flows = state.hubble.get_flows(5000, None).await.unwrap_or_default();
 
     // Bucket flows by hour based on their timestamps
     let mut hourly_counts: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
@@ -376,7 +429,39 @@ pub async fn ip_allocations(State(state): State<Arc<AppState>>) -> Json<serde_js
 pub async fn latency_analysis(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    // Derive per-service traffic volume from Hubble flows
+    // If Prometheus is configured, query real latency percentiles
+    if state.prometheus.is_configured() {
+        let p50 = state
+            .prometheus
+            .get_metric_value(
+                "histogram_quantile(0.5, rate(hubble_flows_processed_duration_seconds_bucket[5m]))",
+            )
+            .await;
+        let p95 = state
+            .prometheus
+            .get_metric_value(
+                "histogram_quantile(0.95, rate(hubble_flows_processed_duration_seconds_bucket[5m]))",
+            )
+            .await;
+        let p99 = state
+            .prometheus
+            .get_metric_value(
+                "histogram_quantile(0.99, rate(hubble_flows_processed_duration_seconds_bucket[5m]))",
+            )
+            .await;
+
+        return Json(serde_json::json!({
+            "latency": {
+                "p50_seconds": p50,
+                "p95_seconds": p95,
+                "p99_seconds": p99,
+            },
+            "source": "prometheus",
+            "query_window": "5m",
+        }));
+    }
+
+    // Fallback: derive per-service traffic volume from Hubble flows
     // Note: L4 flows don't include latency; we report flow counts as a traffic volume proxy
     let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
 
@@ -431,6 +516,7 @@ pub async fn create_mirror_rule(
         "created_at": chrono::Utc::now().to_rfc3339(),
     });
     let _ = state.cache.set_persistent(&format!("{}{}", MIRROR_RULES_PREFIX, id), &rule).await;
+    audit_log(&state, "mirror.create", &id, "", "Mirror rule created", &actor_from_claims(&claims), "success").await;
 
     Ok(Json(serde_json::json!({
         "id": id,
@@ -448,6 +534,7 @@ pub async fn delete_mirror_rule(
     track_request(&state, |_| {}).await;
 
     let _ = state.cache.delete(&format!("{}{}", MIRROR_RULES_PREFIX, id)).await;
+    audit_log(&state, "mirror.delete", &id, "", "Mirror rule deleted", &actor_from_claims(&claims), "success").await;
     Ok(Json(serde_json::json!({
         "id": id,
         "status": "deleted",

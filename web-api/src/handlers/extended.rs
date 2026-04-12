@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use crate::AppState;
-use super::{check_admin, track_request, PaginationQuery, paginate_json};
+use super::{check_admin, track_request, PaginationQuery, paginate_json, audit_log, actor_from_claims};
 
 #[derive(Debug, Deserialize)]
 pub struct StartRecordingRequest {
@@ -63,6 +63,7 @@ pub async fn start_recording(
     });
 
     let _ = state.cache.set_persistent(&format!("{}{}", RECORDINGS_PREFIX, id), &recording).await;
+    audit_log(&state, "recording.start", &id, ns, "Recording started", &actor_from_claims(&claims), "success").await;
 
     Ok(Json(serde_json::json!({
         "id": id,
@@ -85,6 +86,7 @@ pub async fn stop_recording(
         rec["status"] = serde_json::json!("completed");
         rec["end_time"] = serde_json::json!(chrono::Utc::now().to_rfc3339());
         let _ = state.cache.set_persistent(&key, &rec).await;
+        audit_log(&state, "recording.stop", &id, "", "Recording stopped", &actor_from_claims(&claims), "success").await;
         Ok(Json(serde_json::json!({ "id": id, "status": "stopped", "message": "Recording stopped" })))
     } else {
         Ok(Json(serde_json::json!({ "id": id, "status": "not_found" })))
@@ -180,6 +182,7 @@ pub async fn apply_healer_fix(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
+    audit_log(&state, "healer.apply", &id, "", "Healer fix applied", &actor_from_claims(&claims), "success").await;
     Ok(Json(serde_json::json!({ "id": id, "status": "applied", "message": "Fix applied successfully" })))
 }
 
@@ -284,7 +287,43 @@ pub async fn list_clusters(
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
+    use crate::services::hubble::HubbleService;
     use crate::services::k8s::K8sService;
+
+    let configured_clusters = state.hubble.clusters();
+
+    // If we have configured clusters, build info from them first
+    if !configured_clusters.is_empty() {
+        let mut items = Vec::new();
+
+        for (name, addr) in configured_clusters {
+            let healthy = HubbleService::is_address_healthy(addr).await;
+
+            // Query K8s node/pod counts (best-effort)
+            let node_count = {
+                let data = state.k8s.kubectl_json(&["get", "nodes", "-o", "json"]).await;
+                data.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0) as u64
+            };
+            let pod_count = {
+                let data = state.k8s.kubectl_json(&["get", "pods", "--all-namespaces", "-o", "json"]).await;
+                data.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0) as u64
+            };
+
+            items.push(serde_json::json!({
+                "name": name,
+                "status": if healthy { "connected" } else { "unreachable" },
+                "endpoint": addr,
+                "nodes": node_count,
+                "pods": pod_count,
+                "hubble_healthy": healthy,
+                "last_sync": chrono::Utc::now().to_rfc3339(),
+            }));
+        }
+
+        if !items.is_empty() {
+            return Json(paginate_json(items, &params, "clusters"));
+        }
+    }
 
     // Try to get cluster mesh status from cilium agent
     let mesh_output = K8sService::run_cmd(
@@ -340,6 +379,7 @@ pub async fn sync_cluster(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
+    audit_log(&state, "cluster.sync", &name, "", "Cluster sync initiated", &actor_from_claims(&claims), "success").await;
     Ok(Json(serde_json::json!({ "cluster": name, "status": "syncing", "message": "Policy sync initiated" })))
 }
 
@@ -359,18 +399,47 @@ pub async fn heatmap_data(
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    // Build heatmap from real Hubble flows
-    let flows = state.hubble.get_flows(1000, None).await.unwrap_or_default();
+    let multi_cluster = state.hubble.clusters().len() > 1;
+
+    // Collect flows: use multi-cluster aggregation when multiple clusters are configured
+    let all_flows: Vec<crate::models::flow::Flow> = if multi_cluster {
+        let cluster_flows = state.hubble.get_flows_multi_cluster(1000, None).await;
+        cluster_flows.into_iter().flat_map(|(_, flows)| flows).collect()
+    } else {
+        state.hubble.get_flows(1000, None).await.unwrap_or_default()
+    };
 
     let mut ns_set = std::collections::HashSet::new();
     let mut cell_map: std::collections::HashMap<(String, String), (u64, u64)> = std::collections::HashMap::new();
 
-    for flow in &flows {
-        let src_ns = if flow.source.namespace.is_empty() { "unknown" } else { &flow.source.namespace };
-        let dst_ns = if flow.destination.namespace.is_empty() { "unknown" } else { &flow.destination.namespace };
-        ns_set.insert(src_ns.to_string());
-        ns_set.insert(dst_ns.to_string());
-        let entry = cell_map.entry((src_ns.to_string(), dst_ns.to_string())).or_default();
+    for flow in &all_flows {
+        let raw_src_ns = if flow.source.namespace.is_empty() { "unknown" } else { &flow.source.namespace };
+        let raw_dst_ns = if flow.destination.namespace.is_empty() { "unknown" } else { &flow.destination.namespace };
+
+        // In multi-cluster mode, prefix namespace with cluster name (e.g. "us-east/default")
+        let src_ns = if multi_cluster {
+            if let Some(ref cluster) = flow.cluster {
+                format!("{}/{}", cluster, raw_src_ns)
+            } else {
+                raw_src_ns.to_string()
+            }
+        } else {
+            raw_src_ns.to_string()
+        };
+
+        let dst_ns = if multi_cluster {
+            if let Some(ref cluster) = flow.cluster {
+                format!("{}/{}", cluster, raw_dst_ns)
+            } else {
+                raw_dst_ns.to_string()
+            }
+        } else {
+            raw_dst_ns.to_string()
+        };
+
+        ns_set.insert(src_ns.clone());
+        ns_set.insert(dst_ns.clone());
+        let entry = cell_map.entry((src_ns, dst_ns)).or_default();
         entry.0 += 1; // flow_count
         if flow.verdict == "DROPPED" {
             entry.1 += 1; // dropped_count
@@ -382,7 +451,7 @@ pub async fn heatmap_data(
     }).collect();
 
     let namespaces: Vec<String> = ns_set.into_iter().collect();
-    Json(serde_json::json!({ "cells": cells, "namespaces": namespaces }))
+    Json(serde_json::json!({ "cells": cells, "namespaces": namespaces, "multi_cluster": multi_cluster }))
 }
 
 // ── Service Dependencies ────────────────────────────────────
@@ -422,12 +491,36 @@ pub async fn list_dependencies(
         if flow.verdict == "DROPPED" { entry.2 += 1; } // errors
     }
 
+    // Collect L7 HTTP info per dependency key
+    let mut l7_map: std::collections::HashMap<(String, String, u16), (Option<String>, Option<String>)> = std::collections::HashMap::new();
+    for flow in &flows {
+        let src = if !flow.source.pod.is_empty() {
+            flow.source.pod.split('-').take(2).collect::<Vec<_>>().join("-")
+        } else { continue; };
+        let dst = if !flow.destination.pod.is_empty() {
+            flow.destination.pod.split('-').take(2).collect::<Vec<_>>().join("-")
+        } else { continue; };
+        if src == dst { continue; }
+        if flow.http_method.is_some() || flow.http_url.is_some() {
+            l7_map.entry((src, dst, flow.port))
+                .or_insert((flow.http_method.clone(), flow.http_url.clone()));
+        }
+    }
+
     let items: Vec<serde_json::Value> = dep_map.into_iter().map(|((src, dst, port), (proto, total, errors))| {
         let error_rate = if total > 0 { errors as f64 / total as f64 * 100.0 } else { 0.0 };
-        serde_json::json!({
+        let l7 = l7_map.get(&(src.clone(), dst.clone(), port));
+        let mut entry = serde_json::json!({
             "source": src, "destination": dst, "protocol": proto,
             "port": port, "request_count": total, "error_rate": error_rate,
-        })
+        });
+        if let Some((Some(method), _)) = l7 {
+            entry["http_method"] = serde_json::json!(method);
+        }
+        if let Some((_, Some(url))) = l7 {
+            entry["http_url"] = serde_json::json!(url);
+        }
+        entry
     }).collect();
 
     Json(paginate_json(items, &params, "dependencies"))

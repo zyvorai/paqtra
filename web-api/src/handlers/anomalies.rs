@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::AppState;
-use super::{check_admin, track_request, to_json};
+use super::{check_admin, track_request, to_json, audit_log, actor_from_claims};
 
 use super::PaginationQuery;
 
@@ -302,6 +302,9 @@ pub async fn remediate_anomaly(
             format!("No anomaly with id '{}' found in current detection window; no action taken", id),
         )
     };
+
+    let ns = anomaly.as_ref().map(|a| a.source_namespace.as_str()).unwrap_or("");
+    audit_log(&state, "anomaly.remediate", &id, ns, "Anomaly remediation applied", &actor_from_claims(&claims), "success").await;
 
     let result = RemediationResult {
         id: id.clone(),

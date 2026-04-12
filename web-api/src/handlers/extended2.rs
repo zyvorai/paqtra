@@ -1,7 +1,7 @@
 use axum::{extract::{Path, Query, State}, http::StatusCode, Json};
 use std::sync::Arc;
 use crate::AppState;
-use super::{check_admin, track_request, PaginationQuery, paginate_json};
+use super::{check_admin, track_request, PaginationQuery, paginate_json, audit_log as emit_audit, actor_from_claims};
 
 // ── Host Info ───────────────────────────────────────────────
 
@@ -84,6 +84,7 @@ pub async fn apply_template(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
+    emit_audit(&state, "template.apply", &id, "", "Template applied", &actor_from_claims(&claims), "success").await;
     Ok(Json(serde_json::json!({ "id": id, "status": "applied", "message": "Template applied successfully" })))
 }
 
@@ -269,6 +270,7 @@ pub async fn toggle_alert_rule(
         let enabled = rule.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
         rule["enabled"] = serde_json::json!(!enabled);
         let _ = state.cache.set_persistent(&key, &rule).await;
+        emit_audit(&state, "alert.toggle", &id, "", &format!("Alert rule toggled to {}", !enabled), &actor_from_claims(&claims), "success").await;
         Ok(Json(serde_json::json!({ "id": id, "enabled": !enabled, "status": "updated" })))
     } else {
         Ok(Json(serde_json::json!({ "id": id, "status": "not_found" })))
@@ -304,7 +306,12 @@ pub async fn service_map(State(state): State<Arc<AppState>>) -> Json<serde_json:
         svc_set.insert((dst.clone(), flow.destination.namespace.clone()));
 
         let key = (src, dst);
-        let entry = edge_map.entry(key).or_insert((flow.protocol.clone(), 0));
+        let proto = if flow.http_method.is_some() {
+            "HTTP".to_string()
+        } else {
+            flow.protocol.clone()
+        };
+        let entry = edge_map.entry(key).or_insert((proto, 0));
         entry.1 += 1;
     }
 
@@ -350,6 +357,7 @@ pub async fn start_capture(
         "started_at": chrono::Utc::now().to_rfc3339(),
     });
     let _ = state.cache.set_persistent(&format!("{}{}", CAPTURES_PREFIX, id), &session).await;
+    emit_audit(&state, "capture.start", &id, "", "Capture started", &actor_from_claims(&claims), "success").await;
 
     Ok(Json(serde_json::json!({ "id": id, "status": "capturing", "message": "Capture started" })))
 }
@@ -368,6 +376,7 @@ pub async fn stop_capture(
         session["stopped_at"] = serde_json::json!(chrono::Utc::now().to_rfc3339());
         let _ = state.cache.set_persistent(&key, &session).await;
     }
+    emit_audit(&state, "capture.stop", &id, "", "Capture stopped", &actor_from_claims(&claims), "success").await;
     Ok(Json(serde_json::json!({ "id": id, "status": "completed", "message": "Capture stopped" })))
 }
 

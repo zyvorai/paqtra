@@ -15,6 +15,12 @@ pub struct Config {
     pub auth_disabled: bool,
     /// Directory containing the built web UI static files (index.html, assets/, etc.)
     pub ui_dist_dir: Option<String>,
+    /// Optional Prometheus server URL for querying real metrics (e.g. latency percentiles).
+    pub prometheus_url: Option<String>,
+    /// List of (cluster_name, hubble_address) pairs for multi-cluster aggregation.
+    /// Parsed from HUBBLE_ADDRESSES env var as comma-separated `name=host:port` pairs.
+    /// Falls back to a single "local" entry derived from `hubble_address`.
+    pub hubble_addresses: Vec<(String, String)>,
 }
 
 impl Config {
@@ -60,6 +66,34 @@ impl Config {
             );
         }
 
+        let hubble_address = env::var("HUBBLE_ADDRESS")
+            .unwrap_or_else(|_| "localhost:4245".to_string());
+
+        let hubble_addresses = if let Ok(raw) = env::var("HUBBLE_ADDRESSES") {
+            // Parse comma-separated name=host:port pairs
+            raw.split(',')
+                .filter_map(|entry| {
+                    let entry = entry.trim();
+                    if entry.is_empty() {
+                        return None;
+                    }
+                    let parts: Vec<&str> = entry.splitn(2, '=').collect();
+                    if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+                        Some((parts[0].to_string(), parts[1].to_string()))
+                    } else {
+                        tracing::warn!(
+                            "Ignoring invalid HUBBLE_ADDRESSES entry '{}': expected name=host:port",
+                            entry
+                        );
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            // Derive a single entry from the primary hubble_address
+            vec![("local".to_string(), hubble_address.clone())]
+        };
+
         Ok(Self {
             host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: env::var("PORT")
@@ -68,11 +102,12 @@ impl Config {
             redis_url: env::var("REDIS_URL")
                 .unwrap_or_else(|_| "redis://localhost:6379".to_string()),
             jwt_secret,
-            hubble_address: env::var("HUBBLE_ADDRESS")
-                .unwrap_or_else(|_| "localhost:4245".to_string()),
+            hubble_address,
             k8s_context: env::var("K8S_CONTEXT").ok(),
             auth_disabled,
             ui_dist_dir: env::var("UI_DIST_DIR").ok(),
+            prometheus_url: env::var("PROMETHEUS_URL").ok(),
+            hubble_addresses,
         })
     }
 }

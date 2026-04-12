@@ -58,8 +58,16 @@ pub(crate) fn handle_key_event(app: &mut TuiApp, key_code: KeyCode) -> KeyAction
         KeyCode::Char('t')
             if !app.show_help && app.selected_tab == 9 && !app.replay_view.time_travel_mode =>
         {
-            // Enter time-travel mode
+            // Enter time-travel mode and load flows from the selected recording
             app.replay_view.enter_time_travel();
+            match &app.modules {
+                ModuleContainer::Enriched { replay, .. } => {
+                    app.replay_view.load_flows(replay);
+                }
+                ModuleContainer::Mock { replay, .. } => {
+                    app.replay_view.load_flows(replay);
+                }
+            }
         }
         KeyCode::Esc
             if !app.show_help && app.selected_tab == 9 && app.replay_view.time_travel_mode =>

@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::AppState;
-use super::{track_request, to_json};
+use super::{track_request, to_json, audit_log, actor_from_claims};
 
 /// Typed request for the compliance audit endpoint.
 #[derive(Debug, Deserialize)]
@@ -329,6 +329,8 @@ pub async fn run_audit(
         score,
         findings,
     };
+
+    audit_log(&state, "compliance.audit", framework, "", &format!("Compliance audit completed: score={}", score), &actor_from_claims(&claims), "success").await;
 
     Ok(Json(to_json(&audit)))
 }

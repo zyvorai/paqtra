@@ -400,6 +400,18 @@ impl<M: MapReader> ReplayEngine<M> {
         &self.recordings
     }
 
+    /// Load recorded flows for a specific recording.
+    /// Returns the flows or an error if the recording doesn't exist.
+    pub fn load_recording_flows(&self, recording_id: &str) -> Result<Vec<RecordedFlow>> {
+        if let Some(rec) = self.recordings.iter().find(|r| r.id == recording_id) {
+            use storage::RecordingStorage;
+            let storage = RecordingStorage::new(self.config.recording_dir.clone());
+            storage.load(rec)
+        } else {
+            anyhow::bail!("Recording not found: {}", recording_id)
+        }
+    }
+
     /// Get statistics
     pub fn stats(&self) -> ReplayStats {
         ReplayStats {

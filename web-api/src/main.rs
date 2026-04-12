@@ -26,6 +26,7 @@ use crate::config::Config;
 use crate::services::hubble::HubbleService;
 use crate::services::k8s::K8sService;
 use crate::services::cache::CacheService;
+use crate::services::prometheus::PrometheusService;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -48,14 +49,25 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Connected to Redis");
 
     // Initialize services
-    let hubble = HubbleService::new(&config.hubble_address);
-    tracing::info!("HubbleService initialized (relay: {})", config.hubble_address);
+    let hubble = HubbleService::new(&config.hubble_address, config.hubble_addresses.clone());
+    tracing::info!(
+        "HubbleService initialized (relay: {}, clusters: {})",
+        config.hubble_address,
+        config.hubble_addresses.iter().map(|(n, a)| format!("{}={}", n, a)).collect::<Vec<_>>().join(", ")
+    );
 
     let k8s = K8sService::new(config.k8s_context.clone());
     tracing::info!("K8sService initialized (context: {:?})", config.k8s_context);
 
     let cache = CacheService::new(redis_conn.clone());
     tracing::info!("CacheService initialized");
+
+    let prometheus = PrometheusService::new(config.prometheus_url.clone());
+    if prometheus.is_configured() {
+        tracing::info!("PrometheusService initialized (url: {:?})", config.prometheus_url);
+    } else {
+        tracing::info!("PrometheusService not configured (set PROMETHEUS_URL to enable)");
+    }
 
     // Build shared application state
     let app_state = Arc::new(AppState {
@@ -64,8 +76,17 @@ async fn main() -> anyhow::Result<()> {
         hubble,
         k8s,
         cache,
+        prometheus,
         metrics: AppMetrics::default(),
     });
+
+    // Start background export pipeline
+    services::exporter::spawn_export_pipeline(app_state.clone());
+    tracing::info!("Background export pipeline started");
+
+    // Start background alerting engine
+    services::alerting::spawn_alerting_engine(app_state.clone());
+    tracing::info!("Background alerting engine started");
 
     // Build API router
     let api_routes = Router::new()
@@ -254,6 +275,7 @@ async fn main() -> anyhow::Result<()> {
 
         // WebSocket endpoints
         .route("/api/v1/ws/flows", get(websocket::flows_websocket))
+        .route("/api/v1/ws/flows/live", get(websocket::ws_live_flows))
         .route("/api/v1/ws/metrics", get(websocket::metrics_websocket))
 
         // Metrics endpoint for Prometheus (no auth required - handled by middleware)
@@ -373,5 +395,6 @@ pub struct AppState {
     pub hubble: HubbleService,
     pub k8s: K8sService,
     pub cache: CacheService,
+    pub prometheus: PrometheusService,
     pub metrics: AppMetrics,
 }

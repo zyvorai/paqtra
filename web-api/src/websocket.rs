@@ -8,13 +8,17 @@ use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 use serde::Deserialize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use crate::AppState;
 use crate::middleware::auth::Claims;
+use crate::services::hubble::hubble_json_to_flow;
 
 /// Query parameter for WebSocket token-based authentication.
 #[derive(Debug, Deserialize)]
 pub struct WsAuthQuery {
     pub token: Option<String>,
+    #[serde(default)]
+    pub namespace: Option<String>,
 }
 
 /// Validate a JWT token from the WebSocket query string.
@@ -209,5 +213,181 @@ async fn handle_metrics_socket(mut socket: WebSocket, state: Arc<AppState>, _gua
                 if !handle_ws_message(msg, "Metrics") { break; }
             }
         }
+    }
+}
+
+pub async fn ws_live_flows(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<WsAuthQuery>,
+    ws: WebSocketUpgrade,
+) -> Result<Response, (StatusCode, String)> {
+    validate_ws_token(&state, &query)?;
+
+    let guard = match WsConnectionGuard::try_acquire() {
+        Some(g) => g,
+        None => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Too many WebSocket connections".to_string(),
+            ));
+        }
+    };
+
+    let namespace = query.namespace.clone();
+
+    Ok(ws.on_upgrade(move |socket| handle_live_flows(socket, state, guard, namespace)))
+}
+
+async fn handle_live_flows(
+    mut socket: WebSocket,
+    state: Arc<AppState>,
+    _guard: WsConnectionGuard,
+    namespace: Option<String>,
+) {
+    tracing::info!(
+        "Live flow WebSocket connection established (namespace: {:?})",
+        namespace
+    );
+
+    // Send initial connected message
+    if let Err(e) = socket
+        .send(Message::Text(
+            serde_json::json!({
+                "type": "connected",
+                "message": "Live flow stream ready",
+                "namespace": namespace,
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+    {
+        tracing::error!("Live flow WebSocket send error: {}", e);
+        return;
+    }
+
+    // Validate namespace to prevent flag injection
+    if let Some(ref ns) = namespace {
+        if ns.starts_with('-') || ns.contains(char::is_whitespace) {
+            let _ = socket
+                .send(Message::Text(
+                    serde_json::json!({
+                        "type": "error",
+                        "message": "Invalid namespace parameter",
+                    })
+                    .to_string()
+                    .into(),
+                ))
+                .await;
+            return;
+        }
+    }
+
+    // Spawn hubble observe --follow
+    let mut cmd = tokio::process::Command::new("hubble");
+    cmd.arg("observe")
+        .arg("--follow")
+        .arg("--output")
+        .arg("json")
+        .arg("--server")
+        .arg(state.hubble.address());
+
+    if let Some(ref ns) = namespace {
+        cmd.arg("--namespace").arg(ns);
+    }
+
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("Failed to spawn hubble observe: {}", e);
+            let _ = socket
+                .send(Message::Text(
+                    serde_json::json!({
+                        "type": "error",
+                        "message": format!("Failed to start hubble observe: {}", e),
+                    })
+                    .to_string()
+                    .into(),
+                ))
+                .await;
+            return;
+        }
+    };
+
+    let stdout = child.stdout.take().expect("stdout was piped");
+    let mut lines = BufReader::new(stdout).lines();
+
+    let mut ping_interval =
+        tokio::time::interval(tokio::time::Duration::from_secs(PING_INTERVAL_SECS));
+    let mut flow_index: usize = 0;
+
+    loop {
+        tokio::select! {
+            line_result = lines.next_line() => {
+                match line_result {
+                    Ok(Some(line)) => {
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+                        let parsed = match serde_json::from_str::<serde_json::Value>(&line) {
+                            Ok(v) => v,
+                            Err(_) => continue,
+                        };
+                        let flow = hubble_json_to_flow(flow_index, &parsed);
+                        flow_index = flow_index.wrapping_add(1);
+
+                        let msg = serde_json::json!({
+                            "type": "flow",
+                            "data": flow,
+                        });
+                        if socket
+                            .send(Message::Text(msg.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            tracing::debug!("Live flow WebSocket client disconnected");
+                            break;
+                        }
+                    }
+                    Ok(None) => {
+                        // hubble process exited
+                        tracing::debug!("hubble observe process exited");
+                        let _ = socket
+                            .send(Message::Text(
+                                serde_json::json!({
+                                    "type": "error",
+                                    "message": "hubble observe process exited",
+                                })
+                                .to_string()
+                                .into(),
+                            ))
+                            .await;
+                        break;
+                    }
+                    Err(e) => {
+                        tracing::error!("Error reading hubble output: {}", e);
+                        break;
+                    }
+                }
+            }
+            _ = ping_interval.tick() => {
+                if !ws_ping(&mut socket, "LiveFlow").await {
+                    break;
+                }
+            }
+            msg = socket.recv() => {
+                if !handle_ws_message(msg, "LiveFlow") {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Kill the child process on disconnect
+    if let Err(e) = child.kill().await {
+        tracing::debug!("Failed to kill hubble observe process: {}", e);
     }
 }

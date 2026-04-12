@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::AppState;
-use super::{check_admin, track_request, to_json};
+use super::{check_admin, track_request, to_json, audit_log, actor_from_claims};
 
 const CHAOS_PREFIX: &str = "cv:chaos:";
 const CANARY_PREFIX: &str = "cv:canary:";
@@ -304,6 +304,8 @@ pub async fn generate_autopolicy(
         policies,
     };
 
+    audit_log(&state, "autopolicy.generate", &result.request_id, namespace, "Autopolicy generated", &actor_from_claims(&claims), "success").await;
+
     Ok(Json(to_json(&result)))
 }
 
@@ -375,6 +377,8 @@ pub async fn run_chaos_experiment(
             Json(json!({ "error": "Failed to persist experiment" })),
         ));
     }
+
+    audit_log(&state, "chaos.run", &id, &req.target_namespace, "Chaos experiment started", &actor_from_claims(&claims), "success").await;
 
     Ok(Json(to_json(&experiment)))
 }

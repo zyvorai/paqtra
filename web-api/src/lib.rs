@@ -22,5 +22,7 @@ pub mod auth_types {
         pub exp: usize,
         pub iat: usize,
         pub role: String,
+        #[serde(default)]
+        pub namespaces: Vec<String>,  // Empty = all namespaces (for backwards compat)
     }
 }

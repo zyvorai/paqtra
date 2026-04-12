@@ -3,7 +3,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use crate::AppState;
-use super::{track_request, jstr};
+use super::{track_request, jstr, has_namespace_access};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CiliumEndpoint {
@@ -20,6 +20,7 @@ pub struct CiliumEndpoint {
 
 pub async fn list_endpoints(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
 
@@ -98,6 +99,11 @@ pub async fn list_endpoints(
             }).collect()
         })
         .unwrap_or_default();
+
+    // Apply namespace RBAC filter
+    let endpoints: Vec<_> = endpoints.into_iter()
+        .filter(|ep| has_namespace_access(&state, &claims, &ep.namespace))
+        .collect();
 
     let total = endpoints.len();
     Json(serde_json::json!({ "endpoints": endpoints, "total": total }))

@@ -16,6 +16,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 VERSION="2.0.0"
+REMOTE_DIR=""  # Resolved after TARGET_USER is known
 
 # Parse args
 TARGET_HOST="${1:-}"
@@ -99,13 +100,20 @@ check_connectivity() {
         fail "Cannot SSH to ${TARGET_HOST}"
         exit 1
     fi
+
+    # Resolve remote home directory
+    REMOTE_HOME=$(_ssh "echo \$HOME" 2>/dev/null | tr -d '\r')
+    REMOTE_HOME="${REMOTE_HOME:-/home/${TARGET_USER}}"
+    REMOTE_DIR="${REMOTE_HOME}/cilium-vision"
+    info "Remote deploy directory: ${REMOTE_DIR}"
 }
 
 # ─── Sync project files ─────────────────────────────────────
 
 sync_files() {
-    info "Syncing project to ${TARGET_HOST}:/root/cilium-vision..."
+    info "Syncing project to ${TARGET_HOST}:${REMOTE_DIR}..."
 
+    _ssh "mkdir -p '${REMOTE_DIR}'"
     _rsync \
         --exclude '.git' \
         --exclude 'node_modules' \
@@ -115,9 +123,9 @@ sync_files() {
         --exclude '*.qcow2' \
         --exclude '*.iso' \
         "${PROJECT_DIR}/" \
-        "${TARGET_USER}@${TARGET_HOST}:/root/cilium-vision/"
+        "${TARGET_USER}@${TARGET_HOST}:${REMOTE_DIR}/"
 
-    ok "Synced to ${TARGET_HOST}:/root/cilium-vision"
+    ok "Synced to ${TARGET_HOST}:${REMOTE_DIR}"
 }
 
 # ─── Sync pre-built binaries (quick mode) ────────────────────
@@ -254,9 +262,9 @@ REMOTE
 
 install_full() {
     info "Running full installation on ${TARGET_HOST}..."
-    _ssh bash <<'REMOTE'
+    _ssh bash <<REMOTE
 set -e
-cd /root/cilium-vision
+cd ${REMOTE_DIR}
 
 # Install system deps
 if command -v dnf &>/dev/null; then
@@ -268,7 +276,7 @@ fi
 # Install Rust if needed
 if ! command -v rustc &>/dev/null; then
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source "$HOME/.cargo/env"
+    source "\$HOME/.cargo/env"
 fi
 
 # Build API
@@ -290,7 +298,7 @@ REMOTE
 
 deploy_k3s() {
     info "Deploying Cilium Vision on K3s..."
-    _ssh bash <<'REMOTE'
+    _ssh bash <<REMOTE
 set -e
 
 # Install K3s if not present
@@ -316,26 +324,26 @@ export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
 # Wait for K3s ready
 echo "Waiting for K3s..."
-for i in $(seq 1 30); do
+for i in \$(seq 1 30); do
     kubectl get nodes &>/dev/null && break
     sleep 2
 done
 
 # Deploy Cilium Vision via Helm if chart exists
-if [ -d /root/cilium-vision/chart ]; then
+if [ -d ${REMOTE_DIR}/chart ]; then
     echo "Installing via Helm chart..."
-    helm upgrade --install cilium-vision /root/cilium-vision/chart \
+    helm upgrade --install cilium-vision ${REMOTE_DIR}/chart \
         --namespace cilium-system --create-namespace \
         --set redis.enabled=true \
         --set api.replicas=1 \
         --set ui.replicas=1 \
         --wait --timeout 120s 2>/dev/null || {
             echo "  Helm install failed, deploying via kubectl..."
-            kubectl apply -f /root/cilium-vision/deployments/k8s/ 2>/dev/null || true
+            kubectl apply -f ${REMOTE_DIR}/deployments/k8s/ 2>/dev/null || true
         }
 else
     # Fallback to raw manifests
-    kubectl apply -f /root/cilium-vision/deployments/k8s/ 2>/dev/null || true
+    kubectl apply -f ${REMOTE_DIR}/deployments/k8s/ 2>/dev/null || true
 fi
 
 echo ""
@@ -355,7 +363,7 @@ REMOTE
 
 do_uninstall() {
     info "Uninstalling Cilium Vision from ${TARGET_HOST}..."
-    _ssh bash <<'REMOTE'
+    _ssh bash <<REMOTE
 set -e
 
 # Stop services
@@ -376,7 +384,7 @@ rm -f /usr/lib/systemd/system/cilium-vision-api.service
 rm -f /usr/lib/systemd/system/cilium-vision-ui.service
 rm -f /etc/pam.d/cilium-vision
 rm -rf /var/lib/cilium-vision /etc/cilium-vision /var/log/cilium-vision
-rm -rf /root/cilium-vision
+rm -rf ${REMOTE_DIR}
 userdel cilium-vision 2>/dev/null || true
 systemctl daemon-reload
 

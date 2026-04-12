@@ -57,6 +57,35 @@ pub fn to_json<T: Serialize>(val: &T) -> Value {
     })
 }
 
+/// Log an audit event to Redis.
+pub async fn audit_log(
+    state: &AppState,
+    action: &str,
+    resource: &str,
+    namespace: &str,
+    details: &str,
+    actor: &str,
+    outcome: &str,
+) {
+    let id = format!("aud-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("000"));
+    let entry = serde_json::json!({
+        "id": id,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "action": action,
+        "resource": resource,
+        "namespace": namespace,
+        "details": details,
+        "actor": actor,
+        "outcome": outcome,
+    });
+    let _ = state.cache.set_persistent(&format!("cv:audit_log:{}", id), &entry).await;
+}
+
+/// Extract the actor (subject) from JWT claims, defaulting to "anonymous".
+pub fn actor_from_claims(claims: &Option<axum::Extension<crate::middleware::auth::Claims>>) -> String {
+    claims.as_ref().map(|c| c.sub.clone()).unwrap_or_else(|| "anonymous".to_string())
+}
+
 /// Shared pagination query params for list endpoints.
 #[derive(Debug, serde::Deserialize)]
 pub struct PaginationQuery {
@@ -67,6 +96,41 @@ pub struct PaginationQuery {
 /// Extract a string field from a JSON value, returning empty string if absent.
 pub fn jstr(v: &Value, key: &str) -> String {
     v.get(key).and_then(|x| x.as_str()).unwrap_or("").to_string()
+}
+
+/// Check if the caller has access to a specific namespace.
+/// Returns true if: auth is disabled, role is admin, namespaces list is empty (all access), or namespace is in the list.
+pub fn has_namespace_access(
+    state: &AppState,
+    claims: &Option<axum::Extension<crate::middleware::auth::Claims>>,
+    namespace: &str,
+) -> bool {
+    if state.config.auth_disabled { return true; }
+    match claims.as_ref() {
+        Some(c) if c.role == "admin" => true,
+        Some(c) if c.namespaces.is_empty() => true,  // empty = all
+        Some(c) => c.namespaces.iter().any(|ns| ns == namespace || ns == "*"),
+        None => false,
+    }
+}
+
+/// Filter a list of JSON values by namespace access. Checks "namespace" field on each item.
+pub fn filter_by_namespace_access(
+    state: &AppState,
+    claims: &Option<axum::Extension<crate::middleware::auth::Claims>>,
+    items: Vec<serde_json::Value>,
+) -> Vec<serde_json::Value> {
+    if state.config.auth_disabled { return items; }
+    match claims.as_ref() {
+        Some(c) if c.role == "admin" || c.namespaces.is_empty() => items,
+        Some(c) => items.into_iter().filter(|item| {
+            item.get("namespace")
+                .and_then(|v| v.as_str())
+                .map(|ns| c.namespaces.iter().any(|allowed| allowed == ns || allowed == "*"))
+                .unwrap_or(true)  // keep items without namespace field
+        }).collect(),
+        None => vec![],
+    }
 }
 
 /// Apply pagination to a JSON array field and return the response with metadata.
