@@ -287,7 +287,19 @@ cd web-api && cargo build --release && cd ..
 echo "Building UI..."
 cd web-ui && npm ci --silent && npm run build && cd ..
 
-# Run installer
+# Install the built binary
+sudo systemctl stop cilium-vision-api 2>/dev/null || true
+sudo install -m 755 web-api/target/release/cilium-vision-api /usr/local/bin/cilium-vision-api
+echo "  API binary installed to /usr/local/bin/"
+
+# Install UI files
+if [ -d web-ui/dist ]; then
+    sudo mkdir -p /var/lib/cilium-vision/ui
+    sudo cp -r web-ui/dist/* /var/lib/cilium-vision/ui/
+    echo "  UI files installed"
+fi
+
+# Run installer for services/config
 bash install.sh setup-services
 bash install.sh start
 REMOTE
