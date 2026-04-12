@@ -258,13 +258,125 @@ REMOTE
     ok "Installation complete"
 }
 
+# ─── Setup K8s + Cilium + Hubble stack ─────────────────────
+
+setup_k8s_stack() {
+    info "Setting up K3s + Cilium + Hubble on ${TARGET_HOST}..."
+    _ssh bash <<REMOTE
+set -e
+
+# ── K3s ──────────────────────────────────────────────────────
+if ! command -v k3s &>/dev/null; then
+    echo "  Installing K3s (no flannel, no kube-proxy, no traefik)..."
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --flannel-backend=none --disable-network-policy --disable-kube-proxy" sh -
+    echo "  Waiting for K3s API..."
+    for i in \$(seq 1 60); do
+        KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes &>/dev/null && break
+        sleep 2
+    done
+    echo "  ✅ K3s installed"
+else
+    echo "  ✅ K3s already installed"
+fi
+
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+# ── Helm ─────────────────────────────────────────────────────
+if ! command -v helm &>/dev/null; then
+    echo "  Installing Helm..."
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    echo "  ✅ Helm installed"
+fi
+
+# ── Cilium CLI ───────────────────────────────────────────────
+if ! command -v cilium &>/dev/null; then
+    echo "  Installing Cilium CLI..."
+    CILIUM_CLI_VERSION=\$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)
+    CLI_ARCH=amd64
+    if [ "\$(uname -m)" = "aarch64" ]; then CLI_ARCH=arm64; fi
+    curl -L --fail --remote-name-all "https://github.com/cilium/cilium-cli/releases/download/\${CILIUM_CLI_VERSION}/cilium-linux-\${CLI_ARCH}.tar.gz{,.sha256sum}"
+    sha256sum --check cilium-linux-\${CLI_ARCH}.tar.gz.sha256sum 2>/dev/null || true
+    sudo tar xzvf cilium-linux-\${CLI_ARCH}.tar.gz -C /usr/local/bin
+    rm -f cilium-linux-\${CLI_ARCH}.tar.gz{,.sha256sum}
+    echo "  ✅ Cilium CLI installed"
+fi
+
+# ── Cilium CNI ───────────────────────────────────────────────
+if ! kubectl get daemonset -n kube-system cilium &>/dev/null; then
+    echo "  Installing Cilium CNI with Hubble..."
+    helm repo add cilium https://helm.cilium.io/ 2>/dev/null || true
+    helm repo update cilium 2>/dev/null || true
+    helm install cilium cilium/cilium --namespace kube-system \
+        --set operator.replicas=1 \
+        --set kubeProxyReplacement=true \
+        --set hubble.relay.enabled=true \
+        --set hubble.ui.enabled=false \
+        --set hubble.metrics.enabled="{dns,drop,tcp,flow,icmp,http}" \
+        --set hubble.metrics.enableOpenMetrics=true \
+        --set prometheus.enabled=true \
+        --set operator.prometheus.enabled=true \
+        --wait --timeout 300s
+    echo "  ✅ Cilium + Hubble installed"
+else
+    echo "  ✅ Cilium already installed"
+
+    # Ensure Hubble relay is enabled (might be missing from older installs)
+    HUBBLE_RELAY=\$(kubectl get deploy -n kube-system hubble-relay 2>/dev/null | grep -c hubble-relay || true)
+    if [ "\$HUBBLE_RELAY" = "0" ]; then
+        echo "  Enabling Hubble relay..."
+        helm upgrade cilium cilium/cilium --namespace kube-system --reuse-values \
+            --set hubble.relay.enabled=true \
+            --set hubble.metrics.enabled="{dns,drop,tcp,flow,icmp,http}" \
+            --wait --timeout 120s 2>/dev/null || true
+        echo "  ✅ Hubble relay enabled"
+    else
+        echo "  ✅ Hubble relay already running"
+    fi
+fi
+
+# ── Wait for Cilium + Hubble to be ready ─────────────────────
+echo "  Waiting for Cilium pods to be ready..."
+kubectl -n kube-system wait --for=condition=ready pod -l k8s-app=cilium --timeout=120s 2>/dev/null || true
+kubectl -n kube-system wait --for=condition=ready pod -l k8s-app=hubble-relay --timeout=120s 2>/dev/null || true
+
+# ── Port-forward Hubble relay for local access ───────────────
+# Kill any existing port-forward
+pkill -f "kubectl.*port-forward.*hubble-relay" 2>/dev/null || true
+sleep 1
+
+# Start port-forward in background so the API can reach Hubble at localhost:4245
+nohup kubectl -n kube-system port-forward deploy/hubble-relay 4245:4245 --address=127.0.0.1 \
+    > /tmp/hubble-relay-port-forward.log 2>&1 &
+echo "  ✅ Hubble relay port-forwarded to localhost:4245"
+
+# ── Verify ───────────────────────────────────────────────────
+echo ""
+echo "  === Cluster Status ==="
+kubectl get nodes
+echo ""
+echo "  === Cilium Status ==="
+cilium status --brief 2>/dev/null || kubectl -n kube-system get pods -l k8s-app=cilium
+echo ""
+echo "  === Hubble Relay ==="
+kubectl -n kube-system get pods -l k8s-app=hubble-relay
+echo ""
+REMOTE
+    ok "K8s + Cilium + Hubble stack ready"
+}
+
 # ─── Full install (build on remote) ─────────────────────────
 
 install_full() {
     info "Running full installation on ${TARGET_HOST}..."
+
+    # First ensure K8s + Cilium + Hubble are set up
+    setup_k8s_stack
+
+    info "Building and installing Cilium Vision..."
     _ssh bash <<REMOTE
 set -e
 cd ${REMOTE_DIR}
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
 # Install system deps
 if command -v dnf &>/dev/null; then
@@ -299,9 +411,49 @@ if [ -d web-ui/dist ]; then
     echo "  UI files installed"
 fi
 
+# Update config to point at Hubble relay
+sudo mkdir -p /etc/cilium-vision
+if [ -f /etc/cilium-vision/config.env ]; then
+    # Ensure HUBBLE_ADDRESS is set correctly
+    if ! grep -q "HUBBLE_ADDRESS" /etc/cilium-vision/config.env; then
+        echo "HUBBLE_ADDRESS=localhost:4245" | sudo tee -a /etc/cilium-vision/config.env > /dev/null
+    fi
+    # Ensure K8S_CONTEXT is not set (use default kubeconfig)
+    if ! grep -q "KUBECONFIG" /etc/cilium-vision/config.env; then
+        echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" | sudo tee -a /etc/cilium-vision/config.env > /dev/null
+    fi
+fi
+
 # Run installer for services/config
 bash install.sh setup-services
 bash install.sh start
+
+# Create a systemd service for Hubble port-forward (survives reboots)
+sudo tee /usr/lib/systemd/system/hubble-port-forward.service > /dev/null <<'SVCEOF'
+[Unit]
+Description=Hubble Relay Port Forward
+After=k3s.service
+Wants=k3s.service
+
+[Service]
+Type=simple
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+ExecStartPre=/bin/sh -c 'until kubectl -n kube-system get deploy hubble-relay; do sleep 5; done'
+ExecStart=/usr/local/bin/kubectl -n kube-system port-forward deploy/hubble-relay 4245:4245 --address=127.0.0.1
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+sudo systemctl daemon-reload
+sudo systemctl enable hubble-port-forward --now 2>/dev/null || true
+sleep 3
+
+# Final health check
+echo ""
+echo "  === Final Health Check ==="
+curl -sf http://localhost:9191/health 2>/dev/null | python3 -m json.tool 2>/dev/null || curl -sf http://localhost:9191/health || echo "  API not responding yet"
 REMOTE
     ok "Full installation complete"
 }
@@ -310,40 +462,17 @@ REMOTE
 
 deploy_k3s() {
     info "Deploying Cilium Vision on K3s..."
+
+    # Set up K8s + Cilium + Hubble stack first
+    setup_k8s_stack
+
     _ssh bash <<REMOTE
 set -e
-
-# Install K3s if not present
-if ! command -v k3s &>/dev/null; then
-    echo "Installing K3s..."
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --flannel-backend=none --disable-network-policy" sh -
-    sleep 10
-
-    # Install Cilium CNI
-    if command -v helm &>/dev/null || (curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash); then
-        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-        helm repo add cilium https://helm.cilium.io/ 2>/dev/null || true
-        helm install cilium cilium/cilium --namespace kube-system \
-            --set operator.replicas=1 \
-            --set hubble.relay.enabled=true \
-            --set hubble.ui.enabled=false \
-            --set kubeProxyReplacement=true 2>/dev/null || true
-        echo "  Cilium CNI installed"
-    fi
-fi
-
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-
-# Wait for K3s ready
-echo "Waiting for K3s..."
-for i in \$(seq 1 30); do
-    kubectl get nodes &>/dev/null && break
-    sleep 2
-done
 
 # Deploy Cilium Vision via Helm if chart exists
 if [ -d ${REMOTE_DIR}/chart ]; then
-    echo "Installing via Helm chart..."
+    echo "Installing Cilium Vision via Helm chart..."
     helm upgrade --install cilium-vision ${REMOTE_DIR}/chart \
         --namespace cilium-system --create-namespace \
         --set redis.enabled=true \
@@ -362,11 +491,16 @@ echo ""
 echo "  K3s cluster status:"
 kubectl get nodes
 echo ""
+echo "  Cilium pods:"
+kubectl -n kube-system get pods -l k8s-app=cilium
+echo ""
+echo "  Hubble Relay:"
+kubectl -n kube-system get pods -l k8s-app=hubble-relay
+echo ""
 echo "  Cilium Vision pods:"
-kubectl -n cilium-system get pods 2>/dev/null || kubectl get pods -A | grep cilium-vision || true
+kubectl -n cilium-system get pods 2>/dev/null || echo "  (deployed via systemd, not K8s)"
 echo ""
 echo "  ✅ K3s deployment complete"
-echo "  Access: kubectl -n cilium-system port-forward svc/cilium-vision-api 9191:9191"
 REMOTE
     ok "K3s deployment complete on ${TARGET_HOST}"
 }
@@ -379,8 +513,9 @@ do_uninstall() {
 set -e
 
 # Stop services
-systemctl stop cilium-vision-api cilium-vision-ui 2>/dev/null || true
-systemctl disable cilium-vision-api cilium-vision-ui 2>/dev/null || true
+systemctl stop cilium-vision-api cilium-vision-ui hubble-port-forward 2>/dev/null || true
+systemctl disable cilium-vision-api cilium-vision-ui hubble-port-forward 2>/dev/null || true
+rm -f /usr/lib/systemd/system/hubble-port-forward.service
 
 # Remove K8s deployment
 if command -v kubectl &>/dev/null; then
@@ -445,11 +580,13 @@ verify() {
 echo ""
 echo "=== Service Status ==="
 systemctl is-active cilium-vision-api 2>/dev/null && echo "  API: ✅ active" || echo "  API: ❌ inactive"
+systemctl is-active hubble-port-forward 2>/dev/null && echo "  Hubble Port-Forward: ✅ active" || echo "  Hubble Port-Forward: ⚠️  inactive"
 
 echo ""
 echo "=== Health Check ==="
-if curl -sf http://localhost:9191/health 2>/dev/null; then
-    echo "  ✅ API healthy"
+HEALTH=$(curl -sf http://localhost:9191/health 2>/dev/null)
+if [ -n "$HEALTH" ]; then
+    echo "  $HEALTH" | python3 -m json.tool 2>/dev/null || echo "  $HEALTH"
 else
     echo "  ❌ API not responding"
 fi
@@ -462,7 +599,25 @@ if command -v k3s &>/dev/null; then
     echo ""
     echo "=== K3s ==="
     k3s --version
-    KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -n cilium-system 2>/dev/null || true
+    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+    echo ""
+    echo "=== Cilium ==="
+    cilium status --brief 2>/dev/null || kubectl -n kube-system get pods -l k8s-app=cilium 2>/dev/null || true
+
+    echo ""
+    echo "=== Hubble ==="
+    kubectl -n kube-system get pods -l k8s-app=hubble-relay 2>/dev/null || true
+
+    echo ""
+    echo "=== Hubble Connectivity ==="
+    if curl -sf --connect-timeout 2 localhost:4245 2>/dev/null; then
+        echo "  ✅ Hubble relay reachable at localhost:4245"
+    elif nc -z localhost 4245 2>/dev/null; then
+        echo "  ✅ Hubble relay port open at localhost:4245"
+    else
+        echo "  ⚠️  Hubble relay not reachable at localhost:4245"
+    fi
 fi
 REMOTE
 }
