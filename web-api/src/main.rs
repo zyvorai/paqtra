@@ -551,8 +551,23 @@ async fn main() -> anyhow::Result<()> {
         let tls_addr: SocketAddr = format!("{}:{}", config.host, tls_port).parse()?;
         let http_addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
 
-        let tls_config =
-            axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path).await?;
+        // Build TLS config with HTTP/1.1 ALPN only (HTTP/2 doesn't support WebSocket upgrades)
+        let tls_config = {
+            use std::io::BufReader;
+            let cert_data = std::fs::read(cert_path)?;
+            let key_data = std::fs::read(key_path)?;
+            let certs: Vec<_> = rustls_pemfile::certs(&mut BufReader::new(&cert_data[..]))
+                .filter_map(|c| c.ok())
+                .collect();
+            let key = rustls_pemfile::private_key(&mut BufReader::new(&key_data[..]))?
+                .ok_or_else(|| anyhow::anyhow!("No private key found in {}", key_path))?;
+            let mut server_config = rustls::ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(certs, key)?;
+            // Only advertise HTTP/1.1 — this ensures WebSocket upgrades work over TLS
+            server_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+            axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(server_config))
+        };
         tracing::info!(
             "TLS configured (cert={}, key={})",
             cert_path,

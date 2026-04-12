@@ -283,6 +283,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rustls",
+ "rustls-pemfile",
  "serde",
  "serde_json",
  "serde_yaml",
