@@ -1,8 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { CircleDot, Loader2, Search } from 'lucide-react';
 import { fetchEndpoints, CiliumEndpoint } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { usePagination } from '../../hooks/usePagination';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
@@ -26,6 +27,7 @@ const Endpoints: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [autoRefreshOn, setAutoRefreshOn] = useState(true);
+  const pagination = usePagination({ initialLimit: 24 });
 
   const fetchData = useCallback(async () => {
     setError(null);
@@ -35,9 +37,17 @@ const Endpoints: React.FC = () => {
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
-  const filtered = search
+  const filtered = useMemo(() => search
     ? endpoints.filter((e) => e.name.toLowerCase().includes(search.toLowerCase()) || e.namespace.toLowerCase().includes(search.toLowerCase()) || e.labels.some((l) => l.toLowerCase().includes(search.toLowerCase())))
-    : endpoints;
+    : endpoints, [endpoints, search]);
+
+  // Keep pagination total in sync with filtered count and reset page on search change
+  useMemo(() => { pagination.setTotal(filtered.length); pagination.resetPage(); }, [filtered.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const paginatedEndpoints = useMemo(
+    () => filtered.slice(pagination.offset, pagination.offset + pagination.limit),
+    [filtered, pagination.offset, pagination.limit],
+  );
 
   return (
     <div>
@@ -63,7 +73,7 @@ const Endpoints: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 col-span-full mx-auto my-8" />}
-        {!loading && filtered.length === 0 && (
+        {!loading && paginatedEndpoints.length === 0 && (
           <div className="col-span-full">
             <EmptyState
               icon={<CircleDot className="w-8 h-8 text-slate-400" />}
@@ -72,7 +82,7 @@ const Endpoints: React.FC = () => {
             />
           </div>
         )}
-        {filtered.map((ep) => (
+        {paginatedEndpoints.map((ep) => (
           <div key={ep.id} className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-4 card-glow transition-all hover:scale-[1.01]">
             <div className="flex items-center justify-between mb-3">
               <div className="font-semibold text-white truncate">{ep.name}</div>
@@ -103,6 +113,28 @@ const Endpoints: React.FC = () => {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between mt-4 px-4 py-3 rounded-xl border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400">
+        <span>Showing {pagination.pageRange.start}–{pagination.pageRange.end} of {filtered.length} endpoints</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs">Page {pagination.page + 1} of {pagination.totalPages || 1}</span>
+          <button
+            disabled={!pagination.hasPrevPage}
+            onClick={pagination.prevPage}
+            className="px-3 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <button
+            disabled={!pagination.hasNextPage}
+            onClick={pagination.nextPage}
+            className="px-3 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
   );

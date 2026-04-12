@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   ShieldCheck,
-  RefreshCw,
   Play,
   CheckCircle,
   XCircle,
@@ -14,6 +13,8 @@ import { fetchFrameworks as apiFetchFrameworks, runAudit as apiRunAudit, fetchSe
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
 
 interface FrameworkStatus {
   name: string;
@@ -58,14 +59,14 @@ const Compliance: React.FC = () => {
   usePageTitle('Compliance');
   const [frameworks, setFrameworks] = useState<FrameworkStatus[]>([]);
   const [posture, setPosture] = useState<{ score: number; trend: string } | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [auditing, setAuditing] = useState<string | null>(null);
   const [breakdown, setBreakdown] = useState(STATIC_BREAKDOWN);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(false);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try {
       const [fwRes, posRes] = await Promise.all([apiFetchFrameworks(), apiFetchSecurityPosture()]);
       setFrameworks((fwRes.data.frameworks ?? []).map((fw) => {
@@ -83,10 +84,9 @@ const Compliance: React.FC = () => {
         setBreakdown(postureData.breakdown);
       }
     } catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to load compliance data'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 60000, autoRefreshOn);
 
   const handleAudit = async (fw: string) => {
     setAuditing(fw); setError(null);
@@ -106,9 +106,8 @@ const Compliance: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500 to-emerald-700 flex items-center justify-center shadow-lg shadow-green-500/20"><ShieldCheck className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Security & Compliance</h1></div>
           <p className="text-sm text-slate-400 mt-1">Multi-framework compliance auditing</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading}
+          autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn(v => !v)} intervalSecs={60} />
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}

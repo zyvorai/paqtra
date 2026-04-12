@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Search,
-  RefreshCw,
   ArrowRight,
   Ban,
   Eye,
@@ -13,6 +12,9 @@ import {
 import { fetchFlows as apiFetchFlows, fetchFlowStats as apiFetchFlowStats, Flow, FlowStats } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { usePagination } from '../../hooks/usePagination';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
 
 type Verdict = 'ALL' | 'FORWARDED' | 'DROPPED' | 'AUDIT';
 
@@ -33,48 +35,28 @@ const Flows: React.FC = () => {
   const [namespace, setNamespace] = useState('');
   const [verdict, setVerdict] = useState<Verdict>('ALL');
   const [searchText, setSearchText] = useState('');
-  const [page, setPage] = useState(0);
-  const [rowsPerPage] = useState(25);
+  const pagination = usePagination({ initialLimit: 25 });
   const [flows, setFlows] = useState<Flow[]>([]);
-  const [total, setTotal] = useState(0);
   const [stats, setStats] = useState<FlowStats | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(false);
 
-  const fetchFlows = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async () => {
     setError(null);
     try {
-      const params: Record<string, string | number> = { limit: rowsPerPage, offset: page * rowsPerPage };
+      const params: Record<string, string | number> = { limit: pagination.limit, offset: pagination.offset };
       if (namespace) params.namespace = namespace;
       if (verdict !== 'ALL') params.verdict = verdict;
-      const res = await apiFetchFlows(params);
-      setFlows(res.data.flows);
-      setTotal(res.data.total);
+      const [flowRes, statsRes] = await Promise.all([apiFetchFlows(params), apiFetchFlowStats().catch(() => null)]);
+      setFlows(flowRes.data.flows);
+      pagination.setTotal(flowRes.data.total);
+      if (statsRes) setStats(statsRes.data);
     } catch (err) {
       setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to fetch flows');
-    } finally {
-      setLoading(false);
     }
-  }, [namespace, verdict, page, rowsPerPage]);
+  }, [namespace, verdict, pagination.offset, pagination.limit, pagination.setTotal]);
 
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await apiFetchFlowStats();
-      setStats(res.data);
-    } catch { /* non-critical */ }
-  }, []);
-
-  useEffect(() => { fetchFlows(); fetchStats(); }, [fetchFlows, fetchStats]);
-
-  useEffect(() => {
-    if (autoRefresh) {
-      intervalRef.current = setInterval(() => { fetchFlows(); fetchStats(); }, 10000);
-    }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [autoRefresh, fetchFlows, fetchStats]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 10000, autoRefreshOn);
 
   const filtered = searchText
     ? flows.filter((f) => {
@@ -106,10 +88,8 @@ const Flows: React.FC = () => {
             <p className="text-sm text-slate-400">Real-time network flow analysis</p>
           </div>
         </div>
-        <button onClick={() => { fetchFlows(); fetchStats(); }} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading}
+          autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn(v => !v)} intervalSecs={10} />
       </div>
 
       {error && (
@@ -132,13 +112,13 @@ const Flows: React.FC = () => {
         <input
           type="text"
           value={namespace}
-          onChange={(e) => { setNamespace(e.target.value); setPage(0); }}
+          onChange={(e) => { setNamespace(e.target.value); pagination.resetPage(); }}
           placeholder="Namespace"
           className="px-3 py-1.5 rounded-lg bg-slate-900/50 border border-slate-700/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 w-40"
         />
         <select
           value={verdict}
-          onChange={(e) => { setVerdict(e.target.value as Verdict); setPage(0); }}
+          onChange={(e) => { setVerdict(e.target.value as Verdict); pagination.resetPage(); }}
           className="px-3 py-1.5 rounded-lg bg-slate-900/50 border border-slate-700/50 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="ALL">All Verdicts</option>
@@ -157,10 +137,6 @@ const Flows: React.FC = () => {
           />
           <span className="text-xs text-gray-500">(filters current page)</span>
         </div>
-        <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
-          <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} className="rounded" />
-          Auto-refresh
-        </label>
       </div>
 
       {/* Table */}
@@ -173,7 +149,7 @@ const Flows: React.FC = () => {
             <h2 className="text-lg font-semibold text-white">Network Flows</h2>
           </div>
           <span className="text-xs font-medium text-slate-400 bg-slate-700/50 px-2.5 py-1 rounded-full">
-            {filtered.length} of {total}
+            {filtered.length} of {pagination.total}
           </span>
         </div>
         {loading && (
@@ -231,18 +207,19 @@ const Flows: React.FC = () => {
 
         {/* Pagination */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-slate-700/50 text-sm text-slate-400">
-          <span>Showing {filtered.length} of {total} flows</span>
-          <div className="flex gap-2">
+          <span>Showing {pagination.pageRange.start}–{pagination.pageRange.end} of {pagination.total} flows</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs">Page {pagination.page + 1} of {pagination.totalPages || 1}</span>
             <button
-              disabled={page === 0}
-              onClick={() => setPage((p) => p - 1)}
+              disabled={!pagination.hasPrevPage}
+              onClick={pagination.prevPage}
               className="px-3 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Previous
             </button>
             <button
-              disabled={(page + 1) * rowsPerPage >= total}
-              onClick={() => setPage((p) => p + 1)}
+              disabled={!pagination.hasNextPage}
+              onClick={pagination.nextPage}
               className="px-3 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Next

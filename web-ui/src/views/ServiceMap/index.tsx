@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Map, RefreshCw, Loader2 } from 'lucide-react';
+import { Map, Loader2 } from 'lucide-react';
 import { select } from 'd3-selection';
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide, type SimulationNodeDatum, type SimulationLinkDatum } from 'd3-force';
 import { drag as d3Drag } from 'd3-drag';
 import { fetchServiceMap, ServiceNode, ServiceEdge } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
 
 const STATUS_COLOR: Record<string, string> = { healthy: '#22c55e', degraded: '#eab308', unhealthy: '#ef4444' };
 
@@ -13,19 +15,18 @@ const ServiceMapView: React.FC = () => {
   usePageTitle('Service Map');
   const [nodes, setNodes] = useState<ServiceNode[]>([]);
   const [edges, setEdges] = useState<ServiceEdge[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(false);
 
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { const res = await fetchServiceMap(); setNodes(res.data.nodes ?? []); setEdges(res.data.edges ?? []); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   // D3 force simulation
   useEffect(() => {
@@ -99,7 +100,8 @@ const ServiceMapView: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-lg shadow-emerald-500/20"><Map className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Service Map</h1></div>
           <p className="text-sm text-slate-400 mt-1">Interactive force-directed service topology (drag nodes to rearrange)</p>
         </div>
-        <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
+        <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading}
+          autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn(v => !v)} intervalSecs={30} />
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
       {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}

@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Shield,
-  RefreshCw,
   Plus,
   Trash2,
   Eye,
@@ -23,6 +22,8 @@ import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 import { useAuthStore } from '../../stores/authStore';
+import { useAutoRefresh } from '../../hooks/useAutoRefresh';
+import DataFreshness from '../../components/DataFreshness';
 
 const STATUS_BADGE: Record<string, string> = {
   active: 'bg-green-500/15 text-green-400 border-green-500/30',
@@ -42,9 +43,9 @@ const Policies: React.FC = () => {
   const userRole = useAuthStore((s) => s.role);
   const isAdmin = userRole === 'admin';
   const [policies, setPolicies] = useState<Policy[]>([]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useAutoDismiss<string | null>(null);
+  const [autoRefreshOn, setAutoRefreshOn] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -72,13 +73,12 @@ const Policies: React.FC = () => {
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
   const fetchPolicies = useCallback(async () => {
-    setLoading(true); setError(null);
+    setError(null);
     try { setPolicies((await apiFetchPolicies()).data.policies); }
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to fetch policies'); }
-    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchPolicies(); }, [fetchPolicies]);
+  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchPolicies, 30000, autoRefreshOn);
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
@@ -189,10 +189,9 @@ const Policies: React.FC = () => {
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center shadow-lg shadow-red-500/20"><Shield className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Policy Management</h1></div>
           <p className="text-sm text-slate-400 mt-1">Manage CiliumNetworkPolicies</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={fetchPolicies} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+        <div className="flex items-center gap-2">
+          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading}
+            autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn(v => !v)} intervalSecs={30} />
           <button onClick={() => setCreateOpen(true)} disabled={!isAdmin} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm hover:from-blue-500 hover:to-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title={isAdmin ? '' : 'Admin role required'}>
             <Plus className="w-4 h-4" /> Create Policy
           </button>

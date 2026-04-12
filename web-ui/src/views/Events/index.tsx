@@ -1,8 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Bell, Loader2, AlertTriangle, Info, CheckCircle } from 'lucide-react';
 import { fetchEvents, K8sEvent } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { usePagination } from '../../hooks/usePagination';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
@@ -36,6 +37,7 @@ const Events: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [autoRefreshOn, setAutoRefreshOn] = useState(true);
+  const pagination = usePagination({ initialLimit: 25 });
 
   const fetchData = useCallback(async () => {
     setError(null);
@@ -45,9 +47,17 @@ const Events: React.FC = () => {
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
-  const filtered = search
+  const filtered = useMemo(() => search
     ? events.filter((e) => e.message.toLowerCase().includes(search.toLowerCase()) || e.object.toLowerCase().includes(search.toLowerCase()) || e.reason.toLowerCase().includes(search.toLowerCase()))
-    : events;
+    : events, [events, search]);
+
+  // Keep pagination total in sync with filtered count and reset page on search change
+  useMemo(() => { pagination.setTotal(filtered.length); pagination.resetPage(); }, [filtered.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const paginatedEvents = useMemo(
+    () => filtered.slice(pagination.offset, pagination.offset + pagination.limit),
+    [filtered, pagination.offset, pagination.limit],
+  );
 
   const warnings = events.filter((e) => e.type === 'Warning').length;
 
@@ -95,9 +105,9 @@ const Events: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && !loading ? (
+              {paginatedEvents.length === 0 && !loading ? (
                 <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-400">No events found</td></tr>
-              ) : filtered.map((e) => (
+              ) : paginatedEvents.map((e) => (
                 <tr key={e.id} className="border-b border-slate-700/30 table-row-hover">
                   <td className="px-4 py-2.5">
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border ${TYPE_BADGE[e.type] ?? ''}`}>
@@ -115,8 +125,25 @@ const Events: React.FC = () => {
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-3 border-t border-slate-700/50 text-sm text-slate-400">
-          Showing {filtered.length} of {events.length} events
+        <div className="flex items-center justify-between px-4 py-3 border-t border-slate-700/50 text-sm text-slate-400">
+          <span>Showing {pagination.pageRange.start}–{pagination.pageRange.end} of {filtered.length} events</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs">Page {pagination.page + 1} of {pagination.totalPages || 1}</span>
+            <button
+              disabled={!pagination.hasPrevPage}
+              onClick={pagination.prevPage}
+              className="px-3 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <button
+              disabled={!pagination.hasNextPage}
+              onClick={pagination.nextPage}
+              className="px-3 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
     </div>

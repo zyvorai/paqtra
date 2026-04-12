@@ -1,8 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { ScrollText, Loader2, Search } from 'lucide-react';
 import { fetchAuditLog, AuditEntry } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { usePagination } from '../../hooks/usePagination';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
@@ -31,6 +32,7 @@ const AuditLog: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [autoRefreshOn, setAutoRefreshOn] = useState(true);
+  const pagination = usePagination({ initialLimit: 25 });
 
   const fetchData = useCallback(async () => {
     setError(null);
@@ -40,7 +42,15 @@ const AuditLog: React.FC = () => {
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
-  const filtered = search ? entries.filter((e) => e.action.includes(search.toLowerCase()) || e.actor.toLowerCase().includes(search.toLowerCase()) || e.resource.toLowerCase().includes(search.toLowerCase()) || e.details.toLowerCase().includes(search.toLowerCase())) : entries;
+  const filtered = useMemo(() => search ? entries.filter((e) => e.action.includes(search.toLowerCase()) || e.actor.toLowerCase().includes(search.toLowerCase()) || e.resource.toLowerCase().includes(search.toLowerCase()) || e.details.toLowerCase().includes(search.toLowerCase())) : entries, [entries, search]);
+
+  // Keep pagination total in sync with filtered count and reset page on search change
+  useMemo(() => { pagination.setTotal(filtered.length); pagination.resetPage(); }, [filtered.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const paginatedEntries = useMemo(
+    () => filtered.slice(pagination.offset, pagination.offset + pagination.limit),
+    [filtered, pagination.offset, pagination.limit],
+  );
 
   return (
     <div>
@@ -67,7 +77,7 @@ const AuditLog: React.FC = () => {
       {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 
       <div className="space-y-2">
-        {filtered.map((e) => (
+        {paginatedEntries.map((e) => (
           <div key={e.id} className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-4 card-glow transition-all hover:scale-[1.01]">
             <div className="flex items-center gap-3 mb-2">
               <span className={`px-2 py-0.5 rounded-full text-xs border ${ACTION_BADGE[e.action] ?? 'bg-slate-900/50 text-slate-400 border-slate-700/50'}`}>{e.action}</span>
@@ -82,7 +92,29 @@ const AuditLog: React.FC = () => {
             </div>
           </div>
         ))}
-        {!loading && filtered.length === 0 && <div className="text-center py-12 text-slate-400">No audit entries found</div>}
+        {!loading && paginatedEntries.length === 0 && <div className="text-center py-12 text-slate-400">No audit entries found</div>}
+      </div>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between mt-4 px-4 py-3 rounded-xl border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400">
+        <span>Showing {pagination.pageRange.start}–{pagination.pageRange.end} of {filtered.length} entries</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs">Page {pagination.page + 1} of {pagination.totalPages || 1}</span>
+          <button
+            disabled={!pagination.hasPrevPage}
+            onClick={pagination.prevPage}
+            className="px-3 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <button
+            disabled={!pagination.hasNextPage}
+            onClick={pagination.nextPage}
+            className="px-3 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
   );

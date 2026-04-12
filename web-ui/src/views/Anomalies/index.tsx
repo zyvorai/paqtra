@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   Bug,
   Wrench,
@@ -12,6 +12,7 @@ import {
 import { fetchAnomalies as apiFetchAnomalies, remediateAnomaly as apiRemediate, Anomaly } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import { usePagination } from '../../hooks/usePagination';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
@@ -49,6 +50,7 @@ const Anomalies: React.FC = () => {
   const [remId, setRemId] = useState<string | null>(null);
   const [remediating, setRemediating] = useState(false);
   const [autoRefreshOn, setAutoRefreshOn] = useState(true);
+  const pagination = usePagination({ initialLimit: 25 });
 
   const fetchData = useCallback(async () => {
     setError(null);
@@ -57,6 +59,14 @@ const Anomalies: React.FC = () => {
   }, []);
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
+
+  // Keep pagination in sync with data
+  useMemo(() => { pagination.setTotal(anomalies.length); }, [anomalies.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const paginatedAnomalies = useMemo(
+    () => anomalies.slice(pagination.offset, pagination.offset + pagination.limit),
+    [anomalies, pagination.offset, pagination.limit],
+  );
 
   const handleRemediate = async () => {
     if (!remId) return;
@@ -117,7 +127,7 @@ const Anomalies: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {anomalies.length === 0 && !loading ? (
+              {paginatedAnomalies.length === 0 && !loading ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center">
                     <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-3" />
@@ -125,7 +135,7 @@ const Anomalies: React.FC = () => {
                     <div className="text-sm text-slate-400">The ML engine is monitoring your traffic.</div>
                   </td>
                 </tr>
-              ) : anomalies.map((a) => (
+              ) : paginatedAnomalies.map((a) => (
                 <tr key={a.id} className="border-b border-slate-700/30 table-row-hover">
                   <td className="px-4 py-2.5">
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border ${SEV_BADGE[a.severity] ?? ''}`}>
@@ -155,6 +165,26 @@ const Anomalies: React.FC = () => {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="flex items-center justify-between px-4 py-3 border-t border-slate-700/50 text-sm text-slate-400">
+          <span>Showing {pagination.pageRange.start}–{pagination.pageRange.end} of {anomalies.length} anomalies</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs">Page {pagination.page + 1} of {pagination.totalPages || 1}</span>
+            <button
+              disabled={!pagination.hasPrevPage}
+              onClick={pagination.prevPage}
+              className="px-3 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <button
+              disabled={!pagination.hasNextPage}
+              onClick={pagination.nextPage}
+              className="px-3 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
