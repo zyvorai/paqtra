@@ -423,6 +423,10 @@ if [ -f /etc/cilium-vision/config.env ]; then
     if ! grep -q "KUBECONFIG" /etc/cilium-vision/config.env; then
         echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" | sudo tee -a /etc/cilium-vision/config.env > /dev/null
     fi
+    # Set CORS origins for both HTTP and HTTPS
+    HOST_IP=\$(hostname -I | awk '{print \$1}')
+    sudo sed -i '/^ALLOWED_ORIGINS=/d' /etc/cilium-vision/config.env
+    echo "ALLOWED_ORIGINS=https://\${HOST_IP},http://\${HOST_IP}:9191,http://\${HOST_IP}:3001,http://localhost:3001" | sudo tee -a /etc/cilium-vision/config.env > /dev/null
 fi
 
 # Generate self-signed TLS certificate if none exists
