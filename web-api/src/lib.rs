@@ -23,7 +23,7 @@ pub mod auth_types {
         pub iat: usize,
         pub role: String,
         #[serde(default)]
-        pub namespaces: Vec<String>,  // Empty = all namespaces (for backwards compat)
+        pub namespaces: Vec<String>, // Empty = all namespaces (for backwards compat)
     }
 }
 
@@ -139,7 +139,11 @@ pub mod utils {
             .filter(|item| {
                 item.get("namespace")
                     .and_then(|v| v.as_str())
-                    .map(|ns| namespaces.iter().any(|allowed| allowed == ns || allowed == "*"))
+                    .map(|ns| {
+                        namespaces
+                            .iter()
+                            .any(|allowed| allowed == ns || allowed == "*")
+                    })
                     .unwrap_or(true)
             })
             .collect()

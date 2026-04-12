@@ -181,8 +181,15 @@ impl KernelVersion {
         let mut parts = base.split('.');
         let major = parts.next()?.parse::<u32>().ok()?;
         let minor = parts.next()?.parse::<u32>().ok()?;
-        let patch = parts.next().and_then(|p| p.parse::<u32>().ok()).unwrap_or(0);
-        Some(Self { major, minor, patch })
+        let patch = parts
+            .next()
+            .and_then(|p| p.parse::<u32>().ok())
+            .unwrap_or(0);
+        Some(Self {
+            major,
+            minor,
+            patch,
+        })
     }
 
     /// Returns true if this version is at least the given major.minor.
@@ -353,9 +360,7 @@ impl KernelCapabilities {
     /// Detect all kernel capabilities by probing the running system.
     pub fn detect() -> Self {
         let kernel_version_raw = Self::read_uname_release();
-        let kernel_version = kernel_version_raw
-            .as_deref()
-            .and_then(KernelVersion::parse);
+        let kernel_version = kernel_version_raw.as_deref().and_then(KernelVersion::parse);
         let feature_tier = kernel_version
             .as_ref()
             .map(FeatureTier::from_version)
@@ -519,7 +524,10 @@ impl KernelCapabilities {
                 if lower.contains("hash") && !lower.contains("lru") && !lower.contains("percpu") {
                     types.hash = true;
                 }
-                if lower.contains("array") && !lower.contains("percpu") && !lower.contains("of_maps") {
+                if lower.contains("array")
+                    && !lower.contains("percpu")
+                    && !lower.contains("of_maps")
+                {
                     types.array = true;
                 }
                 if lower.contains("lru_hash") && !lower.contains("percpu") {
@@ -574,13 +582,11 @@ impl KernelCapabilities {
         let Ok(entries) = std::fs::read_dir(base) else {
             return false;
         };
-        entries
-            .filter_map(|e| e.ok())
-            .any(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .starts_with("cilium_policy_")
-            })
+        entries.filter_map(|e| e.ok()).any(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("cilium_policy_")
+        })
     }
 
     // -- Convenience query methods --
@@ -600,10 +606,7 @@ impl KernelCapabilities {
 
     /// Whether the kernel supports advanced features (5.10+).
     pub fn supports_advanced(&self) -> bool {
-        matches!(
-            self.feature_tier,
-            FeatureTier::Advanced | FeatureTier::Full
-        )
+        matches!(self.feature_tier, FeatureTier::Advanced | FeatureTier::Full)
     }
 
     /// Whether Cilium appears to be running (has core BPF maps).
@@ -738,7 +741,11 @@ mod tests {
 
     #[test]
     fn test_kernel_version_at_least() {
-        let v = KernelVersion { major: 5, minor: 10, patch: 3 };
+        let v = KernelVersion {
+            major: 5,
+            minor: 10,
+            patch: 3,
+        };
         assert!(v.at_least(4, 19));
         assert!(v.at_least(5, 4));
         assert!(v.at_least(5, 10));
@@ -748,34 +755,62 @@ mod tests {
 
     #[test]
     fn test_kernel_version_display() {
-        let v = KernelVersion { major: 5, minor: 10, patch: 42 };
+        let v = KernelVersion {
+            major: 5,
+            minor: 10,
+            patch: 42,
+        };
         assert_eq!(v.to_string(), "5.10.42");
     }
 
     #[test]
     fn test_feature_tier_from_version() {
         assert_eq!(
-            FeatureTier::from_version(&KernelVersion { major: 4, minor: 14, patch: 0 }),
+            FeatureTier::from_version(&KernelVersion {
+                major: 4,
+                minor: 14,
+                patch: 0
+            }),
             FeatureTier::Unsupported
         );
         assert_eq!(
-            FeatureTier::from_version(&KernelVersion { major: 4, minor: 19, patch: 0 }),
+            FeatureTier::from_version(&KernelVersion {
+                major: 4,
+                minor: 19,
+                patch: 0
+            }),
             FeatureTier::Basic
         );
         assert_eq!(
-            FeatureTier::from_version(&KernelVersion { major: 5, minor: 4, patch: 0 }),
+            FeatureTier::from_version(&KernelVersion {
+                major: 5,
+                minor: 4,
+                patch: 0
+            }),
             FeatureTier::Btf
         );
         assert_eq!(
-            FeatureTier::from_version(&KernelVersion { major: 5, minor: 10, patch: 0 }),
+            FeatureTier::from_version(&KernelVersion {
+                major: 5,
+                minor: 10,
+                patch: 0
+            }),
             FeatureTier::Advanced
         );
         assert_eq!(
-            FeatureTier::from_version(&KernelVersion { major: 5, minor: 15, patch: 0 }),
+            FeatureTier::from_version(&KernelVersion {
+                major: 5,
+                minor: 15,
+                patch: 0
+            }),
             FeatureTier::Full
         );
         assert_eq!(
-            FeatureTier::from_version(&KernelVersion { major: 6, minor: 0, patch: 0 }),
+            FeatureTier::from_version(&KernelVersion {
+                major: 6,
+                minor: 0,
+                patch: 0
+            }),
             FeatureTier::Full
         );
     }
@@ -857,7 +892,11 @@ CONFIG_SOMETHING_ELSE=y
     #[test]
     fn test_kernel_capabilities_summary() {
         let caps = KernelCapabilities {
-            kernel_version: Some(KernelVersion { major: 5, minor: 15, patch: 0 }),
+            kernel_version: Some(KernelVersion {
+                major: 5,
+                minor: 15,
+                patch: 0,
+            }),
             kernel_version_raw: Some("5.15.0-generic".to_string()),
             feature_tier: FeatureTier::Full,
             bpf_fs_mounted: true,
@@ -883,7 +922,11 @@ CONFIG_SOMETHING_ELSE=y
     #[test]
     fn test_kernel_capabilities_convenience_methods() {
         let caps = KernelCapabilities {
-            kernel_version: Some(KernelVersion { major: 5, minor: 10, patch: 0 }),
+            kernel_version: Some(KernelVersion {
+                major: 5,
+                minor: 10,
+                patch: 0,
+            }),
             kernel_version_raw: Some("5.10.0".to_string()),
             feature_tier: FeatureTier::Advanced,
             bpf_fs_mounted: true,
@@ -905,7 +948,11 @@ CONFIG_SOMETHING_ELSE=y
     #[test]
     fn test_kernel_capabilities_unsupported_kernel() {
         let caps = KernelCapabilities {
-            kernel_version: Some(KernelVersion { major: 4, minor: 14, patch: 0 }),
+            kernel_version: Some(KernelVersion {
+                major: 4,
+                minor: 14,
+                patch: 0,
+            }),
             kernel_version_raw: Some("4.14.0".to_string()),
             feature_tier: FeatureTier::Unsupported,
             bpf_fs_mounted: false,

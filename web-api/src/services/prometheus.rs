@@ -1,7 +1,7 @@
 // Prometheus query service -- fetches metrics from a Prometheus server via HTTP.
 // Uses `curl` through `tokio::process::Command` to avoid adding an HTTP client dependency.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
 pub struct PrometheusService {

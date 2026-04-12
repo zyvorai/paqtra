@@ -12,18 +12,43 @@ use crate::modules::chaos::{ChaosEngine, ChaosExperiment, ChaosStatus};
 
 /// Preset chaos experiments that can be launched from the UI.
 pub const CHAOS_PRESETS: &[(
-    &str,            // name
-    &str,            // description
-    &str,            // severity label
+    &str,                  // name
+    &str,                  // description
+    &str,                  // severity label
     ratatui::style::Color, // color
 )] = &[
-    ("Network Partition", "Drop 20% of packets", "Medium", WARNING_COLOR),
+    (
+        "Network Partition",
+        "Drop 20% of packets",
+        "Medium",
+        WARNING_COLOR,
+    ),
     ("Latency Spike", "Add 500ms delay", "Medium", WARNING_COLOR),
     ("DNS Outage", "Fail 30% DNS lookups", "High", ERROR_COLOR),
-    ("Connection Reset", "Kill 15% connections", "Medium", WARNING_COLOR),
-    ("Bandwidth Limit", "Throttle to 10 Mbps", "Low", SUCCESS_COLOR),
-    ("Packet Corruption", "Corrupt 5% packets", "High", ERROR_COLOR),
-    ("Total Partition", "Drop 100% packets (DANGER)", "Critical", ERROR_COLOR),
+    (
+        "Connection Reset",
+        "Kill 15% connections",
+        "Medium",
+        WARNING_COLOR,
+    ),
+    (
+        "Bandwidth Limit",
+        "Throttle to 10 Mbps",
+        "Low",
+        SUCCESS_COLOR,
+    ),
+    (
+        "Packet Corruption",
+        "Corrupt 5% packets",
+        "High",
+        ERROR_COLOR,
+    ),
+    (
+        "Total Partition",
+        "Drop 100% packets (DANGER)",
+        "Critical",
+        ERROR_COLOR,
+    ),
 ];
 
 /// Convert a preset index into a concrete ChaosExperiment value.
@@ -31,11 +56,16 @@ pub const CHAOS_PRESETS: &[(
 pub fn preset_to_experiment(index: usize) -> Option<ChaosExperiment> {
     match index {
         0 => Some(ChaosExperiment::PacketDrop { drop_rate: 0.20 }),
-        1 => Some(ChaosExperiment::Latency { delay_ms: 500, jitter_ms: 50 }),
+        1 => Some(ChaosExperiment::Latency {
+            delay_ms: 500,
+            jitter_ms: 50,
+        }),
         2 => Some(ChaosExperiment::DNSFailure { failure_rate: 0.30 }),
         3 => Some(ChaosExperiment::ConnectionKill { kill_rate: 0.15 }),
         4 => Some(ChaosExperiment::Bandwidth { limit_mbps: 10 }),
-        5 => Some(ChaosExperiment::PacketCorruption { corruption_rate: 0.05 }),
+        5 => Some(ChaosExperiment::PacketCorruption {
+            corruption_rate: 0.05,
+        }),
         6 => Some(ChaosExperiment::PacketDrop { drop_rate: 1.0 }),
         _ => None,
     }
@@ -115,10 +145,19 @@ impl ChaosView {
         }
     }
 
-    fn render_header(&self, f: &mut Frame, area: ratatui::layout::Rect, chaos: Option<&ChaosEngine>) {
+    fn render_header(
+        &self,
+        f: &mut Frame,
+        area: ratatui::layout::Rect,
+        chaos: Option<&ChaosEngine>,
+    ) {
         let (active, total, cb_active) = if let Some(engine) = chaos {
             let stats = engine.stats();
-            (stats.active_experiments, stats.total_experiments, stats.circuit_breaker_active)
+            (
+                stats.active_experiments,
+                stats.total_experiments,
+                stats.circuit_breaker_active,
+            )
         } else {
             (0, 0, false)
         };
@@ -135,7 +174,11 @@ impl ChaosView {
             if cb_active { "TRIGGERED" } else { "Normal" },
             active,
             total,
-            if self.show_presets { "Experiment Presets" } else { "Active Experiments" }
+            if self.show_presets {
+                "Experiment Presets"
+            } else {
+                "Active Experiments"
+            }
         );
 
         let header = Paragraph::new(header_text)
@@ -312,11 +355,7 @@ impl ChaosView {
                     let truncated_id: String = exp.id.chars().take(14).collect();
                     let content = format!(
                         "{}{:<15} {:<25} [{:<8}] {}s ago",
-                        prefix,
-                        truncated_id,
-                        exp.name,
-                        status_str,
-                        elapsed
+                        prefix, truncated_id, exp.name, status_str, elapsed
                     );
                     ListItem::new(Line::from(Span::styled(content, style)))
                 })

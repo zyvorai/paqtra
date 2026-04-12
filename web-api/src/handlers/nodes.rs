@@ -1,9 +1,9 @@
+use super::{jstr, track_request};
+use crate::AppState;
 use axum::{extract::State, Json};
 use serde::Serialize;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use crate::AppState;
-use super::{track_request, jstr};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct K8sNode {
@@ -20,83 +20,93 @@ pub struct K8sNode {
     pub age: String,
 }
 
-pub async fn list_nodes(
-    State(state): State<Arc<AppState>>,
-) -> Json<serde_json::Value> {
-    track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
+pub async fn list_nodes(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    track_request(&state, |m| {
+        m.k8s_queries.fetch_add(1, Ordering::Relaxed);
+    })
+    .await;
 
-    let data = state.k8s.kubectl_json(&["get", "nodes", "-o", "json"]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&["get", "nodes", "-o", "json"])
+        .await;
 
     let nodes: Vec<K8sNode> = data
         .get("items")
         .and_then(|v| v.as_array())
         .map(|items| {
-            items.iter().map(|item| {
-                let meta = item.get("metadata").unwrap_or(item);
-                let status = item.get("status").unwrap_or(item);
-                let node_info = status.get("nodeInfo").unwrap_or(status);
-                let capacity = status.get("capacity").unwrap_or(status);
+            items
+                .iter()
+                .map(|item| {
+                    let meta = item.get("metadata").unwrap_or(item);
+                    let status = item.get("status").unwrap_or(item);
+                    let node_info = status.get("nodeInfo").unwrap_or(status);
+                    let capacity = status.get("capacity").unwrap_or(status);
 
-                let name = jstr(meta, "name");
-                let created = jstr(meta, "creationTimestamp");
+                    let name = jstr(meta, "name");
+                    let created = jstr(meta, "creationTimestamp");
 
-                // Parse roles from labels
-                let roles: Vec<String> = meta
-                    .get("labels")
-                    .and_then(|v| v.as_object())
-                    .map(|labels| {
-                        labels.keys()
-                            .filter_map(|k| k.strip_prefix("node-role.kubernetes.io/").map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-
-                // Parse conditions for Ready status
-                let ready = status
-                    .get("conditions")
-                    .and_then(|v| v.as_array())
-                    .and_then(|conds| {
-                        conds.iter().find(|c| {
-                            c.get("type").and_then(|v| v.as_str()) == Some("Ready")
+                    // Parse roles from labels
+                    let roles: Vec<String> = meta
+                        .get("labels")
+                        .and_then(|v| v.as_object())
+                        .map(|labels| {
+                            labels
+                                .keys()
+                                .filter_map(|k| {
+                                    k.strip_prefix("node-role.kubernetes.io/").map(String::from)
+                                })
+                                .collect()
                         })
-                    })
-                    .and_then(|c| c.get("status"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown");
-                let status_str = if ready == "True" { "Ready" } else { "NotReady" };
+                        .unwrap_or_default();
 
-                let cpu = capacity
-                    .get("cpu")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| s.parse::<u32>().ok())
-                    .unwrap_or(0);
+                    // Parse conditions for Ready status
+                    let ready = status
+                        .get("conditions")
+                        .and_then(|v| v.as_array())
+                        .and_then(|conds| {
+                            conds
+                                .iter()
+                                .find(|c| c.get("type").and_then(|v| v.as_str()) == Some("Ready"))
+                        })
+                        .and_then(|c| c.get("status"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown");
+                    let status_str = if ready == "True" { "Ready" } else { "NotReady" };
 
-                let mem_str = capacity
-                    .get("memory")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("0");
-                let mem_gb = parse_k8s_memory(mem_str);
+                    let cpu = capacity
+                        .get("cpu")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or(0);
 
-                let pods_cap = capacity
-                    .get("pods")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| s.parse::<u32>().ok())
-                    .unwrap_or(0);
+                    let mem_str = capacity
+                        .get("memory")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("0");
+                    let mem_gb = parse_k8s_memory(mem_str);
 
-                K8sNode {
-                    name,
-                    status: status_str.to_string(),
-                    roles,
-                    version: jstr(node_info, "kubeletVersion"),
-                    os: jstr(node_info, "osImage"),
-                    kernel: jstr(node_info, "kernelVersion"),
-                    cpu_capacity: cpu,
-                    memory_capacity_gb: mem_gb,
-                    pods_count: 0, // Would need separate pod listing per node
-                    pods_capacity: pods_cap,
-                    age: created,
-                }
-            }).collect()
+                    let pods_cap = capacity
+                        .get("pods")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or(0);
+
+                    K8sNode {
+                        name,
+                        status: status_str.to_string(),
+                        roles,
+                        version: jstr(node_info, "kubeletVersion"),
+                        os: jstr(node_info, "osImage"),
+                        kernel: jstr(node_info, "kernelVersion"),
+                        cpu_capacity: cpu,
+                        memory_capacity_gb: mem_gb,
+                        pods_count: 0, // Would need separate pod listing per node
+                        pods_capacity: pods_cap,
+                        age: created,
+                    }
+                })
+                .collect()
         })
         .unwrap_or_default();
 

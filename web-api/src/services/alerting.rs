@@ -3,8 +3,8 @@
 // Evaluates alert rules stored in Redis every 60 seconds and fires alerts
 // when conditions are met. Alert history is persisted back to Redis.
 
-use std::sync::Arc;
 use crate::AppState;
+use std::sync::Arc;
 
 const ALERT_RULES_PREFIX: &str = "cv:alert_rules:";
 const ALERT_HISTORY_PREFIX: &str = "cv:alert_history:";
@@ -36,14 +36,23 @@ async fn evaluate_rules(state: &AppState) -> anyhow::Result<()> {
     let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
 
     for rule in &rules {
-        let enabled = rule.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        let enabled = rule
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if !enabled {
             continue;
         }
 
         let rule_id = rule.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
-        let rule_name = rule.get("name").and_then(|v| v.as_str()).unwrap_or("Unnamed");
-        let severity = rule.get("severity").and_then(|v| v.as_str()).unwrap_or("warning");
+        let rule_name = rule
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unnamed");
+        let severity = rule
+            .get("severity")
+            .and_then(|v| v.as_str())
+            .unwrap_or("warning");
         let condition = rule.get("condition").and_then(|v| v.as_str()).unwrap_or("");
 
         let result = evaluate_condition(condition, &flows, state).await;
@@ -61,11 +70,7 @@ async fn evaluate_rules(state: &AppState) -> anyhow::Result<()> {
             }
             ConditionResult::Ok => {}
             ConditionResult::Skipped(reason) => {
-                tracing::debug!(
-                    rule_id = rule_id,
-                    "Rule skipped: {}",
-                    reason
-                );
+                tracing::debug!(rule_id = rule_id, "Rule skipped: {}", reason);
             }
         }
     }
@@ -114,7 +119,10 @@ async fn evaluate_condition(
     if cond.starts_with("dns_servfail >") {
         if let Some(threshold) = parse_rate_threshold(cond) {
             // Count DNS (port 53) flows that were DROPPED as a proxy for SERVFAIL
-            let dns_drops = flows.iter().filter(|f| f.port == 53 && f.verdict == "DROPPED").count();
+            let dns_drops = flows
+                .iter()
+                .filter(|f| f.port == 53 && f.verdict == "DROPPED")
+                .count();
             if dns_drops as f64 > threshold {
                 return ConditionResult::Fired(format!(
                     "DNS failures {} exceed threshold {}/min",
@@ -123,7 +131,10 @@ async fn evaluate_condition(
             }
             return ConditionResult::Ok;
         }
-        return ConditionResult::Skipped(format!("Could not parse dns_servfail condition: {}", cond));
+        return ConditionResult::Skipped(format!(
+            "Could not parse dns_servfail condition: {}",
+            cond
+        ));
     }
 
     // ── policy_denied > N/min ───────────────────────────────
@@ -227,7 +238,13 @@ fn parse_rate_threshold(condition: &str) -> Option<f64> {
 }
 
 /// Write a fired alert to Redis alert history.
-async fn fire_alert(state: &AppState, rule_id: &str, rule_name: &str, severity: &str, message: &str) {
+async fn fire_alert(
+    state: &AppState,
+    rule_id: &str,
+    rule_name: &str,
+    severity: &str,
+    message: &str,
+) {
     let alert_id = format!("alert-{}", uuid::Uuid::new_v4());
     let now = chrono::Utc::now().to_rfc3339();
 

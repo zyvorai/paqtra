@@ -4,11 +4,7 @@
 // code, duration, and correlation ID. Finished spans are submitted to the
 // `SpanExporter` for asynchronous OTLP export.
 
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, middleware::Next, response::Response};
 use std::sync::Arc;
 
 use crate::middleware::correlation::RequestId;
@@ -18,10 +14,7 @@ use crate::services::tracing_svc::{SpanBuilder, SpanExporter};
 ///
 /// Must run *after* the correlation-ID middleware so that `RequestId` is
 /// available in request extensions.
-pub async fn otel_trace_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn otel_trace_middleware(request: Request, next: Next) -> Response {
     let method = request.method().to_string();
     let path = request.uri().path().to_string();
 
@@ -33,10 +26,8 @@ pub async fn otel_trace_middleware(
         .unwrap_or_default();
 
     // Retrieve the exporter handle stashed in extensions by the app setup.
-    let exporter: Option<Arc<SpanExporter>> = request
-        .extensions()
-        .get::<Arc<SpanExporter>>()
-        .cloned();
+    let exporter: Option<Arc<SpanExporter>> =
+        request.extensions().get::<Arc<SpanExporter>>().cloned();
 
     let span_builder = SpanBuilder::start(&method, &path, &request_id);
 

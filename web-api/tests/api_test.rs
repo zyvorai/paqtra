@@ -4,11 +4,11 @@
 // error response formatting, and auth token claim structures WITHOUT
 // requiring a running Redis instance or any other external service.
 
+use cilium_vision_api::auth_types::Claims;
 use cilium_vision_api::config::Config;
 use cilium_vision_api::error::ApiError;
 use cilium_vision_api::models::flow::{Flow, FlowEndpoint, FlowStats};
 use cilium_vision_api::models::policy::{CreatePolicyRequest, Policy};
-use cilium_vision_api::auth_types::Claims;
 
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -59,7 +59,10 @@ fn test_jwt_secret_too_short() {
         std::env::set_var("JWT_SECRET", "short");
     }
     let result = Config::load();
-    assert!(result.is_err(), "Config::load should fail when JWT_SECRET is too short");
+    assert!(
+        result.is_err(),
+        "Config::load should fail when JWT_SECRET is too short"
+    );
     let err_msg = format!("{}", result.unwrap_err());
     assert!(
         err_msg.contains("32 characters"),
@@ -77,7 +80,10 @@ fn test_jwt_secret_missing() {
     clear_config_env();
 
     let result = Config::load();
-    assert!(result.is_err(), "Config::load should fail when JWT_SECRET is missing");
+    assert!(
+        result.is_err(),
+        "Config::load should fail when JWT_SECRET is missing"
+    );
     let err_msg = format!("{}", result.unwrap_err());
     assert!(
         err_msg.contains("JWT_SECRET"),
@@ -283,7 +289,11 @@ fn test_policy_json_keys() {
     assert!(obj.contains_key("namespace"));
     assert!(obj.contains_key("created_at"));
     assert!(obj.contains_key("status"));
-    assert_eq!(obj.len(), 5, "Policy should serialize to exactly 5 JSON keys");
+    assert_eq!(
+        obj.len(),
+        5,
+        "Policy should serialize to exactly 5 JSON keys"
+    );
 }
 
 /// CreatePolicyRequest deserializes correctly from JSON input.
@@ -537,8 +547,15 @@ fn test_claims_json_keys() {
     assert!(obj.contains_key("exp"), "Claims must have 'exp' field");
     assert!(obj.contains_key("iat"), "Claims must have 'iat' field");
     assert!(obj.contains_key("role"), "Claims must have 'role' field");
-    assert!(obj.contains_key("namespaces"), "Claims must have 'namespaces' field");
-    assert_eq!(obj.len(), 5, "Claims should serialize to exactly 5 JSON keys");
+    assert!(
+        obj.contains_key("namespaces"),
+        "Claims must have 'namespaces' field"
+    );
+    assert_eq!(
+        obj.len(),
+        5,
+        "Claims should serialize to exactly 5 JSON keys"
+    );
 }
 
 /// Claims deserialization must fail when required fields are missing.
@@ -546,14 +563,17 @@ fn test_claims_json_keys() {
 fn test_claims_missing_fields() {
     let input = json!({"sub": "u", "exp": 0});
     let result = serde_json::from_value::<Claims>(input);
-    assert!(result.is_err(), "Should fail when 'iat' and 'role' are missing");
+    assert!(
+        result.is_err(),
+        "Should fail when 'iat' and 'role' are missing"
+    );
 }
 
 /// JWT encode/decode round-trip using jsonwebtoken crate to verify Claims
 /// is compatible with the HS256 algorithm used by the auth middleware.
 #[test]
 fn test_jwt_encode_decode_roundtrip() {
-    use jsonwebtoken::{encode, decode, Header, EncodingKey, DecodingKey, Validation, Algorithm};
+    use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 
     let secret = "a]3kF9#mP!xQ7$wL2^rT5&vB8*nJ0dYcHgUeZsAiOlCbNfR";
 
@@ -591,7 +611,7 @@ fn test_jwt_encode_decode_roundtrip() {
 /// Decoding a JWT with the wrong secret must fail.
 #[test]
 fn test_jwt_decode_wrong_secret() {
-    use jsonwebtoken::{encode, decode, Header, EncodingKey, DecodingKey, Validation, Algorithm};
+    use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 
     let claims = Claims {
         sub: "user".to_string(),
@@ -620,7 +640,7 @@ fn test_jwt_decode_wrong_secret() {
 /// Decoding an expired JWT must fail.
 #[test]
 fn test_jwt_decode_expired_token() {
-    use jsonwebtoken::{encode, decode, Header, EncodingKey, DecodingKey, Validation, Algorithm};
+    use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 
     let secret = b"test-secret-for-expiry-check-32chars!";
 

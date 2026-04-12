@@ -1,5 +1,9 @@
 // Error types
-use axum::{http::StatusCode, response::{IntoResponse, Response}, Json};
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
 use serde_json::json;
 
 pub enum ApiError {
@@ -21,7 +25,10 @@ impl IntoResponse for ApiError {
             ApiError::Conflict(msg) => (StatusCode::CONFLICT, msg),
             ApiError::InternalError(msg) => {
                 tracing::error!("Internal error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
             }
         };
 

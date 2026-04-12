@@ -217,11 +217,7 @@ impl RiskScorer {
 
     /// Generate risk summary
     pub fn summarize_risk(&self, risk: &RiskAssessment) -> String {
-        let mut summary = format!(
-            "Risk Level: {} (Score: {}/10)\n",
-            risk.level,
-            risk.score
-        );
+        let mut summary = format!("Risk Level: {} (Score: {}/10)\n", risk.level, risk.score);
 
         if risk.safe_to_apply {
             summary.push_str("✅ Safe to apply\n");
@@ -269,12 +265,7 @@ impl RiskScorer {
         let mut rankings = Vec::new();
 
         for (idx, (scenario, risk)) in scenarios.iter().enumerate() {
-            let description = format!(
-                "{:?} - Risk: {} ({})",
-                scenario,
-                risk.level,
-                risk.score
-            );
+            let description = format!("{:?} - Risk: {} ({})", scenario, risk.level, risk.score);
             rankings.push((idx, description));
         }
 

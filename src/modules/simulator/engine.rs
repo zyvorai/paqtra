@@ -398,7 +398,8 @@ impl SimulationEngine {
         }
 
         // Wildcard destination match – also check port and protocol when specified
-        if decision.src_identity == flow.src_identity && decision.dst_identity == 0
+        if decision.src_identity == flow.src_identity
+            && decision.dst_identity == 0
             && (decision.port == 0 || decision.port == flow.port)
             && (decision.protocol == 0 || decision.protocol == flow.protocol)
         {

@@ -10,17 +10,15 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::AppState;
 use super::{check_admin, paginate_json, PaginationQuery};
+use crate::AppState;
 
 // ---------------------------------------------------------------------------
 // Helper: run bpftool with a 5-second timeout, return parsed JSON
 // ---------------------------------------------------------------------------
 
 async fn run_bpftool(args: &[&str]) -> Result<Value, String> {
-    let fut = tokio::process::Command::new("bpftool")
-        .args(args)
-        .output();
+    let fut = tokio::process::Command::new("bpftool").args(args).output();
 
     let output = tokio::time::timeout(Duration::from_secs(5), fut)
         .await
@@ -146,7 +144,12 @@ pub async fn list_real_programs(
 
     let arr = match progs.as_array() {
         Some(a) => a,
-        None => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, "unexpected bpftool output")),
+        None => {
+            return Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "unexpected bpftool output",
+            ))
+        }
     };
 
     let items: Vec<Value> = arr
@@ -157,9 +160,7 @@ pub async fn list_real_programs(
             if name.is_empty() {
                 return false;
             }
-            name.contains("cil")
-                || ptype == "sched_cls"
-                || ptype == "xdp"
+            name.contains("cil") || ptype == "sched_cls" || ptype == "xdp"
         })
         .map(|p| {
             json!({
@@ -197,7 +198,12 @@ pub async fn list_real_maps(
 
     let arr = match maps.as_array() {
         Some(a) => a,
-        None => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, "unexpected bpftool output")),
+        None => {
+            return Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "unexpected bpftool output",
+            ))
+        }
     };
 
     let items: Vec<Value> = arr
@@ -264,7 +270,10 @@ pub async fn dump_map_entries(
         Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
     };
     if !valid_ids.contains(&(id as u64)) {
-        return Err(error_response(StatusCode::NOT_FOUND, "Map ID is not a known Cilium map"));
+        return Err(error_response(
+            StatusCode::NOT_FOUND,
+            "Map ID is not a known Cilium map",
+        ));
     }
 
     let id_str = id.to_string();
@@ -426,11 +435,21 @@ pub async fn get_ipcache(
 
     let ipcache_map = match find_map_by_name(&map_arr, "cilium_ipcache") {
         Some(m) => m,
-        None => return Err(error_response(StatusCode::NOT_FOUND, "cilium_ipcache map not found")),
+        None => {
+            return Err(error_response(
+                StatusCode::NOT_FOUND,
+                "cilium_ipcache map not found",
+            ))
+        }
     };
     let mid = match map_id(ipcache_map) {
         Some(id) => id,
-        None => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, "cannot read map id")),
+        None => {
+            return Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot read map id",
+            ))
+        }
     };
 
     let id_str = mid.to_string();
@@ -502,11 +521,21 @@ pub async fn get_lb_backends(
 
     let lb_map = match find_map_by_name(&map_arr, "cilium_lb4_serv") {
         Some(m) => m,
-        None => return Err(error_response(StatusCode::NOT_FOUND, "cilium_lb4_serv map not found")),
+        None => {
+            return Err(error_response(
+                StatusCode::NOT_FOUND,
+                "cilium_lb4_serv map not found",
+            ))
+        }
     };
     let mid = match map_id(lb_map) {
         Some(id) => id,
-        None => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, "cannot read map id")),
+        None => {
+            return Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot read map id",
+            ))
+        }
     };
 
     let id_str = mid.to_string();
@@ -597,11 +626,21 @@ pub async fn get_drop_stats(
 
     let metrics_map = match find_map_by_name(&map_arr, "cilium_metrics") {
         Some(m) => m,
-        None => return Err(error_response(StatusCode::NOT_FOUND, "cilium_metrics map not found")),
+        None => {
+            return Err(error_response(
+                StatusCode::NOT_FOUND,
+                "cilium_metrics map not found",
+            ))
+        }
     };
     let mid = match map_id(metrics_map) {
         Some(id) => id,
-        None => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, "cannot read map id")),
+        None => {
+            return Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cannot read map id",
+            ))
+        }
     };
 
     let id_str = mid.to_string();

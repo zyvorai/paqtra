@@ -387,7 +387,11 @@ impl<M: MapReader> Simulator<M> {
     }
 
     /// Convert conntrack entry to historical flow
-    fn conntrack_to_flow(&self, ct: &ConntrackEntry, ipcache: &[crate::ebpf::IPCacheEntry]) -> Result<HistoricalFlow> {
+    fn conntrack_to_flow(
+        &self,
+        ct: &ConntrackEntry,
+        ipcache: &[crate::ebpf::IPCacheEntry],
+    ) -> Result<HistoricalFlow> {
         let src_ip: IpAddr = ct
             .src_ip
             .parse()

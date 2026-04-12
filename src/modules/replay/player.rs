@@ -153,7 +153,11 @@ impl<'a, M: MapReader> ReplayPlayer<'a, M> {
             verdict_matches,
             new_drops,
             fixed_flows,
-            success_rate: if total > 0 { successful as f32 / total as f32 } else { 1.0 },
+            success_rate: if total > 0 {
+                successful as f32 / total as f32
+            } else {
+                1.0
+            },
         })
     }
 

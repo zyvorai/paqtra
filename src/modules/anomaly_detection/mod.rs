@@ -173,7 +173,10 @@ impl Default for DetectionConfig {
 
 impl AnomalyDetector {
     pub fn new(config: DetectionConfig) -> Result<Self> {
-        Self::with_baseline_path(config, Path::new(baseline::DEFAULT_BASELINE_DIR).join("baseline.json"))
+        Self::with_baseline_path(
+            config,
+            Path::new(baseline::DEFAULT_BASELINE_DIR).join("baseline.json"),
+        )
     }
 
     /// Create a detector with an explicit baseline file path.
@@ -200,8 +203,7 @@ impl AnomalyDetector {
             baseline::BaselineLearner::new(config.learning_period_hours)
         };
 
-        let mut scorer =
-            scoring::AnomalyScorer::new(config.sensitivity, config.algorithms.clone());
+        let mut scorer = scoring::AnomalyScorer::new(config.sensitivity, config.algorithms.clone());
         // Adapt algorithm selection to the amount of data we already have
         scorer.select_algorithms(baseline.observation_count());
 
@@ -517,7 +519,10 @@ mod tests {
             detector.process_metrics(&[metric]).await.unwrap();
         }
 
-        assert!(path.exists(), "Baseline should be persisted after save_interval");
+        assert!(
+            path.exists(),
+            "Baseline should be persisted after save_interval"
+        );
     }
 
     #[tokio::test]
@@ -540,7 +545,10 @@ mod tests {
         let config2 = DetectionConfig::default();
         let d2 = AnomalyDetector::with_baseline_path(config2, path).unwrap();
         let stats = d2.get_baseline_stats();
-        assert!(!stats.is_empty(), "Loaded detector should have baseline data");
+        assert!(
+            !stats.is_empty(),
+            "Loaded detector should have baseline data"
+        );
     }
 
     #[test]

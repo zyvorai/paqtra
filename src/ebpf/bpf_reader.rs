@@ -174,7 +174,10 @@ impl CiliumMapReader {
         if let Some(ref tool) = self.bpftool {
             if let Ok(maps) = tool.list_maps() {
                 if maps.iter().any(|m| m.name == map_name) {
-                    tracing::debug!(map = map_name, "Map found via bpftool, use MapReader trait for typed access");
+                    tracing::debug!(
+                        map = map_name,
+                        "Map found via bpftool, use MapReader trait for typed access"
+                    );
                 }
             }
         }
@@ -200,7 +203,9 @@ impl MapReader for CiliumMapReader {
             match aya.read_policy_map() {
                 Ok(entries) if !entries.is_empty() => return Ok(entries),
                 Ok(_) => {} // empty result, fall through
-                Err(e) => tracing::debug!("Aya policy map read failed, falling back to bpftool: {}", e),
+                Err(e) => {
+                    tracing::debug!("Aya policy map read failed, falling back to bpftool: {}", e)
+                }
             }
         }
 
@@ -217,7 +222,10 @@ impl MapReader for CiliumMapReader {
             match aya.read_conntrack_map() {
                 Ok(entries) if !entries.is_empty() => return Ok(entries),
                 Ok(_) => {}
-                Err(e) => tracing::debug!("Aya conntrack map read failed, falling back to bpftool: {}", e),
+                Err(e) => tracing::debug!(
+                    "Aya conntrack map read failed, falling back to bpftool: {}",
+                    e
+                ),
             }
         }
 
@@ -249,7 +257,10 @@ impl MapReader for CiliumMapReader {
             match aya.read_ipcache_map() {
                 Ok(entries) if !entries.is_empty() => return Ok(entries),
                 Ok(_) => {}
-                Err(e) => tracing::debug!("Aya ipcache map read failed, falling back to bpftool: {}", e),
+                Err(e) => tracing::debug!(
+                    "Aya ipcache map read failed, falling back to bpftool: {}",
+                    e
+                ),
             }
         }
 
@@ -265,7 +276,9 @@ impl MapReader for CiliumMapReader {
             match aya.read_drop_map() {
                 Ok(entries) if !entries.is_empty() => return Ok(entries),
                 Ok(_) => {}
-                Err(e) => tracing::debug!("Aya drop map read failed, falling back to bpftool: {}", e),
+                Err(e) => {
+                    tracing::debug!("Aya drop map read failed, falling back to bpftool: {}", e)
+                }
             }
         }
 

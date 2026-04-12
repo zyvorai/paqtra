@@ -109,15 +109,16 @@ impl AlertManager {
     }
 
     fn should_suppress(&self, anomaly: &Anomaly, history: &[Anomaly]) -> bool {
-        let key = format!("{:?}", anomaly.anomaly_type)
-            .chars()
-            .fold(String::new(), |mut acc, c| {
-                if c.is_uppercase() && !acc.is_empty() {
-                    acc.push('_');
-                }
-                acc.push(c.to_ascii_lowercase());
-                acc
-            });
+        let key =
+            format!("{:?}", anomaly.anomaly_type)
+                .chars()
+                .fold(String::new(), |mut acc, c| {
+                    if c.is_uppercase() && !acc.is_empty() {
+                        acc.push('_');
+                    }
+                    acc.push(c.to_ascii_lowercase());
+                    acc
+                });
         let rule = self
             .suppression_rules
             .get(&key)

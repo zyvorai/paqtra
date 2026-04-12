@@ -1,10 +1,5 @@
 // Request correlation ID middleware
-use axum::{
-    extract::Request,
-    http::HeaderValue,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, http::HeaderValue, middleware::Next, response::Response};
 
 /// Middleware that assigns a unique correlation ID to every request.
 ///
@@ -14,10 +9,7 @@ use axum::{
 /// 1. Stored in the request extensions as `RequestId` (accessible by handlers).
 /// 2. Emitted in a tracing span so every log line within the request carries it.
 /// 3. Echoed back in the `X-Request-Id` response header.
-pub async fn correlation_id_middleware(
-    mut request: Request,
-    next: Next,
-) -> Response {
+pub async fn correlation_id_middleware(mut request: Request, next: Next) -> Response {
     let request_id = request
         .headers()
         .get("x-request-id")
@@ -26,7 +18,9 @@ pub async fn correlation_id_middleware(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     // Store in request extensions for handlers
-    request.extensions_mut().insert(RequestId(request_id.clone()));
+    request
+        .extensions_mut()
+        .insert(RequestId(request_id.clone()));
 
     // Run the inner handler inside a tracing span.
     // We use `Instrument::instrument` rather than `Span::entered()` so the

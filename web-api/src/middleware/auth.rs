@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ pub struct Claims {
     pub iat: usize,
     pub role: String,
     #[serde(default)]
-    pub namespaces: Vec<String>,  // Empty = all namespaces (for backwards compat)
+    pub namespaces: Vec<String>, // Empty = all namespaces (for backwards compat)
 }
 
 /// JWT authentication middleware that validates Bearer tokens.
@@ -34,9 +34,12 @@ pub async fn auth_middleware(
     // Skip auth for health/metrics endpoints and WebSocket upgrades
     // (WebSocket handlers validate tokens via query parameter instead)
     let path = request.uri().path();
-    if path == "/health" || path == "/ready" || path == "/metrics"
+    if path == "/health"
+        || path == "/ready"
+        || path == "/metrics"
         || path.starts_with("/api/v1/ws/")
-        || path.starts_with("/api-docs/") || path == "/swagger-ui"
+        || path.starts_with("/api-docs/")
+        || path == "/swagger-ui"
     {
         return next.run(request).await;
     }

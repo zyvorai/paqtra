@@ -1,22 +1,22 @@
 // HTTP request handlers
-pub mod health;
-pub mod flows;
-pub mod policies;
 pub mod anomalies;
 pub mod compliance;
-pub mod modules;
-pub mod metrics;
-pub mod events;
+pub mod ebpf;
 pub mod endpoints;
-pub mod nodes;
+pub mod events;
 pub mod extended;
 pub mod extended2;
 pub mod extended3;
 pub mod extended4;
-pub mod ebpf;
+pub mod flows;
+pub mod health;
+pub mod metrics;
+pub mod modules;
+pub mod nodes;
+pub mod policies;
 
-use axum::{http::StatusCode, Json};
 use crate::{AppMetrics, AppState};
+use axum::{http::StatusCode, Json};
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::atomic::Ordering;
@@ -31,10 +31,15 @@ pub fn check_admin(
     state: &AppState,
     claims: &Option<axum::Extension<crate::middleware::auth::Claims>>,
 ) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
-    if state.config.auth_disabled { return Ok(()); }
+    if state.config.auth_disabled {
+        return Ok(());
+    }
     match claims.as_ref().map(|c| c.role.as_str()) {
         Some("admin") => Ok(()),
-        _ => Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Admin role required"})))),
+        _ => Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "Admin role required"})),
+        )),
     }
 }
 
@@ -70,7 +75,10 @@ pub async fn audit_log(
     actor: &str,
     outcome: &str,
 ) {
-    audit_log_with_request_id(state, action, resource, namespace, details, actor, outcome, None).await;
+    audit_log_with_request_id(
+        state, action, resource, namespace, details, actor, outcome, None,
+    )
+    .await;
 }
 
 /// Like [`audit_log`] but accepts an optional correlation `request_id`.
@@ -84,7 +92,14 @@ pub async fn audit_log_with_request_id(
     outcome: &str,
     request_id: Option<&str>,
 ) {
-    let id = format!("aud-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("000"));
+    let id = format!(
+        "aud-{}",
+        uuid::Uuid::new_v4()
+            .to_string()
+            .split('-')
+            .next()
+            .unwrap_or("000")
+    );
     let mut entry = serde_json::json!({
         "id": id,
         "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -100,12 +115,20 @@ pub async fn audit_log_with_request_id(
             obj.insert("request_id".to_string(), serde_json::json!(rid));
         }
     }
-    let _ = state.cache.set_persistent(&format!("cv:audit_log:{}", id), &entry).await;
+    let _ = state
+        .cache
+        .set_persistent(&format!("cv:audit_log:{}", id), &entry)
+        .await;
 }
 
 /// Extract the actor (subject) from JWT claims, defaulting to "anonymous".
-pub fn actor_from_claims(claims: &Option<axum::Extension<crate::middleware::auth::Claims>>) -> String {
-    claims.as_ref().map(|c| c.sub.clone()).unwrap_or_else(|| "anonymous".to_string())
+pub fn actor_from_claims(
+    claims: &Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> String {
+    claims
+        .as_ref()
+        .map(|c| c.sub.clone())
+        .unwrap_or_else(|| "anonymous".to_string())
 }
 
 /// Shared pagination query params for list endpoints.
@@ -117,7 +140,10 @@ pub struct PaginationQuery {
 
 /// Extract a string field from a JSON value, returning empty string if absent.
 pub fn jstr(v: &Value, key: &str) -> String {
-    v.get(key).and_then(|x| x.as_str()).unwrap_or("").to_string()
+    v.get(key)
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 /// Check if the caller has access to a specific namespace.
@@ -127,10 +153,12 @@ pub fn has_namespace_access(
     claims: &Option<axum::Extension<crate::middleware::auth::Claims>>,
     namespace: &str,
 ) -> bool {
-    if state.config.auth_disabled { return true; }
+    if state.config.auth_disabled {
+        return true;
+    }
     match claims.as_ref() {
         Some(c) if c.role == "admin" => true,
-        Some(c) if c.namespaces.is_empty() => true,  // empty = all
+        Some(c) if c.namespaces.is_empty() => true, // empty = all
         Some(c) => c.namespaces.iter().any(|ns| ns == namespace || ns == "*"),
         None => false,
     }
@@ -142,15 +170,24 @@ pub fn filter_by_namespace_access(
     claims: &Option<axum::Extension<crate::middleware::auth::Claims>>,
     items: Vec<serde_json::Value>,
 ) -> Vec<serde_json::Value> {
-    if state.config.auth_disabled { return items; }
+    if state.config.auth_disabled {
+        return items;
+    }
     match claims.as_ref() {
         Some(c) if c.role == "admin" || c.namespaces.is_empty() => items,
-        Some(c) => items.into_iter().filter(|item| {
-            item.get("namespace")
-                .and_then(|v| v.as_str())
-                .map(|ns| c.namespaces.iter().any(|allowed| allowed == ns || allowed == "*"))
-                .unwrap_or(true)  // keep items without namespace field
-        }).collect(),
+        Some(c) => items
+            .into_iter()
+            .filter(|item| {
+                item.get("namespace")
+                    .and_then(|v| v.as_str())
+                    .map(|ns| {
+                        c.namespaces
+                            .iter()
+                            .any(|allowed| allowed == ns || allowed == "*")
+                    })
+                    .unwrap_or(true) // keep items without namespace field
+            })
+            .collect(),
         None => vec![],
     }
 }

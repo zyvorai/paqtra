@@ -248,7 +248,9 @@ spec:
         - matchPattern: "*.cluster.local"
         - matchPattern: "*.svc"
 "#,
-            yaml_escape(&anomaly.context.service), yaml_escape(&anomaly.context.namespace), yaml_escape(&anomaly.context.service)
+            yaml_escape(&anomaly.context.service),
+            yaml_escape(&anomaly.context.namespace),
+            yaml_escape(&anomaly.context.service)
         )
     }
 
@@ -275,7 +277,9 @@ spec:
       - port: "53"
         protocol: UDP
 "#,
-            yaml_escape(&anomaly.id), yaml_escape(&anomaly.context.namespace), yaml_escape(&anomaly.context.pod)
+            yaml_escape(&anomaly.id),
+            yaml_escape(&anomaly.context.namespace),
+            yaml_escape(&anomaly.context.pod)
         )
     }
 }

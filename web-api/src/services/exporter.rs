@@ -7,7 +7,7 @@
 use crate::models::flow::Flow;
 use crate::AppState;
 use std::sync::Arc;
-use tokio::time::{Duration, interval};
+use tokio::time::{interval, Duration};
 
 const EXPORT_CONFIGS_PREFIX: &str = "cv:export_configs:";
 const DEFAULT_EXPORT_DIR: &str = "/var/lib/cilium-vision/exports";
@@ -45,9 +45,18 @@ async fn run_exports(state: &AppState) -> anyhow::Result<()> {
             continue;
         }
 
-        let config_id = config.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
-        let format = config.get("format").and_then(|v| v.as_str()).unwrap_or("json");
-        let destination = config.get("destination").and_then(|v| v.as_str()).unwrap_or("");
+        let config_id = config
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let format = config
+            .get("format")
+            .and_then(|v| v.as_str())
+            .unwrap_or("json");
+        let destination = config
+            .get("destination")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         let payload = match format {
             "csv" => format_flows_csv(&flows),
@@ -62,7 +71,12 @@ async fn run_exports(state: &AppState) -> anyhow::Result<()> {
         };
 
         if let Err(e) = write_export(destination, config_id, ext, &payload).await {
-            tracing::warn!("Export to '{}' failed for config {}: {}", destination, config_id, e);
+            tracing::warn!(
+                "Export to '{}' failed for config {}: {}",
+                destination,
+                config_id,
+                e
+            );
             continue;
         }
 
@@ -85,7 +99,11 @@ async fn run_exports(state: &AppState) -> anyhow::Result<()> {
             flows.len(),
             config_id,
             format,
-            if destination.is_empty() { "default" } else { destination }
+            if destination.is_empty() {
+                "default"
+            } else {
+                destination
+            }
         );
     }
 
@@ -93,7 +111,12 @@ async fn run_exports(state: &AppState) -> anyhow::Result<()> {
 }
 
 /// Write export payload to the appropriate destination.
-async fn write_export(destination: &str, config_id: &str, ext: &str, payload: &str) -> anyhow::Result<()> {
+async fn write_export(
+    destination: &str,
+    config_id: &str,
+    ext: &str,
+    payload: &str,
+) -> anyhow::Result<()> {
     use crate::services::k8s::K8sService;
 
     if let Some(path) = destination.strip_prefix("file://") {

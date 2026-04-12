@@ -100,7 +100,11 @@ impl K8sService {
     }
 
     /// Run a CLI command with data piped to stdin. Returns (success, stdout, stderr).
-    pub async fn run_cmd_stdin(program: &str, args: &[&str], stdin_data: &str) -> (bool, String, String) {
+    pub async fn run_cmd_stdin(
+        program: &str,
+        args: &[&str],
+        stdin_data: &str,
+    ) -> (bool, String, String) {
         use tokio::io::AsyncWriteExt;
         let mut cmd = Command::new(program);
         for a in args {
@@ -134,7 +138,13 @@ impl K8sService {
 
     /// List CiliumNetworkPolicy resources across all namespaces
     pub async fn list_policies(&self) -> Result<Vec<Policy>> {
-        let mut cmd = self.kubectl(&["get", "ciliumnetworkpolicies", "--all-namespaces", "-o", "json"]);
+        let mut cmd = self.kubectl(&[
+            "get",
+            "ciliumnetworkpolicies",
+            "--all-namespaces",
+            "-o",
+            "json",
+        ]);
 
         let output = timeout(Duration::from_secs(30), cmd.output())
             .await
@@ -143,18 +153,13 @@ impl K8sService {
         match output {
             Ok(out) if out.status.success() => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
-                let list: serde_json::Value = serde_json::from_str(&stdout)
-                    .context("Failed to parse kubectl JSON output")?;
+                let list: serde_json::Value =
+                    serde_json::from_str(&stdout).context("Failed to parse kubectl JSON output")?;
 
                 let policies = list
                     .get("items")
                     .and_then(|items| items.as_array())
-                    .map(|items| {
-                        items
-                            .iter()
-                            .map(k8s_resource_to_policy)
-                            .collect()
-                    })
+                    .map(|items| items.iter().map(k8s_resource_to_policy).collect())
                     .unwrap_or_default();
 
                 Ok(policies)

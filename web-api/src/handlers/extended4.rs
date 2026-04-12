@@ -1,8 +1,14 @@
-use axum::{extract::{Query, State}, http::StatusCode, Json};
+use super::{
+    actor_from_claims, audit_log, check_admin, paginate_json, track_request, PaginationQuery,
+};
+use crate::AppState;
+use axum::{
+    extract::{Query, State},
+    http::StatusCode,
+    Json,
+};
 use serde::Deserialize;
 use std::sync::Arc;
-use crate::AppState;
-use super::{check_admin, track_request, PaginationQuery, paginate_json, audit_log, actor_from_claims};
 
 #[derive(Debug, Deserialize)]
 pub struct ValidatePolicyRequest {
@@ -20,8 +26,12 @@ pub struct CreateExportRequest {
     pub destination: String,
 }
 
-fn default_export_name() -> String { "new-export".to_string() }
-fn default_export_format() -> String { "json".to_string() }
+fn default_export_name() -> String {
+    "new-export".to_string()
+}
+fn default_export_format() -> String {
+    "json".to_string()
+}
 
 #[derive(Debug, Deserialize)]
 pub struct NodeActionRequest {
@@ -42,9 +52,21 @@ pub async fn wireguard_peers(
     use crate::services::k8s::K8sService;
     let wg_output = K8sService::run_cmd(
         "kubectl",
-        &["exec", "-n", "kube-system", "-l", "k8s-app=cilium", "-c", "cilium-agent",
-          "--", "cilium", "encrypt", "status"],
-    ).await;
+        &[
+            "exec",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=cilium",
+            "-c",
+            "cilium-agent",
+            "--",
+            "cilium",
+            "encrypt",
+            "status",
+        ],
+    )
+    .await;
 
     if !wg_output.is_empty() {
         return Ok(Json(serde_json::json!({
@@ -69,46 +91,76 @@ pub async fn cilium_status(State(state): State<Arc<AppState>>) -> Json<serde_jso
     use crate::services::k8s::K8sService;
     let status_json = K8sService::run_cmd(
         "kubectl",
-        &["exec", "-n", "kube-system", "-l", "k8s-app=cilium",
-          "--", "cilium", "status", "-o", "json", "--brief"],
-    ).await;
+        &[
+            "exec",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=cilium",
+            "--",
+            "cilium",
+            "status",
+            "-o",
+            "json",
+            "--brief",
+        ],
+    )
+    .await;
 
     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&status_json) {
         return Json(serde_json::json!({ "status": parsed }));
     }
 
     // Fallback: get cilium pods and their status
-    let pods = state.k8s.kubectl_json(&[
-        "get", "pods", "-n", "kube-system", "-l", "k8s-app=cilium", "-o", "json",
-    ]).await;
+    let pods = state
+        .k8s
+        .kubectl_json(&[
+            "get",
+            "pods",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=cilium",
+            "-o",
+            "json",
+        ])
+        .await;
 
     let agents: Vec<serde_json::Value> = pods
         .get("items")
         .and_then(|v| v.as_array())
         .map(|items| {
-            items.iter().map(|item| {
-                let meta = item.get("metadata").unwrap_or(item);
-                let status = item.get("status").unwrap_or(item);
-                let phase = status.get("phase").and_then(|v| v.as_str()).unwrap_or("Unknown");
-                let node = meta.get("labels")
-                    .and_then(|l| l.get("kubernetes.io/hostname"))
-                    .and_then(|v| v.as_str())
-                    .or_else(|| status.get("hostIP").and_then(|v| v.as_str()))
-                    .unwrap_or("unknown");
-                let ready = status.get("containerStatuses")
-                    .and_then(|v| v.as_array())
-                    .and_then(|arr| arr.first())
-                    .and_then(|c| c.get("ready"))
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                serde_json::json!({
-                    "node": node,
-                    "pod": meta.get("name").and_then(|v| v.as_str()).unwrap_or(""),
-                    "status": if ready { "OK" } else { phase },
-                    "ready": ready,
-                    "host_ip": status.get("hostIP").and_then(|v| v.as_str()).unwrap_or(""),
+            items
+                .iter()
+                .map(|item| {
+                    let meta = item.get("metadata").unwrap_or(item);
+                    let status = item.get("status").unwrap_or(item);
+                    let phase = status
+                        .get("phase")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown");
+                    let node = meta
+                        .get("labels")
+                        .and_then(|l| l.get("kubernetes.io/hostname"))
+                        .and_then(|v| v.as_str())
+                        .or_else(|| status.get("hostIP").and_then(|v| v.as_str()))
+                        .unwrap_or("unknown");
+                    let ready = status
+                        .get("containerStatuses")
+                        .and_then(|v| v.as_array())
+                        .and_then(|arr| arr.first())
+                        .and_then(|c| c.get("ready"))
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    serde_json::json!({
+                        "node": node,
+                        "pod": meta.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                        "status": if ready { "OK" } else { phase },
+                        "ready": ready,
+                        "host_ip": status.get("hostIP").and_then(|v| v.as_str()).unwrap_or(""),
+                    })
                 })
-            }).collect()
+                .collect()
         })
         .unwrap_or_default();
 
@@ -162,7 +214,8 @@ pub async fn validate_policy(
             "kubectl",
             &["apply", "--dry-run=client", "-f", "-", "--validate=true"],
             yaml,
-        ).await;
+        )
+        .await;
         if !ok && !stderr.is_empty() {
             errors.push(format!("kubectl dry-run failed: {}", stderr));
         }
@@ -189,7 +242,11 @@ pub async fn list_export_configs(
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let items = state.cache.list_values(EXPORT_CONFIGS_PREFIX).await.unwrap_or_default();
+    let items = state
+        .cache
+        .list_values(EXPORT_CONFIGS_PREFIX)
+        .await
+        .unwrap_or_default();
     Json(paginate_json(items, &params, "configs"))
 }
 
@@ -201,7 +258,14 @@ pub async fn create_export_config(
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
-    let id = format!("exp-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("000"));
+    let id = format!(
+        "exp-{}",
+        uuid::Uuid::new_v4()
+            .to_string()
+            .split('-')
+            .next()
+            .unwrap_or("000")
+    );
     let config = serde_json::json!({
         "id": id,
         "name": body.name,
@@ -211,8 +275,20 @@ pub async fn create_export_config(
         "created_at": chrono::Utc::now().to_rfc3339(),
     });
 
-    let _ = state.cache.set_persistent(&format!("{}{}", EXPORT_CONFIGS_PREFIX, id), &config).await;
-    audit_log(&state, "export.create", &id, "", "Export config created", &actor_from_claims(&claims), "success").await;
+    let _ = state
+        .cache
+        .set_persistent(&format!("{}{}", EXPORT_CONFIGS_PREFIX, id), &config)
+        .await;
+    audit_log(
+        &state,
+        "export.create",
+        &id,
+        "",
+        "Export config created",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
 
     Ok(Json(serde_json::json!({
         "id": id,
@@ -231,7 +307,16 @@ pub async fn delete_export_config(
 
     let key = format!("{}{}", EXPORT_CONFIGS_PREFIX, id);
     let _ = state.cache.delete(&key).await;
-    audit_log(&state, "export.delete", &id, "", "Export config deleted", &actor_from_claims(&claims), "success").await;
+    audit_log(
+        &state,
+        "export.delete",
+        &id,
+        "",
+        "Export config deleted",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
 
     Ok(Json(serde_json::json!({
         "id": id,
@@ -250,7 +335,11 @@ pub async fn list_slos(
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let stored = state.cache.list_values(SLOS_PREFIX).await.unwrap_or_default();
+    let stored = state
+        .cache
+        .list_values(SLOS_PREFIX)
+        .await
+        .unwrap_or_default();
     Json(paginate_json(stored, &params, "slos"))
 }
 
@@ -261,7 +350,11 @@ pub async fn list_incidents(
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let stored = state.cache.list_values(INCIDENTS_PREFIX).await.unwrap_or_default();
+    let stored = state
+        .cache
+        .list_values(INCIDENTS_PREFIX)
+        .await
+        .unwrap_or_default();
     Json(paginate_json(stored, &params, "incidents"))
 }
 
@@ -276,7 +369,11 @@ pub async fn list_changes(
     track_request(&state, |_| {}).await;
 
     // Read changes stored by the background change tracker from Redis
-    let items = state.cache.list_values(CHANGES_PREFIX).await.unwrap_or_default();
+    let items = state
+        .cache
+        .list_values(CHANGES_PREFIX)
+        .await
+        .unwrap_or_default();
     Json(paginate_json(items, &params, "changes"))
 }
 
@@ -287,7 +384,16 @@ pub async fn rollback_change(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    audit_log(&state, "change.rollback", &id, "", "Change rolled back", &actor_from_claims(&claims), "success").await;
+    audit_log(
+        &state,
+        "change.rollback",
+        &id,
+        "",
+        "Change rolled back",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
     Ok(Json(serde_json::json!({
         "id": id,
         "status": "rolled_back",
@@ -301,35 +407,56 @@ pub async fn rollback_change(
 pub async fn node_drain_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    let data = state.k8s.kubectl_json(&["get", "nodes", "-o", "json"]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&["get", "nodes", "-o", "json"])
+        .await;
 
     let nodes: Vec<serde_json::Value> = data
         .get("items")
         .and_then(|v| v.as_array())
         .map(|items| {
-            items.iter().map(|item| {
-                let meta = item.get("metadata").unwrap_or(item);
-                let spec = item.get("spec").unwrap_or(item);
-                let status = item.get("status").unwrap_or(item);
+            items
+                .iter()
+                .map(|item| {
+                    let meta = item.get("metadata").unwrap_or(item);
+                    let spec = item.get("spec").unwrap_or(item);
+                    let status = item.get("status").unwrap_or(item);
 
-                let name = meta.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let unschedulable = spec.get("unschedulable").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let name = meta.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let unschedulable = spec
+                        .get("unschedulable")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
 
-                let ready = status.get("conditions")
-                    .and_then(|v| v.as_array())
-                    .and_then(|conds| conds.iter().find(|c| c.get("type").and_then(|v| v.as_str()) == Some("Ready")))
-                    .and_then(|c| c.get("status").and_then(|v| v.as_str()))
-                    .unwrap_or("Unknown") == "True";
+                    let ready = status
+                        .get("conditions")
+                        .and_then(|v| v.as_array())
+                        .and_then(|conds| {
+                            conds
+                                .iter()
+                                .find(|c| c.get("type").and_then(|v| v.as_str()) == Some("Ready"))
+                        })
+                        .and_then(|c| c.get("status").and_then(|v| v.as_str()))
+                        .unwrap_or("Unknown")
+                        == "True";
 
-                let node_status = if unschedulable { "cordoned" } else if ready { "ready" } else { "not_ready" };
+                    let node_status = if unschedulable {
+                        "cordoned"
+                    } else if ready {
+                        "ready"
+                    } else {
+                        "not_ready"
+                    };
 
-                serde_json::json!({
-                    "node": name,
-                    "status": node_status,
-                    "cordon": unschedulable,
-                    "ready": ready,
+                    serde_json::json!({
+                        "node": name,
+                        "status": node_status,
+                        "cordon": unschedulable,
+                        "ready": ready,
+                    })
                 })
-            }).collect()
+                .collect()
         })
         .unwrap_or_default();
 
@@ -344,7 +471,16 @@ pub async fn drain_node(
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let node = &body.node;
-    audit_log(&state, "node.drain", node, "", "Node drain initiated", &actor_from_claims(&claims), "success").await;
+    audit_log(
+        &state,
+        "node.drain",
+        node,
+        "",
+        "Node drain initiated",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
     Ok(Json(serde_json::json!({
         "node": node,
         "status": "draining",
@@ -361,7 +497,16 @@ pub async fn uncordon_node(
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let node = &body.node;
-    audit_log(&state, "node.uncordon", node, "", "Node uncordoned", &actor_from_claims(&claims), "success").await;
+    audit_log(
+        &state,
+        "node.uncordon",
+        node,
+        "",
+        "Node uncordoned",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
     Ok(Json(serde_json::json!({
         "node": node,
         "status": "ready",
@@ -376,37 +521,43 @@ pub async fn pod_security(State(state): State<Arc<AppState>>) -> Json<serde_json
     track_request(&state, |_| {}).await;
 
     // Query namespaces for PSA labels and pods for security context
-    let ns_data = state.k8s.kubectl_json(&["get", "namespaces", "-o", "json"]).await;
+    let ns_data = state
+        .k8s
+        .kubectl_json(&["get", "namespaces", "-o", "json"])
+        .await;
 
     let reports: Vec<serde_json::Value> = ns_data
         .get("items")
         .and_then(|v| v.as_array())
         .map(|items| {
-            items.iter().filter_map(|item| {
-                let meta = item.get("metadata")?;
-                let name = meta.get("name").and_then(|v| v.as_str())?;
-                let labels = meta.get("labels").and_then(|v| v.as_object());
+            items
+                .iter()
+                .filter_map(|item| {
+                    let meta = item.get("metadata")?;
+                    let name = meta.get("name").and_then(|v| v.as_str())?;
+                    let labels = meta.get("labels").and_then(|v| v.as_object());
 
-                let enforce = labels
-                    .and_then(|l| l.get("pod-security.kubernetes.io/enforce"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("not-set");
-                let audit = labels
-                    .and_then(|l| l.get("pod-security.kubernetes.io/audit"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("not-set");
-                let warn = labels
-                    .and_then(|l| l.get("pod-security.kubernetes.io/warn"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("not-set");
+                    let enforce = labels
+                        .and_then(|l| l.get("pod-security.kubernetes.io/enforce"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("not-set");
+                    let audit = labels
+                        .and_then(|l| l.get("pod-security.kubernetes.io/audit"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("not-set");
+                    let warn = labels
+                        .and_then(|l| l.get("pod-security.kubernetes.io/warn"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("not-set");
 
-                Some(serde_json::json!({
-                    "namespace": name,
-                    "enforce_level": enforce,
-                    "audit_level": audit,
-                    "warn_level": warn,
-                }))
-            }).collect()
+                    Some(serde_json::json!({
+                        "namespace": name,
+                        "enforce_level": enforce,
+                        "audit_level": audit,
+                        "warn_level": warn,
+                    }))
+                })
+                .collect()
         })
         .unwrap_or_default();
 
@@ -419,9 +570,16 @@ pub async fn egress_policies(State(state): State<Arc<AppState>>) -> Json<serde_j
     track_request(&state, |_| {}).await;
 
     // Query CiliumEgressGatewayPolicy resources
-    let data = state.k8s.kubectl_json(&[
-        "get", "ciliumegressgatewaypolicies", "--all-namespaces", "-o", "json",
-    ]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&[
+            "get",
+            "ciliumegressgatewaypolicies",
+            "--all-namespaces",
+            "-o",
+            "json",
+        ])
+        .await;
 
     let policies: Vec<serde_json::Value> = data
         .get("items")
@@ -449,15 +607,16 @@ pub async fn egress_policies(State(state): State<Arc<AppState>>) -> Json<serde_j
 pub async fn mesh_services(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
     // Query real K8s Services and infer protocol from ports/annotations
-    let data = state.k8s.kubectl_json(&[
-        "get", "services", "--all-namespaces", "-o", "json",
-    ]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&["get", "services", "--all-namespaces", "-o", "json"])
+        .await;
 
-    let services: Vec<serde_json::Value> = data
-        .get("items")
-        .and_then(|v| v.as_array())
-        .map(|items| {
-            items.iter().filter_map(|item| {
+    let services: Vec<serde_json::Value> =
+        data.get("items")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items.iter().filter_map(|item| {
                 let meta = item.get("metadata")?;
                 let spec = item.get("spec")?;
                 let name = meta.get("name").and_then(|v| v.as_str())?;
@@ -480,8 +639,8 @@ pub async fn mesh_services(State(state): State<Arc<AppState>>) -> Json<serde_jso
                     "ports": ports.cloned().unwrap_or_default(),
                 }))
             }).collect()
-        })
-        .unwrap_or_default();
+            })
+            .unwrap_or_default();
 
     let total = services.len();
     Json(serde_json::json!({ "services": services, "total": total }))
@@ -493,17 +652,38 @@ pub async fn kpr_status(State(state): State<Arc<AppState>>) -> Json<serde_json::
     track_request(&state, |_| {}).await;
 
     // Read KPR config from cilium-config ConfigMap
-    let cm = state.k8s.kubectl_json(&[
-        "get", "configmap", "cilium-config", "-n", "kube-system", "-o", "json",
-    ]).await;
+    let cm = state
+        .k8s
+        .kubectl_json(&[
+            "get",
+            "configmap",
+            "cilium-config",
+            "-n",
+            "kube-system",
+            "-o",
+            "json",
+        ])
+        .await;
     let empty = serde_json::json!({});
     let data = cm.get("data").unwrap_or(&empty);
 
-    let kpr = data.get("kube-proxy-replacement").and_then(|v| v.as_str()).unwrap_or("disabled");
+    let kpr = data
+        .get("kube-proxy-replacement")
+        .and_then(|v| v.as_str())
+        .unwrap_or("disabled");
     let device = data.get("devices").and_then(|v| v.as_str()).unwrap_or("");
-    let dsr = data.get("loadbalancer-mode").and_then(|v| v.as_str()).unwrap_or("snat");
-    let session_affinity = data.get("enable-session-affinity").and_then(|v| v.as_str()).unwrap_or("false");
-    let node_port_range = data.get("node-port-range").and_then(|v| v.as_str()).unwrap_or("30000-32767");
+    let dsr = data
+        .get("loadbalancer-mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("snat");
+    let session_affinity = data
+        .get("enable-session-affinity")
+        .and_then(|v| v.as_str())
+        .unwrap_or("false");
+    let node_port_range = data
+        .get("node-port-range")
+        .and_then(|v| v.as_str())
+        .unwrap_or("30000-32767");
 
     Json(serde_json::json!({
         "enabled": kpr != "disabled" && !kpr.is_empty(),

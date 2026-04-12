@@ -62,7 +62,10 @@ fn classify(method: &Method, path: &str) -> RateTier {
 
     // Mutating methods take precedence over heavy-read classification so that
     // POST /api/v1/flows/exports is limited at the tighter mutating rate.
-    if matches!(method, &Method::POST | &Method::PUT | &Method::DELETE | &Method::PATCH) {
+    if matches!(
+        method,
+        &Method::POST | &Method::PUT | &Method::DELETE | &Method::PATCH
+    ) {
         return RateTier::Mutating;
     }
 
@@ -216,10 +219,7 @@ fn limiter() -> &'static TieredRateLimiter {
 ///   - Heavy (20 req/s): flows, heatmap, dependencies, service-map, security findings
 ///   - Mutating (10 req/s): POST / PUT / DELETE / PATCH
 ///   - Default (100 req/s): everything else
-pub async fn rate_limit_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn rate_limit_middleware(request: Request, next: Next) -> Response {
     let ip = request
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
@@ -310,10 +310,7 @@ mod tests {
             classify(&Method::GET, "/api/v1/policies"),
             RateTier::Default
         );
-        assert_eq!(
-            classify(&Method::GET, "/api/v1/nodes"),
-            RateTier::Default
-        );
+        assert_eq!(classify(&Method::GET, "/api/v1/nodes"), RateTier::Default);
     }
 
     #[test]

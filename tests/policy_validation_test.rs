@@ -6,7 +6,6 @@
 ///
 /// The `validate_k8s_name` and `validate_port` functions are imported
 /// directly from the production code in `src/policies/mod.rs`.
-
 use cilium_tui::policies::{validate_k8s_name, validate_port};
 
 /// Generate an intra-namespace policy YAML string.
@@ -253,7 +252,10 @@ fn test_empty_name_rejected() {
     let result = validate_k8s_name("", "namespace");
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().to_string().contains("must not be empty"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("must not be empty"),
         "Error should mention empty"
     );
 }

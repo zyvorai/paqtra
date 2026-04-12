@@ -208,52 +208,43 @@ impl CanaryView {
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
             .split(area);
 
-        let (split_text, canary_health_pct, canary_traffic_pct) =
-            if let Some(engine) = canary {
-                if let Some(c) = engine.active_canaries().get(self.selected_canary_index) {
-                    let stable_bar_len = (c.current_split.stable_pct as usize * 20) / 100;
-                    let canary_bar_len = (c.current_split.canary_pct as usize * 20) / 100;
-                    let stable_bar: String =
-                        "|".repeat(stable_bar_len) + &" ".repeat(20 - stable_bar_len);
-                    let canary_bar: String =
-                        "|".repeat(canary_bar_len) + &" ".repeat(20 - canary_bar_len);
+        let (split_text, canary_health_pct, canary_traffic_pct) = if let Some(engine) = canary {
+            if let Some(c) = engine.active_canaries().get(self.selected_canary_index) {
+                let stable_bar_len = (c.current_split.stable_pct as usize * 20) / 100;
+                let canary_bar_len = (c.current_split.canary_pct as usize * 20) / 100;
+                let stable_bar: String =
+                    "|".repeat(stable_bar_len) + &" ".repeat(20 - stable_bar_len);
+                let canary_bar: String =
+                    "|".repeat(canary_bar_len) + &" ".repeat(20 - canary_bar_len);
 
-                    let sr = c.metrics.canary_success_rate();
-                    let text = format!(
-                        "Traffic Distribution ({})\n\n\
+                let sr = c.metrics.canary_success_rate();
+                let text = format!(
+                    "Traffic Distribution ({})\n\n\
                         Stable ({}):[{}] {}%\n\
                         Canary ({}):[{}] {}%\n\n\
                         Metrics:\n\
                         Canary Success:  {:.1}%\n\
                         Canary Latency:  {:.0}ms (vs {:.0}ms stable)\n\
                         Error Rate:      {:.1}%",
-                        c.name,
-                        c.stable_version,
-                        stable_bar,
-                        c.current_split.stable_pct,
-                        c.canary_version,
-                        canary_bar,
-                        c.current_split.canary_pct,
-                        sr * 100.0,
-                        c.metrics.canary_avg_latency_ms,
-                        c.metrics.stable_avg_latency_ms,
-                        c.metrics.canary_error_rate() * 100.0,
-                    );
-                    (text, sr, c.current_split.canary_pct as f64 / 100.0)
-                } else {
-                    (
-                        "No canary selected".to_string(),
-                        0.0_f32,
-                        0.0,
-                    )
-                }
+                    c.name,
+                    c.stable_version,
+                    stable_bar,
+                    c.current_split.stable_pct,
+                    c.canary_version,
+                    canary_bar,
+                    c.current_split.canary_pct,
+                    sr * 100.0,
+                    c.metrics.canary_avg_latency_ms,
+                    c.metrics.stable_avg_latency_ms,
+                    c.metrics.canary_error_rate() * 100.0,
+                );
+                (text, sr, c.current_split.canary_pct as f64 / 100.0)
             } else {
-                (
-                    "Canary engine not available".to_string(),
-                    0.0_f32,
-                    0.0,
-                )
-            };
+                ("No canary selected".to_string(), 0.0_f32, 0.0)
+            }
+        } else {
+            ("Canary engine not available".to_string(), 0.0_f32, 0.0)
+        };
 
         let split = Paragraph::new(split_text)
             .style(Style::default().fg(TEXT_COLOR))

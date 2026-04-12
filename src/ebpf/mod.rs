@@ -29,13 +29,13 @@ pub use aya_writer::AyaMapWriter;
 pub use bpf_reader::CiliumMapReader;
 pub use bpf_syscall::IdentityInfo;
 #[allow(unused_imports)]
-pub use reader::BasicMapReader;
-#[allow(unused_imports)]
 pub use capabilities::{
     BpfCapabilities, BpfCapability, BpfKernelConfig, BpfMapTypes, CiliumMaps, FeatureTier,
     KernelCapabilities, KernelVersion,
 };
 pub use enriched_reader::{EnrichedConnectionInfo, EnrichedDropInfo, EnrichedMapReader};
+#[allow(unused_imports)]
+pub use reader::BasicMapReader;
 
 /// Policy decision from eBPF map
 #[derive(Debug, Clone)]

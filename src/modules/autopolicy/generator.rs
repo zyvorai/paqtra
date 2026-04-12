@@ -166,7 +166,11 @@ spec:
             if !dst_labels.is_empty() {
                 rules.push_str("        - matchLabels:\n");
                 for (k, v) in dst_labels.iter() {
-                    rules.push_str(&format!("            {}: {}\n", yaml_escape(k), yaml_escape(v)));
+                    rules.push_str(&format!(
+                        "            {}: {}\n",
+                        yaml_escape(k),
+                        yaml_escape(v)
+                    ));
                 }
             } else {
                 // Just namespace

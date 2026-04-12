@@ -63,12 +63,7 @@ impl MapWriter for MockMapWriter {
         Ok(())
     }
 
-    fn delete_policy_entry(
-        &self,
-        src_identity: u32,
-        dst_port: u16,
-        protocol: u8,
-    ) -> Result<()> {
+    fn delete_policy_entry(&self, src_identity: u32, dst_port: u16, protocol: u8) -> Result<()> {
         self.policy_entries
             .lock()
             .unwrap()
@@ -85,13 +80,10 @@ impl MapWriter for MockMapWriter {
         slot: u16,
         protocol: u8,
     ) -> Result<()> {
-        self.lb_entries
-            .lock()
-            .unwrap()
-            .insert(
-                (service_ip, service_port, slot, protocol),
-                (backend_ip, backend_port),
-            );
+        self.lb_entries.lock().unwrap().insert(
+            (service_ip, service_port, slot, protocol),
+            (backend_ip, backend_port),
+        );
         Ok(())
     }
 
@@ -109,12 +101,7 @@ impl MapWriter for MockMapWriter {
         Ok(())
     }
 
-    fn write_ipcache_entry(
-        &self,
-        ip: Ipv4Addr,
-        identity: u32,
-        prefix_len: u32,
-    ) -> Result<()> {
+    fn write_ipcache_entry(&self, ip: Ipv4Addr, identity: u32, prefix_len: u32) -> Result<()> {
         self.ipcache_entries
             .lock()
             .unwrap()
@@ -154,10 +141,18 @@ fn test_write_policy_entry_deny() {
 fn test_delete_policy_entry() {
     let writer = MockMapWriter::new();
     writer.write_policy_entry(100, 80, 6, true).unwrap();
-    assert!(writer.policy_entries.lock().unwrap().contains_key(&(100, 80, 6)));
+    assert!(writer
+        .policy_entries
+        .lock()
+        .unwrap()
+        .contains_key(&(100, 80, 6)));
 
     writer.delete_policy_entry(100, 80, 6).unwrap();
-    assert!(!writer.policy_entries.lock().unwrap().contains_key(&(100, 80, 6)));
+    assert!(!writer
+        .policy_entries
+        .lock()
+        .unwrap()
+        .contains_key(&(100, 80, 6)));
 }
 
 #[test]
@@ -214,10 +209,18 @@ fn test_delete_lb_entry() {
     writer
         .write_lb_entry(svc_ip, 443, be_ip, 8443, 1, 6)
         .unwrap();
-    assert!(writer.lb_entries.lock().unwrap().contains_key(&(svc_ip, 443, 1, 6)));
+    assert!(writer
+        .lb_entries
+        .lock()
+        .unwrap()
+        .contains_key(&(svc_ip, 443, 1, 6)));
 
     writer.delete_lb_entry(svc_ip, 443, 1, 6).unwrap();
-    assert!(!writer.lb_entries.lock().unwrap().contains_key(&(svc_ip, 443, 1, 6)));
+    assert!(!writer
+        .lb_entries
+        .lock()
+        .unwrap()
+        .contains_key(&(svc_ip, 443, 1, 6)));
 }
 
 #[test]
@@ -273,11 +276,27 @@ fn test_delete_ipcache_entry_by_overwrite() {
     let ip = Ipv4Addr::new(10, 0, 0, 1);
 
     writer.write_ipcache_entry(ip, 100, 32).unwrap();
-    assert_eq!(*writer.ipcache_entries.lock().unwrap().get(&(ip, 32)).unwrap(), 100);
+    assert_eq!(
+        *writer
+            .ipcache_entries
+            .lock()
+            .unwrap()
+            .get(&(ip, 32))
+            .unwrap(),
+        100
+    );
 
     // Overwrite with identity 0 (world)
     writer.write_ipcache_entry(ip, 0, 32).unwrap();
-    assert_eq!(*writer.ipcache_entries.lock().unwrap().get(&(ip, 32)).unwrap(), 0);
+    assert_eq!(
+        *writer
+            .ipcache_entries
+            .lock()
+            .unwrap()
+            .get(&(ip, 32))
+            .unwrap(),
+        0
+    );
 }
 
 #[test]
@@ -434,15 +453,19 @@ fn test_map_writer_as_trait_object() {
     let dyn_writer: &dyn MapWriter = &writer;
 
     dyn_writer.write_policy_entry(1, 80, 6, true).unwrap();
-    dyn_writer.write_lb_entry(
-        Ipv4Addr::new(10, 96, 0, 1),
-        443,
-        Ipv4Addr::new(10, 0, 1, 10),
-        8443,
-        1,
-        6,
-    ).unwrap();
-    dyn_writer.write_ipcache_entry(Ipv4Addr::new(10, 0, 0, 1), 100, 32).unwrap();
+    dyn_writer
+        .write_lb_entry(
+            Ipv4Addr::new(10, 96, 0, 1),
+            443,
+            Ipv4Addr::new(10, 0, 1, 10),
+            8443,
+            1,
+            6,
+        )
+        .unwrap();
+    dyn_writer
+        .write_ipcache_entry(Ipv4Addr::new(10, 0, 0, 1), 100, 32)
+        .unwrap();
     dyn_writer.clear_metrics().unwrap();
 
     // Verify the writes landed in the backing store

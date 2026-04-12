@@ -112,9 +112,14 @@ impl TuiApp {
         let mut explainer = match self.packet_explainer.try_lock() {
             Ok(guard) => guard,
             Err(_) => {
-                let busy = Paragraph::new("Packet explainer is busy. Try again.\n\nPress Esc to return.")
-                    .style(Style::default().fg(WARNING_COLOR))
-                    .block(Block::default().borders(Borders::ALL).title("Packet Explanation"));
+                let busy =
+                    Paragraph::new("Packet explainer is busy. Try again.\n\nPress Esc to return.")
+                        .style(Style::default().fg(WARNING_COLOR))
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .title("Packet Explanation"),
+                        );
                 f.render_widget(busy, area);
                 return;
             }

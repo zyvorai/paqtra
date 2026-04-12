@@ -311,10 +311,7 @@ impl IdentityResolver {
         let cmd = tokio::process::Command::new("cilium")
             .args(["identity", "get", &identity.to_string(), "-o", "json"])
             .output();
-        if let Ok(Ok(output)) = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            cmd,
-        ).await {
+        if let Ok(Ok(output)) = tokio::time::timeout(std::time::Duration::from_secs(5), cmd).await {
             if output.status.success() {
                 if let Ok(json_str) = String::from_utf8(output.stdout) {
                     if let Ok(val) = serde_json::from_str::<Value>(&json_str) {
@@ -342,7 +339,12 @@ impl IdentityResolver {
 
                         // Evict oldest entries if cache is full
                         if self.identity_cache.len() >= MAX_IDENTITY_CACHE_SIZE {
-                            let keys: Vec<u32> = self.identity_cache.keys().take(MAX_IDENTITY_CACHE_SIZE / 4).copied().collect();
+                            let keys: Vec<u32> = self
+                                .identity_cache
+                                .keys()
+                                .take(MAX_IDENTITY_CACHE_SIZE / 4)
+                                .copied()
+                                .collect();
                             for k in keys {
                                 self.identity_cache.remove(&k);
                             }
@@ -379,10 +381,7 @@ impl IdentityResolver {
         let cmd = tokio::process::Command::new("cilium")
             .args(["bpf", "ipcache", "list", "-o", "json"])
             .output();
-        if let Ok(Ok(output)) = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            cmd,
-        ).await {
+        if let Ok(Ok(output)) = tokio::time::timeout(std::time::Duration::from_secs(5), cmd).await {
             if output.status.success() {
                 if let Ok(json_str) = String::from_utf8(output.stdout) {
                     if let Ok(entries) = serde_json::from_str::<Vec<Value>>(&json_str) {

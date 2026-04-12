@@ -185,12 +185,7 @@ impl DropExplainer {
                 format!("Conntrack mismatch → {}:{}", event.dst_ip, event.dst_port)
             }
             _ => {
-                format!(
-                    "{} → {}:{}",
-                    event.reason,
-                    event.dst_ip,
-                    event.dst_port
-                )
+                format!("{} → {}:{}", event.reason, event.dst_ip, event.dst_port)
             }
         }
     }

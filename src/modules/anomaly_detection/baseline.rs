@@ -136,10 +136,7 @@ impl BaselineLearner {
 
     /// Total number of data points across all baselines
     pub fn observation_count(&self) -> usize {
-        self.baselines
-            .values()
-            .map(|b| b.data_points.len())
-            .sum()
+        self.baselines.values().map(|b| b.data_points.len()).sum()
     }
 
     /// Serialize the learned baselines to a JSON file at `path`.
@@ -149,7 +146,11 @@ impl BaselineLearner {
         }
         let json = serde_json::to_string_pretty(self)?;
         std::fs::write(path, json)?;
-        tracing::info!("Saved baseline ({} keys) to {}", self.baselines.len(), path.display());
+        tracing::info!(
+            "Saved baseline ({} keys) to {}",
+            self.baselines.len(),
+            path.display()
+        );
         Ok(())
     }
 

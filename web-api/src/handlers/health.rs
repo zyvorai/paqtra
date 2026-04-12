@@ -18,9 +18,7 @@ fn process_start() -> Instant {
     *START_TIME.get_or_init(Instant::now)
 }
 
-pub async fn health_check(
-    State(state): State<Arc<AppState>>,
-) -> (StatusCode, Json<Value>) {
+pub async fn health_check(State(state): State<Arc<AppState>>) -> (StatusCode, Json<Value>) {
     let uptime = process_start().elapsed();
 
     // Probe each subsystem concurrently with a timeout so one slow probe
@@ -63,9 +61,7 @@ pub async fn health_check(
     )
 }
 
-pub async fn readiness_check(
-    State(state): State<Arc<AppState>>,
-) -> (StatusCode, Json<Value>) {
+pub async fn readiness_check(State(state): State<Arc<AppState>>) -> (StatusCode, Json<Value>) {
     let mut checks = serde_json::Map::new();
     let mut all_ok = true;
 

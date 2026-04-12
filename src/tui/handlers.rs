@@ -164,7 +164,10 @@ pub(crate) async fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bo
             for policy_name in applied_names {
                 // Find the policy to get its namespace
                 if let Some(policy) = policies.iter().find(|p| p.name == policy_name) {
-                    match app.rollback_policy_kubectl(&policy.name, &policy.namespace).await {
+                    match app
+                        .rollback_policy_kubectl(&policy.name, &policy.namespace)
+                        .await
+                    {
                         Ok(_) => {
                             app.applied_policies.remove(&policy.name);
                             rolled_back += 1;
@@ -373,7 +376,10 @@ pub(crate) async fn handle_autopolicy_keys(app: &mut TuiApp, key: KeyCode) -> bo
                 let policy_name = policy.name.clone();
                 let policy_namespace = policy.namespace.clone();
 
-                match app.rollback_policy_kubectl(&policy_name, &policy_namespace).await {
+                match app
+                    .rollback_policy_kubectl(&policy_name, &policy_namespace)
+                    .await
+                {
                     Ok(_) => {
                         app.applied_policies.remove(&policy_name);
                         app.set_status_message(&format!(

@@ -382,7 +382,8 @@ impl MultiClusterAutopilot {
 
             // Derive cluster state from node readiness
             // A cluster with zero nodes is not healthy
-            cluster.health.healthy = cluster.health.node_count > 0 && cluster.health.healthy_nodes == cluster.health.node_count;
+            cluster.health.healthy = cluster.health.node_count > 0
+                && cluster.health.healthy_nodes == cluster.health.node_count;
 
             if cluster.health.healthy {
                 cluster.state = ClusterState::Active;

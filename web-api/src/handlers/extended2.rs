@@ -1,7 +1,14 @@
-use axum::{extract::{Path, Query, State}, http::StatusCode, Json};
-use std::sync::Arc;
+use super::{
+    actor_from_claims, audit_log as emit_audit, check_admin, paginate_json, track_request,
+    PaginationQuery,
+};
 use crate::AppState;
-use super::{check_admin, track_request, PaginationQuery, paginate_json, audit_log as emit_audit, actor_from_claims};
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    Json,
+};
+use std::sync::Arc;
 
 // ── Host Info ───────────────────────────────────────────────
 
@@ -16,17 +23,31 @@ pub async fn host_info(
     let hostname = K8sService::run_cmd("hostname", &[]).await;
     let kernel = K8sService::run_cmd("uname", &["-r"]).await;
     let arch = K8sService::run_cmd("uname", &["-m"]).await;
-    let os_release = K8sService::run_cmd("sh", &["-c", "grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '\"'"]).await;
+    let os_release = K8sService::run_cmd(
+        "sh",
+        &[
+            "-c",
+            "grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '\"'",
+        ],
+    )
+    .await;
     let cpu_count = K8sService::run_cmd("nproc", &[]).await;
     let uptime_str = K8sService::run_cmd("sh", &["-c", "cat /proc/uptime | cut -d' ' -f1"]).await;
     let load_str = K8sService::run_cmd("sh", &["-c", "cat /proc/loadavg"]).await;
 
     let uptime: f64 = uptime_str.parse().unwrap_or(0.0);
-    let load_parts: Vec<f64> = load_str.split_whitespace().take(3)
-        .map(|s| s.parse().unwrap_or(0.0)).collect();
+    let load_parts: Vec<f64> = load_str
+        .split_whitespace()
+        .take(3)
+        .map(|s| s.parse().unwrap_or(0.0))
+        .collect();
 
     // Parse /proc/meminfo
-    let meminfo = K8sService::run_cmd("sh", &["-c", "grep -E '^(MemTotal|MemAvailable):' /proc/meminfo"]).await;
+    let meminfo = K8sService::run_cmd(
+        "sh",
+        &["-c", "grep -E '^(MemTotal|MemAvailable):' /proc/meminfo"],
+    )
+    .await;
     let mut mem_total_kb: f64 = 0.0;
     let mut mem_available_kb: f64 = 0.0;
     for line in meminfo.lines() {
@@ -84,8 +105,19 @@ pub async fn apply_template(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    emit_audit(&state, "template.apply", &id, "", "Template applied", &actor_from_claims(&claims), "success").await;
-    Ok(Json(serde_json::json!({ "id": id, "status": "applied", "message": "Template applied successfully" })))
+    emit_audit(
+        &state,
+        "template.apply",
+        &id,
+        "",
+        "Template applied",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
+    Ok(Json(
+        serde_json::json!({ "id": id, "status": "applied", "message": "Template applied successfully" }),
+    ))
 }
 
 // ── Diagnostics ─────────────────────────────────────────────
@@ -109,10 +141,24 @@ pub async fn run_diagnostics(
     }));
 
     // Test 2: Cilium agents
-    let cilium_pods = state.k8s.kubectl_json(&[
-        "get", "pods", "-n", "kube-system", "-l", "k8s-app=cilium", "-o", "json",
-    ]).await;
-    let agent_count = cilium_pods.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+    let cilium_pods = state
+        .k8s
+        .kubectl_json(&[
+            "get",
+            "pods",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=cilium",
+            "-o",
+            "json",
+        ])
+        .await;
+    let agent_count = cilium_pods
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
     tests.push(serde_json::json!({
         "name": "Cilium Agents",
         "status": if agent_count > 0 { "pass" } else { "fail" },
@@ -136,7 +182,14 @@ pub async fn run_diagnostics(
     }));
 
     // Test 5: BPF filesystem
-    let bpf_mount = K8sService::run_cmd("sh", &["-c", "mountpoint -q /sys/fs/bpf && echo mounted || echo not_mounted"]).await;
+    let bpf_mount = K8sService::run_cmd(
+        "sh",
+        &[
+            "-c",
+            "mountpoint -q /sys/fs/bpf && echo mounted || echo not_mounted",
+        ],
+    )
+    .await;
     tests.push(serde_json::json!({
         "name": "BPF Filesystem",
         "status": if bpf_mount.contains("mounted") { "pass" } else { "warn" },
@@ -151,7 +204,9 @@ pub async fn run_diagnostics(
         "message": format!("{} CiliumNetworkPolicies found", policies.len()),
     }));
 
-    Ok(Json(serde_json::json!({ "tests": tests, "total": tests.len() })))
+    Ok(Json(
+        serde_json::json!({ "tests": tests, "total": tests.len() }),
+    ))
 }
 
 pub async fn connectivity_test(
@@ -191,7 +246,11 @@ pub async fn audit_log(
         .unwrap_or_else(|| "anonymous".to_string());
     let access_id = format!(
         "aud-{}",
-        uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("000")
+        uuid::Uuid::new_v4()
+            .to_string()
+            .split('-')
+            .next()
+            .unwrap_or("000")
     );
     let access_entry = serde_json::json!({
         "id": access_id,
@@ -215,7 +274,9 @@ pub async fn audit_log(
         .await
         .unwrap_or_default();
     let total = entries.len();
-    Ok(Json(serde_json::json!({ "entries": entries, "total": total })))
+    Ok(Json(
+        serde_json::json!({ "entries": entries, "total": total }),
+    ))
 }
 
 // ── Alerts ──────────────────────────────────────────────────
@@ -228,7 +289,11 @@ pub async fn list_alert_rules(
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    let items = state.cache.list_values(ALERT_RULES_PREFIX).await.unwrap_or_default();
+    let items = state
+        .cache
+        .list_values(ALERT_RULES_PREFIX)
+        .await
+        .unwrap_or_default();
 
     // Seed default rules if empty
     if items.is_empty() {
@@ -241,7 +306,10 @@ pub async fn list_alert_rules(
         ];
         for rule in &defaults {
             let id = rule["id"].as_str().unwrap_or("unknown");
-            let _ = state.cache.set_persistent(&format!("{}{}", ALERT_RULES_PREFIX, id), rule).await;
+            let _ = state
+                .cache
+                .set_persistent(&format!("{}{}", ALERT_RULES_PREFIX, id), rule)
+                .await;
         }
         return Json(paginate_json(defaults, &params, "rules"));
     }
@@ -253,7 +321,11 @@ const ALERT_HISTORY_PREFIX: &str = "cv:alert_history:";
 
 pub async fn alert_history(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let alerts = state.cache.list_values(ALERT_HISTORY_PREFIX).await.unwrap_or_default();
+    let alerts = state
+        .cache
+        .list_values(ALERT_HISTORY_PREFIX)
+        .await
+        .unwrap_or_default();
     Json(serde_json::json!({ "alerts": alerts, "total": alerts.len() }))
 }
 
@@ -267,11 +339,25 @@ pub async fn toggle_alert_rule(
 
     let key = format!("{}{}", ALERT_RULES_PREFIX, id);
     if let Ok(Some(mut rule)) = state.cache.get::<serde_json::Value>(&key).await {
-        let enabled = rule.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        let enabled = rule
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         rule["enabled"] = serde_json::json!(!enabled);
         let _ = state.cache.set_persistent(&key, &rule).await;
-        emit_audit(&state, "alert.toggle", &id, "", &format!("Alert rule toggled to {}", !enabled), &actor_from_claims(&claims), "success").await;
-        Ok(Json(serde_json::json!({ "id": id, "enabled": !enabled, "status": "updated" })))
+        emit_audit(
+            &state,
+            "alert.toggle",
+            &id,
+            "",
+            &format!("Alert rule toggled to {}", !enabled),
+            &actor_from_claims(&claims),
+            "success",
+        )
+        .await;
+        Ok(Json(
+            serde_json::json!({ "id": id, "enabled": !enabled, "status": "updated" }),
+        ))
     } else {
         Ok(Json(serde_json::json!({ "id": id, "status": "not_found" })))
     }
@@ -292,16 +378,28 @@ pub async fn service_map(State(state): State<Arc<AppState>>) -> Json<serde_json:
 
     for flow in &flows {
         let src = if !flow.source.pod.is_empty() {
-            flow.source.pod.split('-').take(2).collect::<Vec<_>>().join("-")
+            flow.source
+                .pod
+                .split('-')
+                .take(2)
+                .collect::<Vec<_>>()
+                .join("-")
         } else {
             continue;
         };
         let dst = if !flow.destination.pod.is_empty() {
-            flow.destination.pod.split('-').take(2).collect::<Vec<_>>().join("-")
+            flow.destination
+                .pod
+                .split('-')
+                .take(2)
+                .collect::<Vec<_>>()
+                .join("-")
         } else {
             continue;
         };
-        if src == dst { continue; }
+        if src == dst {
+            continue;
+        }
 
         svc_set.insert((src.clone(), flow.source.namespace.clone()));
         svc_set.insert((dst.clone(), flow.destination.namespace.clone()));
@@ -327,7 +425,11 @@ pub async fn service_map(State(state): State<Arc<AppState>>) -> Json<serde_json:
     let edges: Vec<serde_json::Value> = edge_map
         .iter()
         .map(|((src, dst), (proto, count, dropped))| {
-            let error_rate = if *count > 0 { (*dropped as f64 / *count as f64) * 100.0 } else { 0.0 };
+            let error_rate = if *count > 0 {
+                (*dropped as f64 / *count as f64) * 100.0
+            } else {
+                0.0
+            };
             serde_json::json!({
                 "source": src,
                 "target": dst,
@@ -351,7 +453,11 @@ pub async fn list_capture_sessions(
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let items = state.cache.list_values(CAPTURES_PREFIX).await.unwrap_or_default();
+    let items = state
+        .cache
+        .list_values(CAPTURES_PREFIX)
+        .await
+        .unwrap_or_default();
     Json(paginate_json(items, &params, "sessions"))
 }
 
@@ -362,16 +468,37 @@ pub async fn start_capture(
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
-    let id = format!("cap-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("000"));
+    let id = format!(
+        "cap-{}",
+        uuid::Uuid::new_v4()
+            .to_string()
+            .split('-')
+            .next()
+            .unwrap_or("000")
+    );
     let session = serde_json::json!({
         "id": id,
         "status": "capturing",
         "started_at": chrono::Utc::now().to_rfc3339(),
     });
-    let _ = state.cache.set_persistent(&format!("{}{}", CAPTURES_PREFIX, id), &session).await;
-    emit_audit(&state, "capture.start", &id, "", "Capture started", &actor_from_claims(&claims), "success").await;
+    let _ = state
+        .cache
+        .set_persistent(&format!("{}{}", CAPTURES_PREFIX, id), &session)
+        .await;
+    emit_audit(
+        &state,
+        "capture.start",
+        &id,
+        "",
+        "Capture started",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
 
-    Ok(Json(serde_json::json!({ "id": id, "status": "capturing", "message": "Capture started" })))
+    Ok(Json(
+        serde_json::json!({ "id": id, "status": "capturing", "message": "Capture started" }),
+    ))
 }
 
 pub async fn stop_capture(
@@ -388,8 +515,19 @@ pub async fn stop_capture(
         session["stopped_at"] = serde_json::json!(chrono::Utc::now().to_rfc3339());
         let _ = state.cache.set_persistent(&key, &session).await;
     }
-    emit_audit(&state, "capture.stop", &id, "", "Capture stopped", &actor_from_claims(&claims), "success").await;
-    Ok(Json(serde_json::json!({ "id": id, "status": "completed", "message": "Capture stopped" })))
+    emit_audit(
+        &state,
+        "capture.stop",
+        &id,
+        "",
+        "Capture stopped",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
+    Ok(Json(
+        serde_json::json!({ "id": id, "status": "completed", "message": "Capture stopped" }),
+    ))
 }
 
 // ── DNS Monitor ─────────────────────────────────────────────
@@ -403,7 +541,8 @@ pub async fn dns_queries(
 
     // Get DNS-related flows from Hubble (port 53)
     let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
-    let dns_flows: Vec<serde_json::Value> = flows.iter()
+    let dns_flows: Vec<serde_json::Value> = flows
+        .iter()
         .filter(|f| f.port == 53)
         .enumerate()
         .map(|(i, f)| {
@@ -420,7 +559,9 @@ pub async fn dns_queries(
         .collect();
 
     let total = dns_flows.len();
-    Ok(Json(serde_json::json!({ "queries": dns_flows, "total": total })))
+    Ok(Json(
+        serde_json::json!({ "queries": dns_flows, "total": total }),
+    ))
 }
 
 pub async fn dns_stats(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
@@ -430,7 +571,10 @@ pub async fn dns_stats(State(state): State<Arc<AppState>>) -> Json<serde_json::V
     let flows = state.hubble.get_flows(1000, None).await.unwrap_or_default();
     let dns_flows: Vec<_> = flows.iter().filter(|f| f.port == 53).collect();
     let total = dns_flows.len() as u64;
-    let forwarded = dns_flows.iter().filter(|f| f.verdict == "FORWARDED").count() as u64;
+    let forwarded = dns_flows
+        .iter()
+        .filter(|f| f.verdict == "FORWARDED")
+        .count() as u64;
     let dropped = dns_flows.iter().filter(|f| f.verdict == "DROPPED").count() as u64;
 
     Json(serde_json::json!({
@@ -450,9 +594,10 @@ pub async fn list_identities(
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    let data = state.k8s.kubectl_json(&[
-        "get", "ciliumidentities", "-o", "json",
-    ]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&["get", "ciliumidentities", "-o", "json"])
+        .await;
 
     let items: Vec<serde_json::Value> = data
         .get("items")
@@ -496,9 +641,23 @@ pub async fn list_mesh_peers(
     use crate::services::k8s::K8sService;
     let mesh_output = K8sService::run_cmd(
         "kubectl",
-        &["exec", "-n", "kube-system", "-l", "k8s-app=cilium", "-c", "cilium-agent",
-          "--", "cilium", "clustermesh", "status", "-o", "json"],
-    ).await;
+        &[
+            "exec",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=cilium",
+            "-c",
+            "cilium-agent",
+            "--",
+            "cilium",
+            "clustermesh",
+            "status",
+            "-o",
+            "json",
+        ],
+    )
+    .await;
 
     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&mesh_output) {
         if let Some(clusters) = parsed.get("clusters").and_then(|v| v.as_array()) {
@@ -508,10 +667,24 @@ pub async fn list_mesh_peers(
     }
 
     // Fallback: check for clustermesh-apiserver pods
-    let data = state.k8s.kubectl_json(&[
-        "get", "pods", "-n", "kube-system", "-l", "k8s-app=clustermesh-apiserver", "-o", "json",
-    ]).await;
-    let count = data.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+    let data = state
+        .k8s
+        .kubectl_json(&[
+            "get",
+            "pods",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=clustermesh-apiserver",
+            "-o",
+            "json",
+        ])
+        .await;
+    let count = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
 
     let items = if count > 0 {
         vec![serde_json::json!({
@@ -534,7 +707,9 @@ pub async fn connect_mesh_peer(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Ok(Json(serde_json::json!({ "status": "connecting", "message": "Peer connection initiated" })))
+    Ok(Json(
+        serde_json::json!({ "status": "connecting", "message": "Peer connection initiated" }),
+    ))
 }
 
 // ── BGP Peering ─────────────────────────────────────────────
@@ -546,9 +721,10 @@ pub async fn list_bgp_peers(
     track_request(&state, |_| {}).await;
 
     // Query CiliumBGPPeeringPolicy resources
-    let data = state.k8s.kubectl_json(&[
-        "get", "ciliumbgppeeringpolicies", "-o", "json",
-    ]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&["get", "ciliumbgppeeringpolicies", "-o", "json"])
+        .await;
 
     let items: Vec<serde_json::Value> = data
         .get("items")
@@ -577,19 +753,24 @@ pub async fn bandwidth_data(State(state): State<Arc<AppState>>) -> Json<serde_js
     // Aggregate bandwidth from Hubble flow data
     let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
 
-    let mut pod_stats: std::collections::HashMap<(String, String), (u64, u64)> = std::collections::HashMap::new();
+    let mut pod_stats: std::collections::HashMap<(String, String), (u64, u64)> =
+        std::collections::HashMap::new();
     for flow in &flows {
         if !flow.source.pod.is_empty() {
             let key = (flow.source.pod.clone(), flow.source.namespace.clone());
             pod_stats.entry(key).or_default().1 += 1; // tx
         }
         if !flow.destination.pod.is_empty() {
-            let key = (flow.destination.pod.clone(), flow.destination.namespace.clone());
+            let key = (
+                flow.destination.pod.clone(),
+                flow.destination.namespace.clone(),
+            );
             pod_stats.entry(key).or_default().0 += 1; // rx
         }
     }
 
-    let entries: Vec<serde_json::Value> = pod_stats.into_iter()
+    let entries: Vec<serde_json::Value> = pod_stats
+        .into_iter()
         .map(|((pod, ns), (rx, tx))| {
             serde_json::json!({
                 "pod": pod,
@@ -601,5 +782,7 @@ pub async fn bandwidth_data(State(state): State<Arc<AppState>>) -> Json<serde_js
         })
         .collect();
 
-    Json(serde_json::json!({ "entries": entries, "total": entries.len(), "source": "hubble flow counts" }))
+    Json(
+        serde_json::json!({ "entries": entries, "total": entries.len(), "source": "hubble flow counts" }),
+    )
 }

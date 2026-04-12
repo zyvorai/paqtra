@@ -4,13 +4,13 @@ use axum::{
     Json,
 };
 use serde_json::{json, Value};
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-use crate::AppState;
+use super::{has_namespace_access, to_json, track_error, track_request};
 use crate::error::ApiError;
 use crate::models::flow::{Flow, FlowQueryParams};
-use super::{track_request, track_error, to_json, has_namespace_access};
+use crate::AppState;
 
 /// Cache key prefix for flow queries
 const FLOWS_CACHE_PREFIX: &str = "flows";
@@ -26,7 +26,10 @@ pub async fn list_flows(
 ) -> Result<Json<Value>, ApiError> {
     tracing::info!("Fetching flows with params: {:?}", params);
 
-    track_request(&state, |m| { m.hubble_queries.fetch_add(1, Ordering::Relaxed); }).await;
+    track_request(&state, |m| {
+        m.hubble_queries.fetch_add(1, Ordering::Relaxed);
+    })
+    .await;
 
     let limit = params.limit.unwrap_or(100).min(MAX_LIMIT);
     // offset is usize, so it is guaranteed to be non-negative
@@ -54,7 +57,10 @@ pub async fn list_flows(
             // Apply namespace RBAC filter
             cached_flows.retain(|f| has_namespace_access(&state, &claims, &f.source.namespace));
 
-            state.metrics.flows_fetched.fetch_add(cached_flows.len() as u64, Ordering::Relaxed);
+            state
+                .metrics
+                .flows_fetched
+                .fetch_add(cached_flows.len() as u64, Ordering::Relaxed);
 
             let total = cached_flows.len();
             let page = apply_pagination(&cached_flows, offset, limit);
@@ -68,7 +74,11 @@ pub async fn list_flows(
             })));
         }
         Ok(None) => {
-            tracing::info!(limit = limit, offset = offset, "Cache miss for flows, fetching from Hubble");
+            tracing::info!(
+                limit = limit,
+                offset = offset,
+                "Cache miss for flows, fetching from Hubble"
+            );
             state.metrics.cache_misses.fetch_add(1, Ordering::Relaxed);
         }
         Err(e) => {
@@ -106,7 +116,10 @@ pub async fn list_flows(
         tracing::warn!("Cache write error: {}", e);
     }
 
-    state.metrics.flows_fetched.fetch_add(flows.len() as u64, Ordering::Relaxed);
+    state
+        .metrics
+        .flows_fetched
+        .fetch_add(flows.len() as u64, Ordering::Relaxed);
 
     let total = flows.len();
     let page = apply_pagination(&flows, offset, limit);
@@ -126,7 +139,10 @@ pub async fn get_flow(
 ) -> Result<Json<Value>, ApiError> {
     tracing::info!("Fetching flow: {}", id);
 
-    track_request(&state, |m| { m.hubble_queries.fetch_add(1, Ordering::Relaxed); }).await;
+    track_request(&state, |m| {
+        m.hubble_queries.fetch_add(1, Ordering::Relaxed);
+    })
+    .await;
 
     // Try cache
     let cache_key = format!("flow:{}", id);
@@ -150,16 +166,15 @@ pub async fn get_flow(
             let _ = state.cache.set(&cache_key, &flow, 30).await;
             Ok(Json(to_json(&flow)))
         }
-        None => {
-            Err(ApiError::NotFound)
-        }
+        None => Err(ApiError::NotFound),
     }
 }
 
-pub async fn flow_stats(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, ApiError> {
-    track_request(&state, |m| { m.hubble_queries.fetch_add(1, Ordering::Relaxed); }).await;
+pub async fn flow_stats(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
+    track_request(&state, |m| {
+        m.hubble_queries.fetch_add(1, Ordering::Relaxed);
+    })
+    .await;
 
     // Try cache
     let cache_key = "flow_stats";

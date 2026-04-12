@@ -125,7 +125,11 @@ impl<M: MapReader> AutoPolicy<M> {
     }
 
     /// Resolve an IP address to namespace and labels via a pre-read IPCache
-    fn resolve_ip(&self, ip: &str, ipcache: &[crate::ebpf::IPCacheEntry]) -> (String, HashMap<String, String>) {
+    fn resolve_ip(
+        &self,
+        ip: &str,
+        ipcache: &[crate::ebpf::IPCacheEntry],
+    ) -> (String, HashMap<String, String>) {
         if let Some(entry) = ipcache.iter().find(|e| e.ip == ip) {
             let namespace = if entry.namespace.is_empty() {
                 "default".to_string()
@@ -150,7 +154,11 @@ impl<M: MapReader> AutoPolicy<M> {
     }
 
     /// Convert connection to traffic pattern
-    fn connection_to_pattern(&self, conn: &ConntrackEntry, ipcache: &[crate::ebpf::IPCacheEntry]) -> Result<Option<TrafficPattern>> {
+    fn connection_to_pattern(
+        &self,
+        conn: &ConntrackEntry,
+        ipcache: &[crate::ebpf::IPCacheEntry],
+    ) -> Result<Option<TrafficPattern>> {
         let (src_namespace, src_labels) = self.resolve_ip(&conn.src_ip, ipcache);
         let (dst_namespace, dst_labels) = self.resolve_ip(&conn.dst_ip, ipcache);
 
@@ -201,7 +209,11 @@ impl<M: MapReader> AutoPolicy<M> {
 
             let elapsed = now - start;
             let total = self.config.learning_duration.as_secs();
-            let progress = if total == 0 { 1.0 } else { (elapsed as f32 / total as f32).min(1.0) };
+            let progress = if total == 0 {
+                1.0
+            } else {
+                (elapsed as f32 / total as f32).min(1.0)
+            };
 
             self.state = LearningState::Learning {
                 started_at: start,

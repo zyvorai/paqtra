@@ -90,7 +90,11 @@ impl<M: MapReader> RootCauseEngine<M> {
 
     /// Resolve labels for a security identity via IPCache.
     /// Falls back to a single "security.identity" label if not found.
-    fn resolve_labels_for_identity(&self, identity: u32, ipcache: &[crate::ebpf::IPCacheEntry]) -> HashMap<String, String> {
+    fn resolve_labels_for_identity(
+        &self,
+        identity: u32,
+        ipcache: &[crate::ebpf::IPCacheEntry],
+    ) -> HashMap<String, String> {
         if let Some(entry) = ipcache.iter().find(|e| e.identity == identity) {
             let labels: HashMap<String, String> = entry
                 .labels
@@ -106,7 +110,11 @@ impl<M: MapReader> RootCauseEngine<M> {
     }
 
     /// Resolve an IP address to identity and namespace via a pre-read IPCache
-    fn resolve_ip_info(&self, ip: &str, ipcache: &[crate::ebpf::IPCacheEntry]) -> (u32, Option<String>) {
+    fn resolve_ip_info(
+        &self,
+        ip: &str,
+        ipcache: &[crate::ebpf::IPCacheEntry],
+    ) -> (u32, Option<String>) {
         if let Some(entry) = ipcache.iter().find(|e| e.ip == ip) {
             let namespace = if entry.namespace.is_empty() {
                 None
@@ -119,7 +127,11 @@ impl<M: MapReader> RootCauseEngine<M> {
     }
 
     /// Convert eBPF drop to drop event
-    async fn ebpf_drop_to_event(&self, ebpf_drop: &EbpfDropReason, ipcache: &[crate::ebpf::IPCacheEntry]) -> Result<DropEvent> {
+    async fn ebpf_drop_to_event(
+        &self,
+        ebpf_drop: &EbpfDropReason,
+        ipcache: &[crate::ebpf::IPCacheEntry],
+    ) -> Result<DropEvent> {
         // Parse IP addresses, logging warnings on failure
         let src_ip: IpAddr = ebpf_drop.src_ip.parse().unwrap_or_else(|e| {
             tracing::warn!(ip = %ebpf_drop.src_ip, error = %e, "Failed to parse source IP in drop event");
@@ -366,7 +378,11 @@ spec:
       - port: "{}"
         protocol: {}
 "#,
-                    yaml_escape(&namespace), from_label_yaml, to_label_yaml, event.dst_port, protocol
+                    yaml_escape(&namespace),
+                    from_label_yaml,
+                    to_label_yaml,
+                    event.dst_port,
+                    protocol
                 );
 
                 Ok(SuggestedFix::AddPolicyRule {

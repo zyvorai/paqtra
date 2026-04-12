@@ -76,7 +76,9 @@ impl RecordingStorage {
         };
 
         serde_json::to_writer(&mut writer, &data)?;
-        let encoder = writer.into_inner().map_err(|e| anyhow::anyhow!("Failed to flush buffer: {}", e))?;
+        let encoder = writer
+            .into_inner()
+            .map_err(|e| anyhow::anyhow!("Failed to flush buffer: {}", e))?;
         encoder.finish()?;
 
         Ok(())
@@ -143,7 +145,8 @@ impl RecordingStorage {
     /// Load only metadata
     pub fn load_metadata(&self, recording_id: &str) -> Result<Recording> {
         // Reject path traversal attempts
-        if recording_id.contains('/') || recording_id.contains('\\') || recording_id.contains("..") {
+        if recording_id.contains('/') || recording_id.contains('\\') || recording_id.contains("..")
+        {
             anyhow::bail!("Invalid recording_id: must not contain path separators or '..'");
         }
 
@@ -220,7 +223,8 @@ impl RecordingStorage {
     /// Delete a recording
     pub fn delete(&self, recording_id: &str) -> Result<()> {
         // Reject path traversal attempts
-        if recording_id.contains('/') || recording_id.contains('\\') || recording_id.contains("..") {
+        if recording_id.contains('/') || recording_id.contains('\\') || recording_id.contains("..")
+        {
             anyhow::bail!("Invalid recording_id: must not contain path separators or '..'");
         }
 

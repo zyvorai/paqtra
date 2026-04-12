@@ -235,7 +235,11 @@ impl MultiClusterView {
                     cluster.health.pod_count,
                     cluster.health.cpu_usage_pct,
                     cluster.health.memory_usage_pct,
-                    if cluster.health.network_ok { "OK" } else { "DEGRADED" },
+                    if cluster.health.network_ok {
+                        "OK"
+                    } else {
+                        "DEGRADED"
+                    },
                     connected,
                 )
             } else {
@@ -266,11 +270,7 @@ impl MultiClusterView {
             )];
 
             for (region, clusters) in &topo.regions {
-                lines.push(format!(
-                    "  Region: {} -> [{}]",
-                    region,
-                    clusters.join(", ")
-                ));
+                lines.push(format!("  Region: {} -> [{}]", region, clusters.join(", ")));
             }
 
             if topo.total_clusters == 0 {

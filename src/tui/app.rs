@@ -309,7 +309,11 @@ impl TuiApp {
         Ok(count)
     }
 
-    pub(crate) async fn apply_policy_kubectl(&self, _policy_name: &str, policy_yaml: &str) -> Result<()> {
+    pub(crate) async fn apply_policy_kubectl(
+        &self,
+        _policy_name: &str,
+        policy_yaml: &str,
+    ) -> Result<()> {
         use std::io::Write;
         use tokio::process::Command;
 
@@ -336,7 +340,11 @@ impl TuiApp {
         }
     }
 
-    pub(crate) async fn rollback_policy_kubectl(&self, policy_name: &str, namespace: &str) -> Result<()> {
+    pub(crate) async fn rollback_policy_kubectl(
+        &self,
+        policy_name: &str,
+        namespace: &str,
+    ) -> Result<()> {
         use tokio::process::Command;
 
         // Delete the CiliumNetworkPolicy using kubectl
@@ -368,7 +376,10 @@ impl TuiApp {
     /// The number of arms here must match `handlers::FIX_COUNT`.
     pub(crate) fn get_fix_policy(&self, fix_index: usize) -> (String, String) {
         // Compile-time assertion: if FIX_COUNT changes, this will fail to compile
-        const _: () = assert!(super::handlers::FIX_COUNT == 4, "FIX_COUNT and get_fix_policy arms must match");
+        const _: () = assert!(
+            super::handlers::FIX_COUNT == 4,
+            "FIX_COUNT and get_fix_policy arms must match"
+        );
         match fix_index {
             0 => {
                 // Allow port 8080 policy

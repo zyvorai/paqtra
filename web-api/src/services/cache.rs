@@ -4,8 +4,8 @@
 // Provides typed get/set with TTL support.
 
 use anyhow::{Context, Result};
-use redis::AsyncCommands;
 use redis::aio::ConnectionManager;
+use redis::AsyncCommands;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -31,15 +31,13 @@ impl CacheService {
     /// Returns Ok(None) if the key does not exist.
     pub async fn get<T: DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
         let mut conn = self.conn.clone();
-        let raw: Option<String> = conn
-            .get(key)
-            .await
-            .context("Redis GET failed")?;
+        let raw: Option<String> = conn.get(key).await.context("Redis GET failed")?;
 
         match raw {
             Some(json_str) => {
-                let value: T = serde_json::from_str(&json_str)
-                    .with_context(|| format!("Failed to deserialize cached value for key '{}'", key))?;
+                let value: T = serde_json::from_str(&json_str).with_context(|| {
+                    format!("Failed to deserialize cached value for key '{}'", key)
+                })?;
                 Ok(Some(value))
             }
             None => Ok(None),
@@ -49,8 +47,8 @@ impl CacheService {
     /// Set a value in cache, serializing to JSON with a TTL in seconds.
     pub async fn set<T: Serialize>(&self, key: &str, value: &T, ttl_secs: u64) -> Result<()> {
         let mut conn = self.conn.clone();
-        let json_str = serde_json::to_string(value)
-            .context("Failed to serialize value for caching")?;
+        let json_str =
+            serde_json::to_string(value).context("Failed to serialize value for caching")?;
 
         conn.set_ex::<_, _, ()>(key, json_str, ttl_secs)
             .await
@@ -62,8 +60,8 @@ impl CacheService {
     /// Set a persistent value (no TTL expiry).
     pub async fn set_persistent<T: Serialize>(&self, key: &str, value: &T) -> Result<()> {
         let mut conn = self.conn.clone();
-        let json_str = serde_json::to_string(value)
-            .context("Failed to serialize value for storage")?;
+        let json_str =
+            serde_json::to_string(value).context("Failed to serialize value for storage")?;
 
         conn.set::<_, _, ()>(key, json_str)
             .await
@@ -75,9 +73,7 @@ impl CacheService {
     /// Delete a key from Redis.
     pub async fn delete(&self, key: &str) -> Result<()> {
         let mut conn = self.conn.clone();
-        conn.del::<_, ()>(key)
-            .await
-            .context("Redis DEL failed")?;
+        conn.del::<_, ()>(key).await.context("Redis DEL failed")?;
         Ok(())
     }
 

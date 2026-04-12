@@ -1,33 +1,33 @@
 #![recursion_limit = "256"]
 // Cilium Vision Web API Server
 mod config;
-pub mod handlers;
-mod models;
-mod services;
-mod middleware;
-mod websocket;
 mod error;
+pub mod handlers;
+mod middleware;
+mod models;
 mod openapi;
+mod services;
+mod websocket;
 
 use axum::{
-    Router,
     extract::DefaultBodyLimit,
     routing::{get, post},
+    Router,
 };
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 use tower_http::{
-    trace::TraceLayer,
     compression::CompressionLayer,
     services::{ServeDir, ServeFile},
+    trace::TraceLayer,
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::Config;
+use crate::services::cache::CacheService;
 use crate::services::hubble::HubbleService;
 use crate::services::k8s::K8sService;
-use crate::services::cache::CacheService;
 use crate::services::prometheus::PrometheusService;
 
 #[tokio::main]
@@ -55,7 +55,12 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(
         "HubbleService initialized (relay: {}, clusters: {})",
         config.hubble_address,
-        config.hubble_addresses.iter().map(|(n, a)| format!("{}={}", n, a)).collect::<Vec<_>>().join(", ")
+        config
+            .hubble_addresses
+            .iter()
+            .map(|(n, a)| format!("{}={}", n, a))
+            .collect::<Vec<_>>()
+            .join(", ")
     );
 
     let k8s = K8sService::new(config.k8s_context.clone());
@@ -66,7 +71,10 @@ async fn main() -> anyhow::Result<()> {
 
     let prometheus = PrometheusService::new(config.prometheus_url.clone());
     if prometheus.is_configured() {
-        tracing::info!("PrometheusService initialized (url: {:?})", config.prometheus_url);
+        tracing::info!(
+            "PrometheusService initialized (url: {:?})",
+            config.prometheus_url
+        );
     } else {
         tracing::info!("PrometheusService not configured (set PROMETHEUS_URL to enable)");
     }
@@ -116,198 +124,375 @@ async fn main() -> anyhow::Result<()> {
         // Health checks (no auth required - handled by middleware)
         .route("/health", get(handlers::health::health_check))
         .route("/ready", get(handlers::health::readiness_check))
-
         // OpenAPI / Swagger UI (no auth required - handled by middleware)
         .route("/api-docs/openapi.json", get(openapi::openapi_json))
         .route("/swagger-ui", get(openapi::swagger_ui))
-
         // Flow monitoring
         .route("/api/v1/flows", get(handlers::flows::list_flows))
         .route("/api/v1/flows/{id}", get(handlers::flows::get_flow))
         .route("/api/v1/flows/stats", get(handlers::flows::flow_stats))
-
         // Policy management
         .route("/api/v1/policies", get(handlers::policies::list_policies))
         .route("/api/v1/policies", post(handlers::policies::create_policy))
         .route("/api/v1/policies/{id}", get(handlers::policies::get_policy))
-        .route("/api/v1/policies/{id}", axum::routing::put(handlers::policies::update_policy))
-        .route("/api/v1/policies/{id}", axum::routing::delete(handlers::policies::delete_policy))
-        .route("/api/v1/policies/simulate", post(handlers::policies::simulate_policy))
-
+        .route(
+            "/api/v1/policies/{id}",
+            axum::routing::put(handlers::policies::update_policy),
+        )
+        .route(
+            "/api/v1/policies/{id}",
+            axum::routing::delete(handlers::policies::delete_policy),
+        )
+        .route(
+            "/api/v1/policies/simulate",
+            post(handlers::policies::simulate_policy),
+        )
         // Anomaly detection
-        .route("/api/v1/anomalies", get(handlers::anomalies::list_anomalies))
-        .route("/api/v1/anomalies/{id}", get(handlers::anomalies::get_anomaly))
-        .route("/api/v1/anomalies/{id}/remediate", post(handlers::anomalies::remediate_anomaly))
-
+        .route(
+            "/api/v1/anomalies",
+            get(handlers::anomalies::list_anomalies),
+        )
+        .route(
+            "/api/v1/anomalies/{id}",
+            get(handlers::anomalies::get_anomaly),
+        )
+        .route(
+            "/api/v1/anomalies/{id}/remediate",
+            post(handlers::anomalies::remediate_anomaly),
+        )
         // Compliance
-        .route("/api/v1/compliance/frameworks", get(handlers::compliance::list_frameworks))
-        .route("/api/v1/compliance/audit", post(handlers::compliance::run_audit))
-        .route("/api/v1/security/posture", get(handlers::compliance::security_posture))
-
+        .route(
+            "/api/v1/compliance/frameworks",
+            get(handlers::compliance::list_frameworks),
+        )
+        .route(
+            "/api/v1/compliance/audit",
+            post(handlers::compliance::run_audit),
+        )
+        .route(
+            "/api/v1/security/posture",
+            get(handlers::compliance::security_posture),
+        )
         // Intelligence modules
-        .route("/api/v1/modules/autopolicy/generate", post(handlers::modules::generate_autopolicy))
-        .route("/api/v1/modules/chaos/experiments", get(handlers::modules::list_chaos_experiments))
-        .route("/api/v1/modules/chaos/run", post(handlers::modules::run_chaos_experiment))
-        .route("/api/v1/modules/canary/{id}", get(handlers::modules::canary_status))
-
+        .route(
+            "/api/v1/modules/autopolicy/generate",
+            post(handlers::modules::generate_autopolicy),
+        )
+        .route(
+            "/api/v1/modules/chaos/experiments",
+            get(handlers::modules::list_chaos_experiments),
+        )
+        .route(
+            "/api/v1/modules/chaos/run",
+            post(handlers::modules::run_chaos_experiment),
+        )
+        .route(
+            "/api/v1/modules/canary/{id}",
+            get(handlers::modules::canary_status),
+        )
         // Events, Endpoints, Nodes
         .route("/api/v1/events", get(handlers::events::list_events))
-        .route("/api/v1/endpoints", get(handlers::endpoints::list_endpoints))
+        .route(
+            "/api/v1/endpoints",
+            get(handlers::endpoints::list_endpoints),
+        )
         .route("/api/v1/nodes", get(handlers::nodes::list_nodes))
-
         // Replay
-        .route("/api/v1/modules/replay/recordings", get(handlers::extended::list_recordings))
-        .route("/api/v1/modules/replay/start", post(handlers::extended::start_recording))
-        .route("/api/v1/modules/replay/{id}/stop", post(handlers::extended::stop_recording))
-
+        .route(
+            "/api/v1/modules/replay/recordings",
+            get(handlers::extended::list_recordings),
+        )
+        .route(
+            "/api/v1/modules/replay/start",
+            post(handlers::extended::start_recording),
+        )
+        .route(
+            "/api/v1/modules/replay/{id}/stop",
+            post(handlers::extended::stop_recording),
+        )
         // Healer
-        .route("/api/v1/modules/healer/problems", get(handlers::extended::list_healer_problems))
-        .route("/api/v1/modules/healer/{id}/fix", post(handlers::extended::apply_healer_fix))
-
+        .route(
+            "/api/v1/modules/healer/problems",
+            get(handlers::extended::list_healer_problems),
+        )
+        .route(
+            "/api/v1/modules/healer/{id}/fix",
+            post(handlers::extended::apply_healer_fix),
+        )
         // RootCause
-        .route("/api/v1/modules/rootcause/drops", get(handlers::extended::list_packet_drops))
-        .route("/api/v1/modules/rootcause/analyze", post(handlers::extended::analyze_drops))
-
+        .route(
+            "/api/v1/modules/rootcause/drops",
+            get(handlers::extended::list_packet_drops),
+        )
+        .route(
+            "/api/v1/modules/rootcause/analyze",
+            post(handlers::extended::analyze_drops),
+        )
         // MultiCluster
-        .route("/api/v1/modules/multicluster/clusters", get(handlers::extended::list_clusters))
-        .route("/api/v1/modules/multicluster/{name}/sync", post(handlers::extended::sync_cluster))
-
+        .route(
+            "/api/v1/modules/multicluster/clusters",
+            get(handlers::extended::list_clusters),
+        )
+        .route(
+            "/api/v1/modules/multicluster/{name}/sync",
+            post(handlers::extended::sync_cluster),
+        )
         // Heatmap & Dependencies
         .route("/api/v1/heatmap", get(handlers::extended::heatmap_data))
-        .route("/api/v1/dependencies", get(handlers::extended::list_dependencies))
-
+        .route(
+            "/api/v1/dependencies",
+            get(handlers::extended::list_dependencies),
+        )
         // Security Dashboard
-        .route("/api/v1/security/findings", get(handlers::extended::list_security_findings))
-        .route("/api/v1/security/zero-trust", get(handlers::extended::zero_trust_score))
-
+        .route(
+            "/api/v1/security/findings",
+            get(handlers::extended::list_security_findings),
+        )
+        .route(
+            "/api/v1/security/zero-trust",
+            get(handlers::extended::zero_trust_score),
+        )
         // eBPF Profiler (real kernel data via bpftool)
-        .route("/api/v1/ebpf/programs", get(handlers::ebpf::list_real_programs))
-        .route("/api/v1/ebpf/programs/{id}", get(handlers::ebpf::get_program_stats))
+        .route(
+            "/api/v1/ebpf/programs",
+            get(handlers::ebpf::list_real_programs),
+        )
+        .route(
+            "/api/v1/ebpf/programs/{id}",
+            get(handlers::ebpf::get_program_stats),
+        )
         .route("/api/v1/ebpf/maps", get(handlers::ebpf::list_real_maps))
-        .route("/api/v1/ebpf/maps/{id}/entries", get(handlers::ebpf::dump_map_entries))
+        .route(
+            "/api/v1/ebpf/maps/{id}/entries",
+            get(handlers::ebpf::dump_map_entries),
+        )
         .route("/api/v1/ebpf/conntrack", get(handlers::ebpf::get_conntrack))
         .route("/api/v1/ebpf/ipcache", get(handlers::ebpf::get_ipcache))
         .route("/api/v1/ebpf/lb", get(handlers::ebpf::get_lb_backends))
         .route("/api/v1/ebpf/drops", get(handlers::ebpf::get_drop_stats))
-        .route("/api/v1/ebpf/summary", get(handlers::ebpf::get_ebpf_summary))
-
+        .route(
+            "/api/v1/ebpf/summary",
+            get(handlers::ebpf::get_ebpf_summary),
+        )
         // Metrics summary
-        .route("/api/v1/metrics/summary", get(handlers::extended::metrics_summary))
-
+        .route(
+            "/api/v1/metrics/summary",
+            get(handlers::extended::metrics_summary),
+        )
         // Host Info
         .route("/api/v1/host/info", get(handlers::extended2::host_info))
-
         // Policy Templates
-        .route("/api/v1/policies/templates", get(handlers::extended2::list_policy_templates))
-        .route("/api/v1/policies/templates/{id}/apply", post(handlers::extended2::apply_template))
-
+        .route(
+            "/api/v1/policies/templates",
+            get(handlers::extended2::list_policy_templates),
+        )
+        .route(
+            "/api/v1/policies/templates/{id}/apply",
+            post(handlers::extended2::apply_template),
+        )
         // Diagnostics
-        .route("/api/v1/diagnostics/run", post(handlers::extended2::run_diagnostics))
-        .route("/api/v1/diagnostics/connectivity", post(handlers::extended2::connectivity_test))
-
+        .route(
+            "/api/v1/diagnostics/run",
+            post(handlers::extended2::run_diagnostics),
+        )
+        .route(
+            "/api/v1/diagnostics/connectivity",
+            post(handlers::extended2::connectivity_test),
+        )
         // Audit Log
         .route("/api/v1/audit/log", get(handlers::extended2::audit_log))
-
         // Alerts
-        .route("/api/v1/alerts/rules", get(handlers::extended2::list_alert_rules))
-        .route("/api/v1/alerts/history", get(handlers::extended2::alert_history))
-        .route("/api/v1/alerts/rules/{id}", axum::routing::put(handlers::extended2::toggle_alert_rule))
-
+        .route(
+            "/api/v1/alerts/rules",
+            get(handlers::extended2::list_alert_rules),
+        )
+        .route(
+            "/api/v1/alerts/history",
+            get(handlers::extended2::alert_history),
+        )
+        .route(
+            "/api/v1/alerts/rules/{id}",
+            axum::routing::put(handlers::extended2::toggle_alert_rule),
+        )
         // Service Map
         .route("/api/v1/servicemap", get(handlers::extended2::service_map))
-
         // Packet Capture
-        .route("/api/v1/modules/capture/sessions", get(handlers::extended2::list_capture_sessions))
-        .route("/api/v1/modules/capture/start", post(handlers::extended2::start_capture))
-        .route("/api/v1/modules/capture/{id}/stop", post(handlers::extended2::stop_capture))
-
+        .route(
+            "/api/v1/modules/capture/sessions",
+            get(handlers::extended2::list_capture_sessions),
+        )
+        .route(
+            "/api/v1/modules/capture/start",
+            post(handlers::extended2::start_capture),
+        )
+        .route(
+            "/api/v1/modules/capture/{id}/stop",
+            post(handlers::extended2::stop_capture),
+        )
         // DNS Monitor
         .route("/api/v1/dns/queries", get(handlers::extended2::dns_queries))
         .route("/api/v1/dns/stats", get(handlers::extended2::dns_stats))
-
         // Identities
-        .route("/api/v1/identities", get(handlers::extended2::list_identities))
-
+        .route(
+            "/api/v1/identities",
+            get(handlers::extended2::list_identities),
+        )
         // Cluster Mesh
-        .route("/api/v1/clustermesh/peers", get(handlers::extended2::list_mesh_peers))
-        .route("/api/v1/clustermesh/connect", post(handlers::extended2::connect_mesh_peer))
-
+        .route(
+            "/api/v1/clustermesh/peers",
+            get(handlers::extended2::list_mesh_peers),
+        )
+        .route(
+            "/api/v1/clustermesh/connect",
+            post(handlers::extended2::connect_mesh_peer),
+        )
         // BGP Peering
-        .route("/api/v1/bgp/peers", get(handlers::extended2::list_bgp_peers))
-
+        .route(
+            "/api/v1/bgp/peers",
+            get(handlers::extended2::list_bgp_peers),
+        )
         // Bandwidth
-        .route("/api/v1/bandwidth", get(handlers::extended2::bandwidth_data))
-
+        .route(
+            "/api/v1/bandwidth",
+            get(handlers::extended2::bandwidth_data),
+        )
         // Cost & Forecasting
-        .route("/api/v1/costs/breakdown", get(handlers::extended3::cost_breakdown))
-        .route("/api/v1/forecast/metrics", get(handlers::extended3::forecast_metrics))
-        .route("/api/v1/forecast/{metric}", get(handlers::extended3::forecast_data))
-
+        .route(
+            "/api/v1/costs/breakdown",
+            get(handlers::extended3::cost_breakdown),
+        )
+        .route(
+            "/api/v1/forecast/metrics",
+            get(handlers::extended3::forecast_metrics),
+        )
+        .route(
+            "/api/v1/forecast/{metric}",
+            get(handlers::extended3::forecast_data),
+        )
         // Encryption
-        .route("/api/v1/encryption/status", get(handlers::extended3::encryption_status))
-
+        .route(
+            "/api/v1/encryption/status",
+            get(handlers::extended3::encryption_status),
+        )
         // Load Balancer & Ingress
-        .route("/api/v1/loadbalancer/services", get(handlers::extended3::lb_services))
-        .route("/api/v1/ingress/routes", get(handlers::extended3::ingress_routes))
-
+        .route(
+            "/api/v1/loadbalancer/services",
+            get(handlers::extended3::lb_services),
+        )
+        .route(
+            "/api/v1/ingress/routes",
+            get(handlers::extended3::ingress_routes),
+        )
         // IPAM
         .route("/api/v1/ipam/pools", get(handlers::extended3::ipam_pools))
-        .route("/api/v1/ipam/allocations", get(handlers::extended3::ip_allocations))
-
+        .route(
+            "/api/v1/ipam/allocations",
+            get(handlers::extended3::ip_allocations),
+        )
         // Latency
-        .route("/api/v1/latency/analysis", get(handlers::extended3::latency_analysis))
-
+        .route(
+            "/api/v1/latency/analysis",
+            get(handlers::extended3::latency_analysis),
+        )
         // Traffic Mirroring
-        .route("/api/v1/modules/mirror/rules", get(handlers::extended3::mirror_rules).post(handlers::extended3::create_mirror_rule))
-        .route("/api/v1/modules/mirror/rules/{id}", axum::routing::delete(handlers::extended3::delete_mirror_rule))
-
+        .route(
+            "/api/v1/modules/mirror/rules",
+            get(handlers::extended3::mirror_rules).post(handlers::extended3::create_mirror_rule),
+        )
+        .route(
+            "/api/v1/modules/mirror/rules/{id}",
+            axum::routing::delete(handlers::extended3::delete_mirror_rule),
+        )
         // Cluster Health & RBAC
-        .route("/api/v1/cluster/health", get(handlers::extended3::cluster_health))
-        .route("/api/v1/rbac/bindings", get(handlers::extended3::rbac_bindings))
-
+        .route(
+            "/api/v1/cluster/health",
+            get(handlers::extended3::cluster_health),
+        )
+        .route(
+            "/api/v1/rbac/bindings",
+            get(handlers::extended3::rbac_bindings),
+        )
         // Network Interfaces
-        .route("/api/v1/network/interfaces", get(handlers::extended3::net_interfaces))
-
+        .route(
+            "/api/v1/network/interfaces",
+            get(handlers::extended3::net_interfaces),
+        )
         // Troubleshoot
-        .route("/api/v1/troubleshoot/run", post(handlers::extended3::run_troubleshoot))
-
+        .route(
+            "/api/v1/troubleshoot/run",
+            post(handlers::extended3::run_troubleshoot),
+        )
         // WireGuard
-        .route("/api/v1/wireguard/peers", get(handlers::extended4::wireguard_peers))
+        .route(
+            "/api/v1/wireguard/peers",
+            get(handlers::extended4::wireguard_peers),
+        )
         // Cilium Status
-        .route("/api/v1/cilium/status", get(handlers::extended4::cilium_status))
+        .route(
+            "/api/v1/cilium/status",
+            get(handlers::extended4::cilium_status),
+        )
         // Policy Validation
-        .route("/api/v1/policies/validate", post(handlers::extended4::validate_policy))
+        .route(
+            "/api/v1/policies/validate",
+            post(handlers::extended4::validate_policy),
+        )
         // Flow Exports
-        .route("/api/v1/flows/exports", get(handlers::extended4::list_export_configs).post(handlers::extended4::create_export_config))
-        .route("/api/v1/flows/exports/{id}", axum::routing::delete(handlers::extended4::delete_export_config))
+        .route(
+            "/api/v1/flows/exports",
+            get(handlers::extended4::list_export_configs)
+                .post(handlers::extended4::create_export_config),
+        )
+        .route(
+            "/api/v1/flows/exports/{id}",
+            axum::routing::delete(handlers::extended4::delete_export_config),
+        )
         // SLOs
         .route("/api/v1/slo/targets", get(handlers::extended4::list_slos))
         // Incidents
-        .route("/api/v1/incidents", get(handlers::extended4::list_incidents))
+        .route(
+            "/api/v1/incidents",
+            get(handlers::extended4::list_incidents),
+        )
         // Changes
         .route("/api/v1/changes", get(handlers::extended4::list_changes))
-        .route("/api/v1/changes/{id}/rollback", post(handlers::extended4::rollback_change))
+        .route(
+            "/api/v1/changes/{id}/rollback",
+            post(handlers::extended4::rollback_change),
+        )
         // Node Drain
-        .route("/api/v1/nodes/drain/status", get(handlers::extended4::node_drain_status))
+        .route(
+            "/api/v1/nodes/drain/status",
+            get(handlers::extended4::node_drain_status),
+        )
         .route("/api/v1/nodes/drain", post(handlers::extended4::drain_node))
-        .route("/api/v1/nodes/uncordon", post(handlers::extended4::uncordon_node))
+        .route(
+            "/api/v1/nodes/uncordon",
+            post(handlers::extended4::uncordon_node),
+        )
         // Pod Security
-        .route("/api/v1/security/pods", get(handlers::extended4::pod_security))
+        .route(
+            "/api/v1/security/pods",
+            get(handlers::extended4::pod_security),
+        )
         // Egress Gateway
-        .route("/api/v1/egress/policies", get(handlers::extended4::egress_policies))
+        .route(
+            "/api/v1/egress/policies",
+            get(handlers::extended4::egress_policies),
+        )
         // Service Mesh
-        .route("/api/v1/servicemesh/services", get(handlers::extended4::mesh_services))
+        .route(
+            "/api/v1/servicemesh/services",
+            get(handlers::extended4::mesh_services),
+        )
         // KubeProxy Replacement
         .route("/api/v1/kpr/status", get(handlers::extended4::kpr_status))
-
         // WebSocket endpoints
         .route("/api/v1/ws/flows", get(websocket::flows_websocket))
         .route("/api/v1/ws/flows/live", get(websocket::ws_live_flows))
         .route("/api/v1/ws/metrics", get(websocket::metrics_websocket))
-
         // Metrics endpoint for Prometheus (no auth required - handled by middleware)
         .route("/metrics", get(handlers::metrics::prometheus_metrics))
-
         // State
         .with_state(app_state.clone());
 
@@ -322,8 +507,7 @@ async fn main() -> anyhow::Result<()> {
             // ServeDir serves real files (JS, CSS, images); the fallback serves
             // index.html for SPA client-side routes (e.g. /flows, /healer).
             let index_path = ui_path.join("index.html");
-            let serve_dir = ServeDir::new(ui_dir)
-                .fallback(ServeFile::new(index_path));
+            let serve_dir = ServeDir::new(ui_dir).fallback(ServeFile::new(index_path));
             api_routes.fallback_service(serve_dir)
         } else {
             tracing::warn!("UI_DIST_DIR set to '{}' but index.html not found", ui_dir);
@@ -363,9 +547,12 @@ async fn main() -> anyhow::Result<()> {
     let actual_addr = listener.local_addr()?;
     tracing::info!("Starting Cilium Vision API server on {}", actual_addr);
 
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     tracing::info!("Server shut down gracefully");
     Ok(())

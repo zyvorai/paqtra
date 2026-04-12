@@ -306,8 +306,8 @@ impl ReplayView {
         let (rec_name, flow_count) = if !self.loaded_flows.is_empty() {
             (self.loaded_recording_name.as_str(), self.loaded_flows.len())
         } else {
-            let selected = replay
-                .and_then(|engine| engine.recordings().get(self.selected_recording_index));
+            let selected =
+                replay.and_then(|engine| engine.recordings().get(self.selected_recording_index));
             match selected {
                 Some(rec) => (rec.name.as_str(), rec.flow_count),
                 None => ("(none)", 0),

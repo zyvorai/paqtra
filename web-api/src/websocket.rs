@@ -1,17 +1,20 @@
 // WebSocket handlers for real-time updates
+use crate::middleware::auth::Claims;
+use crate::services::hubble::hubble_json_to_flow;
+use crate::AppState;
 use axum::{
-    extract::{ws::{WebSocket, WebSocketUpgrade, Message}, Query, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        Query, State,
+    },
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use crate::AppState;
-use crate::middleware::auth::Claims;
-use crate::services::hubble::hubble_json_to_flow;
 
 /// Query parameter for WebSocket token-based authentication.
 #[derive(Debug, Deserialize)]
@@ -116,28 +119,40 @@ pub async fn flows_websocket(
     }
     let guard = match WsConnectionGuard::try_acquire() {
         Some(g) => g,
-        None => return (StatusCode::SERVICE_UNAVAILABLE, "Too many WebSocket connections").into_response(),
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Too many WebSocket connections",
+            )
+                .into_response()
+        }
     };
     ws.on_upgrade(move |socket| handle_flows_socket(socket, state, guard))
 }
 
-async fn handle_flows_socket(mut socket: WebSocket, state: Arc<AppState>, _guard: WsConnectionGuard) {
+async fn handle_flows_socket(
+    mut socket: WebSocket,
+    state: Arc<AppState>,
+    _guard: WsConnectionGuard,
+) {
     tracing::info!("WebSocket connection established for flows");
 
     // Send initial message
-    if let Err(e) = socket.send(Message::Text(
-        serde_json::json!({"type": "connected", "message": "Flow stream ready"}).to_string().into()
-    )).await {
+    if let Err(e) = socket
+        .send(Message::Text(
+            serde_json::json!({"type": "connected", "message": "Flow stream ready"})
+                .to_string()
+                .into(),
+        ))
+        .await
+    {
         tracing::error!("WebSocket send error: {}", e);
         return;
     }
 
-    let mut ping_interval = tokio::time::interval(
-        tokio::time::Duration::from_secs(PING_INTERVAL_SECS)
-    );
-    let mut flow_interval = tokio::time::interval(
-        tokio::time::Duration::from_secs(5)
-    );
+    let mut ping_interval =
+        tokio::time::interval(tokio::time::Duration::from_secs(PING_INTERVAL_SECS));
+    let mut flow_interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
 
     loop {
         tokio::select! {
@@ -173,18 +188,27 @@ pub async fn metrics_websocket(
     }
     let guard = match WsConnectionGuard::try_acquire() {
         Some(g) => g,
-        None => return (StatusCode::SERVICE_UNAVAILABLE, "Too many WebSocket connections").into_response(),
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Too many WebSocket connections",
+            )
+                .into_response()
+        }
     };
     ws.on_upgrade(move |socket| handle_metrics_socket(socket, state, guard))
 }
 
-async fn handle_metrics_socket(mut socket: WebSocket, state: Arc<AppState>, _guard: WsConnectionGuard) {
+async fn handle_metrics_socket(
+    mut socket: WebSocket,
+    state: Arc<AppState>,
+    _guard: WsConnectionGuard,
+) {
     tracing::info!("WebSocket connection established for metrics");
 
     let mut metrics_interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
-    let mut ping_interval = tokio::time::interval(
-        tokio::time::Duration::from_secs(PING_INTERVAL_SECS)
-    );
+    let mut ping_interval =
+        tokio::time::interval(tokio::time::Duration::from_secs(PING_INTERVAL_SECS));
 
     loop {
         tokio::select! {

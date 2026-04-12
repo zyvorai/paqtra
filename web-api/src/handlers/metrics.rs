@@ -1,13 +1,11 @@
 // Prometheus metrics endpoint
 use axum::{extract::State, http::StatusCode, response::IntoResponse};
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use crate::AppState;
 
-pub async fn prometheus_metrics(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn prometheus_metrics(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let m = &state.metrics;
 
     let body = format!(

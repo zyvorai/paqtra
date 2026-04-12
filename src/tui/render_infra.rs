@@ -243,7 +243,11 @@ impl TuiApp {
         // Subtract non-module tabs (Flows, Connections, Endpoints, Policies, Metrics = 5)
         let module_count = total_modules.saturating_sub(5);
         let active_modules = module_count; // All loaded modules are active
-        let pct = if module_count > 0 { active_modules * 100 / module_count } else { 0 };
+        let pct = if module_count > 0 {
+            active_modules * 100 / module_count
+        } else {
+            0
+        };
         let content = Paragraph::new(format!(
             "📊 Platform Metrics:\n\n\
             Modules Active:     {}/{} ({}%)\n\n\

@@ -1,9 +1,12 @@
-use axum::{extract::{Query, State}, Json};
-use serde::Serialize;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use super::{has_namespace_access, jstr, track_request, PaginationQuery};
 use crate::AppState;
-use super::{track_request, jstr, PaginationQuery, has_namespace_access};
+use axum::{
+    extract::{Query, State},
+    Json,
+};
+use serde::Serialize;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct K8sEvent {
@@ -24,45 +27,60 @@ pub async fn list_events(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
-    track_request(&state, |m| { m.k8s_queries.fetch_add(1, Ordering::Relaxed); }).await;
+    track_request(&state, |m| {
+        m.k8s_queries.fetch_add(1, Ordering::Relaxed);
+    })
+    .await;
 
-    let data = state.k8s.kubectl_json(&[
-        "get", "events", "--all-namespaces", "--sort-by=.lastTimestamp", "-o", "json",
-    ]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&[
+            "get",
+            "events",
+            "--all-namespaces",
+            "--sort-by=.lastTimestamp",
+            "-o",
+            "json",
+        ])
+        .await;
 
     let all_events: Vec<K8sEvent> = data
         .get("items")
         .and_then(|v| v.as_array())
         .map(|items| {
-            items.iter().map(|item| {
-                let meta = item.get("metadata").unwrap_or(item);
-                let involved = item.get("involvedObject").unwrap_or(item);
+            items
+                .iter()
+                .map(|item| {
+                    let meta = item.get("metadata").unwrap_or(item);
+                    let involved = item.get("involvedObject").unwrap_or(item);
 
-                let kind = involved.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-                let obj_name = involved.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let object = if kind.is_empty() {
-                    obj_name.to_string()
-                } else {
-                    format!("{}/{}", kind.to_lowercase(), obj_name)
-                };
+                    let kind = involved.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                    let obj_name = involved.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let object = if kind.is_empty() {
+                        obj_name.to_string()
+                    } else {
+                        format!("{}/{}", kind.to_lowercase(), obj_name)
+                    };
 
-                K8sEvent {
-                    id: jstr(meta, "uid"),
-                    event_type: jstr(item, "type"),
-                    reason: jstr(item, "reason"),
-                    object,
-                    message: jstr(item, "message"),
-                    namespace: jstr(meta, "namespace"),
-                    count: item.get("count").and_then(|v| v.as_u64()).unwrap_or(1) as u32,
-                    first_seen: jstr(item, "firstTimestamp"),
-                    last_seen: jstr(item, "lastTimestamp"),
-                }
-            }).collect()
+                    K8sEvent {
+                        id: jstr(meta, "uid"),
+                        event_type: jstr(item, "type"),
+                        reason: jstr(item, "reason"),
+                        object,
+                        message: jstr(item, "message"),
+                        namespace: jstr(meta, "namespace"),
+                        count: item.get("count").and_then(|v| v.as_u64()).unwrap_or(1) as u32,
+                        first_seen: jstr(item, "firstTimestamp"),
+                        last_seen: jstr(item, "lastTimestamp"),
+                    }
+                })
+                .collect()
         })
         .unwrap_or_default();
 
     // Apply namespace RBAC filter
-    let all_events: Vec<_> = all_events.into_iter()
+    let all_events: Vec<_> = all_events
+        .into_iter()
         .filter(|ev| has_namespace_access(&state, &claims, &ev.namespace))
         .collect();
 
@@ -78,4 +96,3 @@ pub async fn list_events(
         "offset": offset,
     }))
 }
-

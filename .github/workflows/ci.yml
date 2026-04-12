@@ -101,7 +101,7 @@ jobs:
       - run: npm run build
       - run: npm test -- --watchAll=false
       - name: NPM audit
-        run: npm audit --audit-level=moderate || true
+        run: npm audit --audit-level=high
 
   # ─── Security Scanning ──────────────────────────────────────────────────
   security-scan:

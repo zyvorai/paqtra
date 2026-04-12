@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
+use super::{actor_from_claims, audit_log, check_admin, to_json, track_request};
 use crate::AppState;
-use super::{check_admin, track_request, to_json, audit_log, actor_from_claims};
 
 use super::PaginationQuery;
 
@@ -104,7 +104,11 @@ async fn detect_anomalies(state: &AppState) -> Vec<Anomaly> {
                     anomalies.push(Anomaly {
                         id: format!("anom-{:04}", next_id),
                         detected_at: now.clone(),
-                        severity: if rate >= 0.5 { Severity::Critical } else { Severity::High },
+                        severity: if rate >= 0.5 {
+                            Severity::Critical
+                        } else {
+                            Severity::High
+                        },
                         anomaly_type: "high_drop_rate".to_string(),
                         description: format!(
                             "Namespace '{}' has a {:.0}% drop rate ({} dropped out of {} flows)",
@@ -145,7 +149,8 @@ async fn detect_anomalies(state: &AppState) -> Vec<Anomaly> {
             if ports.len() >= UNUSUAL_PORT_COUNT_THRESHOLD {
                 let mut port_list: Vec<u16> = ports.iter().copied().collect();
                 port_list.sort_unstable();
-                let display_ports: Vec<String> = port_list.iter().take(12).map(|p| p.to_string()).collect();
+                let display_ports: Vec<String> =
+                    port_list.iter().take(12).map(|p| p.to_string()).collect();
                 let suffix = if port_list.len() > 12 { " ..." } else { "" };
 
                 anomalies.push(Anomaly {
@@ -192,7 +197,11 @@ async fn detect_anomalies(state: &AppState) -> Vec<Anomaly> {
                 anomalies.push(Anomaly {
                     id: format!("anom-{:04}", next_id),
                     detected_at: now.clone(),
-                    severity: if *count >= 50 { Severity::High } else { Severity::Medium },
+                    severity: if *count >= 50 {
+                        Severity::High
+                    } else {
+                        Severity::Medium
+                    },
                     anomaly_type: "excessive_drops".to_string(),
                     description: format!(
                         "Pod '{}/{}' has {} dropped connections in the recent flow window",
@@ -299,12 +308,27 @@ pub async fn remediate_anomaly(
     } else {
         (
             "not_found".to_string(),
-            format!("No anomaly with id '{}' found in current detection window; no action taken", id),
+            format!(
+                "No anomaly with id '{}' found in current detection window; no action taken",
+                id
+            ),
         )
     };
 
-    let ns = anomaly.as_ref().map(|a| a.source_namespace.as_str()).unwrap_or("");
-    audit_log(&state, "anomaly.remediate", &id, ns, "Anomaly remediation applied", &actor_from_claims(&claims), "success").await;
+    let ns = anomaly
+        .as_ref()
+        .map(|a| a.source_namespace.as_str())
+        .unwrap_or("");
+    audit_log(
+        &state,
+        "anomaly.remediate",
+        &id,
+        ns,
+        "Anomaly remediation applied",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
 
     let result = RemediationResult {
         id: id.clone(),

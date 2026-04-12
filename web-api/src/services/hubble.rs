@@ -38,10 +38,16 @@ impl HubbleService {
     fn validate_address(address: &str) -> Result<()> {
         let parts: Vec<&str> = address.rsplitn(2, ':').collect();
         if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
-            anyhow::bail!("Invalid Hubble address '{}': expected host:port format (e.g. hubble-relay:4245)", address);
+            anyhow::bail!(
+                "Invalid Hubble address '{}': expected host:port format (e.g. hubble-relay:4245)",
+                address
+            );
         }
         if parts[0].parse::<u16>().is_err() {
-            anyhow::bail!("Invalid Hubble address '{}': port must be a valid u16", address);
+            anyhow::bail!(
+                "Invalid Hubble address '{}': port must be a valid u16",
+                address
+            );
         }
         Ok(())
     }
@@ -80,14 +86,10 @@ impl HubbleService {
             let namespace = namespace.map(|s| s.to_string());
 
             handles.push(tokio::spawn(async move {
-                let flows = Self::get_flows_from_address(
-                    &addr,
-                    limit,
-                    namespace.as_deref(),
-                    Some(&name),
-                )
-                .await
-                .unwrap_or_default();
+                let flows =
+                    Self::get_flows_from_address(&addr, limit, namespace.as_deref(), Some(&name))
+                        .await
+                        .unwrap_or_default();
                 (name, flows)
             }));
         }
@@ -140,7 +142,11 @@ impl HubbleService {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::debug!("hubble observe ({}) returned non-zero: {}", address, stderr.trim());
+            tracing::debug!(
+                "hubble observe ({}) returned non-zero: {}",
+                address,
+                stderr.trim()
+            );
             return Ok(Vec::new());
         }
 
@@ -165,11 +171,7 @@ impl HubbleService {
 
     /// Retrieve flows from Hubble via the `hubble` CLI with `--server`.
     /// Checks relay connectivity first, then falls back gracefully.
-    pub async fn get_flows(
-        &self,
-        limit: usize,
-        namespace: Option<&str>,
-    ) -> Result<Vec<Flow>> {
+    pub async fn get_flows(&self, limit: usize, namespace: Option<&str>) -> Result<Vec<Flow>> {
         // Cap the limit to prevent excessive resource consumption
         let limit = limit.min(10_000);
 
@@ -245,7 +247,9 @@ pub fn hubble_json_to_flow(index: usize, v: &serde_json::Value) -> Flow {
 
     // Extract L7 HTTP fields if present
     let l7_http = v.get("l7").and_then(|l7| {
-        l7.get("http").or_else(|| l7.get("Http")).or_else(|| l7.get("HTTP"))
+        l7.get("http")
+            .or_else(|| l7.get("Http"))
+            .or_else(|| l7.get("HTTP"))
     });
 
     let http_method = l7_http.and_then(|http| {

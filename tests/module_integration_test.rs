@@ -5,9 +5,7 @@
 /// Canary, MultiCluster, and PacketExplainer.
 use cilium_tui::ebpf::MockMapReader;
 use cilium_tui::kubernetes::K8sClient;
-use cilium_tui::modules::autopolicy::{
-    AutoPolicy, AutoPolicyConfig, LabelSet, Protocol,
-};
+use cilium_tui::modules::autopolicy::{AutoPolicy, AutoPolicyConfig, LabelSet, Protocol};
 use cilium_tui::modules::canary::{CanaryConfig, CanaryEngine, CanaryMetrics, TrafficSplit};
 use cilium_tui::modules::chaos::{ChaosConfig, ChaosEngine, ChaosExperiment, ChaosSeverity};
 use cilium_tui::modules::multicluster::{

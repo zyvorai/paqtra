@@ -10,15 +10,9 @@ use cilium_vision_api::config::Config;
 use cilium_vision_api::models::flow::{Flow, FlowEndpoint};
 use cilium_vision_api::models::policy::CreatePolicyRequest;
 use cilium_vision_api::utils::{
+    cap_hubble_flow_limit, filter_by_namespace_access, has_namespace_access, paginate_json,
+    parse_k8s_memory, validate_hubble_address, validate_hubble_namespace, validate_k8s_name,
     PaginationQuery,
-    cap_hubble_flow_limit,
-    filter_by_namespace_access,
-    has_namespace_access,
-    paginate_json,
-    parse_k8s_memory,
-    validate_hubble_address,
-    validate_hubble_namespace,
-    validate_k8s_name,
 };
 
 use serde_json::json;
@@ -90,7 +84,10 @@ fn test_config_rejects_short_jwt_secret() {
     }
 
     let result = Config::load();
-    assert!(result.is_err(), "Config::load should fail with a JWT_SECRET < 32 chars");
+    assert!(
+        result.is_err(),
+        "Config::load should fail with a JWT_SECRET < 32 chars"
+    );
 
     let err_msg = format!("{}", result.unwrap_err());
     assert!(
@@ -117,12 +114,21 @@ fn test_config_defaults() {
 
     assert_eq!(config.host, "0.0.0.0", "Default host");
     assert_eq!(config.port, 9191, "Default port");
-    assert_eq!(config.redis_url, "redis://localhost:6379", "Default Redis URL");
-    assert_eq!(config.hubble_address, "localhost:4245", "Default Hubble address");
+    assert_eq!(
+        config.redis_url, "redis://localhost:6379",
+        "Default Redis URL"
+    );
+    assert_eq!(
+        config.hubble_address, "localhost:4245",
+        "Default Hubble address"
+    );
     assert!(config.k8s_context.is_none(), "K8S_CONTEXT defaults to None");
     assert!(!config.auth_disabled, "Auth should be enabled by default");
     assert!(config.ui_dist_dir.is_none(), "UI_DIST_DIR defaults to None");
-    assert!(config.prometheus_url.is_none(), "PROMETHEUS_URL defaults to None");
+    assert!(
+        config.prometheus_url.is_none(),
+        "PROMETHEUS_URL defaults to None"
+    );
 
     clear_config_env();
 }
@@ -136,12 +142,19 @@ fn test_config_hubble_addresses_parsing() {
     let secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     unsafe {
         std::env::set_var("JWT_SECRET", secret);
-        std::env::set_var("HUBBLE_ADDRESSES", "us-west=hubble-west:4245,eu-central=hubble-eu:4245,ap-south=hubble-ap:4245");
+        std::env::set_var(
+            "HUBBLE_ADDRESSES",
+            "us-west=hubble-west:4245,eu-central=hubble-eu:4245,ap-south=hubble-ap:4245",
+        );
     }
 
     let config = Config::load().expect("Config::load should succeed");
 
-    assert_eq!(config.hubble_addresses.len(), 3, "Should parse 3 cluster entries");
+    assert_eq!(
+        config.hubble_addresses.len(),
+        3,
+        "Should parse 3 cluster entries"
+    );
     assert_eq!(config.hubble_addresses[0].0, "us-west");
     assert_eq!(config.hubble_addresses[0].1, "hubble-west:4245");
     assert_eq!(config.hubble_addresses[1].0, "eu-central");
@@ -182,7 +195,10 @@ fn test_config_hubble_addresses_ignores_malformed() {
     let secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     unsafe {
         std::env::set_var("JWT_SECRET", secret);
-        std::env::set_var("HUBBLE_ADDRESSES", "good=host:4245,bad-no-equals,=no-name,also-good=h2:4245");
+        std::env::set_var(
+            "HUBBLE_ADDRESSES",
+            "good=host:4245,bad-no-equals,=no-name,also-good=h2:4245",
+        );
     }
 
     let config = Config::load().expect("Config::load should succeed");
@@ -236,7 +252,10 @@ fn test_policy_spec_depth_limit() {
     };
 
     let result = req.validate_spec();
-    assert!(result.is_err(), "Specs nested > 20 levels should be rejected");
+    assert!(
+        result.is_err(),
+        "Specs nested > 20 levels should be rejected"
+    );
     let msg = result.unwrap_err();
     assert!(
         msg.contains("nesting depth"),
@@ -565,7 +584,11 @@ fn test_filter_by_namespace_access() {
 
     let filtered = filter_by_namespace_access("viewer", &allowed, items);
 
-    assert_eq!(filtered.len(), 3, "Should keep default, staging, and the item without namespace");
+    assert_eq!(
+        filtered.len(),
+        3,
+        "Should keep default, staging, and the item without namespace"
+    );
     assert_eq!(filtered[0]["name"], "a"); // default - kept
     assert_eq!(filtered[1]["name"], "c"); // staging - kept
     assert_eq!(filtered[2]["name"], "d"); // no namespace - kept
@@ -619,11 +642,12 @@ fn test_filter_by_namespace_access_wildcard() {
 /// paginate_json with default parameters: offset=0, limit=50.
 #[test]
 fn test_paginate_json_defaults() {
-    let items: Vec<serde_json::Value> = (0..100)
-        .map(|i| json!({"id": i}))
-        .collect();
+    let items: Vec<serde_json::Value> = (0..100).map(|i| json!({"id": i})).collect();
 
-    let params = PaginationQuery { limit: None, offset: None };
+    let params = PaginationQuery {
+        limit: None,
+        offset: None,
+    };
     let result = paginate_json(items, &params, "items");
 
     assert_eq!(result["total"], 100);
@@ -643,11 +667,12 @@ fn test_paginate_json_defaults() {
 /// paginate_json with custom offset and limit.
 #[test]
 fn test_paginate_json_custom() {
-    let items: Vec<serde_json::Value> = (0..100)
-        .map(|i| json!({"id": i}))
-        .collect();
+    let items: Vec<serde_json::Value> = (0..100).map(|i| json!({"id": i})).collect();
 
-    let params = PaginationQuery { limit: Some(10), offset: Some(20) };
+    let params = PaginationQuery {
+        limit: Some(10),
+        offset: Some(20),
+    };
     let result = paginate_json(items, &params, "records");
 
     assert_eq!(result["total"], 100);
@@ -667,11 +692,12 @@ fn test_paginate_json_custom() {
 /// paginate_json limit is capped at 1000.
 #[test]
 fn test_paginate_json_limit_cap() {
-    let items: Vec<serde_json::Value> = (0..2000)
-        .map(|i| json!({"id": i}))
-        .collect();
+    let items: Vec<serde_json::Value> = (0..2000).map(|i| json!({"id": i})).collect();
 
-    let params = PaginationQuery { limit: Some(5000), offset: None };
+    let params = PaginationQuery {
+        limit: Some(5000),
+        offset: None,
+    };
     let result = paginate_json(items, &params, "items");
 
     assert_eq!(result["total"], 2000);
@@ -688,7 +714,10 @@ fn test_paginate_json_limit_cap() {
 fn test_paginate_json_empty() {
     let items: Vec<serde_json::Value> = vec![];
 
-    let params = PaginationQuery { limit: Some(50), offset: None };
+    let params = PaginationQuery {
+        limit: Some(50),
+        offset: None,
+    };
     let result = paginate_json(items, &params, "data");
 
     assert_eq!(result["total"], 0);
@@ -700,11 +729,12 @@ fn test_paginate_json_empty() {
 /// paginate_json with offset beyond total returns empty page.
 #[test]
 fn test_paginate_json_offset_beyond_total() {
-    let items: Vec<serde_json::Value> = (0..10)
-        .map(|i| json!({"id": i}))
-        .collect();
+    let items: Vec<serde_json::Value> = (0..10).map(|i| json!({"id": i})).collect();
 
-    let params = PaginationQuery { limit: Some(10), offset: Some(100) };
+    let params = PaginationQuery {
+        limit: Some(10),
+        offset: Some(100),
+    };
     let result = paginate_json(items, &params, "items");
 
     assert_eq!(result["total"], 10);
@@ -720,12 +750,21 @@ fn test_paginate_json_offset_beyond_total() {
 #[test]
 fn test_paginate_json_custom_items_key() {
     let items = vec![json!({"x": 1})];
-    let params = PaginationQuery { limit: None, offset: None };
+    let params = PaginationQuery {
+        limit: None,
+        offset: None,
+    };
 
     let result = paginate_json(items, &params, "flows");
 
-    assert!(result.get("flows").is_some(), "Should use custom key 'flows'");
-    assert!(result.get("items").is_none(), "Should not use default 'items' key");
+    assert!(
+        result.get("flows").is_some(),
+        "Should use custom key 'flows'"
+    );
+    assert!(
+        result.get("items").is_none(),
+        "Should not use default 'items' key"
+    );
 }
 
 // ===========================================================================
@@ -777,8 +816,16 @@ fn test_hubble_address_validation_invalid() {
 fn test_hubble_flow_limit_cap() {
     assert_eq!(cap_hubble_flow_limit(100), 100);
     assert_eq!(cap_hubble_flow_limit(10_000), 10_000);
-    assert_eq!(cap_hubble_flow_limit(50_000), 10_000, "Limit should be capped at 10000");
-    assert_eq!(cap_hubble_flow_limit(usize::MAX), 10_000, "Limit should be capped at 10000");
+    assert_eq!(
+        cap_hubble_flow_limit(50_000),
+        10_000,
+        "Limit should be capped at 10000"
+    );
+    assert_eq!(
+        cap_hubble_flow_limit(usize::MAX),
+        10_000,
+        "Limit should be capped at 10000"
+    );
     assert_eq!(cap_hubble_flow_limit(0), 0, "Zero limit stays zero");
 }
 
@@ -823,7 +870,10 @@ fn test_k8s_name_validation_valid() {
     assert!(validate_k8s_name("app-v2", "name").is_ok());
     assert!(validate_k8s_name("0-starts-with-number", "name").is_ok());
     assert!(validate_k8s_name("a", "name").is_ok());
-    assert!(validate_k8s_name("a.b.c", "name").is_ok(), "Dots are allowed in DNS subdomains");
+    assert!(
+        validate_k8s_name("a.b.c", "name").is_ok(),
+        "Dots are allowed in DNS subdomains"
+    );
     assert!(validate_k8s_name("a-b-c", "name").is_ok());
 }
 

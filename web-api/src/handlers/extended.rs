@@ -1,9 +1,15 @@
-use axum::{extract::{Path, Query, State}, http::StatusCode, Json};
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use super::{
+    actor_from_claims, audit_log, check_admin, paginate_json, track_request, PaginationQuery,
+};
 use crate::AppState;
-use super::{check_admin, track_request, PaginationQuery, paginate_json, audit_log, actor_from_claims};
+use axum::{
+    extract::{Path, Query, State},
+    http::StatusCode,
+    Json,
+};
+use serde::{Deserialize, Serialize};
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
 pub struct StartRecordingRequest {
@@ -38,7 +44,11 @@ pub async fn list_recordings(
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let items = state.cache.list_values(RECORDINGS_PREFIX).await.unwrap_or_default();
+    let items = state
+        .cache
+        .list_values(RECORDINGS_PREFIX)
+        .await
+        .unwrap_or_default();
     Json(paginate_json(items, &params, "recordings"))
 }
 
@@ -62,8 +72,20 @@ pub async fn start_recording(
         "flow_count": 0,
     });
 
-    let _ = state.cache.set_persistent(&format!("{}{}", RECORDINGS_PREFIX, id), &recording).await;
-    audit_log(&state, "recording.start", &id, ns, "Recording started", &actor_from_claims(&claims), "success").await;
+    let _ = state
+        .cache
+        .set_persistent(&format!("{}{}", RECORDINGS_PREFIX, id), &recording)
+        .await;
+    audit_log(
+        &state,
+        "recording.start",
+        &id,
+        ns,
+        "Recording started",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
 
     Ok(Json(serde_json::json!({
         "id": id,
@@ -86,8 +108,19 @@ pub async fn stop_recording(
         rec["status"] = serde_json::json!("completed");
         rec["end_time"] = serde_json::json!(chrono::Utc::now().to_rfc3339());
         let _ = state.cache.set_persistent(&key, &rec).await;
-        audit_log(&state, "recording.stop", &id, "", "Recording stopped", &actor_from_claims(&claims), "success").await;
-        Ok(Json(serde_json::json!({ "id": id, "status": "stopped", "message": "Recording stopped" })))
+        audit_log(
+            &state,
+            "recording.stop",
+            &id,
+            "",
+            "Recording stopped",
+            &actor_from_claims(&claims),
+            "success",
+        )
+        .await;
+        Ok(Json(
+            serde_json::json!({ "id": id, "status": "stopped", "message": "Recording stopped" }),
+        ))
     } else {
         Ok(Json(serde_json::json!({ "id": id, "status": "not_found" })))
     }
@@ -119,17 +152,31 @@ pub async fn list_healer_problems(
     let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
 
     let mut problems = Vec::new();
-    let mut dns_drops: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-    let mut policy_drops: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut dns_drops: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    let mut policy_drops: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
 
     for flow in &flows {
-        if flow.verdict != "DROPPED" { continue; }
-        let ns = if flow.source.namespace.is_empty() { "unknown" } else { &flow.source.namespace };
+        if flow.verdict != "DROPPED" {
+            continue;
+        }
+        let ns = if flow.source.namespace.is_empty() {
+            "unknown"
+        } else {
+            &flow.source.namespace
+        };
 
         if flow.port == 53 {
-            dns_drops.entry(ns.to_string()).or_default().push(flow.source.pod.clone());
+            dns_drops
+                .entry(ns.to_string())
+                .or_default()
+                .push(flow.source.pod.clone());
         } else {
-            policy_drops.entry(ns.to_string()).or_default().push(flow.source.pod.clone());
+            policy_drops
+                .entry(ns.to_string())
+                .or_default()
+                .push(flow.source.pod.clone());
         }
     }
 
@@ -137,7 +184,12 @@ pub async fn list_healer_problems(
     for (ns, pods) in &dns_drops {
         idx += 1;
         let unique_pods: Vec<String> = {
-            let mut s: Vec<_> = pods.iter().cloned().collect::<std::collections::HashSet<_>>().into_iter().collect();
+            let mut s: Vec<_> = pods
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect();
             s.truncate(5);
             s
         };
@@ -156,7 +208,12 @@ pub async fn list_healer_problems(
     for (ns, pods) in &policy_drops {
         idx += 1;
         let unique_pods: Vec<String> = {
-            let mut s: Vec<_> = pods.iter().cloned().collect::<std::collections::HashSet<_>>().into_iter().collect();
+            let mut s: Vec<_> = pods
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect();
             s.truncate(5);
             s
         };
@@ -182,8 +239,19 @@ pub async fn apply_healer_fix(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    audit_log(&state, "healer.apply", &id, "", "Healer fix applied", &actor_from_claims(&claims), "success").await;
-    Ok(Json(serde_json::json!({ "id": id, "status": "applied", "message": "Fix applied successfully" })))
+    audit_log(
+        &state,
+        "healer.apply",
+        &id,
+        "",
+        "Healer fix applied",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
+    Ok(Json(
+        serde_json::json!({ "id": id, "status": "applied", "message": "Fix applied successfully" }),
+    ))
 }
 
 // ── RootCause ───────────────────────────────────────────────
@@ -248,7 +316,11 @@ pub async fn analyze_drops(
     for f in &dropped {
         *by_ns.entry(&f.source.namespace).or_default() += 1;
     }
-    let top_ns = by_ns.iter().max_by_key(|(_, c)| *c).map(|(ns, _)| *ns).unwrap_or("none");
+    let top_ns = by_ns
+        .iter()
+        .max_by_key(|(_, c)| *c)
+        .map(|(ns, _)| *ns)
+        .unwrap_or("none");
 
     Ok(Json(serde_json::json!({
         "analysis": {
@@ -301,12 +373,24 @@ pub async fn list_clusters(
 
             // Query K8s node/pod counts (best-effort)
             let node_count = {
-                let data = state.k8s.kubectl_json(&["get", "nodes", "-o", "json"]).await;
-                data.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0) as u64
+                let data = state
+                    .k8s
+                    .kubectl_json(&["get", "nodes", "-o", "json"])
+                    .await;
+                data.get("items")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0) as u64
             };
             let pod_count = {
-                let data = state.k8s.kubectl_json(&["get", "pods", "--all-namespaces", "-o", "json"]).await;
-                data.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0) as u64
+                let data = state
+                    .k8s
+                    .kubectl_json(&["get", "pods", "--all-namespaces", "-o", "json"])
+                    .await;
+                data.get("items")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0) as u64
             };
 
             items.push(serde_json::json!({
@@ -328,21 +412,38 @@ pub async fn list_clusters(
     // Try to get cluster mesh status from cilium agent
     let mesh_output = K8sService::run_cmd(
         "kubectl",
-        &["exec", "-n", "kube-system", "-l", "k8s-app=cilium", "-c", "cilium-agent",
-          "--", "cilium", "clustermesh", "status", "-o", "json"],
-    ).await;
+        &[
+            "exec",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=cilium",
+            "-c",
+            "cilium-agent",
+            "--",
+            "cilium",
+            "clustermesh",
+            "status",
+            "-o",
+            "json",
+        ],
+    )
+    .await;
 
     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&mesh_output) {
         if let Some(clusters) = parsed.get("clusters").and_then(|v| v.as_array()) {
-            let items: Vec<serde_json::Value> = clusters.iter().map(|c| {
-                serde_json::json!({
-                    "name": c.get("name").and_then(|v| v.as_str()).unwrap_or("unknown"),
-                    "status": c.get("status").and_then(|v| v.as_str()).unwrap_or("unknown"),
-                    "endpoint": c.get("endpoint").and_then(|v| v.as_str()).unwrap_or(""),
-                    "nodes": c.get("nodes").and_then(|v| v.as_u64()).unwrap_or(0),
-                    "last_sync": c.get("last_change").and_then(|v| v.as_str()).unwrap_or(""),
+            let items: Vec<serde_json::Value> = clusters
+                .iter()
+                .map(|c| {
+                    serde_json::json!({
+                        "name": c.get("name").and_then(|v| v.as_str()).unwrap_or("unknown"),
+                        "status": c.get("status").and_then(|v| v.as_str()).unwrap_or("unknown"),
+                        "endpoint": c.get("endpoint").and_then(|v| v.as_str()).unwrap_or(""),
+                        "nodes": c.get("nodes").and_then(|v| v.as_u64()).unwrap_or(0),
+                        "last_sync": c.get("last_change").and_then(|v| v.as_str()).unwrap_or(""),
+                    })
                 })
-            }).collect();
+                .collect();
             if !items.is_empty() {
                 return Json(paginate_json(items, &params, "clusters"));
             }
@@ -350,26 +451,46 @@ pub async fn list_clusters(
     }
 
     // Fallback: query CiliumClusterMeshConfig CRDs
-    let data = state.k8s.kubectl_json(&[
-        "get", "ciliumclustermeshconfigs", "--all-namespaces", "-o", "json",
-    ]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&[
+            "get",
+            "ciliumclustermeshconfigs",
+            "--all-namespaces",
+            "-o",
+            "json",
+        ])
+        .await;
     if let Some(items) = data.get("items").and_then(|v| v.as_array()) {
         if !items.is_empty() {
-            let clusters: Vec<serde_json::Value> = items.iter().map(|item| {
-                let name = item.pointer("/metadata/name").and_then(|v| v.as_str()).unwrap_or("unknown");
-                let ns = item.pointer("/metadata/namespace").and_then(|v| v.as_str()).unwrap_or("");
-                serde_json::json!({
-                    "name": name,
-                    "namespace": ns,
-                    "status": "configured",
+            let clusters: Vec<serde_json::Value> = items
+                .iter()
+                .map(|item| {
+                    let name = item
+                        .pointer("/metadata/name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let ns = item
+                        .pointer("/metadata/namespace")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    serde_json::json!({
+                        "name": name,
+                        "namespace": ns,
+                        "status": "configured",
+                    })
                 })
-            }).collect();
+                .collect();
             return Json(paginate_json(clusters, &params, "clusters"));
         }
     }
 
     // No remote clusters found — return empty list
-    Json(paginate_json(Vec::<serde_json::Value>::new(), &params, "clusters"))
+    Json(paginate_json(
+        Vec::<serde_json::Value>::new(),
+        &params,
+        "clusters",
+    ))
 }
 
 pub async fn sync_cluster(
@@ -379,8 +500,19 @@ pub async fn sync_cluster(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    audit_log(&state, "cluster.sync", &name, "", "Cluster sync initiated", &actor_from_claims(&claims), "success").await;
-    Ok(Json(serde_json::json!({ "cluster": name, "status": "syncing", "message": "Policy sync initiated" })))
+    audit_log(
+        &state,
+        "cluster.sync",
+        &name,
+        "",
+        "Cluster sync initiated",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
+    Ok(Json(
+        serde_json::json!({ "cluster": name, "status": "syncing", "message": "Policy sync initiated" }),
+    ))
 }
 
 // ── Heatmap ─────────────────────────────────────────────────
@@ -394,9 +526,7 @@ pub struct HeatmapCell {
     pub avg_latency_ms: f64,
 }
 
-pub async fn heatmap_data(
-    State(state): State<Arc<AppState>>,
-) -> Json<serde_json::Value> {
+pub async fn heatmap_data(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
     let multi_cluster = state.hubble.clusters().len() > 1;
@@ -404,17 +534,29 @@ pub async fn heatmap_data(
     // Collect flows: use multi-cluster aggregation when multiple clusters are configured
     let all_flows: Vec<crate::models::flow::Flow> = if multi_cluster {
         let cluster_flows = state.hubble.get_flows_multi_cluster(1000, None).await;
-        cluster_flows.into_iter().flat_map(|(_, flows)| flows).collect()
+        cluster_flows
+            .into_iter()
+            .flat_map(|(_, flows)| flows)
+            .collect()
     } else {
         state.hubble.get_flows(1000, None).await.unwrap_or_default()
     };
 
     let mut ns_set = std::collections::HashSet::new();
-    let mut cell_map: std::collections::HashMap<(String, String), (u64, u64)> = std::collections::HashMap::new();
+    let mut cell_map: std::collections::HashMap<(String, String), (u64, u64)> =
+        std::collections::HashMap::new();
 
     for flow in &all_flows {
-        let raw_src_ns = if flow.source.namespace.is_empty() { "unknown" } else { &flow.source.namespace };
-        let raw_dst_ns = if flow.destination.namespace.is_empty() { "unknown" } else { &flow.destination.namespace };
+        let raw_src_ns = if flow.source.namespace.is_empty() {
+            "unknown"
+        } else {
+            &flow.source.namespace
+        };
+        let raw_dst_ns = if flow.destination.namespace.is_empty() {
+            "unknown"
+        } else {
+            &flow.destination.namespace
+        };
 
         // In multi-cluster mode, prefix namespace with cluster name (e.g. "us-east/default")
         let src_ns = if multi_cluster {
@@ -446,12 +588,21 @@ pub async fn heatmap_data(
         }
     }
 
-    let cells: Vec<HeatmapCell> = cell_map.into_iter().map(|((src, dst), (fc, dc))| {
-        HeatmapCell { source_namespace: src, destination_namespace: dst, flow_count: fc, dropped_count: dc, avg_latency_ms: 0.0 }
-    }).collect();
+    let cells: Vec<HeatmapCell> = cell_map
+        .into_iter()
+        .map(|((src, dst), (fc, dc))| HeatmapCell {
+            source_namespace: src,
+            destination_namespace: dst,
+            flow_count: fc,
+            dropped_count: dc,
+            avg_latency_ms: 0.0,
+        })
+        .collect();
 
     let namespaces: Vec<String> = ns_set.into_iter().collect();
-    Json(serde_json::json!({ "cells": cells, "namespaces": namespaces, "multi_cluster": multi_cluster }))
+    Json(
+        serde_json::json!({ "cells": cells, "namespaces": namespaces, "multi_cluster": multi_cluster }),
+    )
 }
 
 // ── Service Dependencies ────────────────────────────────────
@@ -477,51 +628,99 @@ pub async fn list_dependencies(
     // Build dependencies from real Hubble flows
     let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
 
-    let mut dep_map: std::collections::HashMap<(String, String, u16), (String, u64, u64)> = std::collections::HashMap::new();
+    let mut dep_map: std::collections::HashMap<(String, String, u16), (String, u64, u64)> =
+        std::collections::HashMap::new();
     for flow in &flows {
         let src = if !flow.source.pod.is_empty() {
-            flow.source.pod.split('-').take(2).collect::<Vec<_>>().join("-")
-        } else { continue; };
+            flow.source
+                .pod
+                .split('-')
+                .take(2)
+                .collect::<Vec<_>>()
+                .join("-")
+        } else {
+            continue;
+        };
         let dst = if !flow.destination.pod.is_empty() {
-            flow.destination.pod.split('-').take(2).collect::<Vec<_>>().join("-")
-        } else { continue; };
-        if src == dst { continue; }
-        let entry = dep_map.entry((src, dst, flow.port)).or_insert((flow.protocol.clone(), 0, 0));
+            flow.destination
+                .pod
+                .split('-')
+                .take(2)
+                .collect::<Vec<_>>()
+                .join("-")
+        } else {
+            continue;
+        };
+        if src == dst {
+            continue;
+        }
+        let entry = dep_map
+            .entry((src, dst, flow.port))
+            .or_insert((flow.protocol.clone(), 0, 0));
         entry.1 += 1; // total
-        if flow.verdict == "DROPPED" { entry.2 += 1; } // errors
+        if flow.verdict == "DROPPED" {
+            entry.2 += 1;
+        } // errors
     }
 
     // Collect L7 HTTP info per dependency key
-    let mut l7_map: std::collections::HashMap<(String, String, u16), (Option<String>, Option<String>)> = std::collections::HashMap::new();
+    let mut l7_map: std::collections::HashMap<
+        (String, String, u16),
+        (Option<String>, Option<String>),
+    > = std::collections::HashMap::new();
     for flow in &flows {
         let src = if !flow.source.pod.is_empty() {
-            flow.source.pod.split('-').take(2).collect::<Vec<_>>().join("-")
-        } else { continue; };
+            flow.source
+                .pod
+                .split('-')
+                .take(2)
+                .collect::<Vec<_>>()
+                .join("-")
+        } else {
+            continue;
+        };
         let dst = if !flow.destination.pod.is_empty() {
-            flow.destination.pod.split('-').take(2).collect::<Vec<_>>().join("-")
-        } else { continue; };
-        if src == dst { continue; }
+            flow.destination
+                .pod
+                .split('-')
+                .take(2)
+                .collect::<Vec<_>>()
+                .join("-")
+        } else {
+            continue;
+        };
+        if src == dst {
+            continue;
+        }
         if flow.http_method.is_some() || flow.http_url.is_some() {
-            l7_map.entry((src, dst, flow.port))
+            l7_map
+                .entry((src, dst, flow.port))
                 .or_insert((flow.http_method.clone(), flow.http_url.clone()));
         }
     }
 
-    let items: Vec<serde_json::Value> = dep_map.into_iter().map(|((src, dst, port), (proto, total, errors))| {
-        let error_rate = if total > 0 { errors as f64 / total as f64 * 100.0 } else { 0.0 };
-        let l7 = l7_map.get(&(src.clone(), dst.clone(), port));
-        let mut entry = serde_json::json!({
-            "source": src, "destination": dst, "protocol": proto,
-            "port": port, "request_count": total, "error_rate": error_rate,
-        });
-        if let Some((Some(method), _)) = l7 {
-            entry["http_method"] = serde_json::json!(method);
-        }
-        if let Some((_, Some(url))) = l7 {
-            entry["http_url"] = serde_json::json!(url);
-        }
-        entry
-    }).collect();
+    let items: Vec<serde_json::Value> = dep_map
+        .into_iter()
+        .map(|((src, dst, port), (proto, total, errors))| {
+            let error_rate = if total > 0 {
+                errors as f64 / total as f64 * 100.0
+            } else {
+                0.0
+            };
+            let l7 = l7_map.get(&(src.clone(), dst.clone(), port));
+            let mut entry = serde_json::json!({
+                "source": src, "destination": dst, "protocol": proto,
+                "port": port, "request_count": total, "error_rate": error_rate,
+            });
+            if let Some((Some(method), _)) = l7 {
+                entry["http_method"] = serde_json::json!(method);
+            }
+            if let Some((_, Some(url))) = l7 {
+                entry["http_url"] = serde_json::json!(url);
+            }
+            entry
+        })
+        .collect();
 
     Json(paginate_json(items, &params, "dependencies"))
 }
@@ -552,16 +751,23 @@ pub async fn list_security_findings(
 
     // Check namespaces without policies
     let policies = state.k8s.list_policies().await.unwrap_or_default();
-    let ns_with_policies: std::collections::HashSet<String> = policies.iter().map(|p| p.namespace.clone()).collect();
+    let ns_with_policies: std::collections::HashSet<String> =
+        policies.iter().map(|p| p.namespace.clone()).collect();
 
-    let ns_data = state.k8s.kubectl_json(&["get", "namespaces", "-o", "json"]).await;
+    let ns_data = state
+        .k8s
+        .kubectl_json(&["get", "namespaces", "-o", "json"])
+        .await;
     if let Some(items) = ns_data.get("items").and_then(|v| v.as_array()) {
         for item in items {
-            let name = item.get("metadata")
+            let name = item
+                .get("metadata")
                 .and_then(|m| m.get("name"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            if name.starts_with("kube-") || name == "cilium" { continue; }
+            if name.starts_with("kube-") || name == "cilium" {
+                continue;
+            }
             if !ns_with_policies.contains(name) {
                 idx += 1;
                 findings.push(serde_json::json!({
@@ -600,24 +806,41 @@ pub async fn list_security_findings(
     Json(paginate_json(findings, &params, "findings"))
 }
 
-pub async fn zero_trust_score(
-    State(state): State<Arc<AppState>>,
-) -> Json<serde_json::Value> {
+pub async fn zero_trust_score(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
     // Compute real zero-trust scores from cluster state
     let policies = state.k8s.list_policies().await.unwrap_or_default();
-    let ns_data = state.k8s.kubectl_json(&["get", "namespaces", "-o", "json"]).await;
-    let ns_count = ns_data.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(1);
-    let ns_with_policies: std::collections::HashSet<String> = policies.iter().map(|p| p.namespace.clone()).collect();
+    let ns_data = state
+        .k8s
+        .kubectl_json(&["get", "namespaces", "-o", "json"])
+        .await;
+    let ns_count = ns_data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(1);
+    let ns_with_policies: std::collections::HashSet<String> =
+        policies.iter().map(|p| p.namespace.clone()).collect();
 
     // Network segmentation: % of namespaces with policies
     let segmentation = (ns_with_policies.len() as f64 / ns_count as f64 * 100.0).min(100.0) as u32;
 
     // Identity verification: Cilium always uses identities (score based on identity count)
-    let id_data = state.k8s.kubectl_json(&["get", "ciliumidentities", "-o", "json"]).await;
-    let id_count = id_data.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-    let identity_score = if id_count > 0 { 80u32.min(50 + id_count as u32) } else { 20 };
+    let id_data = state
+        .k8s
+        .kubectl_json(&["get", "ciliumidentities", "-o", "json"])
+        .await;
+    let id_count = id_data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let identity_score = if id_count > 0 {
+        80u32.min(50 + id_count as u32)
+    } else {
+        20
+    };
 
     // Monitoring: check if hubble is running
     let hubble_ok = state.hubble.is_healthy().await;
@@ -638,9 +861,7 @@ pub async fn zero_trust_score(
 
 // ── Metrics Summary ─────────────────────────────────────────
 
-pub async fn metrics_summary(
-    State(state): State<Arc<AppState>>,
-) -> Json<serde_json::Value> {
+pub async fn metrics_summary(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     use crate::services::k8s::K8sService;
 
     let m = &state.metrics;

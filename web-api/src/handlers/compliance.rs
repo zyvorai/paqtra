@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
+use super::{actor_from_claims, audit_log, to_json, track_request};
 use crate::AppState;
-use super::{track_request, to_json, audit_log, actor_from_claims};
 
 /// Typed request for the compliance audit endpoint.
 #[derive(Debug, Deserialize)]
@@ -179,8 +179,7 @@ pub async fn run_audit(
             title: "Default-deny network policies".to_string(),
             status: "passed".to_string(),
             severity: "high".to_string(),
-            description: "All non-system namespaces have CiliumNetworkPolicy coverage."
-                .to_string(),
+            description: "All non-system namespaces have CiliumNetworkPolicy coverage.".to_string(),
         });
     } else {
         findings.push(AuditFinding {
@@ -330,7 +329,16 @@ pub async fn run_audit(
         findings,
     };
 
-    audit_log(&state, "compliance.audit", framework, "", &format!("Compliance audit completed: score={}", score), &actor_from_claims(&claims), "success").await;
+    audit_log(
+        &state,
+        "compliance.audit",
+        framework,
+        "",
+        &format!("Compliance audit completed: score={}", score),
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
 
     Ok(Json(to_json(&audit)))
 }
@@ -362,24 +370,47 @@ pub async fn security_posture(
     let policies_count = ns_data.len();
 
     // Get namespace count
-    let ns_json = state.k8s.kubectl_json(&["get", "namespaces", "-o", "json"]).await;
-    let namespaces_total = ns_json.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+    let ns_json = state
+        .k8s
+        .kubectl_json(&["get", "namespaces", "-o", "json"])
+        .await;
+    let namespaces_total = ns_json
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
 
     // Find namespaces with policies
-    let ns_with_policies: std::collections::HashSet<String> = ns_data.iter().map(|p| p.namespace.clone()).collect();
-    let all_ns: Vec<String> = ns_json.get("items").and_then(|v| v.as_array())
-        .map(|items| items.iter()
-            .filter_map(|i| i.get("metadata").and_then(|m| m.get("name")).and_then(|v| v.as_str()).map(String::from))
-            .collect())
+    let ns_with_policies: std::collections::HashSet<String> =
+        ns_data.iter().map(|p| p.namespace.clone()).collect();
+    let all_ns: Vec<String> = ns_json
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|i| {
+                    i.get("metadata")
+                        .and_then(|m| m.get("name"))
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                })
+                .collect()
+        })
         .unwrap_or_default();
-    let ns_without: Vec<&str> = all_ns.iter()
+    let ns_without: Vec<&str> = all_ns
+        .iter()
         .filter(|ns| !ns_with_policies.contains(ns.as_str()) && !ns.starts_with("kube-"))
         .map(|s| s.as_str())
         .collect();
 
     let policy_coverage = if namespaces_total > 0 {
-        ((namespaces_total - ns_without.len()) as f64 / namespaces_total as f64 * 100.0 * 10.0).round() / 10.0
-    } else { 0.0 };
+        ((namespaces_total - ns_without.len()) as f64 / namespaces_total as f64 * 100.0 * 10.0)
+            .round()
+            / 10.0
+    } else {
+        0.0
+    };
 
     let score = policy_coverage; // Score reflects actual policy coverage percentage
 
@@ -394,10 +425,14 @@ pub async fn security_posture(
 
     let mut recommendations = Vec::new();
     if !ns_without.is_empty() {
-        recommendations.push(format!("Apply network policies to namespaces: {}", ns_without.join(", ")));
+        recommendations.push(format!(
+            "Apply network policies to namespaces: {}",
+            ns_without.join(", ")
+        ));
     }
     if policies_count == 0 {
-        recommendations.push("No CiliumNetworkPolicies found -- create least-privilege policies".to_string());
+        recommendations
+            .push("No CiliumNetworkPolicies found -- create least-privilege policies".to_string());
     }
 
     Ok(Json(json!({

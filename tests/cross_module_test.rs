@@ -79,7 +79,10 @@ async fn test_rootcause_and_healer_consistent_run_on_mock() {
 
     // Both should process mock data consistently.
     // MockMapReader has PolicyDenied drops, so healer detects problems.
-    assert!(healer_stats.problems_detected > 0, "Healer should detect problems from mock drops");
+    assert!(
+        healer_stats.problems_detected > 0,
+        "Healer should detect problems from mock drops"
+    );
     // RootCause processes mock drops without error. Mock timestamps are in the past,
     // so they fall outside the analysis window and don't appear in history.
 }
@@ -310,7 +313,10 @@ async fn test_healer_then_rootcause_lifecycle() {
     // Step 1: Healer runs and processes mock data
     let mut healer = SelfHealer::new(HealerConfig::default(), MockMapReader, k8s.clone());
     let healer_stats = healer.run().await.unwrap();
-    assert!(healer_stats.problems_detected > 0, "Healer should detect problems from mock drops");
+    assert!(
+        healer_stats.problems_detected > 0,
+        "Healer should detect problems from mock drops"
+    );
 
     // Step 2: RootCause analyzes the same mock data without error
     let mut rootcause = RootCauseEngine::new(RootCauseConfig::default(), MockMapReader, k8s);
@@ -332,16 +338,25 @@ async fn test_autopolicy_to_simulator_lifecycle() {
 
     // Step 2: Update (MockMapReader has conntrack data)
     let learning_stats = autopolicy.update().await.unwrap();
-    assert!(learning_stats.connections_observed > 0, "Should observe connections from MockMapReader");
+    assert!(
+        learning_stats.connections_observed > 0,
+        "Should observe connections from MockMapReader"
+    );
 
     // Step 3: Generate policies
     let policies = autopolicy.generate_policies().unwrap();
-    assert!(!policies.is_empty(), "Should generate at least one policy from observed traffic");
+    assert!(
+        !policies.is_empty(),
+        "Should generate at least one policy from observed traffic"
+    );
 
     // Step 4: Simulator loads history from mock conntrack data
     let mut simulator = Simulator::new(SimulatorConfig::default(), MockMapReader, k8s);
     let loaded = simulator.load_history().await.unwrap();
-    assert!(loaded > 0, "Simulator should load conntrack entries from MockMapReader");
+    assert!(
+        loaded > 0,
+        "Simulator should load conntrack entries from MockMapReader"
+    );
 }
 
 #[tokio::test]
@@ -363,7 +378,10 @@ async fn test_replay_to_rootcause_lifecycle() {
     // Step 3: Stop recording
     let recording = replay.stop_recording().await.unwrap();
     assert_eq!(recording.name, "lifecycle-test");
-    assert!(recording.flow_count > 0, "Recording should contain captured flows");
+    assert!(
+        recording.flow_count > 0,
+        "Recording should contain captured flows"
+    );
 
     // Step 4: RootCause analyzes mock drops without error
     let mut rootcause = RootCauseEngine::new(RootCauseConfig::default(), MockMapReader, k8s);

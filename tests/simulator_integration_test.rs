@@ -328,7 +328,10 @@ spec:
     // MockMapReader provides conntrack data, simulate should complete successfully
     let result = sim.simulate(scenario).await.unwrap();
     // Verify the simulation produced meaningful output
-    assert!(!result.details.flow_results.is_empty(), "Simulation should produce flow results");
+    assert!(
+        !result.details.flow_results.is_empty(),
+        "Simulation should produce flow results"
+    );
 }
 
 #[tokio::test]

@@ -9,8 +9,8 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use super::{actor_from_claims, audit_log, check_admin, to_json, track_request};
 use crate::AppState;
-use super::{check_admin, track_request, to_json, audit_log, actor_from_claims};
 
 const CHAOS_PREFIX: &str = "cv:chaos:";
 const CANARY_PREFIX: &str = "cv:canary:";
@@ -236,9 +236,7 @@ pub async fn generate_autopolicy(
         // Build toPorts
         let ports: Vec<Value> = port_protos
             .iter()
-            .map(|(port, proto)| {
-                json!({ "port": port.to_string(), "protocol": proto })
-            })
+            .map(|(port, proto)| json!({ "port": port.to_string(), "protocol": proto }))
             .collect();
 
         let ingress_rule = if ports.is_empty() {
@@ -289,7 +287,11 @@ pub async fn generate_autopolicy(
     }
 
     // Sort by confidence descending so most confident policies come first
-    policies.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    policies.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let avg_confidence = if policies.is_empty() {
         0.0
@@ -304,7 +306,16 @@ pub async fn generate_autopolicy(
         policies,
     };
 
-    audit_log(&state, "autopolicy.generate", &result.request_id, namespace, "Autopolicy generated", &actor_from_claims(&claims), "success").await;
+    audit_log(
+        &state,
+        "autopolicy.generate",
+        &result.request_id,
+        namespace,
+        "Autopolicy generated",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
 
     Ok(Json(to_json(&result)))
 }
@@ -319,7 +330,8 @@ fn extract_app_label(pod_name: &str) -> String {
         .iter()
         .take_while(|p| {
             // Keep segments that are not purely hash-like
-            p.len() > 10 || !p.chars().all(|c| c.is_ascii_alphanumeric())
+            p.len() > 10
+                || !p.chars().all(|c| c.is_ascii_alphanumeric())
                 || parts.iter().position(|x| x == *p) == Some(0)
         })
         .copied()
@@ -337,7 +349,11 @@ pub async fn list_chaos_experiments(
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
-    let items = state.cache.list_values(CHAOS_PREFIX).await.unwrap_or_default();
+    let items = state
+        .cache
+        .list_values(CHAOS_PREFIX)
+        .await
+        .unwrap_or_default();
     let total = items.len();
 
     Ok(Json(json!({
@@ -378,7 +394,16 @@ pub async fn run_chaos_experiment(
         ));
     }
 
-    audit_log(&state, "chaos.run", &id, &req.target_namespace, "Chaos experiment started", &actor_from_claims(&claims), "success").await;
+    audit_log(
+        &state,
+        "chaos.run",
+        &id,
+        &req.target_namespace,
+        "Chaos experiment started",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
 
     Ok(Json(to_json(&experiment)))
 }
@@ -443,17 +468,11 @@ pub async fn canary_status(
     let stable_pct = 100u32.saturating_sub(canary_pct);
 
     // Query recent flows to compute real success metrics for this deployment
-    let flows = state
-        .hubble
-        .get_flows(1000, None)
-        .await
-        .unwrap_or_default();
+    let flows = state.hubble.get_flows(1000, None).await.unwrap_or_default();
 
     let relevant_flows: Vec<_> = flows
         .iter()
-        .filter(|f| {
-            f.destination.pod.contains(&id) || f.source.pod.contains(&id)
-        })
+        .filter(|f| f.destination.pod.contains(&id) || f.source.pod.contains(&id))
         .collect();
 
     let total_relevant = relevant_flows.len() as u64;

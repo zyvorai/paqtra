@@ -53,7 +53,6 @@ pub async fn start_port_forward() -> Result<u16> {
 
 /// Start Hubble port-forward on a specific port and verify it is running.
 pub async fn start_port_forward_on(port: u16) -> Result<u16> {
-
     // Check if an existing port-forward is already working on this port
     if tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
         .await

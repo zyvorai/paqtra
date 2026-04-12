@@ -42,7 +42,13 @@ impl RootCauseView {
         self.render_drops(f, chunks[1], rootcause);
 
         // Recommended Fixes
-        self.render_fixes(f, chunks[2], rootcause, selected_fix_index, fix_apply_confirmation);
+        self.render_fixes(
+            f,
+            chunks[2],
+            rootcause,
+            selected_fix_index,
+            fix_apply_confirmation,
+        );
     }
 
     fn render_header<M: MapReader>(
@@ -104,10 +110,8 @@ impl RootCauseView {
                             "identity:{}→identity:{}:{}",
                             pattern.src_identity, pattern.dst_identity, pattern.dst_port
                         );
-                        let content = format!(
-                            "{} {} [{severity}] {count} drops",
-                            pattern.reason, flow,
-                        );
+                        let content =
+                            format!("{} {} [{severity}] {count} drops", pattern.reason, flow,);
                         ListItem::new(Line::from(Span::styled(
                             content,
                             Style::default().fg(color).add_modifier(Modifier::BOLD),
@@ -164,8 +168,7 @@ impl RootCauseView {
                     .iter()
                     .take(5)
                     .map(|(pattern, count)| {
-                        let (name, detail) =
-                            Self::fix_for_pattern(pattern, *count);
+                        let (name, detail) = Self::fix_for_pattern(pattern, *count);
                         (name, detail)
                     })
                     .collect()
@@ -256,10 +259,7 @@ impl RootCauseView {
                     );
                     (name, detail)
                 } else {
-                    let name = format!(
-                        "Allow port {} {proto}",
-                        pattern.dst_port,
-                    );
+                    let name = format!("Allow port {} {proto}", pattern.dst_port,);
                     let detail = format!(
                         "Policy: rootcause-fix-allow-{port}\n\n\
                         Allows identity:{src} -> identity:{dst}:{port} {proto}\n\n\

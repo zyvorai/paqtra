@@ -72,8 +72,8 @@ impl Config {
             );
         }
 
-        let hubble_address = env::var("HUBBLE_ADDRESS")
-            .unwrap_or_else(|_| "localhost:4245".to_string());
+        let hubble_address =
+            env::var("HUBBLE_ADDRESS").unwrap_or_else(|_| "localhost:4245".to_string());
 
         let hubble_addresses = if let Ok(raw) = env::var("HUBBLE_ADDRESSES") {
             // Parse comma-separated name=host:port pairs

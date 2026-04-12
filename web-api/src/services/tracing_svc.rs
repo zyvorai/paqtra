@@ -102,10 +102,7 @@ impl SpanBuilder {
 ///
 /// If `otel_endpoint` is `None`, spans are consumed from the channel and
 /// discarded (the middleware still records them for structured logging).
-pub fn start_exporter(
-    otel_endpoint: Option<String>,
-    service_name: String,
-) -> SpanExporter {
+pub fn start_exporter(otel_endpoint: Option<String>, service_name: String) -> SpanExporter {
     // Bounded channel — if the consumer falls behind, newest spans are dropped.
     let (tx, rx) = mpsc::channel::<FinishedSpan>(4096);
 
@@ -274,10 +271,7 @@ enum AttributeValue<'a> {
     IntValue(i64),
 }
 
-fn build_otlp_payload<'a>(
-    service_name: &'a str,
-    spans: &[FinishedSpan],
-) -> OtlpExportRequest<'a> {
+fn build_otlp_payload<'a>(service_name: &'a str, spans: &[FinishedSpan]) -> OtlpExportRequest<'a> {
     let otlp_spans: Vec<OtlpSpan> = spans
         .iter()
         .map(|s| {
@@ -302,9 +296,9 @@ fn build_otlp_payload<'a>(
                     },
                     KeyValue {
                         key: "http.target",
-                        value: AttributeValue::StringValue(
-                            Box::leak(s.http_path.clone().into_boxed_str()),
-                        ),
+                        value: AttributeValue::StringValue(Box::leak(
+                            s.http_path.clone().into_boxed_str(),
+                        )),
                     },
                     KeyValue {
                         key: "http.status_code",
@@ -312,9 +306,9 @@ fn build_otlp_payload<'a>(
                     },
                     KeyValue {
                         key: "request.id",
-                        value: AttributeValue::StringValue(
-                            Box::leak(s.request_id.clone().into_boxed_str()),
-                        ),
+                        value: AttributeValue::StringValue(Box::leak(
+                            s.request_id.clone().into_boxed_str(),
+                        )),
                     },
                     KeyValue {
                         key: "duration_ms",
@@ -431,7 +425,7 @@ mod tests {
         assert_eq!(otlp_span.status.code, 1); // OK for 200
 
         // Verify JSON serialisation does not panic.
-        let json = serde_json::to_string_pretty(&payload).unwrap();
+        let json = serde_json::to_string_pretty(&payload).unwrap_or_default();
         assert!(json.contains("\"service.name\""));
         assert!(json.contains("\"http.method\""));
     }

@@ -471,8 +471,7 @@ pub(crate) async fn handle_key_event_async(app: &mut TuiApp, key_code: KeyCode) 
                         {
                             app.set_status_message(&format!(
                                 "Canary traffic: {}% canary / {}% stable",
-                                updated.current_split.canary_pct,
-                                updated.current_split.stable_pct
+                                updated.current_split.canary_pct, updated.current_split.stable_pct
                             ));
                         }
                     }
@@ -501,10 +500,7 @@ pub(crate) async fn handle_key_event_async(app: &mut TuiApp, key_code: KeyCode) 
                                     ));
                                 }
                                 Err(e) => {
-                                    app.set_status_message(&format!(
-                                        "Failed to promote: {}",
-                                        e
-                                    ));
+                                    app.set_status_message(&format!("Failed to promote: {}", e));
                                 }
                             }
                         }
@@ -517,10 +513,7 @@ pub(crate) async fn handle_key_event_async(app: &mut TuiApp, key_code: KeyCode) 
                                     ));
                                 }
                                 Err(e) => {
-                                    app.set_status_message(&format!(
-                                        "Failed to rollback: {}",
-                                        e
-                                    ));
+                                    app.set_status_message(&format!("Failed to rollback: {}", e));
                                 }
                             }
                         }

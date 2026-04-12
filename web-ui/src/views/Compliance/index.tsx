@@ -45,8 +45,8 @@ const STATUS_CFG: Record<string, { color: string; icon: React.ReactNode; label: 
 function scoreColor(s: number) { return s >= 80 ? 'text-green-400' : s >= 60 ? 'text-yellow-400' : 'text-red-400'; }
 function scoreBg(s: number) { return s >= 80 ? 'bg-green-400' : s >= 60 ? 'bg-yellow-400' : 'bg-red-400'; }
 
-// TODO: Breakdown data should come from the API (e.g. /security/posture/breakdown).
-// These static values are used as a fallback until the backend provides this data.
+// Static fallback values used when the API response does not include breakdown data.
+// The /security/posture endpoint already returns a `breakdown` field when available.
 const STATIC_BREAKDOWN = [
   { label: 'Network Segmentation', value: 90 },
   { label: 'Policy Coverage', value: 85 },

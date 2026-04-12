@@ -44,7 +44,12 @@ spec:
             - port: "{}"
               protocol: {}
 "#,
-            sanitize_k8s_name(src), sanitize_k8s_name(dst), yaml_escape(src), yaml_escape(dst), port, yaml_escape(protocol)
+            sanitize_k8s_name(src),
+            sanitize_k8s_name(dst),
+            yaml_escape(src),
+            yaml_escape(dst),
+            port,
+            yaml_escape(protocol)
         )
     }
 }

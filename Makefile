@@ -1,4 +1,4 @@
-.PHONY: build run check test clean install help
+.PHONY: build run check test clean install help lint-fix type-check security
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-25s\033[0m %s\n", $$1, $$2}'
@@ -187,6 +187,18 @@ hyper-logs: ## Stream Hyper container logs
 
 hyper-teardown: ## Remove Hyper deployment
 	bash scripts/deploy-hyper.sh teardown
+
+# ─── Quality & Security ───────────────────────────────────────────────
+lint-fix: ## Auto-fix linting issues across TUI and web-ui
+	cd web-ui && npx eslint --fix src/
+	cargo fmt
+
+type-check: ## Type-check web-ui TypeScript
+	cd web-ui && npx tsc --noEmit
+
+security: ## Run security audits on Rust and Node dependencies
+	cargo audit 2>/dev/null || echo "Install cargo-audit: cargo install cargo-audit"
+	cd web-ui && npm audit --audit-level=high
 
 # ─── Full Project ──────────────────────────────────────────────────────
 check-all: check api-check ui-typecheck ui-lint ## Check all components

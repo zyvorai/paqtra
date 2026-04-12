@@ -40,7 +40,7 @@ COPY --from=ui-builder --chown=cilium:cilium /ui/dist ./ui/
 ENV CILIUM_VISION_HOST=0.0.0.0 \
     CILIUM_VISION_PORT=9191 \
     HUBBLE_ADDRESS=hubble-relay.kube-system.svc.cluster.local:4245 \
-    REDIS_URL=redis://localhost:6379 \
+    REDIS_URL=redis://redis:6379 \
     RUST_LOG=info \
     UI_DIST_DIR=/app/ui
 

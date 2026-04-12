@@ -97,8 +97,7 @@ impl SecurityPosture {
 
         let score = if wireguard_enabled || ipsec_enabled {
             if wireguard_enabled {
-                findings
-                    .push("WireGuard encryption enabled for pod-to-pod traffic".to_string());
+                findings.push("WireGuard encryption enabled for pod-to-pod traffic".to_string());
             }
             if ipsec_enabled {
                 findings.push("IPsec node-level encryption enabled".to_string());
@@ -210,10 +209,7 @@ impl SecurityPosture {
                 .map(|ns| ns.to_string())
                 .collect();
             if !missing.is_empty() {
-                findings.push(format!(
-                    "Namespaces without RBAC: {}",
-                    missing.join(", ")
-                ));
+                findings.push(format!("Namespaces without RBAC: {}", missing.join(", ")));
             }
         }
 
@@ -235,9 +231,7 @@ impl SecurityPosture {
             return DimensionScore {
                 score: 0.0,
                 weight: 0.25,
-                findings: vec![
-                    "kubectl not available - cannot assess network policies".to_string(),
-                ],
+                findings: vec!["kubectl not available - cannot assess network policies".to_string()],
             };
         }
 
@@ -344,7 +338,7 @@ impl SecurityPosture {
                 score: 0.0,
                 weight: 0.25,
                 findings: vec![
-                    "kubectl not available - cannot assess Hubble observability".to_string(),
+                    "kubectl not available - cannot assess Hubble observability".to_string()
                 ],
             };
         }
@@ -702,7 +696,11 @@ mod tests {
     async fn test_all_dimensions_scored() {
         let posture = SecurityPosture::new().unwrap();
         let score = posture.calculate_score().await.unwrap();
-        assert_eq!(score.dimensions.len(), 4, "Should have exactly 4 dimensions");
+        assert_eq!(
+            score.dimensions.len(),
+            4,
+            "Should have exactly 4 dimensions"
+        );
         // Each dimension should have a score between 0 and 100
         for (name, dim) in &score.dimensions {
             assert!(

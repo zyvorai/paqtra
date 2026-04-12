@@ -5,8 +5,8 @@
 // `cv:changes:` prefix. Detects ArgoCD/Flux annotations to mark
 // GitOps-managed resources.
 
-use std::sync::Arc;
 use crate::AppState;
+use std::sync::Arc;
 
 const CHANGES_PREFIX: &str = "cv:changes:";
 const CHANGES_TTL: u64 = 604800; // 7 days
@@ -37,12 +37,19 @@ const RELEVANT_KINDS: &[&str] = &[
 /// relevant network resources, check for GitOps annotations, and
 /// persist new changes to Redis.
 async fn track_changes(state: &AppState) -> anyhow::Result<()> {
-    let data = state.k8s.kubectl_json(&[
-        "get", "events", "--all-namespaces",
-        "--field-selector", "reason!=Pulled,reason!=Scheduled,reason!=Started",
-        "-o", "json",
-        "--sort-by=.lastTimestamp",
-    ]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&[
+            "get",
+            "events",
+            "--all-namespaces",
+            "--field-selector",
+            "reason!=Pulled,reason!=Scheduled,reason!=Started",
+            "-o",
+            "json",
+            "--sort-by=.lastTimestamp",
+        ])
+        .await;
 
     let items = match data.get("items").and_then(|v| v.as_array()) {
         Some(items) => items,
@@ -83,13 +90,15 @@ async fn track_changes(state: &AppState) -> anyhow::Result<()> {
         }
 
         let resource_name = involved.get("name").and_then(|v| v.as_str()).unwrap_or("");
-        let namespace = meta.get("namespace")
+        let namespace = meta
+            .get("namespace")
             .and_then(|v| v.as_str())
             .or_else(|| involved.get("namespace").and_then(|v| v.as_str()))
             .unwrap_or("");
         let reason = item.get("reason").and_then(|v| v.as_str()).unwrap_or("");
         let message = item.get("message").and_then(|v| v.as_str()).unwrap_or("");
-        let timestamp = item.get("lastTimestamp")
+        let timestamp = item
+            .get("lastTimestamp")
             .or_else(|| item.get("firstTimestamp"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
@@ -173,7 +182,10 @@ async fn check_gitops_annotations(
 
     // Check ArgoCD annotations
     if let Some(annotations) = meta.get("annotations").and_then(|v| v.as_object()) {
-        if annotations.keys().any(|k| k.starts_with("argocd.argoproj.io/")) {
+        if annotations
+            .keys()
+            .any(|k| k.starts_with("argocd.argoproj.io/"))
+        {
             return true;
         }
     }

@@ -319,7 +319,8 @@ impl ChaosEngine {
         let netem_args = Self::experiment_to_netem_args(&experiment);
         if !netem_args.is_empty() {
             let target_selector = Self::build_pod_selector(&chaos.target);
-            match Self::apply_netem_via_kubectl(&chaos.target, &target_selector, &netem_args).await {
+            match Self::apply_netem_via_kubectl(&chaos.target, &target_selector, &netem_args).await
+            {
                 Ok(affected) => {
                     tracing::info!(
                         experiment = chaos.name,

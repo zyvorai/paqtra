@@ -242,7 +242,11 @@ impl AnomalyScorer {
 
         let recent_avg = recent_data.iter().sum::<f64>() / recent_data.len() as f64;
         if recent_avg.abs() < f64::EPSILON {
-            return Ok(if metric.value.abs() > f64::EPSILON { 1.0 } else { 0.0 });
+            return Ok(if metric.value.abs() > f64::EPSILON {
+                1.0
+            } else {
+                0.0
+            });
         }
         let deviation = ((metric.value - recent_avg) / recent_avg).abs();
 
@@ -283,7 +287,11 @@ impl AnomalyScorer {
 
         let macd = short_ma - long_ma;
         if long_ma.abs() < f64::EPSILON {
-            return Ok(if metric.value.abs() > f64::EPSILON { 1.0 } else { 0.0 });
+            return Ok(if metric.value.abs() > f64::EPSILON {
+                1.0
+            } else {
+                0.0
+            });
         }
         let signal = macd / long_ma;
 
@@ -309,7 +317,11 @@ impl AnomalyScorer {
             .unwrap_or(baseline.stats.mean);
 
         if expected.abs() < f64::EPSILON {
-            return Ok(if metric.value.abs() > f64::EPSILON { 1.0 } else { 0.0 });
+            return Ok(if metric.value.abs() > f64::EPSILON {
+                1.0
+            } else {
+                0.0
+            });
         }
         let deviation = ((metric.value - expected) / expected).abs();
 
@@ -382,16 +394,18 @@ impl AnomalyScorer {
         if let Some(expected) = baseline.seasonal_patterns.hourly_patterns.get(&hour) {
             if expected.abs() < f64::EPSILON {
                 if metric.value.abs() > f64::EPSILON {
-                    factors.push("Hour-of-day baseline is zero but current value is non-zero".to_string());
+                    factors.push(
+                        "Hour-of-day baseline is zero but current value is non-zero".to_string(),
+                    );
                 }
             } else {
-            let hour_deviation = ((metric.value - expected) / expected).abs();
-            if hour_deviation > 0.5 {
-                factors.push(format!(
-                    "Deviates {:.1}% from typical hour-of-day pattern",
-                    hour_deviation * 100.0
-                ));
-            }
+                let hour_deviation = ((metric.value - expected) / expected).abs();
+                if hour_deviation > 0.5 {
+                    factors.push(format!(
+                        "Deviates {:.1}% from typical hour-of-day pattern",
+                        hour_deviation * 100.0
+                    ));
+                }
             }
         }
 

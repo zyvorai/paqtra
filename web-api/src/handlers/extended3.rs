@@ -1,8 +1,8 @@
+use super::{actor_from_claims, audit_log, check_admin, track_request};
+use crate::AppState;
 use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;
 use std::sync::Arc;
-use crate::AppState;
-use super::{check_admin, track_request, audit_log, actor_from_claims};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateMirrorRequest {
@@ -10,7 +10,9 @@ pub struct CreateMirrorRequest {
     pub name: String,
 }
 
-fn default_mirror_name() -> String { "new-rule".to_string() }
+fn default_mirror_name() -> String {
+    "new-rule".to_string()
+}
 
 #[derive(Debug, Deserialize)]
 pub struct TroubleshootRequest {
@@ -18,7 +20,9 @@ pub struct TroubleshootRequest {
     pub target: String,
 }
 
-fn default_target() -> String { "cluster".to_string() }
+fn default_target() -> String {
+    "cluster".to_string()
+}
 
 // ── Cost Breakdown ─────────────────────────────────────────
 
@@ -26,21 +30,24 @@ pub async fn cost_breakdown(State(state): State<Arc<AppState>>) -> Json<serde_js
     track_request(&state, |_| {}).await;
 
     // Query all pods to compute resource requests per namespace
-    let data = state.k8s.kubectl_json(&[
-        "get", "pods", "--all-namespaces", "-o", "json",
-    ]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&["get", "pods", "--all-namespaces", "-o", "json"])
+        .await;
 
     let mut ns_resources: std::collections::HashMap<String, (f64, f64, u64)> =
         std::collections::HashMap::new(); // (cpu_millicores, memory_mib, pod_count)
 
     if let Some(items) = data.get("items").and_then(|v| v.as_array()) {
         for item in items {
-            let ns = item.get("metadata")
+            let ns = item
+                .get("metadata")
                 .and_then(|m| m.get("namespace"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown")
                 .to_string();
-            let containers = item.get("spec")
+            let containers = item
+                .get("spec")
                 .and_then(|s| s.get("containers"))
                 .and_then(|v| v.as_array());
             let mut pod_cpu: f64 = 0.0;
@@ -68,22 +75,39 @@ pub async fn cost_breakdown(State(state): State<Arc<AppState>>) -> Json<serde_js
     let total_cpu: f64 = ns_resources.values().map(|v| v.0).sum();
     let total_mem: f64 = ns_resources.values().map(|v| v.1).sum();
 
-    let mut namespaces: Vec<serde_json::Value> = ns_resources.iter().map(|(ns, (cpu, mem, pods))| {
-        let cpu_share = if total_cpu > 0.0 { cpu / total_cpu } else { 0.0 };
-        let mem_share = if total_mem > 0.0 { mem / total_mem } else { 0.0 };
-        serde_json::json!({
-            "namespace": ns,
-            "pod_count": pods,
-            "cpu_request_millicores": *cpu as u64,
-            "memory_request_mib": *mem as u64,
-            "cpu_share_percent": (cpu_share * 100.0 * 10.0).round() / 10.0,
-            "memory_share_percent": (mem_share * 100.0 * 10.0).round() / 10.0,
-            "relative_weight": ((cpu_share + mem_share) / 2.0 * 100.0 * 10.0).round() / 10.0,
+    let mut namespaces: Vec<serde_json::Value> = ns_resources
+        .iter()
+        .map(|(ns, (cpu, mem, pods))| {
+            let cpu_share = if total_cpu > 0.0 {
+                cpu / total_cpu
+            } else {
+                0.0
+            };
+            let mem_share = if total_mem > 0.0 {
+                mem / total_mem
+            } else {
+                0.0
+            };
+            serde_json::json!({
+                "namespace": ns,
+                "pod_count": pods,
+                "cpu_request_millicores": *cpu as u64,
+                "memory_request_mib": *mem as u64,
+                "cpu_share_percent": (cpu_share * 100.0 * 10.0).round() / 10.0,
+                "memory_share_percent": (mem_share * 100.0 * 10.0).round() / 10.0,
+                "relative_weight": ((cpu_share + mem_share) / 2.0 * 100.0 * 10.0).round() / 10.0,
+            })
         })
-    }).collect();
+        .collect();
     namespaces.sort_by(|a, b| {
-        let wa = a.get("relative_weight").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let wb = b.get("relative_weight").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let wa = a
+            .get("relative_weight")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let wb = b
+            .get("relative_weight")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
         wb.partial_cmp(&wa).unwrap_or(std::cmp::Ordering::Equal)
     });
 
@@ -161,7 +185,11 @@ pub async fn forecast_data(
         let start = (now - chrono::Duration::hours(24)).to_rfc3339();
         let step = "300"; // 5-minute intervals
 
-        if let Ok(result) = state.prometheus.query_range(promql, &start, &end, step).await {
+        if let Ok(result) = state
+            .prometheus
+            .query_range(promql, &start, &end, step)
+            .await
+        {
             // Extract data points from the Prometheus range response
             let points: Vec<serde_json::Value> = result
                 .get("data")
@@ -203,8 +231,10 @@ pub async fn forecast_data(
     let flows = state.hubble.get_flows(5000, None).await.unwrap_or_default();
 
     // Bucket flows by hour based on their timestamps
-    let mut hourly_counts: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
-    let mut hourly_dropped: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    let mut hourly_counts: std::collections::BTreeMap<String, u64> =
+        std::collections::BTreeMap::new();
+    let mut hourly_dropped: std::collections::BTreeMap<String, u64> =
+        std::collections::BTreeMap::new();
 
     for flow in &flows {
         // Parse the flow timestamp and truncate to hour
@@ -222,15 +252,18 @@ pub async fn forecast_data(
         }
     }
 
-    let points: Vec<serde_json::Value> = hourly_counts.iter().map(|(hour, count)| {
-        let drops = hourly_dropped.get(hour).copied().unwrap_or(0);
-        serde_json::json!({
-            "timestamp": hour,
-            "flow_count": count,
-            "dropped_count": drops,
-            "forwarded_count": count - drops,
+    let points: Vec<serde_json::Value> = hourly_counts
+        .iter()
+        .map(|(hour, count)| {
+            let drops = hourly_dropped.get(hour).copied().unwrap_or(0);
+            serde_json::json!({
+                "timestamp": hour,
+                "flow_count": count,
+                "dropped_count": drops,
+                "forwarded_count": count - drops,
+            })
         })
-    }).collect();
+        .collect();
 
     let total_flows: u64 = hourly_counts.values().sum();
     let total_hours = hourly_counts.len();
@@ -253,21 +286,39 @@ pub async fn encryption_status(State(state): State<Arc<AppState>>) -> Json<serde
     track_request(&state, |_| {}).await;
 
     // Query Cilium ConfigMap for encryption settings
-    let cm = state.k8s.kubectl_json(&[
-        "get", "configmap", "cilium-config", "-n", "kube-system", "-o", "json",
-    ]).await;
+    let cm = state
+        .k8s
+        .kubectl_json(&[
+            "get",
+            "configmap",
+            "cilium-config",
+            "-n",
+            "kube-system",
+            "-o",
+            "json",
+        ])
+        .await;
 
     let empty = serde_json::json!({});
     let data = cm.get("data").unwrap_or(&empty);
-    let enc_type = data.get("encrypt-node").and_then(|v| v.as_str())
+    let enc_type = data
+        .get("encrypt-node")
+        .and_then(|v| v.as_str())
         .or_else(|| data.get("encryption.type").and_then(|v| v.as_str()))
         .unwrap_or("disabled")
         .to_string();
     let enabled = enc_type != "disabled" && !enc_type.is_empty();
 
     // Count nodes
-    let nodes = state.k8s.kubectl_json(&["get", "nodes", "-o", "json"]).await;
-    let nodes_total = nodes.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
+    let nodes = state
+        .k8s
+        .kubectl_json(&["get", "nodes", "-o", "json"])
+        .await;
+    let nodes_total = nodes
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
 
     Json(serde_json::json!({
         "enabled": enabled,
@@ -283,37 +334,47 @@ pub async fn lb_services(State(state): State<Arc<AppState>>) -> Json<serde_json:
     track_request(&state, |_| {}).await;
 
     // Query real K8s Service resources of type LoadBalancer and ClusterIP
-    let data = state.k8s.kubectl_json(&[
-        "get", "services", "--all-namespaces", "-o", "json",
-    ]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&["get", "services", "--all-namespaces", "-o", "json"])
+        .await;
 
     let services: Vec<serde_json::Value> = data
         .get("items")
         .and_then(|v| v.as_array())
         .map(|items| {
-            items.iter().map(|item| {
-                let meta = item.get("metadata").unwrap_or(item);
-                let spec = item.get("spec").unwrap_or(item);
-                let name = meta.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let ns = meta.get("namespace").and_then(|v| v.as_str()).unwrap_or("");
-                let svc_type = spec.get("type").and_then(|v| v.as_str()).unwrap_or("ClusterIP");
-                let cluster_ip = spec.get("clusterIP").and_then(|v| v.as_str()).unwrap_or("");
-                let ports: Vec<serde_json::Value> = spec
-                    .get("ports")
-                    .and_then(|v| v.as_array())
-                    .cloned()
-                    .unwrap_or_default();
-                let session_affinity = spec.get("sessionAffinity").and_then(|v| v.as_str()).unwrap_or("None");
+            items
+                .iter()
+                .map(|item| {
+                    let meta = item.get("metadata").unwrap_or(item);
+                    let spec = item.get("spec").unwrap_or(item);
+                    let name = meta.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let ns = meta.get("namespace").and_then(|v| v.as_str()).unwrap_or("");
+                    let svc_type = spec
+                        .get("type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("ClusterIP");
+                    let cluster_ip = spec.get("clusterIP").and_then(|v| v.as_str()).unwrap_or("");
+                    let ports: Vec<serde_json::Value> = spec
+                        .get("ports")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let session_affinity = spec
+                        .get("sessionAffinity")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("None");
 
-                serde_json::json!({
-                    "name": name,
-                    "namespace": ns,
-                    "type": svc_type,
-                    "cluster_ip": cluster_ip,
-                    "ports": ports,
-                    "session_affinity": session_affinity,
+                    serde_json::json!({
+                        "name": name,
+                        "namespace": ns,
+                        "type": svc_type,
+                        "cluster_ip": cluster_ip,
+                        "ports": ports,
+                        "session_affinity": session_affinity,
+                    })
                 })
-            }).collect()
+                .collect()
         })
         .unwrap_or_default();
 
@@ -326,9 +387,10 @@ pub async fn lb_services(State(state): State<Arc<AppState>>) -> Json<serde_json:
 pub async fn ingress_routes(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    let data = state.k8s.kubectl_json(&[
-        "get", "ingress", "--all-namespaces", "-o", "json",
-    ]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&["get", "ingress", "--all-namespaces", "-o", "json"])
+        .await;
 
     let routes: Vec<serde_json::Value> = data
         .get("items")
@@ -361,29 +423,38 @@ pub async fn ipam_pools(State(state): State<Arc<AppState>>) -> Json<serde_json::
     track_request(&state, |_| {}).await;
 
     // Query CiliumNode resources for IPAM pool info
-    let data = state.k8s.kubectl_json(&[
-        "get", "ciliumnodes", "-o", "json",
-    ]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&["get", "ciliumnodes", "-o", "json"])
+        .await;
 
     let pools: Vec<serde_json::Value> = data
         .get("items")
         .and_then(|v| v.as_array())
         .map(|items| {
-            items.iter().filter_map(|item| {
-                let meta = item.get("metadata")?;
-                let spec = item.get("spec")?;
-                let ipam = spec.get("ipam")?;
-                let name = meta.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let cidrs: Vec<String> = ipam.get("podCIDRs")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                    .unwrap_or_default();
-                Some(serde_json::json!({
-                    "node": name,
-                    "pod_cidrs": cidrs,
-                    "ipam": ipam,
-                }))
-            }).collect()
+            items
+                .iter()
+                .filter_map(|item| {
+                    let meta = item.get("metadata")?;
+                    let spec = item.get("spec")?;
+                    let ipam = spec.get("ipam")?;
+                    let name = meta.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let cidrs: Vec<String> = ipam
+                        .get("podCIDRs")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    Some(serde_json::json!({
+                        "node": name,
+                        "pod_cidrs": cidrs,
+                        "ipam": ipam,
+                    }))
+                })
+                .collect()
         })
         .unwrap_or_default();
 
@@ -396,15 +467,16 @@ pub async fn ip_allocations(State(state): State<Arc<AppState>>) -> Json<serde_js
     track_request(&state, |_| {}).await;
 
     // Get pod IPs from running pods
-    let data = state.k8s.kubectl_json(&[
-        "get", "pods", "--all-namespaces", "-o", "json",
-    ]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&["get", "pods", "--all-namespaces", "-o", "json"])
+        .await;
 
-    let allocations: Vec<serde_json::Value> = data
-        .get("items")
-        .and_then(|v| v.as_array())
-        .map(|items| {
-            items.iter().filter_map(|item| {
+    let allocations: Vec<serde_json::Value> =
+        data.get("items")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items.iter().filter_map(|item| {
                 let meta = item.get("metadata")?;
                 let status = item.get("status")?;
                 let pod_ip = status.get("podIP").and_then(|v| v.as_str())?;
@@ -417,8 +489,8 @@ pub async fn ip_allocations(State(state): State<Arc<AppState>>) -> Json<serde_js
                     "phase": status.get("phase").and_then(|v| v.as_str()).unwrap_or("Unknown"),
                 }))
             }).collect()
-        })
-        .unwrap_or_default();
+            })
+            .unwrap_or_default();
 
     let total = allocations.len();
     Json(serde_json::json!({ "allocations": allocations, "total": total }))
@@ -465,27 +537,44 @@ pub async fn latency_analysis(State(state): State<Arc<AppState>>) -> Json<serde_
     // Note: L4 flows don't include latency; we report flow counts as a traffic volume proxy
     let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
 
-    let mut svc_flows: std::collections::HashMap<(String, String), (u64, u64)> = std::collections::HashMap::new();
+    let mut svc_flows: std::collections::HashMap<(String, String), (u64, u64)> =
+        std::collections::HashMap::new();
     for flow in &flows {
         let svc = if !flow.destination.pod.is_empty() {
-            flow.destination.pod.split('-').take(2).collect::<Vec<_>>().join("-")
-        } else { continue; };
-        let ns = if flow.destination.namespace.is_empty() { "unknown" } else { &flow.destination.namespace };
+            flow.destination
+                .pod
+                .split('-')
+                .take(2)
+                .collect::<Vec<_>>()
+                .join("-")
+        } else {
+            continue;
+        };
+        let ns = if flow.destination.namespace.is_empty() {
+            "unknown"
+        } else {
+            &flow.destination.namespace
+        };
         let entry = svc_flows.entry((svc, ns.to_string())).or_default();
         entry.0 += 1; // total
-        if flow.verdict == "DROPPED" { entry.1 += 1; } // errors
+        if flow.verdict == "DROPPED" {
+            entry.1 += 1;
+        } // errors
     }
 
-    let services: Vec<serde_json::Value> = svc_flows.into_iter().map(|((svc, ns), (total, errors))| {
-        serde_json::json!({
-            "service": svc,
-            "namespace": ns,
-            "sample_count": total,
-            "error_count": errors,
-            "error_rate": if total > 0 { errors as f64 / total as f64 * 100.0 } else { 0.0 },
-            "note": "Latency requires L7/Prometheus metrics; showing flow volume",
+    let services: Vec<serde_json::Value> = svc_flows
+        .into_iter()
+        .map(|((svc, ns), (total, errors))| {
+            serde_json::json!({
+                "service": svc,
+                "namespace": ns,
+                "sample_count": total,
+                "error_count": errors,
+                "error_rate": if total > 0 { errors as f64 / total as f64 * 100.0 } else { 0.0 },
+                "note": "Latency requires L7/Prometheus metrics; showing flow volume",
+            })
         })
-    }).collect();
+        .collect();
 
     Json(serde_json::json!({ "services": services, "source": "hubble L4 flow counts" }))
 }
@@ -496,7 +585,11 @@ const MIRROR_RULES_PREFIX: &str = "cv:mirror_rules:";
 
 pub async fn mirror_rules(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let items = state.cache.list_values(MIRROR_RULES_PREFIX).await.unwrap_or_default();
+    let items = state
+        .cache
+        .list_values(MIRROR_RULES_PREFIX)
+        .await
+        .unwrap_or_default();
     Json(serde_json::json!({ "rules": items, "total": items.len() }))
 }
 
@@ -508,15 +601,34 @@ pub async fn create_mirror_rule(
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
-    let id = format!("mirror-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("000"));
+    let id = format!(
+        "mirror-{}",
+        uuid::Uuid::new_v4()
+            .to_string()
+            .split('-')
+            .next()
+            .unwrap_or("000")
+    );
     let rule = serde_json::json!({
         "id": id,
         "name": body.name,
         "enabled": true,
         "created_at": chrono::Utc::now().to_rfc3339(),
     });
-    let _ = state.cache.set_persistent(&format!("{}{}", MIRROR_RULES_PREFIX, id), &rule).await;
-    audit_log(&state, "mirror.create", &id, "", "Mirror rule created", &actor_from_claims(&claims), "success").await;
+    let _ = state
+        .cache
+        .set_persistent(&format!("{}{}", MIRROR_RULES_PREFIX, id), &rule)
+        .await;
+    audit_log(
+        &state,
+        "mirror.create",
+        &id,
+        "",
+        "Mirror rule created",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
 
     Ok(Json(serde_json::json!({
         "id": id,
@@ -533,8 +645,20 @@ pub async fn delete_mirror_rule(
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
-    let _ = state.cache.delete(&format!("{}{}", MIRROR_RULES_PREFIX, id)).await;
-    audit_log(&state, "mirror.delete", &id, "", "Mirror rule deleted", &actor_from_claims(&claims), "success").await;
+    let _ = state
+        .cache
+        .delete(&format!("{}{}", MIRROR_RULES_PREFIX, id))
+        .await;
+    audit_log(
+        &state,
+        "mirror.delete",
+        &id,
+        "",
+        "Mirror rule deleted",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
     Ok(Json(serde_json::json!({
         "id": id,
         "status": "deleted",
@@ -548,25 +672,44 @@ pub async fn cluster_health(State(state): State<Arc<AppState>>) -> Json<serde_js
     track_request(&state, |_| {}).await;
 
     // Query real component statuses
-    let cilium_pods = state.k8s.kubectl_json(&[
-        "get", "pods", "-n", "kube-system", "-l", "k8s-app=cilium", "-o", "json",
-    ]).await;
+    let cilium_pods = state
+        .k8s
+        .kubectl_json(&[
+            "get",
+            "pods",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=cilium",
+            "-o",
+            "json",
+        ])
+        .await;
 
     let components: Vec<serde_json::Value> = {
         let mut comps = Vec::new();
         // Check cilium agents
         let agents = cilium_pods.get("items").and_then(|v| v.as_array());
-        let (total, ready) = agents.map(|arr| {
-            let t = arr.len();
-            let r = arr.iter().filter(|p| {
-                p.get("status")
-                    .and_then(|s| s.get("containerStatuses"))
-                    .and_then(|v| v.as_array())
-                    .map(|cs| cs.iter().all(|c| c.get("ready").and_then(|v| v.as_bool()).unwrap_or(false)))
-                    .unwrap_or(false)
-            }).count();
-            (t, r)
-        }).unwrap_or((0, 0));
+        let (total, ready) = agents
+            .map(|arr| {
+                let t = arr.len();
+                let r = arr
+                    .iter()
+                    .filter(|p| {
+                        p.get("status")
+                            .and_then(|s| s.get("containerStatuses"))
+                            .and_then(|v| v.as_array())
+                            .map(|cs| {
+                                cs.iter().all(|c| {
+                                    c.get("ready").and_then(|v| v.as_bool()).unwrap_or(false)
+                                })
+                            })
+                            .unwrap_or(false)
+                    })
+                    .count();
+                (t, r)
+            })
+            .unwrap_or((0, 0));
 
         comps.push(serde_json::json!({
             "name": "cilium-agent",
@@ -576,13 +719,35 @@ pub async fn cluster_health(State(state): State<Arc<AppState>>) -> Json<serde_js
         }));
 
         // Check hubble-relay
-        let relay = state.k8s.kubectl_json(&[
-            "get", "pods", "-n", "kube-system", "-l", "k8s-app=hubble-relay", "-o", "json",
-        ]).await;
+        let relay = state
+            .k8s
+            .kubectl_json(&[
+                "get",
+                "pods",
+                "-n",
+                "kube-system",
+                "-l",
+                "k8s-app=hubble-relay",
+                "-o",
+                "json",
+            ])
+            .await;
         let relay_items = relay.get("items").and_then(|v| v.as_array());
-        let (rt, rr) = relay_items.map(|arr| (arr.len(), arr.iter().filter(|p| {
-            p.get("status").and_then(|s| s.get("phase")).and_then(|v| v.as_str()) == Some("Running")
-        }).count())).unwrap_or((0, 0));
+        let (rt, rr) = relay_items
+            .map(|arr| {
+                (
+                    arr.len(),
+                    arr.iter()
+                        .filter(|p| {
+                            p.get("status")
+                                .and_then(|s| s.get("phase"))
+                                .and_then(|v| v.as_str())
+                                == Some("Running")
+                        })
+                        .count(),
+                )
+            })
+            .unwrap_or((0, 0));
         comps.push(serde_json::json!({
             "name": "hubble-relay", "instances": rt, "ready": rr,
             "status": if rt == rr && rt > 0 { "healthy" } else if rt > 0 { "degraded" } else { "not_found" },
@@ -595,18 +760,37 @@ pub async fn cluster_health(State(state): State<Arc<AppState>>) -> Json<serde_js
     let k8s_healthy = state.k8s.is_healthy().await;
 
     // Node status
-    let nodes = state.k8s.kubectl_json(&["get", "nodes", "-o", "json"]).await;
+    let nodes = state
+        .k8s
+        .kubectl_json(&["get", "nodes", "-o", "json"])
+        .await;
     let node_items = nodes.get("items").and_then(|v| v.as_array());
     let nodes_total = node_items.map(|a| a.len()).unwrap_or(0);
-    let nodes_ready = node_items.map(|arr| {
-        arr.iter().filter(|n| {
-            n.get("status").and_then(|s| s.get("conditions")).and_then(|v| v.as_array())
-                .and_then(|conds| conds.iter().find(|c| c.get("type").and_then(|v| v.as_str()) == Some("Ready")))
-                .and_then(|c| c.get("status")).and_then(|v| v.as_str()) == Some("True")
-        }).count()
-    }).unwrap_or(0);
+    let nodes_ready = node_items
+        .map(|arr| {
+            arr.iter()
+                .filter(|n| {
+                    n.get("status")
+                        .and_then(|s| s.get("conditions"))
+                        .and_then(|v| v.as_array())
+                        .and_then(|conds| {
+                            conds
+                                .iter()
+                                .find(|c| c.get("type").and_then(|v| v.as_str()) == Some("Ready"))
+                        })
+                        .and_then(|c| c.get("status"))
+                        .and_then(|v| v.as_str())
+                        == Some("True")
+                })
+                .count()
+        })
+        .unwrap_or(0);
 
-    let overall = if nodes_ready == nodes_total && nodes_total > 0 && k8s_healthy { "healthy" } else { "degraded" };
+    let overall = if nodes_ready == nodes_total && nodes_total > 0 && k8s_healthy {
+        "healthy"
+    } else {
+        "degraded"
+    };
 
     Json(serde_json::json!({
         "status": overall,
@@ -629,10 +813,17 @@ pub async fn rbac_bindings(
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
-    let data = state.k8s.kubectl_json(&[
-        "get", "clusterrolebindings", "-o", "json",
-        "-l", "app.kubernetes.io/part-of=cilium",
-    ]).await;
+    let data = state
+        .k8s
+        .kubectl_json(&[
+            "get",
+            "clusterrolebindings",
+            "-o",
+            "json",
+            "-l",
+            "app.kubernetes.io/part-of=cilium",
+        ])
+        .await;
 
     let bindings: Vec<serde_json::Value> = data
         .get("items")
@@ -660,29 +851,38 @@ pub async fn rbac_bindings(
 
     // If no cilium-specific bindings found, get all
     if bindings.is_empty() {
-        let all_data = state.k8s.kubectl_json(&[
-            "get", "clusterrolebindings", "-o", "json",
-        ]).await;
+        let all_data = state
+            .k8s
+            .kubectl_json(&["get", "clusterrolebindings", "-o", "json"])
+            .await;
         let all_bindings: Vec<serde_json::Value> = all_data
             .get("items")
             .and_then(|v| v.as_array())
             .map(|items| {
-                items.iter().take(20).map(|item| {
-                    let meta = item.get("metadata").unwrap_or(item);
-                    let role_ref = item.get("roleRef").unwrap_or(item);
-                    serde_json::json!({
-                        "name": meta.get("name").and_then(|v| v.as_str()).unwrap_or(""),
-                        "type": "ClusterRoleBinding",
-                        "role": role_ref.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                items
+                    .iter()
+                    .take(20)
+                    .map(|item| {
+                        let meta = item.get("metadata").unwrap_or(item);
+                        let role_ref = item.get("roleRef").unwrap_or(item);
+                        serde_json::json!({
+                            "name": meta.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                            "type": "ClusterRoleBinding",
+                            "role": role_ref.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                        })
                     })
-                }).collect()
+                    .collect()
             })
             .unwrap_or_default();
-        return Ok(Json(serde_json::json!({ "bindings": all_bindings, "total": all_bindings.len() })));
+        return Ok(Json(
+            serde_json::json!({ "bindings": all_bindings, "total": all_bindings.len() }),
+        ));
     }
 
     let total = bindings.len();
-    Ok(Json(serde_json::json!({ "bindings": bindings, "total": total })))
+    Ok(Json(
+        serde_json::json!({ "bindings": bindings, "total": total }),
+    ))
 }
 
 // ── Network Interfaces ─────────────────────────────────────
@@ -701,7 +901,9 @@ pub async fn net_interfaces(
     let mut interfaces = Vec::new();
     for line in proc_net.lines().skip(2) {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 11 { continue; }
+        if parts.len() < 11 {
+            continue;
+        }
         let name = parts[0].trim_end_matches(':');
         interfaces.push(serde_json::json!({
             "name": name,
@@ -716,7 +918,9 @@ pub async fn net_interfaces(
         }));
     }
 
-    Ok(Json(serde_json::json!({ "interfaces": interfaces, "total": interfaces.len(), "source": "local /proc/net/dev" })))
+    Ok(Json(
+        serde_json::json!({ "interfaces": interfaces, "total": interfaces.len(), "source": "local /proc/net/dev" }),
+    ))
 }
 
 // ── Troubleshoot ───────────────────────────────────────────
@@ -738,16 +942,40 @@ pub async fn run_troubleshoot(
 
     // Step 1: K8s API
     let k8s_ok = state.k8s.is_healthy().await;
-    if k8s_ok { passed += 1; } else { failed += 1; }
+    if k8s_ok {
+        passed += 1;
+    } else {
+        failed += 1;
+    }
     steps.push(serde_json::json!({
         "step": 1, "name": "Kubernetes API", "status": if k8s_ok { "pass" } else { "fail" },
         "output": if k8s_ok { "API server reachable" } else { "API server unreachable" },
     }));
 
     // Step 2: Cilium agents
-    let agent_pods = state.k8s.kubectl_json(&["get", "pods", "-n", "kube-system", "-l", "k8s-app=cilium", "-o", "json"]).await;
-    let agent_count = agent_pods.get("items").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0);
-    if agent_count > 0 { passed += 1; } else { failed += 1; }
+    let agent_pods = state
+        .k8s
+        .kubectl_json(&[
+            "get",
+            "pods",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=cilium",
+            "-o",
+            "json",
+        ])
+        .await;
+    let agent_count = agent_pods
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    if agent_count > 0 {
+        passed += 1;
+    } else {
+        failed += 1;
+    }
     steps.push(serde_json::json!({
         "step": 2, "name": "Cilium Agents", "status": if agent_count > 0 { "pass" } else { "fail" },
         "output": format!("{} cilium agent pods found", agent_count),
@@ -755,7 +983,11 @@ pub async fn run_troubleshoot(
 
     // Step 3: Hubble
     let hubble_ok = state.hubble.is_healthy().await;
-    if hubble_ok { passed += 1; } else { warnings += 1; }
+    if hubble_ok {
+        passed += 1;
+    } else {
+        warnings += 1;
+    }
     steps.push(serde_json::json!({
         "step": 3, "name": "Hubble Relay", "status": if hubble_ok { "pass" } else { "warn" },
         "output": if hubble_ok { format!("Connected to {}", state.hubble.address()) } else { "Relay unreachable".to_string() },
@@ -763,16 +995,28 @@ pub async fn run_troubleshoot(
 
     // Step 4: Network policies
     let policies = state.k8s.list_policies().await.unwrap_or_default();
-    if !policies.is_empty() { passed += 1; } else { warnings += 1; }
+    if !policies.is_empty() {
+        passed += 1;
+    } else {
+        warnings += 1;
+    }
     steps.push(serde_json::json!({
         "step": 4, "name": "Network Policies", "status": if !policies.is_empty() { "pass" } else { "warn" },
         "output": format!("{} CiliumNetworkPolicies active", policies.len()),
     }));
 
     // Step 5: BPF filesystem
-    let bpf_mount = K8sService::run_cmd("sh", &["-c", "mountpoint -q /sys/fs/bpf && echo yes || echo no"]).await;
+    let bpf_mount = K8sService::run_cmd(
+        "sh",
+        &["-c", "mountpoint -q /sys/fs/bpf && echo yes || echo no"],
+    )
+    .await;
     let bpf_ok = bpf_mount.trim() == "yes";
-    if bpf_ok { passed += 1; } else { warnings += 1; }
+    if bpf_ok {
+        passed += 1;
+    } else {
+        warnings += 1;
+    }
     steps.push(serde_json::json!({
         "step": 5, "name": "BPF Filesystem", "status": if bpf_ok { "pass" } else { "warn" },
         "output": if bpf_ok { "/sys/fs/bpf mounted" } else { "/sys/fs/bpf not available" },
@@ -781,7 +1025,11 @@ pub async fn run_troubleshoot(
     // Step 6: Flows check
     let flows = state.hubble.get_flows(100, None).await.unwrap_or_default();
     let drops = flows.iter().filter(|f| f.verdict == "DROPPED").count();
-    if drops == 0 { passed += 1; } else { warnings += 1; }
+    if drops == 0 {
+        passed += 1;
+    } else {
+        warnings += 1;
+    }
     steps.push(serde_json::json!({
         "step": 6, "name": "Recent Traffic Health", "status": if drops == 0 { "pass" } else { "warn" },
         "output": format!("{} flows observed, {} drops", flows.len(), drops),

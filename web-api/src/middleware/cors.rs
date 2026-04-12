@@ -8,7 +8,9 @@ pub fn cors_layer() -> CorsLayer {
     let origins_str = std::env::var("ALLOWED_ORIGINS").ok();
 
     let is_localhost = origins_str.is_none()
-        || origins_str.as_ref().is_some_and(|s| s.contains("localhost"));
+        || origins_str
+            .as_ref()
+            .is_some_and(|s| s.contains("localhost"));
 
     if is_localhost {
         tracing::warn!(
@@ -17,8 +19,8 @@ pub fn cors_layer() -> CorsLayer {
         );
     }
 
-    let origins_raw = origins_str
-        .unwrap_or_else(|| "http://localhost:3000,http://localhost:3001".to_string());
+    let origins_raw =
+        origins_str.unwrap_or_else(|| "http://localhost:3000,http://localhost:3001".to_string());
 
     let origins: Vec<HeaderValue> = origins_raw
         .split(',')
