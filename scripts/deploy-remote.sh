@@ -306,15 +306,14 @@ if ! kubectl get daemonset -n kube-system cilium &>/dev/null; then
     echo "  Installing Cilium CNI with Hubble..."
     helm repo add cilium https://helm.cilium.io/ 2>/dev/null || true
     helm repo update cilium 2>/dev/null || true
-    helm install cilium cilium/cilium --namespace kube-system \
+    CILIUM_CHART_VERSION=1.17.3
+    helm install cilium cilium/cilium --version \${CILIUM_CHART_VERSION} --namespace kube-system \
         --set operator.replicas=1 \
         --set kubeProxyReplacement=true \
+        --set hubble.enabled=true \
         --set hubble.relay.enabled=true \
         --set hubble.ui.enabled=false \
         --set hubble.metrics.enabled="{dns,drop,tcp,flow,icmp,http}" \
-        --set hubble.metrics.enableOpenMetrics=true \
-        --set prometheus.enabled=true \
-        --set operator.prometheus.enabled=true \
         --wait --timeout 300s
     echo "  ✅ Cilium + Hubble installed"
 else
@@ -324,7 +323,9 @@ else
     HUBBLE_RELAY=\$(kubectl get deploy -n kube-system hubble-relay 2>/dev/null | grep -c hubble-relay || true)
     if [ "\$HUBBLE_RELAY" = "0" ]; then
         echo "  Enabling Hubble relay..."
-        helm upgrade cilium cilium/cilium --namespace kube-system --reuse-values \
+        CILIUM_CHART_VERSION=\$(helm list -n kube-system -o json 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[0]["chart"].split("-")[-1])' 2>/dev/null || echo "1.17.3")
+        helm upgrade cilium cilium/cilium --version \${CILIUM_CHART_VERSION} --namespace kube-system --reuse-values \
+            --set hubble.enabled=true \
             --set hubble.relay.enabled=true \
             --set hubble.metrics.enabled="{dns,drop,tcp,flow,icmp,http}" \
             --wait --timeout 120s 2>/dev/null || true
