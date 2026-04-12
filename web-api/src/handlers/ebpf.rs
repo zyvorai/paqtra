@@ -655,7 +655,9 @@ pub async fn get_drop_stats(
     let maps = match run_bpftool(&["map", "list", "-j"]).await {
         Ok(v) => v,
         Err(_) => {
-            return Ok(Json(paginate_json(vec![], &params, "drops")));
+            let mut r = paginate_json(vec![], &params, "drops");
+            r.as_object_mut().map(|o| o.insert("total_drops".to_string(), json!(0)));
+            return Ok(Json(r));
         }
     };
     let map_arr = maps.as_array().cloned().unwrap_or_default();
@@ -663,7 +665,9 @@ pub async fn get_drop_stats(
     let metrics_map = match find_map_by_name(&map_arr, "cilium_metrics") {
         Some(m) => m,
         None => {
-            return Ok(Json(paginate_json(vec![], &params, "drops")));
+            let mut r = paginate_json(vec![], &params, "drops");
+            r.as_object_mut().map(|o| o.insert("total_drops".to_string(), json!(0)));
+            return Ok(Json(r));
         }
     };
     let mid = match map_id(metrics_map) {
