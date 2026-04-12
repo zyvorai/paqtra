@@ -61,16 +61,62 @@ pub async fn host_info(
         }
     }
 
+    // Parse disk usage from df
+    let df_output = K8sService::run_cmd("sh", &["-c", "df -B1 / | tail -1"]).await;
+    let df_parts: Vec<&str> = df_output.split_whitespace().collect();
+    let disk_total_gb = df_parts.get(1).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0) / 1_073_741_824.0;
+    let disk_used_gb = df_parts.get(2).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0) / 1_073_741_824.0;
+
+    // CPU model
+    let cpu_model = K8sService::run_cmd("sh", &["-c", "grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs"]).await;
+
+    // CPU usage from /proc/stat (1-second sample)
+    let cpu_usage_str = K8sService::run_cmd("sh", &["-c",
+        "read c1 u1 n1 s1 i1 < <(head -1 /proc/stat | awk '{print $2,$3,$4,$5,$6}') && sleep 1 && \
+         read c2 u2 n2 s2 i2 < <(head -1 /proc/stat | awk '{print $2,$3,$4,$5,$6}') && \
+         echo $(( (c2+u2+n2+s2 - c1-u1-n1-s1) * 100 / (c2+u2+n2+s2+i2 - c1-u1-n1-s1-i1) ))"
+    ]).await;
+    let cpu_usage: f64 = cpu_usage_str.trim().parse().unwrap_or(0.0);
+
+    // Network interfaces
+    let ip_output = K8sService::run_cmd("sh", &["-c",
+        "ip -j addr show 2>/dev/null || echo '[]'"
+    ]).await;
+    let net_interfaces: Vec<serde_json::Value> = serde_json::from_str::<Vec<serde_json::Value>>(&ip_output)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|iface| {
+            let name = iface.get("ifname")?.as_str()?.to_string();
+            let state = iface.get("operstate").and_then(|v| v.as_str()).unwrap_or("unknown").to_lowercase();
+            let mac = iface.get("address").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let ip = iface.get("addr_info").and_then(|v| v.as_array())
+                .and_then(|arr| arr.iter().find(|a| a.get("family").and_then(|f| f.as_str()) == Some("inet")))
+                .and_then(|a| a.get("local").and_then(|v| v.as_str()))
+                .unwrap_or("").to_string();
+            Some(serde_json::json!({
+                "name": name,
+                "status": if state == "up" { "up" } else { "down" },
+                "ip": ip,
+                "mac": mac,
+            }))
+        })
+        .collect();
+
     Ok(Json(serde_json::json!({
         "hostname": hostname,
         "os": if os_release.is_empty() { "Linux".to_string() } else { os_release },
         "kernel": kernel,
         "arch": arch,
         "cpu_cores": cpu_count.parse::<u32>().unwrap_or(0),
+        "cpu_model": if cpu_model.is_empty() { serde_json::Value::Null } else { serde_json::json!(cpu_model) },
+        "cpu_usage": cpu_usage,
         "memory_total_gb": (mem_total_kb / 1_048_576.0 * 10.0).round() / 10.0,
         "memory_used_gb": ((mem_total_kb - mem_available_kb) / 1_048_576.0 * 10.0).round() / 10.0,
+        "disk_total_gb": (disk_total_gb * 10.0).round() / 10.0,
+        "disk_used_gb": (disk_used_gb * 10.0).round() / 10.0,
         "uptime_seconds": uptime as u64,
         "load_average": load_parts,
+        "network_interfaces": net_interfaces,
     })))
 }
 
