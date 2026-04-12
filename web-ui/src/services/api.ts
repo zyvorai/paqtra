@@ -102,6 +102,9 @@ export interface Flow {
   verdict: string;
   protocol: string;
   port: number;
+  http_method?: string;
+  http_url?: string;
+  http_code?: number;
   [key: string]: unknown;
 }
 
@@ -109,6 +112,7 @@ export interface FlowStats {
   total_flows: number;
   forwarded: number;
   dropped: number;
+  redirected?: number;
   requests_per_second: number;
   avg_latency_ms: number;
   [key: string]: unknown;
@@ -490,6 +494,8 @@ export interface ServiceEdge {
   port: number;
   request_rate: number;
   error_rate: number;
+  flow_count?: number;
+  dropped_count?: number;
   [key: string]: unknown;
 }
 

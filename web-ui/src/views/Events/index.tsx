@@ -7,6 +7,7 @@ import { usePagination } from '../../hooks/usePagination';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import { useNamespaceStore } from '../../stores/namespaceStore';
 
 const TYPE_BADGE: Record<string, string> = {
   Normal: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
@@ -33,6 +34,7 @@ function formatAge(ts: string): string {
 
 const Events: React.FC = () => {
   usePageTitle('Events');
+  const { selectedNamespace } = useNamespaceStore();
   const [events, setEvents] = useState<K8sEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -47,9 +49,15 @@ const Events: React.FC = () => {
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
+  // Apply global namespace filter, then local search filter
+  const namespacedEvents = useMemo(() => {
+    if (!selectedNamespace) return events;
+    return events.filter((e) => e.namespace === selectedNamespace);
+  }, [events, selectedNamespace]);
+
   const filtered = useMemo(() => search
-    ? events.filter((e) => e.message.toLowerCase().includes(search.toLowerCase()) || e.object.toLowerCase().includes(search.toLowerCase()) || e.reason.toLowerCase().includes(search.toLowerCase()))
-    : events, [events, search]);
+    ? namespacedEvents.filter((e) => e.message.toLowerCase().includes(search.toLowerCase()) || e.object.toLowerCase().includes(search.toLowerCase()) || e.reason.toLowerCase().includes(search.toLowerCase()))
+    : namespacedEvents, [namespacedEvents, search]);
 
   // Keep pagination total in sync with filtered count and reset page on search change
   useMemo(() => { pagination.setTotal(filtered.length); pagination.resetPage(); }, [filtered.length]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -59,7 +67,7 @@ const Events: React.FC = () => {
     [filtered, pagination.offset, pagination.limit],
   );
 
-  const warnings = events.filter((e) => e.type === 'Warning').length;
+  const warnings = namespacedEvents.filter((e) => e.type === 'Warning').length;
 
   return (
     <div>

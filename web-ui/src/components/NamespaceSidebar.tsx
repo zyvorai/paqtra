@@ -1,5 +1,6 @@
 import React from 'react';
-import { Box, Shield, ChevronRight } from 'lucide-react';
+import { Box, Shield, ChevronRight, X, Layers } from 'lucide-react';
+import { useNamespaceStore } from '../stores/namespaceStore';
 
 export interface NamespaceInfo {
   name: string;
@@ -20,6 +21,8 @@ const STATUS_DOT: Record<string, string> = {
 };
 
 export const NamespaceSidebar: React.FC<NamespaceSidebarProps> = ({ namespaces }) => {
+  const { selectedNamespace, setNamespace, clearNamespace } = useNamespaceStore();
+
   return (
     <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 p-5 h-full">
       <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
@@ -38,21 +41,58 @@ export const NamespaceSidebar: React.FC<NamespaceSidebarProps> = ({ namespaces }
         </div>
       ) : (
         <div className="space-y-2 overflow-y-auto max-h-[360px] pr-1">
+          {/* All Namespaces option */}
+          <div
+            onClick={clearNamespace}
+            className={`rounded-lg p-3 border transition-all cursor-pointer group ${
+              selectedNamespace === ''
+                ? 'bg-blue-500/10 border-l-4 border-l-blue-500 border-t-blue-500/30 border-r-blue-500/30 border-b-blue-500/30'
+                : 'bg-slate-900/50 border-slate-700/30 hover:border-slate-600/50 hover:bg-slate-900/70'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <Layers className={`w-4 h-4 flex-shrink-0 ${selectedNamespace === '' ? 'text-blue-400' : 'text-slate-500'}`} />
+                <span className={`text-sm truncate ${selectedNamespace === '' ? 'font-bold text-blue-300' : 'font-medium text-slate-400'}`}>
+                  All Namespaces
+                </span>
+              </div>
+              <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 transition-colors ${selectedNamespace === '' ? 'text-blue-400' : 'text-slate-600 group-hover:text-slate-400'}`} />
+            </div>
+          </div>
+
           {namespaces.map((ns) => {
             const dotColor = STATUS_DOT[ns.status || 'active'] || STATUS_DOT.active;
+            const isSelected = selectedNamespace === ns.name;
             return (
               <div
                 key={ns.name}
-                className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/30 transition-all hover:border-slate-600/50 hover:bg-slate-900/70 cursor-pointer group"
+                onClick={() => setNamespace(ns.name)}
+                className={`rounded-lg p-3 border transition-all cursor-pointer group ${
+                  isSelected
+                    ? 'bg-blue-500/10 border-l-4 border-l-blue-500 border-t-blue-500/30 border-r-blue-500/30 border-b-blue-500/30'
+                    : 'bg-slate-900/50 border-slate-700/30 hover:border-slate-600/50 hover:bg-slate-900/70'
+                }`}
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className={`flex-shrink-0 w-2 h-2 rounded-full ${dotColor}`} />
-                    <span className="text-sm font-semibold text-white truncate">
+                    <span className={`text-sm truncate ${isSelected ? 'font-bold text-blue-300' : 'font-semibold text-white'}`}>
                       {ns.name}
                     </span>
                   </div>
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 transition-colors flex-shrink-0" />
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {isSelected && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); clearNamespace(); }}
+                        className="w-5 h-5 rounded flex items-center justify-center text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 transition-colors"
+                        title="Clear namespace filter"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <ChevronRight className={`w-3.5 h-3.5 transition-colors ${isSelected ? 'text-blue-400' : 'text-slate-600 group-hover:text-slate-400'}`} />
+                  </div>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="flex flex-col items-center bg-slate-800/60 rounded-md py-1.5 px-1">

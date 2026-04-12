@@ -286,7 +286,8 @@ pub async fn service_map(State(state): State<Arc<AppState>>) -> Json<serde_json:
     let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
 
     let mut svc_set = std::collections::HashSet::new();
-    let mut edge_map: std::collections::HashMap<(String, String), (String, u64)> =
+    // (protocol, flow_count, dropped_count)
+    let mut edge_map: std::collections::HashMap<(String, String), (String, u64, u64)> =
         std::collections::HashMap::new();
 
     for flow in &flows {
@@ -311,8 +312,11 @@ pub async fn service_map(State(state): State<Arc<AppState>>) -> Json<serde_json:
         } else {
             flow.protocol.clone()
         };
-        let entry = edge_map.entry(key).or_insert((proto, 0));
+        let entry = edge_map.entry(key).or_insert((proto, 0, 0));
         entry.1 += 1;
+        if flow.verdict == "DROPPED" {
+            entry.2 += 1;
+        }
     }
 
     let nodes: Vec<serde_json::Value> = svc_set
@@ -322,8 +326,16 @@ pub async fn service_map(State(state): State<Arc<AppState>>) -> Json<serde_json:
 
     let edges: Vec<serde_json::Value> = edge_map
         .iter()
-        .map(|((src, dst), (proto, count))| {
-            serde_json::json!({ "source": src, "target": dst, "protocol": proto, "flow_count": count })
+        .map(|((src, dst), (proto, count, dropped))| {
+            let error_rate = if *count > 0 { (*dropped as f64 / *count as f64) * 100.0 } else { 0.0 };
+            serde_json::json!({
+                "source": src,
+                "target": dst,
+                "protocol": proto,
+                "flow_count": count,
+                "dropped_count": dropped,
+                "error_rate": (error_rate * 100.0).round() / 100.0
+            })
         })
         .collect();
 

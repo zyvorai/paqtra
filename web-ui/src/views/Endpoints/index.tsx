@@ -8,6 +8,7 @@ import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
 import EmptyState from '../../components/EmptyState';
+import { useNamespaceStore } from '../../stores/namespaceStore';
 
 const STATUS_BADGE: Record<string, string> = {
   ready: 'bg-green-500/15 text-green-400 border-green-500/30',
@@ -23,6 +24,7 @@ const ENFORCEMENT_BADGE: Record<string, string> = {
 
 const Endpoints: React.FC = () => {
   usePageTitle('Endpoints');
+  const { selectedNamespace } = useNamespaceStore();
   const [endpoints, setEndpoints] = useState<CiliumEndpoint[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -37,9 +39,15 @@ const Endpoints: React.FC = () => {
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
+  // Apply global namespace filter, then local search filter
+  const namespacedEndpoints = useMemo(() => {
+    if (!selectedNamespace) return endpoints;
+    return endpoints.filter((e) => e.namespace === selectedNamespace);
+  }, [endpoints, selectedNamespace]);
+
   const filtered = useMemo(() => search
-    ? endpoints.filter((e) => e.name.toLowerCase().includes(search.toLowerCase()) || e.namespace.toLowerCase().includes(search.toLowerCase()) || e.labels.some((l) => l.toLowerCase().includes(search.toLowerCase())))
-    : endpoints, [endpoints, search]);
+    ? namespacedEndpoints.filter((e) => e.name.toLowerCase().includes(search.toLowerCase()) || e.namespace.toLowerCase().includes(search.toLowerCase()) || e.labels.some((l) => l.toLowerCase().includes(search.toLowerCase())))
+    : namespacedEndpoints, [namespacedEndpoints, search]);
 
   // Keep pagination total in sync with filtered count and reset page on search change
   useMemo(() => { pagination.setTotal(filtered.length); pagination.resetPage(); }, [filtered.length]); // eslint-disable-line react-hooks/exhaustive-deps

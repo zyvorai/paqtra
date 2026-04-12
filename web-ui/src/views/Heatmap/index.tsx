@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Grid3X3, Loader2 } from 'lucide-react';
 import { fetchHeatmapData, HeatmapCell } from '../../services/api';
 import { isAxiosError } from 'axios';
@@ -6,6 +7,7 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import { useNamespaceStore } from '../../stores/namespaceStore';
 
 function cellColor(count: number, max: number): string {
   if (max === 0) return 'bg-slate-900/50';
@@ -26,6 +28,8 @@ function droppedColor(count: number): string {
 
 const Heatmap: React.FC = () => {
   usePageTitle('Traffic Heatmap');
+  const { selectedNamespace } = useNamespaceStore();
+  const navigate = useNavigate();
   const [cells, setCells] = useState<HeatmapCell[]>([]);
   const [namespaces, setNamespaces] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -78,18 +82,19 @@ const Heatmap: React.FC = () => {
             <div className="flex">
               <div className="w-32 flex-shrink-0" />
               {namespaces.map((ns) => (
-                <div key={ns} className="w-28 flex-shrink-0 text-center text-xs font-medium text-slate-400 pb-2 truncate">{ns}</div>
+                <div key={ns} className={`w-28 flex-shrink-0 text-center text-xs font-medium pb-2 truncate ${selectedNamespace && ns === selectedNamespace ? 'text-blue-300 font-bold' : 'text-slate-400'}`}>{ns}</div>
               ))}
             </div>
             {/* Data rows */}
             {namespaces.map((src) => (
-              <div key={src} className="flex items-center">
-                <div className="w-32 flex-shrink-0 text-xs font-medium text-slate-400 pr-3 truncate text-right">{src}</div>
+              <div key={src} className={`flex items-center ${selectedNamespace && src === selectedNamespace ? 'bg-blue-500/5 rounded' : ''}`}>
+                <div className={`w-32 flex-shrink-0 text-xs pr-3 truncate text-right ${selectedNamespace && src === selectedNamespace ? 'font-bold text-blue-300' : 'font-medium text-slate-400'}`}>{src}</div>
                 {namespaces.map((dst) => {
                   const cell = getCell(src, dst);
                   return (
-                    <div key={dst} className="w-28 h-16 flex-shrink-0 p-1" title={`${src} → ${dst}: ${cell?.flow_count ?? 0} flows, ${cell?.dropped_count ?? 0} drops`}>
-                      <div className={`w-full h-full rounded-lg flex flex-col items-center justify-center ${cellColor(cell?.flow_count ?? 0, maxFlows)} transition-colors`}>
+                    <div key={dst} className={`w-28 h-16 flex-shrink-0 p-1 cursor-pointer ${selectedNamespace && (src === selectedNamespace || dst === selectedNamespace) ? 'bg-blue-500/5' : ''}`} title={`${src} → ${dst}: ${cell?.flow_count ?? 0} flows, ${cell?.dropped_count ?? 0} drops — Click to view flows`}
+                      onClick={() => navigate(`/flows?namespace=${encodeURIComponent(src)}&search=${encodeURIComponent(dst)}`)}>
+                      <div className={`w-full h-full rounded-lg flex flex-col items-center justify-center ${cellColor(cell?.flow_count ?? 0, maxFlows)} transition-colors hover:ring-2 hover:ring-blue-400/50 ${selectedNamespace && (src === selectedNamespace || dst === selectedNamespace) ? 'ring-1 ring-blue-400/30' : ''}`}>
                         {cell ? (
                           <>
                             <span className="text-xs font-bold text-white">{cell.flow_count >= 1000 ? `${(cell.flow_count / 1000).toFixed(1)}k` : cell.flow_count}</span>
@@ -130,8 +135,11 @@ const Heatmap: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {[...cells].sort((a, b) => b.flow_count - a.flow_count).map((c, i) => (
-              <tr key={i} className="border-b border-slate-700/30 table-row-hover">
+            {[...cells]
+              .filter((c) => !selectedNamespace || c.source_namespace === selectedNamespace || c.destination_namespace === selectedNamespace)
+              .sort((a, b) => b.flow_count - a.flow_count).map((c, i) => (
+              <tr key={i} className="border-b border-slate-700/30 table-row-hover cursor-pointer"
+                onClick={() => navigate(`/flows?namespace=${encodeURIComponent(c.source_namespace)}&search=${encodeURIComponent(c.destination_namespace ?? c.dest_namespace)}`)}>
                 <td className="px-4 py-2.5 font-medium text-white">{c.source_namespace}</td>
                 <td className="px-4 py-2.5 font-medium text-white">{c.destination_namespace}</td>
                 <td className="px-4 py-2.5 text-right">{(c.flow_count ?? 0).toLocaleString()}</td>
