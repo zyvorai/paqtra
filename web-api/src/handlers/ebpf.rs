@@ -18,17 +18,44 @@ use crate::AppState;
 // ---------------------------------------------------------------------------
 
 async fn run_bpftool(args: &[&str]) -> Result<Value, String> {
+    // Try local bpftool first
     let fut = tokio::process::Command::new("bpftool").args(args).output();
+    match tokio::time::timeout(Duration::from_secs(5), fut).await {
+        Ok(Ok(output)) if output.status.success() => {
+            return serde_json::from_slice(&output.stdout)
+                .map_err(|e| format!("Parse error: {}", e));
+        }
+        _ => {}
+    }
 
-    let output = tokio::time::timeout(Duration::from_secs(5), fut)
+    // Fallback: run bpftool via kubectl exec into a Cilium agent pod
+    let mut kubectl_args = vec![
+        "exec",
+        "-n",
+        "kube-system",
+        "-l",
+        "k8s-app=cilium",
+        "-c",
+        "cilium-agent",
+        "--",
+        "bpftool",
+    ];
+    kubectl_args.extend_from_slice(args);
+
+    let fut = tokio::process::Command::new("kubectl")
+        .args(&kubectl_args)
+        .output();
+
+    let output = tokio::time::timeout(Duration::from_secs(10), fut)
         .await
-        .map_err(|_| "bpftool timed out after 5 seconds".to_string())?
-        .map_err(|e| format!("bpftool not available: {}", e))?;
+        .map_err(|_| "bpftool timed out (tried local and kubectl exec)".to_string())?
+        .map_err(|e| format!("bpftool not available locally or via kubectl: {}", e))?;
 
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
-            "bpftool failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "bpftool unavailable (tried local and kubectl exec into cilium-agent): {}",
+            stderr.trim()
         ));
     }
 
@@ -139,16 +166,15 @@ pub async fn list_real_programs(
 
     let progs = match run_bpftool(&["prog", "list", "-j"]).await {
         Ok(v) => v,
-        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
+        Err(_) => {
+            return Ok(Json(paginate_json(vec![], &params, "programs")));
+        }
     };
 
     let arr = match progs.as_array() {
         Some(a) => a,
         None => {
-            return Err(error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "unexpected bpftool output",
-            ))
+            return Ok(Json(paginate_json(vec![], &params, "programs")));
         }
     };
 
@@ -193,18 +219,13 @@ pub async fn list_real_maps(
 
     let maps = match run_bpftool(&["map", "list", "-j"]).await {
         Ok(v) => v,
-        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
-    };
-
-    let arr = match maps.as_array() {
-        Some(a) => a,
-        None => {
-            return Err(error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "unexpected bpftool output",
-            ))
+        Err(_) => {
+            return Ok(Json(paginate_json(vec![], &params, "maps")));
         }
     };
+
+    let empty = vec![];
+    let arr = maps.as_array().unwrap_or(&empty);
 
     let items: Vec<Value> = arr
         .iter()
@@ -317,7 +338,13 @@ pub async fn get_conntrack(
 
     let maps = match run_bpftool(&["map", "list", "-j"]).await {
         Ok(v) => v,
-        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
+        Err(_) => {
+            return Ok(Json(json!({
+                "entries": [],
+                "total": 0,
+                "message": "eBPF maps not accessible"
+            })));
+        }
     };
 
     let map_arr = maps.as_array().cloned().unwrap_or_default();
@@ -429,17 +456,25 @@ pub async fn get_ipcache(
 
     let maps = match run_bpftool(&["map", "list", "-j"]).await {
         Ok(v) => v,
-        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
+        Err(_) => {
+            // bpftool not available — return empty result instead of error
+            return Ok(Json(json!({
+                "entries": [],
+                "total": 0,
+                "message": "eBPF maps not accessible (bpftool unavailable or no Cilium agent found)"
+            })));
+        }
     };
     let map_arr = maps.as_array().cloned().unwrap_or_default();
 
     let ipcache_map = match find_map_by_name(&map_arr, "cilium_ipcache") {
         Some(m) => m,
         None => {
-            return Err(error_response(
-                StatusCode::NOT_FOUND,
-                "cilium_ipcache map not found",
-            ))
+            return Ok(Json(json!({
+                "entries": [],
+                "total": 0,
+                "message": "cilium_ipcache map not found — Cilium may not be installed"
+            })));
         }
     };
     let mid = match map_id(ipcache_map) {
@@ -515,17 +550,16 @@ pub async fn get_lb_backends(
 
     let maps = match run_bpftool(&["map", "list", "-j"]).await {
         Ok(v) => v,
-        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
+        Err(_) => {
+            return Ok(Json(paginate_json(vec![], &params, "services")));
+        }
     };
     let map_arr = maps.as_array().cloned().unwrap_or_default();
 
     let lb_map = match find_map_by_name(&map_arr, "cilium_lb4_serv") {
         Some(m) => m,
         None => {
-            return Err(error_response(
-                StatusCode::NOT_FOUND,
-                "cilium_lb4_serv map not found",
-            ))
+            return Ok(Json(paginate_json(vec![], &params, "services")));
         }
     };
     let mid = match map_id(lb_map) {
@@ -620,17 +654,16 @@ pub async fn get_drop_stats(
 
     let maps = match run_bpftool(&["map", "list", "-j"]).await {
         Ok(v) => v,
-        Err(e) => return Err(error_response(StatusCode::INTERNAL_SERVER_ERROR, &e)),
+        Err(_) => {
+            return Ok(Json(paginate_json(vec![], &params, "drops")));
+        }
     };
     let map_arr = maps.as_array().cloned().unwrap_or_default();
 
     let metrics_map = match find_map_by_name(&map_arr, "cilium_metrics") {
         Some(m) => m,
         None => {
-            return Err(error_response(
-                StatusCode::NOT_FOUND,
-                "cilium_metrics map not found",
-            ))
+            return Ok(Json(paginate_json(vec![], &params, "drops")));
         }
     };
     let mid = match map_id(metrics_map) {
