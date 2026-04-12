@@ -541,18 +541,71 @@ async fn main() -> anyhow::Result<()> {
         .layer(middleware::cors::cors_layer())
         .layer(TraceLayer::new_for_http());
 
-    // Start server (port 0 = OS-assigned random port)
-    let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    let actual_addr = listener.local_addr()?;
-    tracing::info!("Starting Cilium Vision API server on {}", actual_addr);
+    // Start server — with optional TLS
+    if let (Some(cert_path), Some(key_path)) = (&config.tls_cert_path, &config.tls_key_path) {
+        // ── HTTPS mode: TLS server + HTTP redirect ──────────────────
+        let tls_port = config.tls_port;
+        let tls_addr: SocketAddr = format!("{}:{}", config.host, tls_port).parse()?;
+        let http_addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
 
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal())
-    .await?;
+        let tls_config =
+            axum_server::tls_rustls::RustlsConfig::from_pem_file(cert_path, key_path).await?;
+        tracing::info!(
+            "TLS configured (cert={}, key={})",
+            cert_path,
+            key_path
+        );
+
+        // HTTP redirect router — sends all requests to HTTPS
+        let redirect_tls_port = tls_port;
+        let redirect_app = Router::new().fallback(
+            move |req: axum::http::Request<axum::body::Body>| async move {
+                let host_header = req
+                    .headers()
+                    .get(axum::http::header::HOST)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("localhost")
+                    .to_owned();
+                let host = host_header.split(':').next().unwrap_or(&host_header);
+                let path = req.uri().path();
+                let https_uri = format!("https://{}:{}{}", host, redirect_tls_port, path);
+                axum::response::Redirect::permanent(&https_uri)
+            },
+        );
+
+        let http_listener = tokio::net::TcpListener::bind(http_addr).await?;
+        tracing::info!(
+            "HTTP redirect server listening on {} -> https://...:{}", http_addr, tls_port
+        );
+
+        tracing::info!("Starting Cilium Vision API server (HTTPS) on {}", tls_addr);
+
+        tokio::select! {
+            res = axum_server::bind_rustls(tls_addr, tls_config)
+                .serve(app.into_make_service_with_connect_info::<SocketAddr>()) => {
+                res?;
+            }
+            res = axum::serve(
+                http_listener,
+                redirect_app.into_make_service_with_connect_info::<SocketAddr>(),
+            ).with_graceful_shutdown(shutdown_signal()) => {
+                res?;
+            }
+        }
+    } else {
+        // ── Plain HTTP mode (unchanged behaviour) ───────────────────
+        let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        let actual_addr = listener.local_addr()?;
+        tracing::info!("Starting Cilium Vision API server on {}", actual_addr);
+
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+    }
 
     tracing::info!("Server shut down gracefully");
     Ok(())

@@ -425,6 +425,34 @@ if [ -f /etc/cilium-vision/config.env ]; then
     fi
 fi
 
+# Generate self-signed TLS certificate if none exists
+if [ ! -f /etc/cilium-vision/tls.crt ]; then
+    echo "  Generating self-signed TLS certificate..."
+    openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout /etc/cilium-vision/tls.key \
+        -out /etc/cilium-vision/tls.crt \
+        -days 365 \
+        -subj "/CN=cilium-vision/O=cilium-vision" \
+        -addext "subjectAltName=IP:\$(hostname -I | awk '{print \$1}')"
+    chmod 600 /etc/cilium-vision/tls.key
+    echo "  ✅ TLS certificate generated"
+fi
+
+# Add TLS config if not already present
+if ! grep -q "TLS_CERT_PATH" /etc/cilium-vision/config.env; then
+    echo "TLS_CERT_PATH=/etc/cilium-vision/tls.crt" | sudo tee -a /etc/cilium-vision/config.env > /dev/null
+    echo "TLS_KEY_PATH=/etc/cilium-vision/tls.key" | sudo tee -a /etc/cilium-vision/config.env > /dev/null
+    echo "TLS_PORT=443" | sudo tee -a /etc/cilium-vision/config.env > /dev/null
+fi
+
+# Open HTTPS port in firewall
+if command -v firewall-cmd &>/dev/null; then
+    firewall-cmd --permanent --add-port=443/tcp 2>/dev/null || true
+    firewall-cmd --reload 2>/dev/null || true
+elif command -v ufw &>/dev/null; then
+    ufw allow 443/tcp 2>/dev/null || true
+fi
+
 # Run installer for services/config
 bash install.sh setup-services
 bash install.sh start
@@ -666,8 +694,9 @@ main() {
     echo "✅    Deployment complete: ${TARGET_HOST}"
     echo "✅ ══════════════════════════════════════════════════"
     echo ""
-    echo "  API:  http://${TARGET_HOST}:9191"
-    echo "  UI:   http://${TARGET_HOST}:3001"
+    echo "  HTTPS: https://${TARGET_HOST}:443"
+    echo "  HTTP:  http://${TARGET_HOST}:9191  (redirects to HTTPS)"
+    echo "  UI:    https://${TARGET_HOST}:443"
     echo ""
 }
 

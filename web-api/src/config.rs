@@ -27,6 +27,12 @@ pub struct Config {
     /// Service name reported in exported spans. Defaults to "cilium-vision-api".
     /// Read from OTEL_SERVICE_NAME env var.
     pub otel_service_name: String,
+    /// Path to TLS certificate file (PEM format). When set with tls_key_path, enables HTTPS.
+    pub tls_cert_path: Option<String>,
+    /// Path to TLS private key file (PEM format).
+    pub tls_key_path: Option<String>,
+    /// Port for HTTPS when TLS is enabled. Defaults to 9443.
+    pub tls_port: u16,
 }
 
 impl Config {
@@ -117,6 +123,11 @@ impl Config {
             otel_endpoint: env::var("OTEL_EXPORTER_ENDPOINT").ok(),
             otel_service_name: env::var("OTEL_SERVICE_NAME")
                 .unwrap_or_else(|_| "cilium-vision-api".to_string()),
+            tls_cert_path: env::var("TLS_CERT_PATH").ok().filter(|s| !s.is_empty()),
+            tls_key_path: env::var("TLS_KEY_PATH").ok().filter(|s| !s.is_empty()),
+            tls_port: env::var("TLS_PORT")
+                .unwrap_or_else(|_| "9443".to_string())
+                .parse()?,
         })
     }
 }

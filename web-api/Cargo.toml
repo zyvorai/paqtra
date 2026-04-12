@@ -8,6 +8,7 @@ description = "REST API server for Cilium Vision web application"
 [dependencies]
 # Web framework
 axum = { version = "0.8.8", features = ["ws", "macros"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "fs"] }
 
