@@ -53,40 +53,10 @@ pub async fn wireguard_peers(
         })));
     }
 
-    // Fallback to sample data if cilium is not available
+    // No real WireGuard data available
     Ok(Json(serde_json::json!({
-        "peers": [
-            {
-                "public_key": "aB3dEfGhIjKlMnOpQrStUvWxYz0123456789abc=",
-                "endpoint": "10.0.1.6:51871",
-                "allowed_ips": ["10.244.1.0/24", "10.244.4.0/24"],
-                "latest_handshake": "2026-04-03T11:59:42Z",
-                "transfer_rx": 328_177_366,
-                "transfer_tx": 252_070_133,
-                "persistent_keepalive": 25,
-                "node": "cilium-node-2"
-            },
-            {
-                "public_key": "xY9wVuTsRqPoNmLkJiHgFeDcBa9876543210zyx=",
-                "endpoint": "10.0.1.7:51871",
-                "allowed_ips": ["10.244.2.0/24", "10.244.5.0/24"],
-                "latest_handshake": "2026-04-03T11:59:38Z",
-                "transfer_rx": 412_560_200,
-                "transfer_tx": 301_440_800,
-                "persistent_keepalive": 25,
-                "node": "cilium-node-3"
-            },
-            {
-                "public_key": "mN5oP6qR7sT8uV9wX0yZ1aB2cD3eF4gH5iJ6kL=",
-                "endpoint": "10.0.1.5:51871",
-                "allowed_ips": ["10.244.0.0/24", "10.244.3.0/24"],
-                "latest_handshake": "2026-04-03T11:59:45Z",
-                "transfer_rx": 243_794_534,
-                "transfer_tx": 202_699_467,
-                "persistent_keepalive": 25,
-                "node": "cilium-node-1"
-            }
-        ]
+        "peers": [],
+        "message": "WireGuard encryption not detected or cilium agent unreachable"
     })))
 }
 
@@ -279,62 +249,7 @@ pub async fn list_slos(
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
     let stored = state.cache.list_values(SLOS_PREFIX).await.unwrap_or_default();
-    if !stored.is_empty() {
-        return Json(paginate_json(stored, &params, "slos"));
-    }
-    // Seed defaults
-    let items: Vec<serde_json::Value> = vec![
-        serde_json::json!({
-            "name": "api-availability",
-            "service": "api-gateway",
-            "metric": "availability",
-            "target": 99.95,
-            "current": 99.98,
-            "budget_remaining": 0.87,
-            "budget_total": 1.0,
-            "window": "30d",
-            "status": "met"
-        }),
-        serde_json::json!({
-            "name": "api-latency-p99",
-            "service": "api-gateway",
-            "metric": "latency_p99",
-            "target": 200.0,
-            "current": 120.8,
-            "budget_remaining": 0.92,
-            "budget_total": 1.0,
-            "window": "30d",
-            "status": "met"
-        }),
-        serde_json::json!({
-            "name": "frontend-error-rate",
-            "service": "frontend",
-            "metric": "error_rate",
-            "target": 0.1,
-            "current": 0.08,
-            "budget_remaining": 0.45,
-            "budget_total": 1.0,
-            "window": "30d",
-            "status": "met"
-        }),
-        serde_json::json!({
-            "name": "dns-resolution",
-            "service": "coredns",
-            "metric": "latency_p95",
-            "target": 10.0,
-            "current": 12.4,
-            "budget_remaining": 0.0,
-            "budget_total": 1.0,
-            "window": "7d",
-            "status": "breached"
-        }),
-    ];
-    for slo in &items {
-        if let Some(name) = slo.get("name").and_then(|v| v.as_str()) {
-            let _ = state.cache.set_persistent(&format!("{}{}", SLOS_PREFIX, name), slo).await;
-        }
-    }
-    Json(paginate_json(items, &params, "slos"))
+    Json(paginate_json(stored, &params, "slos"))
 }
 
 // ── Incidents ─────────────────────────────────────────────
@@ -345,52 +260,7 @@ pub async fn list_incidents(
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
     let stored = state.cache.list_values(INCIDENTS_PREFIX).await.unwrap_or_default();
-    if !stored.is_empty() {
-        return Json(paginate_json(stored, &params, "incidents"));
-    }
-    // Seed defaults
-    let items: Vec<serde_json::Value> = vec![
-        serde_json::json!({
-            "id": "inc-001",
-            "title": "Elevated packet drops on cilium-node-3",
-            "severity": "warning",
-            "status": "resolved",
-            "started_at": "2026-04-01T14:22:00Z",
-            "resolved_at": "2026-04-01T15:05:00Z",
-            "duration_minutes": 43,
-            "affected_services": ["api-gateway", "frontend"],
-            "root_cause": "BPF map overflow due to stale CT entries",
-            "timeline": [
-                { "timestamp": "2026-04-01T14:22:00Z", "event": "Alert triggered: packet drop rate > 50/s on cilium-node-3", "actor": "alertmanager" },
-                { "timestamp": "2026-04-01T14:25:00Z", "event": "On-call engineer acknowledged", "actor": "ops-team" },
-                { "timestamp": "2026-04-01T14:40:00Z", "event": "Root cause identified: CT map at 98% capacity", "actor": "ops-team" },
-                { "timestamp": "2026-04-01T14:50:00Z", "event": "CT GC interval reduced, stale entries purged", "actor": "ops-team" },
-                { "timestamp": "2026-04-01T15:05:00Z", "event": "Packet drop rate returned to normal", "actor": "system" }
-            ]
-        }),
-        serde_json::json!({
-            "id": "inc-002",
-            "title": "DNS resolution failures in staging namespace",
-            "severity": "critical",
-            "status": "investigating",
-            "started_at": "2026-04-03T09:15:00Z",
-            "resolved_at": null,
-            "duration_minutes": null,
-            "affected_services": ["grpc-backend", "worker-pool"],
-            "root_cause": null,
-            "timeline": [
-                { "timestamp": "2026-04-03T09:15:00Z", "event": "Alert triggered: DNS SERVFAIL rate > 10% in staging", "actor": "alertmanager" },
-                { "timestamp": "2026-04-03T09:18:00Z", "event": "On-call engineer acknowledged", "actor": "ops-team" },
-                { "timestamp": "2026-04-03T09:30:00Z", "event": "CoreDNS pod logs show upstream timeout errors", "actor": "ops-team" }
-            ]
-        }),
-    ];
-    for inc in &items {
-        if let Some(id) = inc.get("id").and_then(|v| v.as_str()) {
-            let _ = state.cache.set_persistent(&format!("{}{}", INCIDENTS_PREFIX, id), inc).await;
-        }
-    }
-    Json(paginate_json(items, &params, "incidents"))
+    Json(paginate_json(stored, &params, "incidents"))
 }
 
 // ── Change Log ────────────────────────────────────────────
@@ -400,48 +270,55 @@ pub async fn list_changes(
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let items: Vec<serde_json::Value> = vec![
-        serde_json::json!({
-            "id": "chg-001",
-            "timestamp": "2026-04-03T10:30:00Z",
-            "type": "CiliumNetworkPolicy",
-            "resource": "allow-dns-egress",
-            "namespace": "production",
-            "diff_summary": "Added egress rule for UDP/53 to kube-dns",
-            "author": "platform-team",
-            "rollback_available": true
-        }),
-        serde_json::json!({
-            "id": "chg-002",
-            "timestamp": "2026-04-03T09:15:00Z",
-            "type": "CiliumClusterwideNetworkPolicy",
-            "resource": "deny-external-default",
-            "namespace": "",
-            "diff_summary": "Updated CIDR list: added 203.0.113.0/24 to deny list",
-            "author": "security-team",
-            "rollback_available": true
-        }),
-        serde_json::json!({
-            "id": "chg-003",
-            "timestamp": "2026-04-02T16:45:00Z",
-            "type": "Service",
-            "resource": "api-gateway",
-            "namespace": "production",
-            "diff_summary": "Changed service type from ClusterIP to LoadBalancer",
-            "author": "dev-team",
-            "rollback_available": false
-        }),
-        serde_json::json!({
-            "id": "chg-004",
-            "timestamp": "2026-04-02T14:00:00Z",
-            "type": "ConfigMap",
-            "resource": "cilium-config",
-            "namespace": "kube-system",
-            "diff_summary": "Enabled bandwidth manager, set devices=eth0",
-            "author": "platform-team",
-            "rollback_available": true
-        }),
-    ];
+
+    // Query real K8s events for policy and config changes
+    let data = state.k8s.kubectl_json(&[
+        "get", "events", "--all-namespaces",
+        "--field-selector", "reason=Updated,reason=Created,reason=Deleted",
+        "--sort-by=.lastTimestamp", "-o", "json",
+    ]).await;
+
+    let items: Vec<serde_json::Value> = data
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|events| {
+            events.iter().filter_map(|item| {
+                let involved = item.get("involvedObject")?;
+                let kind = involved.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+
+                // Only include CiliumNetworkPolicy and ConfigMap resources
+                if kind != "CiliumNetworkPolicy"
+                    && kind != "CiliumClusterwideNetworkPolicy"
+                    && kind != "ConfigMap"
+                {
+                    return None;
+                }
+
+                let meta = item.get("metadata").unwrap_or(item);
+                let uid = meta.get("uid").and_then(|v| v.as_str()).unwrap_or("");
+                let resource = involved.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let namespace = involved.get("namespace").and_then(|v| v.as_str()).unwrap_or("");
+                let reason = item.get("reason").and_then(|v| v.as_str()).unwrap_or("");
+                let message = item.get("message").and_then(|v| v.as_str()).unwrap_or("");
+                let timestamp = item.get("lastTimestamp")
+                    .or_else(|| item.get("firstTimestamp"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                Some(serde_json::json!({
+                    "id": uid,
+                    "timestamp": timestamp,
+                    "type": kind,
+                    "resource": resource,
+                    "namespace": namespace,
+                    "reason": reason,
+                    "diff_summary": message,
+                    "rollback_available": kind.contains("CiliumNetworkPolicy"),
+                }))
+            }).collect()
+        })
+        .unwrap_or_default();
+
     Json(paginate_json(items, &params, "changes"))
 }
 

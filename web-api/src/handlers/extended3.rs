@@ -24,22 +24,108 @@ fn default_target() -> String { "cluster".to_string() }
 
 pub async fn cost_breakdown(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
+
+    // Query all pods to compute resource requests per namespace
+    let data = state.k8s.kubectl_json(&[
+        "get", "pods", "--all-namespaces", "-o", "json",
+    ]).await;
+
+    let mut ns_resources: std::collections::HashMap<String, (f64, f64, u64)> =
+        std::collections::HashMap::new(); // (cpu_millicores, memory_mib, pod_count)
+
+    if let Some(items) = data.get("items").and_then(|v| v.as_array()) {
+        for item in items {
+            let ns = item.get("metadata")
+                .and_then(|m| m.get("namespace"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let containers = item.get("spec")
+                .and_then(|s| s.get("containers"))
+                .and_then(|v| v.as_array());
+            let mut pod_cpu: f64 = 0.0;
+            let mut pod_mem: f64 = 0.0;
+            if let Some(containers) = containers {
+                for c in containers {
+                    let resources = c.get("resources").and_then(|r| r.get("requests"));
+                    if let Some(req) = resources {
+                        if let Some(cpu_str) = req.get("cpu").and_then(|v| v.as_str()) {
+                            pod_cpu += parse_cpu_millis(cpu_str);
+                        }
+                        if let Some(mem_str) = req.get("memory").and_then(|v| v.as_str()) {
+                            pod_mem += parse_memory_mib(mem_str);
+                        }
+                    }
+                }
+            }
+            let entry = ns_resources.entry(ns).or_insert((0.0, 0.0, 0));
+            entry.0 += pod_cpu;
+            entry.1 += pod_mem;
+            entry.2 += 1;
+        }
+    }
+
+    let total_cpu: f64 = ns_resources.values().map(|v| v.0).sum();
+    let total_mem: f64 = ns_resources.values().map(|v| v.1).sum();
+
+    let mut namespaces: Vec<serde_json::Value> = ns_resources.iter().map(|(ns, (cpu, mem, pods))| {
+        let cpu_share = if total_cpu > 0.0 { cpu / total_cpu } else { 0.0 };
+        let mem_share = if total_mem > 0.0 { mem / total_mem } else { 0.0 };
+        serde_json::json!({
+            "namespace": ns,
+            "pod_count": pods,
+            "cpu_request_millicores": *cpu as u64,
+            "memory_request_mib": *mem as u64,
+            "cpu_share_percent": (cpu_share * 100.0 * 10.0).round() / 10.0,
+            "memory_share_percent": (mem_share * 100.0 * 10.0).round() / 10.0,
+            "relative_weight": ((cpu_share + mem_share) / 2.0 * 100.0 * 10.0).round() / 10.0,
+        })
+    }).collect();
+    namespaces.sort_by(|a, b| {
+        let wa = a.get("relative_weight").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let wb = b.get("relative_weight").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        wb.partial_cmp(&wa).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let total_pods: u64 = ns_resources.values().map(|v| v.2).sum();
     Json(serde_json::json!({
-        "namespaces": [
-            { "namespace": "production", "cpu_cost": 245.80, "memory_cost": 189.50, "network_cost": 67.20, "storage_cost": 120.00, "total_cost": 622.50, "trend": "+3.2%" },
-            { "namespace": "staging", "cpu_cost": 85.40, "memory_cost": 62.30, "network_cost": 18.90, "storage_cost": 45.00, "total_cost": 211.60, "trend": "-1.5%" },
-            { "namespace": "monitoring", "cpu_cost": 120.00, "memory_cost": 95.70, "network_cost": 42.10, "storage_cost": 200.00, "total_cost": 457.80, "trend": "+0.8%" },
-            { "namespace": "kube-system", "cpu_cost": 55.20, "memory_cost": 38.40, "network_cost": 12.60, "storage_cost": 25.00, "total_cost": 131.20, "trend": "+0.1%" },
-            { "namespace": "default", "cpu_cost": 32.10, "memory_cost": 24.80, "network_cost": 8.50, "storage_cost": 15.00, "total_cost": 80.40, "trend": "-0.3%" }
-        ],
+        "namespaces": namespaces,
         "summary": {
-            "total_monthly_cost": 1503.50,
-            "projected_annual_cost": 18042.00,
-            "cost_trend": "+1.8%",
-            "currency": "USD",
-            "billing_period": "2026-04"
+            "total_namespaces": ns_resources.len(),
+            "total_pods": total_pods,
+            "total_cpu_request_millicores": total_cpu as u64,
+            "total_memory_request_mib": total_mem as u64,
+            "note": "Resource-proportional breakdown from pod specs; actual cloud costs require billing API integration",
+            "source": "kubernetes pod resource requests",
         }
     }))
+}
+
+/// Parse a Kubernetes CPU quantity string (e.g. "100m", "0.5", "2") into millicores.
+fn parse_cpu_millis(s: &str) -> f64 {
+    if let Some(m) = s.strip_suffix('m') {
+        m.parse::<f64>().unwrap_or(0.0)
+    } else {
+        s.parse::<f64>().unwrap_or(0.0) * 1000.0
+    }
+}
+
+/// Parse a Kubernetes memory quantity string (e.g. "128Mi", "1Gi", "256000Ki") into MiB.
+fn parse_memory_mib(s: &str) -> f64 {
+    if let Some(v) = s.strip_suffix("Gi") {
+        v.parse::<f64>().unwrap_or(0.0) * 1024.0
+    } else if let Some(v) = s.strip_suffix("Mi") {
+        v.parse::<f64>().unwrap_or(0.0)
+    } else if let Some(v) = s.strip_suffix("Ki") {
+        v.parse::<f64>().unwrap_or(0.0) / 1024.0
+    } else if let Some(v) = s.strip_suffix('G') {
+        v.parse::<f64>().unwrap_or(0.0) * 1000.0 / 1.048576
+    } else if let Some(v) = s.strip_suffix('M') {
+        v.parse::<f64>().unwrap_or(0.0) * 1000.0 / 1048.576
+    } else {
+        // Plain bytes
+        s.parse::<f64>().unwrap_or(0.0) / (1024.0 * 1024.0)
+    }
 }
 
 // ── Forecast Metrics ───────────────────────────────────────
@@ -58,21 +144,53 @@ pub async fn forecast_data(
     axum::extract::Path(metric): axum::extract::Path<String>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
+
+    // Fetch recent Hubble flows and aggregate counts by hour
+    let flows = state.hubble.get_flows(5000, None).await.unwrap_or_default();
+    let now = chrono::Utc::now();
+
+    // Bucket flows by hour based on their timestamps
+    let mut hourly_counts: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    let mut hourly_dropped: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+
+    for flow in &flows {
+        // Parse the flow timestamp and truncate to hour
+        let hour_key = if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&flow.timestamp) {
+            ts.format("%Y-%m-%dT%H:00:00Z").to_string()
+        } else if flow.timestamp.len() >= 13 {
+            // Try truncating to hour even if not perfectly parseable
+            format!("{}:00:00Z", &flow.timestamp[..13])
+        } else {
+            continue;
+        };
+        *hourly_counts.entry(hour_key.clone()).or_insert(0) += 1;
+        if flow.verdict == "DROPPED" {
+            *hourly_dropped.entry(hour_key).or_insert(0) += 1;
+        }
+    }
+
+    let points: Vec<serde_json::Value> = hourly_counts.iter().map(|(hour, count)| {
+        let drops = hourly_dropped.get(hour).copied().unwrap_or(0);
+        serde_json::json!({
+            "timestamp": hour,
+            "flow_count": count,
+            "dropped_count": drops,
+            "forwarded_count": count - drops,
+        })
+    }).collect();
+
+    let total_flows: u64 = hourly_counts.values().sum();
+    let total_hours = hourly_counts.len();
+
     Json(serde_json::json!({
         "metric": metric,
-        "unit": "percent",
-        "forecast_horizon": "7d",
-        "points": [
-            { "timestamp": "2026-04-03T00:00:00Z", "actual": 42.5, "predicted": 43.1, "lower_bound": 38.2, "upper_bound": 48.0 },
-            { "timestamp": "2026-04-04T00:00:00Z", "actual": null, "predicted": 44.8, "lower_bound": 39.0, "upper_bound": 50.6 },
-            { "timestamp": "2026-04-05T00:00:00Z", "actual": null, "predicted": 46.2, "lower_bound": 39.8, "upper_bound": 52.6 },
-            { "timestamp": "2026-04-06T00:00:00Z", "actual": null, "predicted": 45.0, "lower_bound": 38.5, "upper_bound": 51.5 },
-            { "timestamp": "2026-04-07T00:00:00Z", "actual": null, "predicted": 47.3, "lower_bound": 40.1, "upper_bound": 54.5 },
-            { "timestamp": "2026-04-08T00:00:00Z", "actual": null, "predicted": 48.9, "lower_bound": 41.2, "upper_bound": 56.6 },
-            { "timestamp": "2026-04-09T00:00:00Z", "actual": null, "predicted": 50.1, "lower_bound": 42.0, "upper_bound": 58.2 }
-        ],
-        "model": "arima",
-        "confidence_interval": 0.95
+        "data_type": "actual_observations",
+        "source": "hubble flow counts aggregated by hour",
+        "total_flows_observed": total_flows,
+        "time_buckets": total_hours,
+        "points": points,
+        "observed_at": now.to_rfc3339(),
+        "note": "Forecasting (predicted/confidence intervals) requires Prometheus or an external time-series model; showing recent actual flow data",
     }))
 }
 

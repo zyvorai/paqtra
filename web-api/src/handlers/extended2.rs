@@ -174,21 +174,47 @@ pub async fn connectivity_test(
 
 // ── Audit Log ───────────────────────────────────────────────
 
+const AUDIT_LOG_PREFIX: &str = "cv:audit_log:";
+
 pub async fn audit_log(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    let entries = serde_json::json!([
-        { "id": "aud-001", "timestamp": "2026-04-03T10:05:00Z", "action": "policy.create", "actor": "admin@cilium", "resource": "CiliumNetworkPolicy/allow-dns", "namespace": "default", "details": "Created allow-dns policy", "outcome": "success" },
-        { "id": "aud-002", "timestamp": "2026-04-03T10:03:00Z", "action": "anomaly.remediate", "actor": "system/healer", "resource": "Anomaly/anom-003", "namespace": "default", "details": "Auto-remediated DNS timeout anomaly", "outcome": "success" },
-        { "id": "aud-003", "timestamp": "2026-04-03T09:55:00Z", "action": "policy.delete", "actor": "admin@cilium", "resource": "CiliumNetworkPolicy/legacy-allow-all", "namespace": "default", "details": "Removed overly permissive policy", "outcome": "success" },
-        { "id": "aud-004", "timestamp": "2026-04-03T09:45:00Z", "action": "chaos.run", "actor": "sre@team", "resource": "ChaosExperiment/latency-test", "namespace": "staging", "details": "Ran latency spike experiment", "outcome": "success" },
-        { "id": "aud-005", "timestamp": "2026-04-03T09:30:00Z", "action": "compliance.audit", "actor": "admin@cilium", "resource": "Framework/SOC2", "namespace": "-", "details": "SOC2 compliance audit completed: 72% score", "outcome": "success" },
-        { "id": "aud-006", "timestamp": "2026-04-03T09:15:00Z", "action": "policy.simulate", "actor": "dev@team", "resource": "CiliumNetworkPolicy/restrict-egress", "namespace": "production", "details": "Dry-run: 45 flows affected, risk=medium", "outcome": "success" }
-    ]);
-    Ok(Json(serde_json::json!({ "entries": entries, "total": 6 })))
+
+    // Log this access as an audit entry
+    let actor = claims
+        .as_ref()
+        .map(|c| c.sub.clone())
+        .unwrap_or_else(|| "anonymous".to_string());
+    let access_id = format!(
+        "aud-{}",
+        uuid::Uuid::new_v4().to_string().split('-').next().unwrap_or("000")
+    );
+    let access_entry = serde_json::json!({
+        "id": access_id,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "action": "audit_log.access",
+        "actor": actor,
+        "resource": "AuditLog",
+        "namespace": "-",
+        "details": "Audit log endpoint accessed",
+        "outcome": "success",
+    });
+    let _ = state
+        .cache
+        .set_persistent(&format!("{}{}", AUDIT_LOG_PREFIX, access_id), &access_entry)
+        .await;
+
+    // Retrieve all audit entries from cache
+    let entries = state
+        .cache
+        .list_values(AUDIT_LOG_PREFIX)
+        .await
+        .unwrap_or_default();
+    let total = entries.len();
+    Ok(Json(serde_json::json!({ "entries": entries, "total": total })))
 }
 
 // ── Alerts ──────────────────────────────────────────────────

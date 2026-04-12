@@ -125,116 +125,6 @@ pub async fn list_frameworks(
     })))
 }
 
-/// Build sample audit findings for a given framework.
-fn sample_findings(framework: &str) -> Vec<AuditFinding> {
-    match framework {
-        "pci-dss-4.0" => vec![
-            AuditFinding {
-                control_id: "PCI-1.3.1".to_string(),
-                title: "Restrict inbound traffic to system components in the CDE".to_string(),
-                status: "passed".to_string(),
-                severity: "high".to_string(),
-                description: "CiliumNetworkPolicy default-deny ingress is enforced on all \
-                              namespaces in the cardholder data environment."
-                    .to_string(),
-            },
-            AuditFinding {
-                control_id: "PCI-1.3.2".to_string(),
-                title: "Restrict outbound traffic from the CDE".to_string(),
-                status: "failed".to_string(),
-                severity: "high".to_string(),
-                description: "Namespace 'payment-processing' allows unrestricted egress to \
-                              the internet. A default-deny egress policy with explicit \
-                              allowlisting is required."
-                    .to_string(),
-            },
-            AuditFinding {
-                control_id: "PCI-2.2.7".to_string(),
-                title: "Encrypt all non-console administrative access".to_string(),
-                status: "passed".to_string(),
-                severity: "critical".to_string(),
-                description: "All inter-pod communication uses WireGuard transparent encryption \
-                              via Cilium. No unencrypted admin channels detected."
-                    .to_string(),
-            },
-            AuditFinding {
-                control_id: "PCI-6.5.4".to_string(),
-                title: "Insecure direct object references".to_string(),
-                status: "passed".to_string(),
-                severity: "medium".to_string(),
-                description: "L7 HTTP policies enforce path-based access control on all \
-                              API gateway endpoints."
-                    .to_string(),
-            },
-            AuditFinding {
-                control_id: "PCI-10.2.1".to_string(),
-                title: "Audit trails for all access to cardholder data".to_string(),
-                status: "failed".to_string(),
-                severity: "high".to_string(),
-                description: "Hubble flow logs are enabled but retention is set to 1 hour. \
-                              PCI-DSS requires a minimum of 90 days of audit trail retention."
-                    .to_string(),
-            },
-        ],
-        "soc2-type2" => vec![
-            AuditFinding {
-                control_id: "CC6.1".to_string(),
-                title: "Logical and physical access controls".to_string(),
-                status: "passed".to_string(),
-                severity: "high".to_string(),
-                description: "Network segmentation enforced via CiliumNetworkPolicy across \
-                              all production namespaces."
-                    .to_string(),
-            },
-            AuditFinding {
-                control_id: "CC6.6".to_string(),
-                title: "System boundary protections".to_string(),
-                status: "failed".to_string(),
-                severity: "medium".to_string(),
-                description: "Three namespaces (dev, staging, sandbox) lack default-deny \
-                              ingress policies."
-                    .to_string(),
-            },
-            AuditFinding {
-                control_id: "CC7.2".to_string(),
-                title: "System monitoring for anomalies".to_string(),
-                status: "passed".to_string(),
-                severity: "high".to_string(),
-                description: "Anomaly detection pipeline is active with 5-minute detection \
-                              windows and automated alerting."
-                    .to_string(),
-            },
-        ],
-        _ => vec![
-            AuditFinding {
-                control_id: "GEN-1.1".to_string(),
-                title: "Network segmentation".to_string(),
-                status: "passed".to_string(),
-                severity: "high".to_string(),
-                description: "Default-deny network policies are applied to production namespaces."
-                    .to_string(),
-            },
-            AuditFinding {
-                control_id: "GEN-2.1".to_string(),
-                title: "Encryption in transit".to_string(),
-                status: "passed".to_string(),
-                severity: "high".to_string(),
-                description: "WireGuard transparent encryption is enabled cluster-wide."
-                    .to_string(),
-            },
-            AuditFinding {
-                control_id: "GEN-3.1".to_string(),
-                title: "Audit logging".to_string(),
-                status: "failed".to_string(),
-                severity: "medium".to_string(),
-                description: "Flow log retention does not meet the framework's minimum \
-                              retention period."
-                    .to_string(),
-            },
-        ],
-    }
-}
-
 pub async fn run_audit(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
@@ -246,14 +136,182 @@ pub async fn run_audit(
     track_request(&state, |_| {}).await;
 
     let framework = &req.framework;
+    let mut findings = Vec::new();
 
-    let findings = sample_findings(framework);
+    // --- Check 1: Default-deny network policies per namespace ---
+    let policies = state.k8s.list_policies().await.unwrap_or_default();
+    let ns_json = state
+        .k8s
+        .kubectl_json(&["get", "namespaces", "-o", "json"])
+        .await;
+    let all_ns: Vec<String> = ns_json
+        .get("items")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|i| {
+                    i.get("metadata")
+                        .and_then(|m| m.get("name"))
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let ns_with_policies: std::collections::HashSet<String> =
+        policies.iter().map(|p| p.namespace.clone()).collect();
+
+    let ns_without: Vec<&str> = all_ns
+        .iter()
+        .filter(|ns| {
+            !ns_with_policies.contains(ns.as_str())
+                && !ns.starts_with("kube-")
+                && *ns != "kube-system"
+        })
+        .map(|s| s.as_str())
+        .collect();
+
+    if ns_without.is_empty() {
+        findings.push(AuditFinding {
+            control_id: format!("{}-NET-1", framework_prefix(framework)),
+            title: "Default-deny network policies".to_string(),
+            status: "passed".to_string(),
+            severity: "high".to_string(),
+            description: "All non-system namespaces have CiliumNetworkPolicy coverage."
+                .to_string(),
+        });
+    } else {
+        findings.push(AuditFinding {
+            control_id: format!("{}-NET-1", framework_prefix(framework)),
+            title: "Default-deny network policies".to_string(),
+            status: "failed".to_string(),
+            severity: "high".to_string(),
+            description: format!(
+                "The following namespaces lack CiliumNetworkPolicy coverage: {}",
+                ns_without.join(", ")
+            ),
+        });
+    }
+
+    // --- Check 2: Hubble monitoring enabled ---
+    let hubble_healthy = state.hubble.is_healthy().await;
+    if hubble_healthy {
+        findings.push(AuditFinding {
+            control_id: format!("{}-MON-1", framework_prefix(framework)),
+            title: "Network flow monitoring".to_string(),
+            status: "passed".to_string(),
+            severity: "high".to_string(),
+            description: "Hubble relay is reachable and actively monitoring network flows."
+                .to_string(),
+        });
+    } else {
+        findings.push(AuditFinding {
+            control_id: format!("{}-MON-1", framework_prefix(framework)),
+            title: "Network flow monitoring".to_string(),
+            status: "failed".to_string(),
+            severity: "critical".to_string(),
+            description: "Hubble relay is unreachable. Network flow monitoring is not operational."
+                .to_string(),
+        });
+    }
+
+    // --- Check 3: Encryption status via cilium-config ConfigMap ---
+    let cilium_cfg = state
+        .k8s
+        .kubectl_json(&[
+            "get",
+            "configmap",
+            "cilium-config",
+            "-n",
+            "kube-system",
+            "-o",
+            "json",
+        ])
+        .await;
+    let encryption_enabled = cilium_cfg
+        .get("data")
+        .and_then(|d| d.get("enable-wireguard"))
+        .and_then(|v| v.as_str())
+        .map(|v| v == "true")
+        .unwrap_or(false)
+        || cilium_cfg
+            .get("data")
+            .and_then(|d| d.get("encrypt-node"))
+            .and_then(|v| v.as_str())
+            .map(|v| v == "true")
+            .unwrap_or(false)
+        || cilium_cfg
+            .get("data")
+            .and_then(|d| d.get("enable-ipsec"))
+            .and_then(|v| v.as_str())
+            .map(|v| v == "true")
+            .unwrap_or(false);
+
+    if encryption_enabled {
+        findings.push(AuditFinding {
+            control_id: format!("{}-ENC-1", framework_prefix(framework)),
+            title: "Encryption in transit".to_string(),
+            status: "passed".to_string(),
+            severity: "critical".to_string(),
+            description: "Transparent encryption (WireGuard or IPsec) is enabled in the Cilium \
+                          configuration."
+                .to_string(),
+        });
+    } else {
+        findings.push(AuditFinding {
+            control_id: format!("{}-ENC-1", framework_prefix(framework)),
+            title: "Encryption in transit".to_string(),
+            status: "failed".to_string(),
+            severity: "critical".to_string(),
+            description: "No transparent encryption (WireGuard or IPsec) is enabled in the \
+                          cilium-config ConfigMap. Inter-pod traffic may be unencrypted."
+                .to_string(),
+        });
+    }
+
+    // --- Check 4: Dropped flows ---
+    let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
+    let dropped_count = flows.iter().filter(|f| f.verdict == "DROPPED").count();
+    let total_flows = flows.len();
+
+    if dropped_count == 0 {
+        findings.push(AuditFinding {
+            control_id: format!("{}-DRP-1", framework_prefix(framework)),
+            title: "Dropped network flows".to_string(),
+            status: "passed".to_string(),
+            severity: "medium".to_string(),
+            description: format!(
+                "No dropped flows detected in the last {} observed flows.",
+                total_flows
+            ),
+        });
+    } else {
+        let drop_pct = if total_flows > 0 {
+            (dropped_count as f64 / total_flows as f64 * 100.0 * 10.0).round() / 10.0
+        } else {
+            0.0
+        };
+        findings.push(AuditFinding {
+            control_id: format!("{}-DRP-1", framework_prefix(framework)),
+            title: "Dropped network flows".to_string(),
+            status: "failed".to_string(),
+            severity: "medium".to_string(),
+            description: format!(
+                "{} of {} observed flows were dropped ({:.1}%). Investigate policy \
+                 denials or misconfigured endpoints.",
+                dropped_count, total_flows, drop_pct
+            ),
+        });
+    }
+
     let total_controls = findings.len() as u32;
     let passed = findings.iter().filter(|f| f.status == "passed").count() as u32;
     let failed = findings.iter().filter(|f| f.status == "failed").count() as u32;
     let skipped = total_controls - passed - failed;
     let score = if total_controls > 0 {
-        (passed as f64 / total_controls as f64) * 100.0
+        (passed as f64 / total_controls as f64 * 100.0 * 10.0).round() / 10.0
     } else {
         0.0
     };
@@ -273,6 +331,19 @@ pub async fn run_audit(
     };
 
     Ok(Json(to_json(&audit)))
+}
+
+/// Map a framework ID to a short prefix for control IDs.
+fn framework_prefix(framework: &str) -> &str {
+    match framework {
+        "pci-dss-4.0" => "PCI",
+        "soc2-type2" => "SOC2",
+        "hipaa" => "HIPAA",
+        "gdpr" => "GDPR",
+        "iso27001-2022" => "ISO",
+        "nist-csf-2.0" => "NIST",
+        _ => "GEN",
+    }
 }
 
 pub async fn security_posture(

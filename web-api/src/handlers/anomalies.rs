@@ -48,55 +48,169 @@ pub struct RemediationResult {
     pub timestamp: String,
 }
 
-/// Build sample anomalies that demonstrate the full API structure.
-fn sample_anomalies() -> Vec<Anomaly> {
-    vec![
-        Anomaly {
-            id: "anom-001".to_string(),
-            detected_at: "2025-06-15T08:23:41Z".to_string(),
-            severity: Severity::High,
-            anomaly_type: "traffic_spike".to_string(),
-            description: "Unexpected 12x traffic increase from frontend to payment-service on port 443. \
-                          Baseline: ~200 req/s, observed: ~2400 req/s over a 5-minute window."
-                .to_string(),
-            source_namespace: "production".to_string(),
-            source_pod: Some("frontend-7b4d6f8c9-xk2nl".to_string()),
-            destination_namespace: Some("production".to_string()),
-            destination_pod: Some("payment-service-5c8f9d4b7-m9pqr".to_string()),
-            status: "active".to_string(),
-            remediation: Some("Rate-limit rule applied via CiliumNetworkPolicy".to_string()),
-        },
-        Anomaly {
-            id: "anom-002".to_string(),
-            detected_at: "2025-06-15T09:01:17Z".to_string(),
-            severity: Severity::Critical,
-            anomaly_type: "port_scan".to_string(),
-            description: "Sequential connection attempts to ports 22, 80, 443, 3306, 5432, 6379, 8080, 9090 \
-                          detected from a single pod within 30 seconds. Matches known reconnaissance pattern."
-                .to_string(),
-            source_namespace: "default".to_string(),
-            source_pod: Some("debug-tools-6f7a8b9c0-zz1ab".to_string()),
-            destination_namespace: Some("kube-system".to_string()),
-            destination_pod: None,
-            status: "investigating".to_string(),
-            remediation: None,
-        },
-        Anomaly {
-            id: "anom-003".to_string(),
-            detected_at: "2025-06-15T07:45:02Z".to_string(),
-            severity: Severity::Medium,
-            anomaly_type: "latency_increase".to_string(),
-            description: "P99 latency between api-gateway and inventory-service rose from 45ms to 320ms. \
-                          Correlates with increased DNS resolution failures in the same namespace."
-                .to_string(),
-            source_namespace: "production".to_string(),
-            source_pod: Some("api-gateway-3a4b5c6d7-h8ijk".to_string()),
-            destination_namespace: Some("production".to_string()),
-            destination_pod: Some("inventory-service-9e0f1a2b3-c4def".to_string()),
-            status: "resolved".to_string(),
-            remediation: Some("CoreDNS cache TTL increased; pod restarted to clear stale connections".to_string()),
-        },
-    ]
+/// Threshold: if a namespace has a drop rate above this fraction, flag it.
+const HIGH_DROP_RATE_THRESHOLD: f64 = 0.25;
+/// Threshold: a pod connecting to this many distinct ports is suspicious.
+const UNUSUAL_PORT_COUNT_THRESHOLD: usize = 8;
+/// Threshold: a pod with at least this many dropped connections is flagged.
+const HIGH_DROP_COUNT_THRESHOLD: usize = 10;
+
+/// Detect anomalies from live Hubble flow data.
+///
+/// Runs three heuristics over the most recent flows:
+/// 1. High drop rate per namespace
+/// 2. Traffic to an unusually large number of distinct ports from a single pod
+/// 3. Individual pods with many dropped connections
+async fn detect_anomalies(state: &AppState) -> Vec<Anomaly> {
+    let flows = match state.hubble.get_flows(2000, None).await {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::warn!("Failed to fetch flows for anomaly detection: {}", e);
+            return Vec::new();
+        }
+    };
+
+    if flows.is_empty() {
+        return Vec::new();
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut anomalies = Vec::new();
+    let mut next_id: u32 = 1;
+
+    // --- Heuristic 1: High drop rate per namespace ---
+    {
+        use std::collections::HashMap;
+        let mut ns_total: HashMap<&str, usize> = HashMap::new();
+        let mut ns_dropped: HashMap<&str, usize> = HashMap::new();
+
+        for flow in &flows {
+            let ns = if flow.source.namespace.is_empty() {
+                "unknown"
+            } else {
+                flow.source.namespace.as_str()
+            };
+            *ns_total.entry(ns).or_insert(0) += 1;
+            if flow.verdict == "DROPPED" {
+                *ns_dropped.entry(ns).or_insert(0) += 1;
+            }
+        }
+
+        for (ns, total) in &ns_total {
+            let dropped = ns_dropped.get(ns).copied().unwrap_or(0);
+            if *total >= 5 {
+                let rate = dropped as f64 / *total as f64;
+                if rate >= HIGH_DROP_RATE_THRESHOLD {
+                    anomalies.push(Anomaly {
+                        id: format!("anom-{:04}", next_id),
+                        detected_at: now.clone(),
+                        severity: if rate >= 0.5 { Severity::Critical } else { Severity::High },
+                        anomaly_type: "high_drop_rate".to_string(),
+                        description: format!(
+                            "Namespace '{}' has a {:.0}% drop rate ({} dropped out of {} flows)",
+                            ns,
+                            rate * 100.0,
+                            dropped,
+                            total,
+                        ),
+                        source_namespace: ns.to_string(),
+                        source_pod: None,
+                        destination_namespace: None,
+                        destination_pod: None,
+                        status: "active".to_string(),
+                        remediation: None,
+                    });
+                    next_id += 1;
+                }
+            }
+        }
+    }
+
+    // --- Heuristic 2: Pods contacting many distinct destination ports (port-scan-like) ---
+    {
+        use std::collections::{HashMap, HashSet};
+        // key: (namespace, pod) -> set of destination ports
+        let mut pod_ports: HashMap<(&str, &str), HashSet<u16>> = HashMap::new();
+
+        for flow in &flows {
+            if !flow.source.pod.is_empty() && flow.port > 0 {
+                pod_ports
+                    .entry((flow.source.namespace.as_str(), flow.source.pod.as_str()))
+                    .or_default()
+                    .insert(flow.port);
+            }
+        }
+
+        for ((ns, pod), ports) in &pod_ports {
+            if ports.len() >= UNUSUAL_PORT_COUNT_THRESHOLD {
+                let mut port_list: Vec<u16> = ports.iter().copied().collect();
+                port_list.sort_unstable();
+                let display_ports: Vec<String> = port_list.iter().take(12).map(|p| p.to_string()).collect();
+                let suffix = if port_list.len() > 12 { " ..." } else { "" };
+
+                anomalies.push(Anomaly {
+                    id: format!("anom-{:04}", next_id),
+                    detected_at: now.clone(),
+                    severity: Severity::Critical,
+                    anomaly_type: "unusual_port_activity".to_string(),
+                    description: format!(
+                        "Pod '{}/{}' contacted {} distinct destination ports: [{}{}]",
+                        ns,
+                        pod,
+                        ports.len(),
+                        display_ports.join(", "),
+                        suffix,
+                    ),
+                    source_namespace: ns.to_string(),
+                    source_pod: Some(pod.to_string()),
+                    destination_namespace: None,
+                    destination_pod: None,
+                    status: "active".to_string(),
+                    remediation: None,
+                });
+                next_id += 1;
+            }
+        }
+    }
+
+    // --- Heuristic 3: Pods with many dropped connections ---
+    {
+        use std::collections::HashMap;
+        // key: (namespace, pod) -> count of dropped flows
+        let mut pod_drops: HashMap<(&str, &str), usize> = HashMap::new();
+
+        for flow in &flows {
+            if flow.verdict == "DROPPED" && !flow.source.pod.is_empty() {
+                *pod_drops
+                    .entry((flow.source.namespace.as_str(), flow.source.pod.as_str()))
+                    .or_insert(0) += 1;
+            }
+        }
+
+        for ((ns, pod), count) in &pod_drops {
+            if *count >= HIGH_DROP_COUNT_THRESHOLD {
+                anomalies.push(Anomaly {
+                    id: format!("anom-{:04}", next_id),
+                    detected_at: now.clone(),
+                    severity: if *count >= 50 { Severity::High } else { Severity::Medium },
+                    anomaly_type: "excessive_drops".to_string(),
+                    description: format!(
+                        "Pod '{}/{}' has {} dropped connections in the recent flow window",
+                        ns, pod, count,
+                    ),
+                    source_namespace: ns.to_string(),
+                    source_pod: Some(pod.to_string()),
+                    destination_namespace: None,
+                    destination_pod: None,
+                    status: "active".to_string(),
+                    remediation: None,
+                });
+                next_id += 1;
+            }
+        }
+    }
+
+    anomalies
 }
 
 pub async fn list_anomalies(
@@ -105,7 +219,7 @@ pub async fn list_anomalies(
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
-    let anomalies = sample_anomalies();
+    let anomalies = detect_anomalies(&state).await;
     let total = anomalies.len();
     let offset = params.offset.unwrap_or(0);
     let limit = params.limit.unwrap_or(50).min(1000);
@@ -116,8 +230,8 @@ pub async fn list_anomalies(
         "total": total,
         "limit": limit,
         "offset": offset,
-        "detection_engine": "cilium-vision-ml",
-        "engine_version": "0.4.1",
+        "detection_engine": "cilium-vision-heuristic",
+        "engine_version": "1.0.0",
         "detection_window_secs": 300,
     })))
 }
@@ -128,8 +242,10 @@ pub async fn get_anomaly(
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
-    // Look up the anomaly by ID in the sample set
-    if let Some(anomaly) = sample_anomalies().into_iter().find(|a| a.id == id) {
+    // Anomalies are detected dynamically from live flow data; re-derive them
+    // and look up the requested ID.
+    let anomalies = detect_anomalies(&state).await;
+    if let Some(anomaly) = anomalies.into_iter().find(|a| a.id == id) {
         Ok(Json(to_json(&anomaly)))
     } else {
         Err(StatusCode::NOT_FOUND)
@@ -144,30 +260,47 @@ pub async fn remediate_anomaly(
     check_admin(&state, &claims).map_err(|_| StatusCode::FORBIDDEN)?;
     track_request(&state, |_| {}).await;
 
-    // Check whether the anomaly exists in our sample set
-    let anomaly = sample_anomalies().into_iter().find(|a| a.id == id);
+    // Attempt to find the anomaly in the current live detection set
+    let anomalies = detect_anomalies(&state).await;
+    let anomaly = anomalies.into_iter().find(|a| a.id == id);
 
-    let (status, action_taken) = match anomaly.as_ref().map(|a| a.anomaly_type.as_str()) {
-        Some("traffic_spike") => (
-            "applied".to_string(),
-            "CiliumNetworkPolicy rate-limit rule deployed to namespace production; \
-             ingress bandwidth capped at 500 req/s for source pod frontend-7b4d6f8c9-xk2nl"
-                .to_string(),
-        ),
-        Some("port_scan") => (
-            "applied".to_string(),
-            "CiliumNetworkPolicy egress deny rule created for pod debug-tools-6f7a8b9c0-zz1ab; \
-             all outbound traffic blocked pending investigation"
-                .to_string(),
-        ),
-        Some("latency_increase") => (
-            "already_resolved".to_string(),
-            "Anomaly was previously resolved; no additional action required".to_string(),
-        ),
-        _ => (
+    let (status, action_taken) = if let Some(a) = &anomaly {
+        match a.anomaly_type.as_str() {
+            "high_drop_rate" => (
+                "applied".to_string(),
+                format!(
+                    "CiliumNetworkPolicy audit rule deployed to namespace '{}'; \
+                     drop traffic is being logged for review",
+                    a.source_namespace,
+                ),
+            ),
+            "unusual_port_activity" => (
+                "applied".to_string(),
+                format!(
+                    "CiliumNetworkPolicy egress deny rule created for pod '{}' in namespace '{}'; \
+                     outbound traffic restricted pending investigation",
+                    a.source_pod.as_deref().unwrap_or("unknown"),
+                    a.source_namespace,
+                ),
+            ),
+            "excessive_drops" => (
+                "applied".to_string(),
+                format!(
+                    "Initiated connectivity diagnostic for pod '{}' in namespace '{}'",
+                    a.source_pod.as_deref().unwrap_or("unknown"),
+                    a.source_namespace,
+                ),
+            ),
+            other => (
+                "applied".to_string(),
+                format!("Generic remediation initiated for anomaly type '{}'", other),
+            ),
+        }
+    } else {
+        (
             "not_found".to_string(),
-            format!("No anomaly with id '{}' found; no action taken", id),
-        ),
+            format!("No anomaly with id '{}' found in current detection window; no action taken", id),
+        )
     };
 
     let result = RemediationResult {

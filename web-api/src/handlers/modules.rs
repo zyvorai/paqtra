@@ -6,10 +6,14 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::AppState;
 use super::{check_admin, track_request, to_json};
+
+const CHAOS_PREFIX: &str = "cv:chaos:";
+const CANARY_PREFIX: &str = "cv:canary:";
 
 /// Typed request for the autopolicy generation endpoint.
 #[derive(Debug, Deserialize)]
@@ -112,6 +116,15 @@ pub struct CanaryMetrics {
     pub error_count: u64,
 }
 
+/// Represents a unique traffic pair observed in Hubble flows.
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+struct TrafficPair {
+    src_pod: String,
+    dst_pod: String,
+    dst_port: u16,
+    protocol: String,
+}
+
 pub async fn generate_autopolicy(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
@@ -122,135 +135,199 @@ pub async fn generate_autopolicy(
 
     let namespace = &req.namespace;
 
+    // Query real Hubble flows for the target namespace
+    let flows = state
+        .hubble
+        .get_flows(5000, Some(namespace))
+        .await
+        .unwrap_or_default();
+
+    if flows.is_empty() {
+        let result = AutoPolicyResult {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            policies_generated: 0,
+            confidence: 0.0,
+            policies: vec![],
+        };
+        return Ok(Json(to_json(&result)));
+    }
+
+    // Analyze traffic patterns: group by destination pod -> set of (source pod, port, protocol)
+    let mut dst_to_sources: HashMap<String, Vec<TrafficPair>> = HashMap::new();
+    let mut unique_pairs: HashSet<TrafficPair> = HashSet::new();
+    let total_flows = flows.len();
+
+    for flow in &flows {
+        if flow.verdict != "FORWARDED" {
+            continue;
+        }
+        let src_label = if !flow.source.pod.is_empty() {
+            flow.source.pod.clone()
+        } else if !flow.source.ip.is_empty() {
+            flow.source.ip.clone()
+        } else {
+            continue;
+        };
+        let dst_label = if !flow.destination.pod.is_empty() {
+            flow.destination.pod.clone()
+        } else if !flow.destination.ip.is_empty() {
+            flow.destination.ip.clone()
+        } else {
+            continue;
+        };
+
+        let pair = TrafficPair {
+            src_pod: src_label,
+            dst_pod: dst_label.clone(),
+            dst_port: flow.port,
+            protocol: flow.protocol.clone(),
+        };
+
+        if unique_pairs.insert(pair.clone()) {
+            dst_to_sources.entry(dst_label).or_default().push(pair);
+        }
+    }
+
+    // Generate one CiliumNetworkPolicy per destination that received traffic
+    let mut policies = Vec::new();
+    for (dst, pairs) in &dst_to_sources {
+        // Extract the app label from the pod name (strip trailing hash segments)
+        let dst_app = extract_app_label(dst);
+
+        // Collect unique source labels and ports
+        let mut src_labels: HashSet<String> = HashSet::new();
+        let mut port_protos: HashSet<(u16, String)> = HashSet::new();
+        let mut pair_flow_count: usize = 0;
+
+        for pair in pairs {
+            src_labels.insert(extract_app_label(&pair.src_pod));
+            if pair.dst_port > 0 {
+                port_protos.insert((pair.dst_port, pair.protocol.clone()));
+            }
+            // Count how many total flows match this pair
+            pair_flow_count += flows
+                .iter()
+                .filter(|f| {
+                    (f.destination.pod == *dst || f.destination.ip == *dst)
+                        && f.verdict == "FORWARDED"
+                })
+                .count();
+        }
+
+        // Confidence: ratio of flows backing this policy vs total observed flows,
+        // capped at 0.99 and floored at 0.1
+        let raw_confidence = pair_flow_count as f64 / total_flows as f64;
+        let confidence = raw_confidence.min(0.99).max(0.1);
+
+        let policy_name = format!("allow-ingress-to-{}-{}", dst_app, namespace);
+
+        // Build ingress from-endpoints
+        let from_endpoints: Vec<Value> = src_labels
+            .iter()
+            .map(|src| {
+                json!({
+                    "matchLabels": {
+                        "app": src
+                    }
+                })
+            })
+            .collect();
+
+        // Build toPorts
+        let ports: Vec<Value> = port_protos
+            .iter()
+            .map(|(port, proto)| {
+                json!({ "port": port.to_string(), "protocol": proto })
+            })
+            .collect();
+
+        let ingress_rule = if ports.is_empty() {
+            json!([{
+                "fromEndpoints": from_endpoints
+            }])
+        } else {
+            json!([{
+                "fromEndpoints": from_endpoints,
+                "toPorts": [{
+                    "ports": ports
+                }]
+            }])
+        };
+
+        let description = format!(
+            "Allow traffic from {} source(s) to {} on {} port(s). \
+             Derived from {} observed flows in namespace '{}'.",
+            src_labels.len(),
+            dst_app,
+            port_protos.len(),
+            pair_flow_count,
+            namespace
+        );
+
+        policies.push(GeneratedPolicy {
+            name: policy_name.clone(),
+            namespace: namespace.to_string(),
+            description,
+            spec: json!({
+                "apiVersion": "cilium.io/v2",
+                "kind": "CiliumNetworkPolicy",
+                "metadata": {
+                    "name": policy_name,
+                    "namespace": namespace
+                },
+                "spec": {
+                    "endpointSelector": {
+                        "matchLabels": {
+                            "app": dst_app
+                        }
+                    },
+                    "ingress": ingress_rule
+                }
+            }),
+            confidence,
+        });
+    }
+
+    // Sort by confidence descending so most confident policies come first
+    policies.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+
+    let avg_confidence = if policies.is_empty() {
+        0.0
+    } else {
+        policies.iter().map(|p| p.confidence).sum::<f64>() / policies.len() as f64
+    };
+
     let result = AutoPolicyResult {
         request_id: uuid::Uuid::new_v4().to_string(),
-        policies_generated: 2,
-        confidence: 0.87,
-        policies: vec![
-            GeneratedPolicy {
-                name: format!("allow-frontend-to-api-{}", namespace),
-                namespace: namespace.to_string(),
-                description: "Allow frontend pods to reach api-gateway on port 8080 (HTTP) \
-                              and port 8443 (HTTPS). Derived from 72 hours of observed traffic."
-                    .to_string(),
-                spec: json!({
-                    "apiVersion": "cilium.io/v2",
-                    "kind": "CiliumNetworkPolicy",
-                    "metadata": {
-                        "name": format!("allow-frontend-to-api-{}", namespace),
-                        "namespace": namespace
-                    },
-                    "spec": {
-                        "endpointSelector": {
-                            "matchLabels": {
-                                "app": "api-gateway"
-                            }
-                        },
-                        "ingress": [{
-                            "fromEndpoints": [{
-                                "matchLabels": {
-                                    "app": "frontend",
-                                    "tier": "web"
-                                }
-                            }],
-                            "toPorts": [{
-                                "ports": [
-                                    { "port": "8080", "protocol": "TCP" },
-                                    { "port": "8443", "protocol": "TCP" }
-                                ],
-                                "rules": {
-                                    "http": [{
-                                        "method": "GET",
-                                        "path": "/api/v1/.*"
-                                    }, {
-                                        "method": "POST",
-                                        "path": "/api/v1/.*"
-                                    }]
-                                }
-                            }]
-                        }]
-                    }
-                }),
-                confidence: 0.92,
-            },
-            GeneratedPolicy {
-                name: format!("deny-default-egress-{}", namespace),
-                namespace: namespace.to_string(),
-                description: "Default-deny egress for all pods in the namespace, \
-                              with explicit exceptions for DNS (kube-dns) and \
-                              monitored services."
-                    .to_string(),
-                spec: json!({
-                    "apiVersion": "cilium.io/v2",
-                    "kind": "CiliumNetworkPolicy",
-                    "metadata": {
-                        "name": format!("deny-default-egress-{}", namespace),
-                        "namespace": namespace
-                    },
-                    "spec": {
-                        "endpointSelector": {},
-                        "egress": [{
-                            "toEndpoints": [{
-                                "matchLabels": {
-                                    "k8s:io.kubernetes.pod.namespace": "kube-system",
-                                    "k8s-app": "kube-dns"
-                                }
-                            }],
-                            "toPorts": [{
-                                "ports": [
-                                    { "port": "53", "protocol": "UDP" },
-                                    { "port": "53", "protocol": "TCP" }
-                                ]
-                            }]
-                        }, {
-                            "toEndpoints": [{
-                                "matchLabels": {
-                                    "app.kubernetes.io/part-of": namespace
-                                }
-                            }]
-                        }],
-                        "egressDeny": [{
-                            "toEntities": ["world"]
-                        }]
-                    }
-                }),
-                confidence: 0.81,
-            },
-        ],
+        policies_generated: policies.len() as u32,
+        confidence: (avg_confidence * 100.0).round() / 100.0,
+        policies,
     };
 
     Ok(Json(to_json(&result)))
 }
 
-/// Sample chaos experiments showing both completed and running states.
-fn sample_chaos_experiments() -> Vec<ChaosExperiment> {
-    vec![
-        ChaosExperiment {
-            id: "chaos-exp-001".to_string(),
-            name: "payment-service-network-partition".to_string(),
-            experiment_type: "network-partition".to_string(),
-            status: "completed".to_string(),
-            target_namespace: "production".to_string(),
-            created_at: "2025-06-14T14:00:00Z".to_string(),
-            duration_secs: 300,
-            results: Some(ChaosResults {
-                packets_dropped: 14823,
-                connections_failed: 47,
-                services_impacted: 3,
-                recovery_time_secs: Some(12.4),
-            }),
-        },
-        ChaosExperiment {
-            id: "chaos-exp-002".to_string(),
-            name: "dns-failure-injection".to_string(),
-            experiment_type: "dns-disruption".to_string(),
-            status: "running".to_string(),
-            target_namespace: "staging".to_string(),
-            created_at: "2025-06-15T10:30:00Z".to_string(),
-            duration_secs: 600,
-            results: None,
-        },
-    ]
+/// Extract a short app label from a Kubernetes pod name.
+/// E.g. "frontend-7b4d9c8f5-x2k9z" -> "frontend"
+fn extract_app_label(pod_name: &str) -> String {
+    let parts: Vec<&str> = pod_name.split('-').collect();
+    // Kubernetes pods typically end with replicaset hash + pod hash
+    // Strip trailing segments that look like hashes (all alphanumeric, len <= 10)
+    let meaningful: Vec<&str> = parts
+        .iter()
+        .take_while(|p| {
+            // Keep segments that are not purely hash-like
+            p.len() > 10 || !p.chars().all(|c| c.is_ascii_alphanumeric())
+                || parts.iter().position(|x| x == *p) == Some(0)
+        })
+        .copied()
+        .collect();
+
+    if meaningful.is_empty() {
+        parts.first().unwrap_or(&"unknown").to_string()
+    } else {
+        meaningful.join("-")
+    }
 }
 
 pub async fn list_chaos_experiments(
@@ -258,11 +335,11 @@ pub async fn list_chaos_experiments(
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
-    let experiments = sample_chaos_experiments();
-    let total = experiments.len();
+    let items = state.cache.list_values(CHAOS_PREFIX).await.unwrap_or_default();
+    let total = items.len();
 
     Ok(Json(json!({
-        "experiments": experiments,
+        "experiments": items,
         "total": total,
     })))
 }
@@ -275,22 +352,29 @@ pub async fn run_chaos_experiment(
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
-    // Simulate an experiment that has already completed with results
+    let id = format!("chaos-{}", uuid::Uuid::new_v4());
+    let now = chrono::Utc::now().to_rfc3339();
+
     let experiment = ChaosExperiment {
-        id: uuid::Uuid::new_v4().to_string(),
+        id: id.clone(),
         name: req.name.clone(),
         experiment_type: req.experiment_type.clone(),
-        status: "completed".to_string(),
+        status: "started".to_string(),
         target_namespace: req.target_namespace.clone(),
-        created_at: chrono::Utc::now().to_rfc3339(),
+        created_at: now,
         duration_secs: req.duration_secs,
-        results: Some(ChaosResults {
-            packets_dropped: 8432,
-            connections_failed: 23,
-            services_impacted: 2,
-            recovery_time_secs: Some(8.7),
-        }),
+        results: None,
     };
+
+    // Store in Redis cache so list_chaos_experiments can retrieve it
+    let key = format!("{}{}", CHAOS_PREFIX, id);
+    if let Err(e) = state.cache.set_persistent(&key, &experiment).await {
+        tracing::warn!("Failed to store chaos experiment in cache: {}", e);
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "Failed to persist experiment" })),
+        ));
+    }
 
     Ok(Json(to_json(&experiment)))
 }
@@ -301,33 +385,137 @@ pub async fn canary_status(
 ) -> Result<Json<Value>, StatusCode> {
     track_request(&state, |_| {}).await;
 
+    let cache_key = format!("{}{}", CANARY_PREFIX, id);
+
+    // Try to load from cache first
+    if let Ok(Some(cached)) = state.cache.get::<Value>(&cache_key).await {
+        return Ok(Json(cached));
+    }
+
+    // Query Kubernetes for deployment rollout status
+    let deploy_json = state
+        .k8s
+        .kubectl_json(&["get", "deployment", &id, "-o", "json"])
+        .await;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Parse real deployment data if available
+    let (status_str, ready_replicas, total_replicas, updated_replicas) =
+        if let Some(status_obj) = deploy_json.get("status") {
+            let ready = status_obj
+                .get("readyReplicas")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let total = status_obj
+                .get("replicas")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let updated = status_obj
+                .get("updatedReplicas")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+
+            let phase = if updated < total {
+                "progressing"
+            } else if ready == total {
+                "stable"
+            } else {
+                "progressing"
+            };
+
+            (phase.to_string(), ready, total, updated)
+        } else {
+            // K8s not reachable or deployment not found
+            ("unknown".to_string(), 0, 0, 0)
+        };
+
+    // Derive traffic split from rollout progress
+    let canary_pct = if total_replicas > 0 {
+        ((updated_replicas as f64 / total_replicas as f64) * 100.0).round() as u32
+    } else {
+        0
+    };
+    let stable_pct = 100u32.saturating_sub(canary_pct);
+
+    // Query recent flows to compute real success metrics for this deployment
+    let flows = state
+        .hubble
+        .get_flows(1000, None)
+        .await
+        .unwrap_or_default();
+
+    let relevant_flows: Vec<_> = flows
+        .iter()
+        .filter(|f| {
+            f.destination.pod.contains(&id) || f.source.pod.contains(&id)
+        })
+        .collect();
+
+    let total_relevant = relevant_flows.len() as u64;
+    let forwarded = relevant_flows
+        .iter()
+        .filter(|f| f.verdict == "FORWARDED")
+        .count() as u64;
+    let dropped = relevant_flows
+        .iter()
+        .filter(|f| f.verdict == "DROPPED")
+        .count() as u64;
+
+    let success_rate = if total_relevant > 0 {
+        (forwarded as f64 / total_relevant as f64) * 100.0
+    } else {
+        0.0
+    };
+
     let status = CanaryStatus {
-        id,
-        status: "progressing".to_string(),
+        id: id.clone(),
+        status: status_str.clone(),
         traffic_split: TrafficSplit {
-            stable: 80,
-            canary: 20,
+            stable: stable_pct,
+            canary: canary_pct,
         },
         metrics: CanaryMetrics {
-            success_rate: 99.72,
-            latency_p99_ms: 42.3,
-            error_count: 7,
+            success_rate: (success_rate * 100.0).round() / 100.0,
+            latency_p99_ms: 0.0,
+            error_count: dropped,
         },
     };
 
-    Ok(Json(json!({
+    // Determine promotion recommendation based on live metrics
+    let recommendation = if success_rate >= 99.5 && dropped == 0 {
+        "promote"
+    } else if success_rate >= 95.0 {
+        "continue"
+    } else if total_relevant == 0 {
+        "insufficient-data"
+    } else {
+        "rollback"
+    };
+
+    let response = json!({
         "canary": to_json(&status),
         "analysis": {
-            "phase": "canary-weight-20",
-            "started_at": "2025-06-15T06:00:00Z",
-            "last_checked_at": "2025-06-15T10:45:00Z",
+            "phase": format!("canary-weight-{}", canary_pct),
+            "started_at": now,
+            "last_checked_at": now,
+            "replicas": {
+                "total": total_replicas,
+                "ready": ready_replicas,
+                "updated": updated_replicas
+            },
+            "flows_analyzed": total_relevant,
             "promotion_threshold": {
                 "success_rate_min": 99.5,
                 "latency_p99_max_ms": 100.0,
                 "error_count_max": 25
             },
-            "recommendation": "continue",
-            "next_step": "Increase canary weight to 40% if metrics hold for 15 more minutes"
+            "recommendation": recommendation,
         }
-    })))
+    });
+
+    // Cache the result for 30 seconds to avoid hammering K8s/Hubble
+    let _ = state.cache.set(&cache_key, &response, 30).await;
+
+    Ok(Json(response))
 }

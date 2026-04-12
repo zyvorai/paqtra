@@ -283,19 +283,54 @@ pub async fn list_clusters(
     Query(params): Query<PaginationQuery>,
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
-    let clusters = vec![
-        ClusterInfo { name: "us-east-prod".into(), status: "connected".into(), endpoint: "https://10.1.0.1:6443".into(),
-            region: "us-east-1".into(), nodes: 12, pods: 450, latency_ms: 2.1,
-            last_sync: "2026-04-03T10:00:00Z".into(), cilium_version: "1.15.3".into() },
-        ClusterInfo { name: "eu-west-prod".into(), status: "connected".into(), endpoint: "https://10.2.0.1:6443".into(),
-            region: "eu-west-1".into(), nodes: 8, pods: 280, latency_ms: 45.3,
-            last_sync: "2026-04-03T09:59:00Z".into(), cilium_version: "1.15.3".into() },
-        ClusterInfo { name: "ap-south-staging".into(), status: "degraded".into(), endpoint: "https://10.3.0.1:6443".into(),
-            region: "ap-south-1".into(), nodes: 4, pods: 95, latency_ms: 120.8,
-            last_sync: "2026-04-03T09:45:00Z".into(), cilium_version: "1.15.2".into() },
-    ];
-    let items: Vec<_> = clusters.into_iter().map(|c| serde_json::to_value(c).unwrap()).collect();
-    Json(paginate_json(items, &params, "clusters"))
+
+    use crate::services::k8s::K8sService;
+
+    // Try to get cluster mesh status from cilium agent
+    let mesh_output = K8sService::run_cmd(
+        "kubectl",
+        &["exec", "-n", "kube-system", "-l", "k8s-app=cilium", "-c", "cilium-agent",
+          "--", "cilium", "clustermesh", "status", "-o", "json"],
+    ).await;
+
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&mesh_output) {
+        if let Some(clusters) = parsed.get("clusters").and_then(|v| v.as_array()) {
+            let items: Vec<serde_json::Value> = clusters.iter().map(|c| {
+                serde_json::json!({
+                    "name": c.get("name").and_then(|v| v.as_str()).unwrap_or("unknown"),
+                    "status": c.get("status").and_then(|v| v.as_str()).unwrap_or("unknown"),
+                    "endpoint": c.get("endpoint").and_then(|v| v.as_str()).unwrap_or(""),
+                    "nodes": c.get("nodes").and_then(|v| v.as_u64()).unwrap_or(0),
+                    "last_sync": c.get("last_change").and_then(|v| v.as_str()).unwrap_or(""),
+                })
+            }).collect();
+            if !items.is_empty() {
+                return Json(paginate_json(items, &params, "clusters"));
+            }
+        }
+    }
+
+    // Fallback: query CiliumClusterMeshConfig CRDs
+    let data = state.k8s.kubectl_json(&[
+        "get", "ciliumclustermeshconfigs", "--all-namespaces", "-o", "json",
+    ]).await;
+    if let Some(items) = data.get("items").and_then(|v| v.as_array()) {
+        if !items.is_empty() {
+            let clusters: Vec<serde_json::Value> = items.iter().map(|item| {
+                let name = item.pointer("/metadata/name").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let ns = item.pointer("/metadata/namespace").and_then(|v| v.as_str()).unwrap_or("");
+                serde_json::json!({
+                    "name": name,
+                    "namespace": ns,
+                    "status": "configured",
+                })
+            }).collect();
+            return Json(paginate_json(clusters, &params, "clusters"));
+        }
+    }
+
+    // No remote clusters found — return empty list
+    Json(paginate_json(Vec::<serde_json::Value>::new(), &params, "clusters"))
 }
 
 pub async fn sync_cluster(
@@ -513,13 +548,19 @@ pub async fn zero_trust_score(
 pub async fn metrics_summary(
     State(state): State<Arc<AppState>>,
 ) -> Json<serde_json::Value> {
+    use crate::services::k8s::K8sService;
+
     let m = &state.metrics;
+
+    let uptime_str = K8sService::run_cmd("sh", &["-c", "cat /proc/uptime | cut -d' ' -f1"]).await;
+    let uptime: f64 = uptime_str.parse().unwrap_or(0.0);
+
     Json(serde_json::json!({
         "total_requests": m.total_requests.load(Ordering::Relaxed),
         "total_errors": m.total_errors.load(Ordering::Relaxed),
         "total_queries": m.hubble_queries.load(Ordering::Relaxed) + m.k8s_queries.load(Ordering::Relaxed),
         "cache_hits": m.cache_hits.load(Ordering::Relaxed),
         "cache_misses": m.cache_misses.load(Ordering::Relaxed),
-        "uptime_seconds": 86400
+        "uptime_seconds": uptime as u64
     }))
 }

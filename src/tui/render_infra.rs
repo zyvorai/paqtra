@@ -146,20 +146,67 @@ impl TuiApp {
     }
 
     pub(crate) fn render_policies(&self, f: &mut Frame, area: ratatui::layout::Rect) {
-        let content = Paragraph::new(
-            "Active Policies:\n\
-            ✓ allow-intra-namespace (default)\n\
-            ✓ allow-dns (default)\n\
-            ✓ allow-hubble (kube-system)",
-        )
-        .style(Style::default().fg(TEXT_COLOR))
-        .block(
+        let policies = match &self.modules {
+            super::app::ModuleContainer::Enriched { autopolicy, .. } => autopolicy.policies(),
+            super::app::ModuleContainer::Mock { autopolicy, .. } => autopolicy.policies(),
+        };
+
+        if policies.is_empty() {
+            let content = Paragraph::new(
+                "No policies generated yet.\n\n\
+                Go to the AutoPolicy tab and press 'g' to generate policies\n\
+                based on observed traffic patterns.",
+            )
+            .style(Style::default().fg(WARNING_COLOR))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Network Policies (0)")
+                    .border_style(Style::default().fg(BORDER_COLOR)),
+            );
+            f.render_widget(content, area);
+            return;
+        }
+
+        let items: Vec<ListItem> = policies
+            .iter()
+            .map(|policy| {
+                let applied = self.applied_policies.contains(&policy.name);
+                let (icon, color) = if applied {
+                    ("✓", RUNNING_COLOR)
+                } else {
+                    ("○", TEXT_COLOR)
+                };
+
+                let confidence_pct = (policy.confidence * 100.0) as u32;
+                let content = format!(
+                    "{} {:40} {:20} {:>3}% confidence",
+                    icon, policy.name, policy.namespace, confidence_pct
+                );
+
+                ListItem::new(Line::from(Span::styled(
+                    content,
+                    Style::default().fg(color),
+                )))
+            })
+            .collect();
+
+        let applied_count = policies
+            .iter()
+            .filter(|p| self.applied_policies.contains(&p.name))
+            .count();
+
+        let list = List::new(items).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Network Policies")
+                .title(format!(
+                    "Network Policies ({} total, {} applied)",
+                    policies.len(),
+                    applied_count
+                ))
                 .border_style(Style::default().fg(BORDER_COLOR)),
         );
-        f.render_widget(content, area);
+        f.render_widget(list, area);
     }
 
     pub(crate) fn render_metrics(&self, f: &mut Frame, area: ratatui::layout::Rect) {
