@@ -1,14 +1,14 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "cilium-vision.name" -}}
+{{- define "paqtra.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Create a default fully qualified app name.
 */}}
-{{- define "cilium-vision.fullname" -}}
+{{- define "paqtra.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -24,16 +24,16 @@ Create a default fully qualified app name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "cilium-vision.chart" -}}
+{{- define "paqtra.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "cilium-vision.labels" -}}
-helm.sh/chart: {{ include "cilium-vision.chart" . }}
-{{ include "cilium-vision.selectorLabels" . }}
+{{- define "paqtra.labels" -}}
+helm.sh/chart: {{ include "paqtra.chart" . }}
+{{ include "paqtra.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -43,41 +43,41 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "cilium-vision.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "cilium-vision.name" . }}
+{{- define "paqtra.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "paqtra.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 API selector labels
 */}}
-{{- define "cilium-vision.api.selectorLabels" -}}
-{{ include "cilium-vision.selectorLabels" . }}
+{{- define "paqtra.api.selectorLabels" -}}
+{{ include "paqtra.selectorLabels" . }}
 app.kubernetes.io/component: api
 {{- end }}
 
 {{/*
 UI selector labels
 */}}
-{{- define "cilium-vision.ui.selectorLabels" -}}
-{{ include "cilium-vision.selectorLabels" . }}
+{{- define "paqtra.ui.selectorLabels" -}}
+{{ include "paqtra.selectorLabels" . }}
 app.kubernetes.io/component: ui
 {{- end }}
 
 {{/*
-Redis selector labels
+Agent selector labels
 */}}
-{{- define "cilium-vision.redis.selectorLabels" -}}
-{{ include "cilium-vision.selectorLabels" . }}
-app.kubernetes.io/component: redis
+{{- define "paqtra.agent.selectorLabels" -}}
+{{ include "paqtra.selectorLabels" . }}
+app.kubernetes.io/component: agent
 {{- end }}
 
 {{/*
 Create the name of the service account to use
 */}}
-{{- define "cilium-vision.serviceAccountName" -}}
+{{- define "paqtra.serviceAccountName" -}}
 {{- if .Values.api.serviceAccount.create }}
-{{- default (printf "%s-api" (include "cilium-vision.fullname" .)) .Values.api.serviceAccount.name }}
+{{- default (printf "%s-api" (include "paqtra.fullname" .)) .Values.api.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.api.serviceAccount.name }}
 {{- end }}
@@ -86,26 +86,20 @@ Create the name of the service account to use
 {{/*
 API image with tag
 */}}
-{{- define "cilium-vision.api.image" -}}
+{{- define "paqtra.api.image" -}}
 {{- printf "%s:%s" .Values.api.image.repository (default .Chart.AppVersion .Values.api.image.tag) }}
 {{- end }}
 
 {{/*
 UI image with tag
 */}}
-{{- define "cilium-vision.ui.image" -}}
+{{- define "paqtra.ui.image" -}}
 {{- printf "%s:%s" .Values.ui.image.repository (default .Chart.AppVersion .Values.ui.image.tag) }}
 {{- end }}
 
 {{/*
-Redis URL - auto-configure if redis is enabled and no explicit URL set
+Agent image with tag
 */}}
-{{- define "cilium-vision.redisUrl" -}}
-{{- if .Values.api.env.redisUrl }}
-{{- .Values.api.env.redisUrl }}
-{{- else if .Values.redis.enabled }}
-{{- printf "redis://%s-redis:6379" (include "cilium-vision.fullname" .) }}
-{{- else }}
-{{- "redis://localhost:6379" }}
-{{- end }}
+{{- define "paqtra.agent.image" -}}
+{{- printf "%s:%s" .Values.agent.image.repository (default .Chart.AppVersion .Values.agent.image.tag) }}
 {{- end }}

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cilium Vision API Reference v1.0</title>
+<title>Paqtra API Reference v1.0</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--bg:#0d1117;--surface:#161b22;--surface2:#1c2129;--border:#30363d;--text:#e6edf3;--text2:#8b949e;--accent:#58a6ff;--green:#3fb950;--blue:#58a6ff;--yellow:#d29922;--red:#f85149;--purple:#bc8cff;--code-bg:#0d1117;--sidebar-w:280px}
@@ -63,7 +63,7 @@ ul.bullets li{margin-bottom:4px}
 <body>
 
 <nav class="sidebar">
-  <div class="logo">Cilium <span>Vision</span></div>
+  <div class="logo">Paqtra</div>
   <h2>API Reference</h2>
   <ul>
     <li class="cat">Getting Started</li>
@@ -92,7 +92,7 @@ ul.bullets li{margin-bottom:4px}
 
 <main class="main">
 
-<h1>Cilium Vision API Reference v1.0</h1>
+<h1>Paqtra API Reference v1.0</h1>
 <p class="subtitle">Complete REST API for Cilium network visibility, policy management, and intelligent diagnostics.</p>
 
 <div class="base-url">Base URL: http://&lt;host&gt;:9191</div>
@@ -137,9 +137,9 @@ ul.bullets li{margin-bottom:4px}
 
 <div class="endpoint">
   <div class="endpoint-header"><span class="method get">GET</span><span class="path">/metrics</span><span class="desc">Prometheus metrics (text/plain)</span></div>
-  <div class="endpoint-body"><h5>Example Response</h5><pre># HELP cilium_vision_flows_total Total observed flows
-# TYPE cilium_vision_flows_total counter
-cilium_vision_flows_total{verdict="FORWARDED"} 1489203</pre></div>
+  <div class="endpoint-body"><h5>Example Response</h5><pre># HELP paqtra_flows_total Total observed flows
+# TYPE paqtra_flows_total counter
+paqtra_flows_total{verdict="FORWARDED"} 1489203</pre></div>
 </div>
 
 <!-- ====== FLOWS ====== -->
@@ -927,7 +927,7 @@ cilium_vision_flows_total{verdict="FORWARDED"} 1489203</pre></div>
 </div>
 
 <div style="margin-top:64px;padding-top:24px;border-top:1px solid var(--border);color:var(--text2);font-size:13px">
-  Cilium Vision API Reference v1.0 &mdash; 75+ endpoints across 11 categories.<br>
+  Paqtra API Reference v1.0 &mdash; 75+ endpoints across 11 categories.<br>
   Generated for integration developers. Base URL: <code>http://&lt;host&gt;:9191</code>
 </div>
 

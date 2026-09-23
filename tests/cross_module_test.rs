@@ -4,15 +4,15 @@
 /// mock infrastructure and that their data structures interoperate
 /// correctly. Tests interactions between RootCause, Healer, AutoPolicy,
 /// Simulator, and Replay modules.
-use cilium_tui::ebpf::{DropReasonType, MapReader, MockMapReader, PolicyVerdict};
-use cilium_tui::kubernetes::K8sClient;
-use cilium_tui::modules::autopolicy::{AutoPolicy, AutoPolicyConfig, LearningState};
-use cilium_tui::modules::healer::{HealerConfig, SelfHealer};
-use cilium_tui::modules::replay::{ReplayConfig, ReplayEngine};
-use cilium_tui::modules::rootcause::{
+use paqtra::ebpf::{DropReasonType, MapReader, MockMapReader, PolicyVerdict};
+use paqtra::kubernetes::K8sClient;
+use paqtra::modules::autopolicy::{AutoPolicy, AutoPolicyConfig, LearningState};
+use paqtra::modules::healer::{HealerConfig, SelfHealer};
+use paqtra::modules::replay::{ReplayConfig, ReplayEngine};
+use paqtra::modules::rootcause::{
     DropReason as RootCauseDropReason, RootCauseConfig, RootCauseEngine,
 };
-use cilium_tui::modules::simulator::{RiskLevel, Simulator, SimulatorConfig};
+use paqtra::modules::simulator::{RiskLevel, Simulator, SimulatorConfig};
 
 // ---------------------------------------------------------------------------
 // Helper

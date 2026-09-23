@@ -1,4 +1,4 @@
-# Cilium Vision - Production Configuration
+# Paqtra - Production Configuration
 # High-confidence automation with safety guardrails
 
 kubernetes:
@@ -76,7 +76,7 @@ replay:
   max_recorded_flows: 50000         # More capacity
   auto_save: true
   auto_save_interval_secs: 180
-  recordings_dir: "/var/log/cilium-vision/recordings"
+  recordings_dir: "/var/log/paqtra/recordings"
 
 ui:
   refresh_rate_ms: 16
@@ -86,9 +86,9 @@ ui:
 logging:
   level: "info"
   log_to_file: true
-  log_file_path: "/var/log/cilium-vision/cilium-vision.log"
+  log_file_path: "/var/log/paqtra/paqtra.log"
   audit_log: true
-  audit_log_path: "/var/log/cilium-vision/audit.log"
+  audit_log_path: "/var/log/paqtra/audit.log"
 
 security:
   require_policy_confirmation: true

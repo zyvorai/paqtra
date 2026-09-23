@@ -1,125 +1,115 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: cilium-vision-alerts
+  name: paqtra-alerts
   namespace: cilium-system
   labels:
-    app: cilium-vision
+    app: paqtra
     prometheus: kube-prometheus
 spec:
   groups:
-    - name: cilium-vision.api
+    - name: paqtra.api
       rules:
-        - alert: CiliumVisionAPIDown
-          expr: up{job="cilium-vision-api"} == 0
+        - alert: PaqtraAPIDown
+          expr: up{job="paqtra-api"} == 0
           for: 2m
           labels:
             severity: critical
           annotations:
-            summary: "Cilium Vision API is down"
-            description: "Cilium Vision API has been unreachable for more than 2 minutes."
-            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionapidown"
+            summary: "Paqtra API is down"
+            description: "Paqtra API has been unreachable for more than 2 minutes."
+            runbook_url: "https://github.com/your-org/paqtra/wiki/runbooks#ciliumvisionapidown"
 
-        - alert: CiliumVisionHighErrorRate
-          expr: rate(cilium_vision_total_errors[5m]) / rate(cilium_vision_total_requests[5m]) > 0.05
+        - alert: PaqtraHighErrorRate
+          expr: rate(paqtra_total_errors[5m]) / rate(paqtra_total_requests[5m]) > 0.05
           for: 5m
           labels:
             severity: warning
           annotations:
-            summary: "High error rate on Cilium Vision API"
+            summary: "High error rate on Paqtra API"
             description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
-            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionhigherrorrate"
+            runbook_url: "https://github.com/your-org/paqtra/wiki/runbooks#ciliumvisionhigherrorrate"
 
-        - alert: CiliumVisionHighLatency
-          expr: histogram_quantile(0.99, rate(cilium_vision_request_duration_seconds_bucket[5m])) > 2
+        - alert: PaqtraHighLatency
+          expr: histogram_quantile(0.99, rate(paqtra_request_duration_seconds_bucket[5m])) > 2
           for: 5m
           labels:
             severity: warning
           annotations:
-            summary: "High P99 latency on Cilium Vision API"
+            summary: "High P99 latency on Paqtra API"
             description: "P99 latency is {{ $value }}s over the last 5 minutes."
-            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionhighlatency"
+            runbook_url: "https://github.com/your-org/paqtra/wiki/runbooks#ciliumvisionhighlatency"
 
-        - alert: CiliumVisionCacheHitRateLow
-          expr: cilium_vision_cache_hits / (cilium_vision_cache_hits + cilium_vision_cache_misses) < 0.5
+        - alert: PaqtraCacheHitRateLow
+          expr: paqtra_cache_hits / (paqtra_cache_hits + paqtra_cache_misses) < 0.5
           for: 10m
           labels:
             severity: warning
           annotations:
             summary: "Low cache hit rate"
-            description: "Cache hit rate is {{ $value | humanizePercentage }}. Check Redis connectivity."
-            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisioncachehitratelow"
+            description: "Cache hit rate is {{ $value | humanizePercentage }}."
+            runbook_url: "https://github.com/your-org/paqtra/wiki/runbooks#paqtracachehitratelow"
 
-        - alert: CiliumVisionRedisDown
-          expr: up{job="cilium-vision-redis"} == 0
-          for: 1m
-          labels:
-            severity: critical
-          annotations:
-            summary: "Redis is down"
-            description: "Redis used by Cilium Vision has been unreachable for more than 1 minute."
-            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionredisdown"
-
-    - name: cilium-vision.network
+    - name: paqtra.network
       rules:
-        - alert: CiliumVisionHighDropRate
-          expr: rate(cilium_vision_flows_dropped[5m]) / rate(cilium_vision_flows_total[5m]) > 0.05
+        - alert: PaqtraHighDropRate
+          expr: rate(paqtra_flows_dropped[5m]) / rate(paqtra_flows_total[5m]) > 0.05
           for: 5m
           labels:
             severity: warning
           annotations:
             summary: "High network drop rate detected"
             description: "Flow drop rate is {{ $value | humanizePercentage }} over the last 5 minutes."
-            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionhighdroprate"
+            runbook_url: "https://github.com/your-org/paqtra/wiki/runbooks#ciliumvisionhighdroprate"
 
-        - alert: CiliumVisionPolicyDenialSpike
-          expr: rate(cilium_vision_policy_denials[1m]) > 100
+        - alert: PaqtraPolicyDenialSpike
+          expr: rate(paqtra_policy_denials[1m]) > 100
           for: 2m
           labels:
             severity: warning
           annotations:
             summary: "Policy denial spike"
             description: "{{ $value }} policy denials per minute detected."
-            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionpolicydenialspike"
+            runbook_url: "https://github.com/your-org/paqtra/wiki/runbooks#ciliumvisionpolicydenialspike"
 
-        - alert: CiliumVisionAnomalyDetected
-          expr: cilium_vision_anomalies_open > 0
+        - alert: PaqtraAnomalyDetected
+          expr: paqtra_anomalies_open > 0
           for: 0m
           labels:
             severity: info
           annotations:
             summary: "Network anomaly detected"
             description: "{{ $value }} open anomalies detected by ML engine."
-            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionanomalydetected"
+            runbook_url: "https://github.com/your-org/paqtra/wiki/runbooks#ciliumvisionanomalydetected"
 
-    - name: cilium-vision.resources
+    - name: paqtra.resources
       rules:
-        - alert: CiliumVisionHighMemory
-          expr: container_memory_usage_bytes{container="cilium-vision-api"} / container_spec_memory_limit_bytes{container="cilium-vision-api"} > 0.9
+        - alert: PaqtraHighMemory
+          expr: container_memory_usage_bytes{container="paqtra-api"} / container_spec_memory_limit_bytes{container="paqtra-api"} > 0.9
           for: 5m
           labels:
             severity: warning
           annotations:
-            summary: "Cilium Vision API high memory usage"
+            summary: "Paqtra API high memory usage"
             description: "Memory usage is at {{ $value | humanizePercentage }} of limit."
-            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionhighmemory"
+            runbook_url: "https://github.com/your-org/paqtra/wiki/runbooks#ciliumvisionhighmemory"
 
-        - alert: CiliumVisionHighCPU
-          expr: rate(container_cpu_usage_seconds_total{container="cilium-vision-api"}[5m]) > 0.8
+        - alert: PaqtraHighCPU
+          expr: rate(container_cpu_usage_seconds_total{container="paqtra-api"}[5m]) > 0.8
           for: 10m
           labels:
             severity: warning
           annotations:
-            summary: "Cilium Vision API high CPU usage"
+            summary: "Paqtra API high CPU usage"
             description: "CPU usage is {{ $value }} cores averaged over 5 minutes."
-            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionhighcpu"
+            runbook_url: "https://github.com/your-org/paqtra/wiki/runbooks#ciliumvisionhighcpu"
 
-        - alert: CiliumVisionPodRestarts
-          expr: increase(kube_pod_container_status_restarts_total{container="cilium-vision-api"}[1h]) > 3
+        - alert: PaqtraPodRestarts
+          expr: increase(kube_pod_container_status_restarts_total{container="paqtra-api"}[1h]) > 3
           for: 0m
           labels:
             severity: warning
           annotations:
-            summary: "Cilium Vision API pod restarting"
+            summary: "Paqtra API pod restarting"
             description: "{{ $value }} restarts in the last hour."
-            runbook_url: "https://github.com/your-org/cilium-vision/wiki/runbooks#ciliumvisionpodrestarts"
+            runbook_url: "https://github.com/your-org/paqtra/wiki/runbooks#ciliumvisionpodrestarts"

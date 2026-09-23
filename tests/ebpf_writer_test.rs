@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::net::Ipv4Addr;
 use std::sync::Mutex;
 
-use cilium_tui::ebpf::MapWriter;
+use paqtra::ebpf::MapWriter;
 
 // ---------------------------------------------------------------------------
 // Mock implementation

@@ -3,9 +3,9 @@
 /// Tests the healer's problem detection and fix generation workflow
 /// using MockMapReader for eBPF data and K8sClient::mock() for
 /// Kubernetes interactions. Only exercises the public API.
-use cilium_tui::ebpf::MockMapReader;
-use cilium_tui::kubernetes::K8sClient;
-use cilium_tui::modules::healer::{FixAction, HealerConfig, HealerStats, Problem, SelfHealer};
+use paqtra::ebpf::MockMapReader;
+use paqtra::kubernetes::K8sClient;
+use paqtra::modules::healer::{FixAction, HealerConfig, HealerStats, Problem, SelfHealer};
 
 // ---------------------------------------------------------------------------
 // Helper

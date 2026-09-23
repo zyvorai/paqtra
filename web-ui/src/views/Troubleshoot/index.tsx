@@ -31,7 +31,7 @@ const Troubleshoot: React.FC = () => {
   const fail = results.filter((r) => r.status === 'fail').length;
 
   return (
-    <div>
+    <div className="netra-page">
       <div className="mb-6">
         <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-500 to-orange-700 flex items-center justify-center shadow-lg shadow-orange-500/20"><Wrench className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Troubleshoot</h1></div>
         <p className="text-sm text-slate-400 mt-1">End-to-end connectivity troubleshooting between pods</p>

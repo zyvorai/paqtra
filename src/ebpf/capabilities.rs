@@ -78,7 +78,7 @@ impl BpfCapabilities {
         }
         // A lightweight writability check: attempt to create and immediately
         // remove a temporary file. If we can do this, we have write access.
-        let probe_path = globals.join(".cilium_tui_probe");
+        let probe_path = globals.join(".paqtra_probe");
         match std::fs::write(&probe_path, b"") {
             Ok(()) => {
                 let _ = std::fs::remove_file(&probe_path);

@@ -384,7 +384,7 @@ pub async fn run_chaos_experiment(
         results: None,
     };
 
-    // Store in Redis cache so list_chaos_experiments can retrieve it
+    // Store in cache so list_chaos_experiments can retrieve it
     let key = format!("{}{}", CHAOS_PREFIX, id);
     if let Err(e) = state.cache.set_persistent(&key, &experiment).await {
         tracing::warn!("Failed to store chaos experiment in cache: {}", e);

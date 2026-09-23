@@ -8,7 +8,7 @@ import DataFreshness from '../../components/DataFreshness';
 
 function BoolBadge({ value, label }: { value: boolean; label: string }) {
   return (
-    <div className="flex items-center gap-2 p-3 rounded-lg bg-slate-900/50">
+    <div className="netra-page flex items-center gap-2 p-3 rounded-lg bg-slate-900/50">
       {value ? <CheckCircle className="w-4 h-4 text-green-400" /> : <XCircle className="w-4 h-4 text-slate-400" />}
       <span className={value ? 'text-white' : 'text-slate-400'}>{label}</span>
     </div>
@@ -31,7 +31,7 @@ const KubeProxyReplacement: React.FC = () => {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="page-chrome flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center shadow-lg shadow-slate-500/20"><Unplug className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">KubeProxy Replacement</h1></div>
           <p className="text-sm text-slate-400 mt-1">Cilium eBPF-based kube-proxy replacement status</p>

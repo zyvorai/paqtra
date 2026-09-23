@@ -329,7 +329,7 @@ fn build_otlp_payload<'a>(service_name: &'a str, spans: &[FinishedSpan]) -> Otlp
             },
             scope_spans: vec![ScopeSpans {
                 scope: Scope {
-                    name: "cilium-vision-api".to_string(),
+                    name: "paqtra-api".to_string(),
                     version: env!("CARGO_PKG_VERSION").to_string(),
                 },
                 spans: otlp_spans,
@@ -343,16 +343,14 @@ fn build_otlp_payload<'a>(service_name: &'a str, spans: &[FinishedSpan]) -> Otlp
 // ---------------------------------------------------------------------------
 
 fn generate_trace_id() -> String {
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-    let bytes: [u8; 16] = rng.gen();
+    use rand::RngExt;
+    let bytes: [u8; 16] = rand::rng().random();
     hex_encode(&bytes)
 }
 
 fn generate_span_id() -> String {
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-    let bytes: [u8; 8] = rng.gen();
+    use rand::RngExt;
+    let bytes: [u8; 8] = rand::rng().random();
     hex_encode(&bytes)
 }
 

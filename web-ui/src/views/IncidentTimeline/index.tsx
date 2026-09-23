@@ -1,148 +1,68 @@
-import React, { useState, useCallback } from 'react';
-import { Siren, Loader2, ChevronDown, ChevronRight, Clock } from 'lucide-react';
-import { fetchIncidents, Incident } from '../../services/api';
-import { isAxiosError } from 'axios';
-import { usePageTitle } from '../../hooks/usePageTitle';
-import { formatRelativeTime } from '../../utils/formatters';
-import { useAutoRefresh } from '../../hooks/useAutoRefresh';
-import DataFreshness from '../../components/DataFreshness';
-import ExportButton from '../../components/ExportButton';
+import { useCallback, useEffect, useState } from 'react';
+import { fetchIncidents } from '../../services/api';
+import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
 
-const SEV_BADGE: Record<string, string> = { critical: 'bg-red-500/15 text-red-400 border-red-500/30', high: 'bg-orange-500/15 text-orange-400 border-orange-500/30', medium: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', low: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
-const STATUS_BADGE: Record<string, string> = { active: 'bg-red-500/15 text-red-400 border-red-500/30', investigating: 'bg-orange-500/15 text-orange-400 border-orange-500/30', resolved: 'bg-green-500/15 text-green-400 border-green-500/30' };
-
-const IncidentTimeline: React.FC = () => {
-  usePageTitle('Incident Timeline');
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
-
-  const fetchData = useCallback(async () => {
-    setError(null);
-    try { const res = await fetchIncidents(); setIncidents(res.data.incidents ?? []); }
-    catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to load incidents'); }
-  }, []);
-
-  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
-
-  const toggle = (id: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const activeCount = incidents.filter((i) => i.status !== 'resolved').length;
-  const resolvedCount = incidents.filter((i) => i.status === 'resolved').length;
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center shadow-lg shadow-red-500/20">
-              <Siren className="w-5 h-5 text-white" />
-            </div>
-            <h1 className="text-2xl font-bold text-white">Incident Timeline</h1>
-          </div>
-          <p className="text-sm text-slate-400 mt-1">Track and review incident history</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <ExportButton data={incidents as unknown as Record<string, unknown>[]} filename="incidents" />
-          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading} autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn((v) => !v)} intervalSecs={30} />
-        </div>
-      </div>
-
-      {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-blue card-glow transition-all hover:scale-[1.02]">
-          <div className="text-xs text-slate-400 mb-1">Total Incidents</div>
-          <div className="text-2xl font-bold text-white">{incidents.length}</div>
-        </div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-red card-glow transition-all hover:scale-[1.02]">
-          <div className="text-xs text-slate-400 mb-1">Active</div>
-          <div className="text-2xl font-bold text-red-400">{activeCount}</div>
-        </div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-green card-glow-green transition-all hover:scale-[1.02]">
-          <div className="text-xs text-slate-400 mb-1">Resolved</div>
-          <div className="text-2xl font-bold text-green-400">{resolvedCount}</div>
-        </div>
-      </div>
-
-      {loading && incidents.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
-
-      {!loading && incidents.length === 0 && !error && (
-        <div className="text-center py-12 text-slate-400">No incidents recorded.</div>
-      )}
-
-      <div className="relative">
-        {incidents.length > 1 && <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-slate-700" />}
-        <div className="space-y-4">
-          {incidents.map((inc) => {
-            const isOpen = expanded.has(inc.id);
-            return (
-              <div key={inc.id} className="relative pl-12">
-                <div className="absolute left-[14px] top-5 w-3 h-3 rounded-full bg-blue-600 border-2 border-slate-800 z-10" />
-                <div
-                  className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-4 cursor-pointer card-glow transition-all hover:scale-[1.01]"
-                  onClick={() => toggle(inc.id)}
-                >
-                  <div className="flex items-center gap-2 mb-2">
-                    {isOpen ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                    <span className={`px-2 py-0.5 rounded-full text-xs border ${SEV_BADGE[inc.severity] ?? 'bg-slate-500/15 text-slate-400 border-slate-500/30'}`}>{inc.severity}</span>
-                    <span className={`px-2 py-0.5 rounded-full text-xs border ${STATUS_BADGE[inc.status] ?? 'bg-slate-500/15 text-slate-400 border-slate-500/30'}`}>{inc.status}</span>
-                    <span className="font-medium text-white">{inc.title}</span>
-                    <span className="ml-auto flex items-center gap-1 text-xs text-slate-400">
-                      <Clock className="w-3 h-3" /> {formatRelativeTime(inc.started_at)}
-                    </span>
-                  </div>
-                  {inc.duration && <div className="text-xs text-slate-400">Duration: {inc.duration}</div>}
-
-                  {isOpen && (
-                    <div className="mt-4 space-y-3 border-t border-slate-700/50 pt-4">
-                      {inc.affected_services && inc.affected_services.length > 0 && (
-                        <div>
-                          <div className="text-xs font-semibold text-slate-400 mb-1">Affected Services</div>
-                          <div className="flex flex-wrap gap-2">
-                            {inc.affected_services.map((svc) => (
-                              <span key={svc} className="px-2 py-0.5 rounded-full text-xs bg-slate-700/50 text-slate-300 border border-slate-600/50">{svc}</span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {inc.root_cause && (
-                        <div>
-                          <div className="text-xs font-semibold text-slate-400 mb-1">Root Cause</div>
-                          <div className="text-sm text-slate-300">{inc.root_cause}</div>
-                        </div>
-                      )}
-                      {inc.timeline && inc.timeline.length > 0 && (
-                        <div>
-                          <div className="text-xs font-semibold text-slate-400 mb-2">Timeline Events</div>
-                          <div className="space-y-2">
-                            {inc.timeline.map((evt, idx) => (
-                              <div key={idx} className="flex items-start gap-3 text-sm">
-                                <span className="text-xs text-slate-500 font-mono whitespace-nowrap mt-0.5">{evt.time}</span>
-                                <span className="text-slate-300">{evt.event}</span>
-                                {evt.actor && <span className="text-xs text-slate-500 ml-auto">{String(evt.actor)}</span>}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
+type Incident = {
+  id?: string;
+  title?: string;
+  severity?: string;
+  status?: string;
+  started_at?: string;
+  summary?: string;
 };
 
-export default IncidentTimeline;
+export default function IncidentTimeline() {
+  const [items, setItems] = useState<Incident[]>([]);
+  const [err, setErr] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      setItems(((await fetchIncidents()).data as { incidents?: Incident[] }).incidents ?? []);
+      setErr('');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <Board>
+      {err ? (
+        <Card span={3}>
+          <Warning>{err}</Warning>
+        </Card>
+      ) : null}
+      <Card span={3}>
+        <Eyebrow>INCIDENTS</Eyebrow>
+        <h3>When signals agree</h3>
+        <Metrics>
+          <Metric value={items.length} label="incidents" />
+        </Metrics>
+        <Toolbar>
+          <button type="button" className="btn-refresh" onClick={() => void load()}>
+            Refresh
+          </button>
+        </Toolbar>
+      </Card>
+      <Card span={3}>
+        <Eyebrow>TIMELINE</Eyebrow>
+        {items.length === 0 ? <Empty>No incidents joined yet.</Empty> : null}
+        <div className="list">
+          {items.map((x, i) => (
+            <div className="agent wide" key={x.id || i}>
+              <b>{x.title || x.id || `incident-${i}`}</b>
+              <span className={`severity-badge ${(x.severity || 'info').toLowerCase()}`}>{x.severity || x.status || '—'}</span>
+              <small>
+                {x.started_at ? new Date(x.started_at).toLocaleString() : '—'}
+                {x.summary ? ` · ${x.summary}` : ''}
+              </small>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </Board>
+  );
+}

@@ -2,7 +2,7 @@
 ///
 /// These tests exercise the production `TabIndex` type from `src/tui/tabs.rs`
 /// to verify tab index logic, display names, and boundary conditions.
-use cilium_tui::tui::tabs::TabIndex;
+use paqtra::tui::tabs::TabIndex;
 
 /// Expected number of tabs in the TUI.
 const EXPECTED_TAB_COUNT: usize = 13;

@@ -1,17 +1,17 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "cilium-vision.fullname" . }}-ui
+  name: {{ include "paqtra.fullname" . }}-ui
   namespace: {{ .Values.global.namespace | default .Release.Namespace }}
   labels:
-    {{- include "cilium-vision.labels" . | nindent 4 }}
+    {{- include "paqtra.labels" . | nindent 4 }}
     app.kubernetes.io/component: ui
 spec:
   type: {{ .Values.ui.service.type }}
   ports:
     - port: {{ .Values.ui.service.port }}
-      targetPort: http
+      targetPort: {{ if .Values.tls.enabled }}https{{ else }}http{{ end }}
       protocol: TCP
-      name: http
+      name: {{ if .Values.tls.enabled }}https{{ else }}http{{ end }}
   selector:
-    {{- include "cilium-vision.ui.selectorLabels" . | nindent 4 }}
+    {{- include "paqtra.ui.selectorLabels" . | nindent 4 }}

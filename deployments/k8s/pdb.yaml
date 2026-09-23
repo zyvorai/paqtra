@@ -1,21 +1,21 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: cilium-vision-api-pdb
-  namespace: cilium-vision
+  name: paqtra-api-pdb
+  namespace: paqtra
 spec:
   minAvailable: 1
   selector:
     matchLabels:
-      app: cilium-vision-api
+      app: paqtra-api
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: cilium-vision-ui-pdb
-  namespace: cilium-vision
+  name: paqtra-ui-pdb
+  namespace: paqtra
 spec:
   minAvailable: 1
   selector:
     matchLabels:
-      app: cilium-vision-ui
+      app: paqtra-ui

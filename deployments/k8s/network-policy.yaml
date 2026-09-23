@@ -1,43 +1,24 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: cilium-vision-redis
-  namespace: cilium-vision
+  name: paqtra-api
+  namespace: paqtra
 spec:
   podSelector:
     matchLabels:
-      app: cilium-vision-redis
+      app: paqtra-api
   policyTypes:
     - Ingress
   ingress:
     - from:
         - podSelector:
             matchLabels:
-              app: cilium-vision-api
+              app: paqtra-ui
       ports:
-        - port: 6379
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: cilium-vision-api
-  namespace: cilium-vision
-spec:
-  podSelector:
-    matchLabels:
-      app: cilium-vision-api
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: cilium-vision-ui
-      ports:
-        - port: 3000
+        - port: 9191
     - from:
         - namespaceSelector:
             matchLabels:
               app.kubernetes.io/name: ingress-nginx
       ports:
-        - port: 3000
+        - port: 9191

@@ -33,7 +33,7 @@ impl Default for ReplayConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            recording_dir: PathBuf::from("/tmp/cilium-vision/recordings"),
+            recording_dir: PathBuf::from("/tmp/paqtra/recordings"),
             max_recording_size: 100 * 1024 * 1024, // 100 MB
             max_recording_duration: 300,           // 5 minutes
             compress: true,
@@ -261,7 +261,7 @@ mod tests {
         assert!(config.enabled);
         assert_eq!(
             config.recording_dir,
-            PathBuf::from("/tmp/cilium-vision/recordings")
+            PathBuf::from("/tmp/paqtra/recordings")
         );
         assert_eq!(config.max_recording_size, 100 * 1024 * 1024);
         assert_eq!(config.max_recording_duration, 300);
@@ -327,7 +327,7 @@ mod tests {
             total_bytes: 1_048_576,
             namespaces: vec!["default".to_string(), "kube-system".to_string()],
             services: vec!["web".to_string(), "api".to_string()],
-            file_path: PathBuf::from("/tmp/cilium-vision/recordings/rec-001.bin"),
+            file_path: PathBuf::from("/tmp/paqtra/recordings/rec-001.bin"),
             compressed: true,
         };
 

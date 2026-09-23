@@ -29,8 +29,8 @@ const Alerts: React.FC = () => {
   const firing = history.filter((a) => a.status === 'firing').length;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="netra-page">
+      <div className="page-chrome flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center shadow-lg shadow-amber-500/20"><BellRing className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Alerts</h1></div>
           <p className="text-sm text-slate-400 mt-1">Alert rules and notification management</p>

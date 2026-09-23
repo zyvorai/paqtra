@@ -6,7 +6,7 @@
 ///
 /// The `validate_k8s_name` and `validate_port` functions are imported
 /// directly from the production code in `src/policies/mod.rs`.
-use cilium_tui::policies::{validate_k8s_name, validate_port};
+use paqtra::policies::{validate_k8s_name, validate_port};
 
 /// Generate an intra-namespace policy YAML string.
 /// Mirrors the YAML template in `src/policies/mod.rs` `PolicyManager::apply_intra_namespace_policy`.

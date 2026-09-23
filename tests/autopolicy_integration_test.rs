@@ -3,9 +3,9 @@
 /// Tests the autopolicy engine's learning lifecycle, state transitions,
 /// and policy generation using MockMapReader for eBPF data and
 /// K8sClient::mock() for Kubernetes interactions.
-use cilium_tui::ebpf::MockMapReader;
-use cilium_tui::kubernetes::K8sClient;
-use cilium_tui::modules::autopolicy::{
+use paqtra::ebpf::MockMapReader;
+use paqtra::kubernetes::K8sClient;
+use paqtra::modules::autopolicy::{
     AutoPolicy, AutoPolicyConfig, LabelSet, LearningState, LearningStats, Protocol, TrafficPattern,
 };
 use std::collections::HashMap;

@@ -7,7 +7,7 @@ import LoadingSpinner from './components/LoadingSpinner';
 import LoginPage from './components/LoginPage';
 import { ToastProvider } from './components/Toast';
 import { useAuthStore } from './stores/authStore';
-import { useThemeStore } from './stores/themeStore';
+import { applyTheme, readStoredTheme } from './theme';
 
 // Lazy-loaded views
 const Dashboard = React.lazy(() => import('./views/Dashboard'));
@@ -93,17 +93,19 @@ const App: React.FC = () => {
       queries: { retry: 1, refetchOnWindowFocus: false },
     },
   }));
-  const { authRequired, checkSession } = useAuthStore();
-  const isDark = useThemeStore((s) => s.isDark);
+  const { authRequired, sessionReady, checkSession } = useAuthStore();
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDark);
-    document.documentElement.classList.toggle('light-theme', !isDark);
-  }, [isDark]);
+    applyTheme(readStoredTheme());
+  }, []);
 
   useEffect(() => {
     checkSession();
   }, [checkSession]);
+
+  if (!sessionReady) {
+    return <LoadingSpinner size="lg" text="Loading..." fullScreen />;
+  }
 
   if (authRequired) {
     return <LoginPage />;

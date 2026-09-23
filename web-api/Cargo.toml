@@ -1,18 +1,22 @@
 [package]
-name = "cilium-vision-api"
+name = "paqtra-api"
 version = "1.0.0"
 edition = "2021"
-authors = ["Cilium Vision Team"]
-description = "REST API server for Cilium Vision web application"
+authors = ["Paqtra Contributors"]
+description = "REST API server for Paqtra — trace every flow"
+license = "Apache-2.0"
+repository = "https://github.com/ssahani/paqtra"
+homepage = "https://github.com/ssahani/paqtra"
+readme = "../README.md"
 
 [dependencies]
 # Web framework
-axum = { version = "0.8.8", features = ["ws", "macros"] }
-axum-server = { version = "0.7", features = ["tls-rustls"] }
+axum = { version = "0.8.9", features = ["ws", "macros"] }
+axum-server = { version = "0.8", features = ["tls-rustls"] }
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "fs"] }
+tower-http = { version = "0.7", features = ["cors", "trace", "compression-gzip", "fs"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -22,11 +26,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 
-# Redis cache
-redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
-
 # Authentication
-jsonwebtoken = "9.2"
+jsonwebtoken = { version = "11.1", features = ["rust_crypto"] }
 
 # Tracing & Metrics
 tracing = "0.1"
@@ -39,14 +40,15 @@ anyhow = "1.0"
 dotenvy = "0.15"
 
 # HTTP client (for OTEL span export)
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 
 # Utilities
-uuid = { version = "1.6", features = ["v4", "serde"] }
+uuid = { version = "1.26", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-regex = "1.10"
+regex = "1.13"
 dashmap = "6"
-rand = "0.8"
+rand = "0.10"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 
 [profile.release]
 opt-level = 3

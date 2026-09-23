@@ -41,8 +41,8 @@ const PolicyTemplates: React.FC = () => {
   const filtered = search ? templates.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()) || t.description.toLowerCase().includes(search.toLowerCase()) || t.tags.some((tag) => tag.includes(search.toLowerCase()))) : templates;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="netra-page">
+      <div className="page-chrome flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-lg shadow-indigo-500/20"><FileCode className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Policy Templates</h1></div>
           <p className="text-sm text-slate-400 mt-1">Pre-built CiliumNetworkPolicy templates</p>

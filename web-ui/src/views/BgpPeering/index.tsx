@@ -26,8 +26,8 @@ const BgpPeering: React.FC = () => {
   const established = peers.filter((p) => p.state === 'Established').length;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="netra-page">
+      <div className="page-chrome flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 flex items-center justify-center shadow-lg shadow-teal-500/20"><Route className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">BGP Peering</h1></div>
           <p className="text-sm text-slate-400 mt-1">BGP peer status and route advertisements</p>

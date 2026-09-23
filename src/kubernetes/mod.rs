@@ -161,7 +161,7 @@ impl K8sClient {
         });
         api.patch(
             pod,
-            &kube::api::PatchParams::apply("cilium-flow"),
+            &kube::api::PatchParams::apply("paqtra"),
             &kube::api::Patch::Merge(&patch),
         )
         .await?;
@@ -186,7 +186,7 @@ impl K8sClient {
         });
         api.patch(
             deployment,
-            &kube::api::PatchParams::apply("cilium-flow"),
+            &kube::api::PatchParams::apply("paqtra"),
             &kube::api::Patch::Merge(&patch),
         )
         .await?;
@@ -205,7 +205,7 @@ impl K8sClient {
             serde_json::from_str(patch_json).context("Invalid JSON patch for configmap")?;
         api.patch(
             name,
-            &kube::api::PatchParams::apply("cilium-flow"),
+            &kube::api::PatchParams::apply("paqtra"),
             &kube::api::Patch::Merge(&patch),
         )
         .await?;

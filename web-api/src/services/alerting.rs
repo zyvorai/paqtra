@@ -1,7 +1,7 @@
 // Background alerting engine
 //
-// Evaluates alert rules stored in Redis every 60 seconds and fires alerts
-// when conditions are met. Alert history is persisted back to Redis.
+// Evaluates alert rules stored in the in-memory cache every 60 seconds and fires alerts
+// when conditions are met. Alert history is persisted back to the cache.
 
 use crate::AppState;
 use std::sync::Arc;
@@ -10,7 +10,7 @@ const ALERT_RULES_PREFIX: &str = "cv:alert_rules:";
 const ALERT_HISTORY_PREFIX: &str = "cv:alert_history:";
 
 /// Start the background alerting engine.
-/// Evaluates alert rules from Redis every 60 seconds.
+/// Evaluates alert rules from the cache every 60 seconds.
 pub fn spawn_alerting_engine(state: Arc<AppState>) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -23,7 +23,7 @@ pub fn spawn_alerting_engine(state: Arc<AppState>) {
     });
 }
 
-/// Load all alert rules from Redis, evaluate each enabled rule against
+/// Load all alert rules from the cache, evaluate each enabled rule against
 /// live Hubble flows, and fire alerts when thresholds are breached.
 async fn evaluate_rules(state: &AppState) -> anyhow::Result<()> {
     let rules = state.cache.list_values(ALERT_RULES_PREFIX).await?;
@@ -237,7 +237,7 @@ fn parse_rate_threshold(condition: &str) -> Option<f64> {
     num_str.parse::<f64>().ok()
 }
 
-/// Write a fired alert to Redis alert history.
+/// Write a fired alert to cache alert history.
 async fn fire_alert(
     state: &AppState,
     rule_id: &str,

@@ -24,8 +24,8 @@ const CostAnalytics: React.FC = () => {
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="netra-page">
+      <div className="page-chrome flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500 to-emerald-700 flex items-center justify-center shadow-lg shadow-green-500/20"><DollarSign className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Cost Analytics</h1></div>
           <p className="text-sm text-slate-400 mt-1">Network infrastructure cost breakdown by namespace</p>
@@ -77,7 +77,7 @@ const CostAnalytics: React.FC = () => {
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
               <XAxis dataKey="namespace" tick={{ fill: '#94a3b8', fontSize: 11 }} />
               <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} tickFormatter={(v) => `$${v}`} />
-              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8 }} formatter={(v: number) => `$${v.toFixed(2)}`} />
+              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8 }} formatter={(v) => `$${Number(v ?? 0).toFixed(2)}`} />
               <Legend />
               <Bar dataKey="cpu_cost" name="CPU" fill="#3b82f6" radius={[2, 2, 0, 0]} />
               <Bar dataKey="memory_cost" name="Memory" fill="#a855f7" radius={[2, 2, 0, 0]} />

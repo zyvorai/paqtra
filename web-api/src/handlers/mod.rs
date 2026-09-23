@@ -1,5 +1,6 @@
 // HTTP request handlers
 pub mod anomalies;
+pub mod auth;
 pub mod compliance;
 pub mod ebpf;
 pub mod endpoints;
@@ -62,7 +63,7 @@ pub fn to_json<T: Serialize>(val: &T) -> Value {
     })
 }
 
-/// Log an audit event to Redis.
+/// Log an audit event to the in-memory cache.
 ///
 /// If a `request_id` is provided (from the correlation middleware), it is
 /// included in the audit entry for end-to-end traceability.

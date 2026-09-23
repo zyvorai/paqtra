@@ -63,8 +63,47 @@ jobs:
       - run: cargo build --release
       - uses: actions/upload-artifact@v4
         with:
-          name: cilium-tui-${{ matrix.os }}
-          path: target/release/cilium-tui${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          name: paqtra-${{ matrix.os }}
+          path: target/release/paqtra${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+
+  cli-smoke:
+    name: CLI smoke
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: paqtra-ubuntu-latest
+          path: target/release
+      - name: Fix binary permissions
+        run: chmod +x target/release/paqtra
+      - name: CLI smoke
+        run: bash scripts/ci-cli-smoke.sh
+        env:
+          PAQTRA_BIN: ${{ github.workspace }}/target/release/paqtra
+
+  chart-lint:
+    name: Chart lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Helm lint + template
+        run: bash scripts/ci-chart-smoke.sh
+
+  agent-image:
+    name: Agent Dockerfile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build agent/CLI image
+        run: docker build -f Dockerfile -t paqtra:ci .
+        # Full Rust image build is heavy; keep the job but don't block the PR merge path on transient registry issues.
+        continue-on-error: true
 
   # ─── Web API ───────────────────────────────────────────────────────────
   web-api-check:
@@ -99,7 +138,7 @@ jobs:
           cache-dependency-path: web-ui/package-lock.json
       - run: npm ci
       - run: npm run build
-      - run: npm test -- --watchAll=false
+      - run: npx vitest run
       - name: NPM audit
         run: npm audit --audit-level=high
 

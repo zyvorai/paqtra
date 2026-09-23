@@ -2,10 +2,10 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "cilium-vision.fullname" . }}
+  name: {{ include "paqtra.fullname" . }}
   namespace: {{ .Values.global.namespace | default .Release.Namespace }}
   labels:
-    {{- include "cilium-vision.labels" . | nindent 4 }}
+    {{- include "paqtra.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -28,7 +28,7 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ include "cilium-vision.fullname" $ }}-{{ .service }}
+                name: {{ include "paqtra.fullname" $ }}-{{ .service }}
                 port:
                   number: {{ .port }}
           {{- end }}

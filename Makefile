@@ -37,10 +37,10 @@ clean: ## Clean all build artifacts
 	cd web-ui && rm -rf dist node_modules
 
 install: build ## Install TUI to /usr/local/bin
-	sudo cp target/release/cilium-tui /usr/local/bin/
+	sudo cp target/release/paqtra /usr/local/bin/
 
 uninstall: ## Uninstall TUI from /usr/local/bin
-	sudo rm -f /usr/local/bin/cilium-tui
+	sudo rm -f /usr/local/bin/paqtra
 
 dev: ## TUI development workflow: fmt + check + build
 	cargo fmt
@@ -99,18 +99,18 @@ docker-logs: ## Show service logs
 	cd deployments && docker compose logs -f
 
 docker-api: ## Build API Docker image only
-	docker build -t cilium-flow-api:latest -f web-api/Dockerfile web-api/
+	docker build -t paqtra-api:latest -f web-api/Dockerfile web-api/
 
 docker-ui: ## Build UI Docker image only
-	docker build -t cilium-flow-ui:latest -f web-ui/Dockerfile web-ui/
+	docker build -t paqtra-ui:latest -f web-ui/Dockerfile web-ui/
 
 docker-combined: ## Build combined API+UI image
-	docker build -t cilium-flow:latest -f Dockerfile.combined .
+	docker build -t paqtra:latest -f Dockerfile.combined .
 
 docker-push: ## Push images to registry
-	docker push ghcr.io/ssahani/cilium-flow-api:latest
-	docker push ghcr.io/ssahani/cilium-flow-ui:latest
-	docker push ghcr.io/ssahani/cilium-flow:latest
+	docker push ghcr.io/ssahani/paqtra-api:latest
+	docker push ghcr.io/ssahani/paqtra-ui:latest
+	docker push ghcr.io/ssahani/paqtra:latest
 
 # ─── Installation ─────────────────────────────────────────────────────
 install-full: ## Full system installation (build + install + systemd)

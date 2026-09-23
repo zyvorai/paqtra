@@ -6,13 +6,18 @@ use std::env;
 pub struct Config {
     pub host: String,
     pub port: u16,
-    pub redis_url: String,
     pub jwt_secret: String,
     pub hubble_address: String,
     pub k8s_context: Option<String>,
     /// When true, authentication is completely disabled (dev/demo mode only).
     /// Read once at startup from AUTH_DISABLED env var.
     pub auth_disabled: bool,
+    /// Console login username (default: admin).
+    pub admin_username: String,
+    /// Console login password (required when auth is enabled; min 12 chars).
+    pub admin_password: String,
+    /// Optional API key; when set, accepted as an alternate password for admin.
+    pub api_key: String,
     /// Directory containing the built web UI static files (index.html, assets/, etc.)
     pub ui_dist_dir: Option<String>,
     /// Optional Prometheus server URL for querying real metrics (e.g. latency percentiles).
@@ -24,7 +29,7 @@ pub struct Config {
     /// Optional OTLP HTTP endpoint for exporting trace spans (e.g. "http://localhost:4318").
     /// Read from OTEL_EXPORTER_ENDPOINT env var. When unset, tracing export is disabled.
     pub otel_endpoint: Option<String>,
-    /// Service name reported in exported spans. Defaults to "cilium-vision-api".
+    /// Service name reported in exported spans. Defaults to "paqtra-api".
     /// Read from OTEL_SERVICE_NAME env var.
     pub otel_service_name: String,
     /// Path to TLS certificate file (PEM format). When set with tls_key_path, enables HTTPS.
@@ -33,6 +38,10 @@ pub struct Config {
     pub tls_key_path: Option<String>,
     /// Port for HTTPS when TLS is enabled. Defaults to 9443.
     pub tls_port: u16,
+    /// Directory for the SQLite database that persists alert rules, audit log,
+    /// exports, etc. across restarts. Read from PAQTRA_DATA_DIR. When unset,
+    /// state is memory-only and lost on restart.
+    pub data_dir: Option<String>,
 }
 
 impl Config {
@@ -106,28 +115,55 @@ impl Config {
             vec![("local".to_string(), hubble_address.clone())]
         };
 
+        let admin_username = env::var("ADMIN_USERNAME").unwrap_or_else(|_| "admin".to_string());
+        let (admin_password, api_key) = if auth_disabled {
+            (
+                env::var("ADMIN_PASSWORD").unwrap_or_default(),
+                env::var("API_KEY").unwrap_or_default(),
+            )
+        } else {
+            let admin_password = env::var("ADMIN_PASSWORD").map_err(|_| {
+                anyhow::anyhow!(
+                    "ADMIN_PASSWORD environment variable is required when auth is enabled. \
+                     Set a strong password (at least 12 characters)."
+                )
+            })?;
+            if admin_password.len() < 12 {
+                anyhow::bail!(
+                    "ADMIN_PASSWORD must be at least 12 characters long. Current length: {}",
+                    admin_password.len()
+                );
+            }
+            (admin_password, env::var("API_KEY").unwrap_or_default())
+        };
+
         Ok(Self {
-            host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
-            port: env::var("PORT")
+            host: env::var("PAQTRA_HOST")
+                .or_else(|_| env::var("HOST"))
+                .unwrap_or_else(|_| "0.0.0.0".to_string()),
+            port: env::var("PAQTRA_PORT")
+                .or_else(|_| env::var("PORT"))
                 .unwrap_or_else(|_| "9191".to_string())
                 .parse()?,
-            redis_url: env::var("REDIS_URL")
-                .unwrap_or_else(|_| "redis://localhost:6379".to_string()),
             jwt_secret,
             hubble_address,
             k8s_context: env::var("K8S_CONTEXT").ok(),
             auth_disabled,
+            admin_username,
+            admin_password,
+            api_key,
             ui_dist_dir: env::var("UI_DIST_DIR").ok(),
             prometheus_url: env::var("PROMETHEUS_URL").ok(),
             hubble_addresses,
             otel_endpoint: env::var("OTEL_EXPORTER_ENDPOINT").ok(),
             otel_service_name: env::var("OTEL_SERVICE_NAME")
-                .unwrap_or_else(|_| "cilium-vision-api".to_string()),
+                .unwrap_or_else(|_| "paqtra-api".to_string()),
             tls_cert_path: env::var("TLS_CERT_PATH").ok().filter(|s| !s.is_empty()),
             tls_key_path: env::var("TLS_KEY_PATH").ok().filter(|s| !s.is_empty()),
             tls_port: env::var("TLS_PORT")
                 .unwrap_or_else(|_| "9443".to_string())
                 .parse()?,
+            data_dir: env::var("PAQTRA_DATA_DIR").ok().filter(|s| !s.is_empty()),
         })
     }
 }

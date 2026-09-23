@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Cilium TUI - Demo Setup"
+echo "🚀 Paqtra - Demo Setup"
 echo "=========================="
 echo ""
 
@@ -201,7 +201,7 @@ echo "  • Client: 1 replica (curl)"
 echo ""
 echo "🎯 Next steps:"
 echo "  1. Build the TUI: cargo build --release"
-echo "  2. Run the TUI: ./target/release/cilium-tui"
+echo "  2. Run the TUI: ./target/release/paqtra"
 echo "  3. Watch live flows in the TUI!"
 echo ""
 echo "🔄 To generate more traffic:"

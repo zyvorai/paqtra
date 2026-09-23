@@ -14,6 +14,6 @@ export const useNamespaceStore = create<NamespaceStore>()(
       setNamespace: (ns) => set({ selectedNamespace: ns }),
       clearNamespace: () => set({ selectedNamespace: '' }),
     }),
-    { name: 'cilium-vision-namespace' }
+    { name: 'paqtra-namespace' }
   )
 );

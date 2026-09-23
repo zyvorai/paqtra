@@ -6,11 +6,11 @@ interface ThemeState {
 }
 
 export const useThemeStore = create<ThemeState>((set) => ({
-  isDark: localStorage.getItem('cilium-vision-theme') !== 'light',
+  isDark: localStorage.getItem('paqtra-theme') !== 'light',
   toggle: () =>
     set((state) => {
       const next = !state.isDark;
-      localStorage.setItem('cilium-vision-theme', next ? 'dark' : 'light');
+      localStorage.setItem('paqtra-theme', next ? 'dark' : 'light');
       document.documentElement.classList.toggle('dark', next);
       document.documentElement.classList.toggle('light-theme', !next);
       return { isDark: next };

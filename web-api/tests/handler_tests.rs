@@ -1,15 +1,15 @@
-// Comprehensive handler integration tests for the Cilium Vision Web API.
+// Comprehensive handler integration tests for the Paqtra Web API.
 //
 // These tests exercise configuration validation, model validation, flow model
 // serialization, auth/RBAC logic, pagination, Hubble service validation,
 // K8s name validation, and K8s memory parsing -- all WITHOUT requiring a
-// running Redis instance, Hubble relay, or Kubernetes cluster.
+// running Hubble relay or Kubernetes cluster.
 
-use cilium_vision_api::auth_types::Claims;
-use cilium_vision_api::config::Config;
-use cilium_vision_api::models::flow::{Flow, FlowEndpoint};
-use cilium_vision_api::models::policy::CreatePolicyRequest;
-use cilium_vision_api::utils::{
+use paqtra_api::auth_types::Claims;
+use paqtra_api::config::Config;
+use paqtra_api::models::flow::{Flow, FlowEndpoint};
+use paqtra_api::models::policy::CreatePolicyRequest;
+use paqtra_api::utils::{
     cap_hubble_flow_limit, filter_by_namespace_access, has_namespace_access, paginate_json,
     parse_k8s_memory, validate_hubble_address, validate_hubble_namespace, validate_k8s_name,
     PaginationQuery,
@@ -33,11 +33,15 @@ fn clear_config_env() {
         std::env::remove_var("JWT_SECRET");
         std::env::remove_var("HOST");
         std::env::remove_var("PORT");
-        std::env::remove_var("REDIS_URL");
+        std::env::remove_var("PAQTRA_HOST");
+        std::env::remove_var("PAQTRA_PORT");
         std::env::remove_var("HUBBLE_ADDRESS");
         std::env::remove_var("HUBBLE_ADDRESSES");
         std::env::remove_var("K8S_CONTEXT");
         std::env::remove_var("AUTH_DISABLED");
+        std::env::remove_var("ADMIN_USERNAME");
+        std::env::remove_var("ADMIN_PASSWORD");
+        std::env::remove_var("API_KEY");
         std::env::remove_var("UI_DIST_DIR");
         std::env::remove_var("PROMETHEUS_URL");
         std::env::remove_var("ENVIRONMENT");
@@ -108,16 +112,13 @@ fn test_config_defaults() {
     let secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"; // 40 chars
     unsafe {
         std::env::set_var("JWT_SECRET", secret);
+        std::env::set_var("ADMIN_PASSWORD", "test-admin-pass-ok");
     }
 
     let config = Config::load().expect("Config::load should succeed with a valid secret");
 
     assert_eq!(config.host, "0.0.0.0", "Default host");
     assert_eq!(config.port, 9191, "Default port");
-    assert_eq!(
-        config.redis_url, "redis://localhost:6379",
-        "Default Redis URL"
-    );
     assert_eq!(
         config.hubble_address, "localhost:4245",
         "Default Hubble address"
@@ -142,6 +143,7 @@ fn test_config_hubble_addresses_parsing() {
     let secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     unsafe {
         std::env::set_var("JWT_SECRET", secret);
+        std::env::set_var("ADMIN_PASSWORD", "test-admin-pass-ok");
         std::env::set_var(
             "HUBBLE_ADDRESSES",
             "us-west=hubble-west:4245,eu-central=hubble-eu:4245,ap-south=hubble-ap:4245",
@@ -174,6 +176,7 @@ fn test_config_hubble_addresses_fallback_to_local() {
     let secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     unsafe {
         std::env::set_var("JWT_SECRET", secret);
+        std::env::set_var("ADMIN_PASSWORD", "test-admin-pass-ok");
         std::env::set_var("HUBBLE_ADDRESS", "my-relay:4245");
     }
 
@@ -195,6 +198,7 @@ fn test_config_hubble_addresses_ignores_malformed() {
     let secret = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
     unsafe {
         std::env::set_var("JWT_SECRET", secret);
+        std::env::set_var("ADMIN_PASSWORD", "test-admin-pass-ok");
         std::env::set_var(
             "HUBBLE_ADDRESSES",
             "good=host:4245,bad-no-equals,=no-name,also-good=h2:4245",

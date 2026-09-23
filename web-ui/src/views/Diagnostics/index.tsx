@@ -33,8 +33,8 @@ const Diagnostics: React.FC = () => {
   const warn = tests.filter((t) => t.status === 'warn').length;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="netra-page">
+      <div className="page-chrome flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center shadow-lg shadow-purple-500/20"><Stethoscope className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Network Diagnostics</h1></div>
           <p className="text-sm text-slate-400 mt-1">Connectivity tests, DNS checks, and health validation</p>

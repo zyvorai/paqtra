@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-# Cilium Flow — Deploy & Test on Remote K3s
+# Paqtra — Deploy & Test on Remote K3s
 #
-# Syncs source, builds cilium-tui on the remote, enables Hubble,
+# Syncs source, builds paqtra on the remote, enables Hubble,
 # and runs the TUI or a smoke test.
 #
 # Usage:
@@ -18,7 +18,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-REMOTE_DIR="/root/cilium-flow"
+REMOTE_DIR="/root/paqtra"
 
 TARGET_HOST="${1:-}"
 TARGET_USER="${2:-root}"
@@ -69,7 +69,7 @@ if [ -z "${TARGET_HOST}" ]; then
     echo ""
     echo "  --build   Sync source and build on remote"
     echo "  --test    Build + run smoke tests (default)"
-    echo "  --run     Build + launch cilium-tui interactively"
+    echo "  --run     Build + launch paqtra interactively"
     echo "  --status  Just check k3s/Cilium/Hubble status"
     exit 1
 fi
@@ -114,10 +114,10 @@ echo "=== All Pods ==="
 kubectl get pods -A 2>/dev/null
 
 echo ""
-echo "=== cilium-tui ==="
-if [ -f /usr/local/bin/cilium-tui ]; then
-    echo "  Installed at /usr/local/bin/cilium-tui"
-    ls -lh /usr/local/bin/cilium-tui
+echo "=== paqtra ==="
+if [ -f /usr/local/bin/paqtra ]; then
+    echo "  Installed at /usr/local/bin/paqtra"
+    ls -lh /usr/local/bin/paqtra
 else
     echo "  Not installed"
 fi
@@ -189,12 +189,12 @@ REMOTE
 
 # ─── Install build deps + build ─────────────────────────────
 
-step "Building cilium-tui on ${TARGET_HOST}"
+step "Building paqtra on ${TARGET_HOST}"
 _ssh bash <<'REMOTE'
 set -e
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-cd /root/cilium-flow
+cd /root/paqtra
 
 # Install build deps if needed (AlmaLinux / RHEL / Fedora)
 if command -v dnf &>/dev/null; then
@@ -221,12 +221,12 @@ echo "  Building release binary..."
 cargo build --release 2>&1 | tail -5
 
 # Install
-cp target/release/cilium-tui /usr/local/bin/cilium-tui
-chmod 755 /usr/local/bin/cilium-tui
+cp target/release/paqtra /usr/local/bin/paqtra
+chmod 755 /usr/local/bin/paqtra
 
 echo ""
-echo "  ✅ cilium-tui built and installed"
-ls -lh /usr/local/bin/cilium-tui
+echo "  ✅ paqtra built and installed"
+ls -lh /usr/local/bin/paqtra
 REMOTE
 ok "Build complete"
 
@@ -238,14 +238,14 @@ if [ "$ACTION" = "test" ]; then
 set -e
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 source "$HOME/.cargo/env" 2>/dev/null || true
-cd /root/cilium-flow
+cd /root/paqtra
 
 echo "  Running cargo test..."
 cargo test 2>&1 | tail -20
 
 echo ""
-echo "  Checking cilium-tui --help..."
-cilium-tui --help 2>&1 | head -5
+echo "  Checking paqtra --help..."
+paqtra --help 2>&1 | head -5
 
 echo ""
 echo "  Testing Hubble connectivity..."
@@ -280,9 +280,9 @@ echo "  ✅ Smoke tests complete"
 echo ""
 echo "  To run the TUI interactively:"
 echo "    ssh root@$(hostname -I | awk '{print $1}')"
-echo "    cilium-tui"
+echo "    paqtra"
 echo "  Or with skip-bootstrap:"
-echo "    cilium-tui --skip-bootstrap"
+echo "    paqtra --skip-bootstrap"
 REMOTE
     ok "Smoke tests done"
 fi
@@ -290,16 +290,16 @@ fi
 # ─── Run TUI interactively ──────────────────────────────────
 
 if [ "$ACTION" = "run" ]; then
-    step "Launching cilium-tui on ${TARGET_HOST}"
+    step "Launching paqtra on ${TARGET_HOST}"
     echo "  Connecting with interactive TTY..."
     echo ""
     if [ -n "${TARGET_PASS}" ] && command -v sshpass &>/dev/null; then
         export SSHPASS="${TARGET_PASS}"
         sshpass -e ssh ${SSH_OPTS} -t "${TARGET_USER}@${TARGET_HOST}" \
-            "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && cilium-tui --skip-bootstrap"
+            "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && paqtra --skip-bootstrap"
     else
         ssh ${SSH_OPTS} -t "${TARGET_USER}@${TARGET_HOST}" \
-            "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && cilium-tui --skip-bootstrap"
+            "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && paqtra --skip-bootstrap"
     fi
 fi
 
@@ -315,5 +315,5 @@ echo ""
 echo "  Or SSH directly:"
 echo "    sshpass -p '****' ssh root@${TARGET_HOST}"
 echo "    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
-echo "    cilium-tui"
+echo "    paqtra"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

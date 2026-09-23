@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cilium Vision - Build, Push & Deploy
+# Paqtra - Build, Push & Deploy
 # Usage:
 #   ./scripts/deploy.sh build          Build Docker images locally
 #   ./scripts/deploy.sh push           Push images to registry
@@ -14,7 +14,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REGISTRY="${REGISTRY:-ghcr.io}"
-REPO="${REPO:-ssahani/cilium-flow}"
+REPO="${REPO:-ssahani/paqtra}"
 TAG="${TAG:-latest}"
 K8S_NS="${K8S_NS:-cilium-system}"
 
@@ -97,14 +97,14 @@ cmd_k8s() {
     # Generate JWT secret dynamically instead of applying hardcoded secrets.yaml
     local jwt_secret
     jwt_secret=$(openssl rand -base64 48)
-    kubectl -n "${K8S_NS}" create secret generic cilium-vision-secrets \
+    kubectl -n "${K8S_NS}" create secret generic paqtra-secrets \
         --from-literal=jwt-secret="${jwt_secret}" \
         --dry-run=client -o yaml | kubectl apply -f -
     green "  JWT secret generated and applied"
 
     # Apply manifests in order (skip secrets.yaml — generated above)
     local k8s_dir="${ROOT}/deployments/k8s"
-    for f in configmap.yaml rbac.yaml redis-deployment.yaml backend-deployment.yaml frontend-deployment.yaml ingress.yaml; do
+    for f in configmap.yaml rbac.yaml backend-deployment.yaml frontend-deployment.yaml ingress.yaml; do
         if [ -f "${k8s_dir}/${f}" ]; then
             kubectl apply -n "${K8S_NS}" -f "${k8s_dir}/${f}"
             green "  Applied ${f}"
@@ -113,8 +113,8 @@ cmd_k8s() {
 
     echo ""
     bold "Waiting for rollout..."
-    kubectl -n "${K8S_NS}" rollout status deployment/cilium-vision-api --timeout=120s || true
-    kubectl -n "${K8S_NS}" rollout status deployment/cilium-vision-ui --timeout=120s || true
+    kubectl -n "${K8S_NS}" rollout status deployment/paqtra-api --timeout=120s || true
+    kubectl -n "${K8S_NS}" rollout status deployment/paqtra-ui --timeout=120s || true
 
     echo ""
     cmd_status
@@ -170,7 +170,7 @@ case "${1:-help}" in
     all)        cmd_all ;;
     status)     cmd_status ;;
     *)
-        bold "Cilium Vision Deploy Script"
+        bold "Paqtra Deploy Script"
         echo ""
         echo "Usage: $0 <command>"
         echo ""
@@ -186,7 +186,7 @@ case "${1:-help}" in
         echo ""
         echo "Environment variables:"
         echo "  REGISTRY    Container registry (default: ghcr.io)"
-        echo "  REPO        Repository name (default: ssahani/cilium-flow)"
+        echo "  REPO        Repository name (default: ssahani/paqtra)"
         echo "  TAG         Image tag (default: latest)"
         echo "  K8S_NS      Kubernetes namespace (default: cilium-system)"
         ;;

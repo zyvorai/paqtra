@@ -1,8 +1,8 @@
 // Background GitOps change tracker
 //
 // Runs every 120 seconds, queries K8s events for recent changes to
-// network-related resources, and stores them in Redis under the
-// `cv:changes:` prefix. Detects ArgoCD/Flux annotations to mark
+// network-related resources, and stores them in the cache (durable across restarts
+// when PAQTRA_DATA_DIR is set) under the `cv:changes:` prefix. Detects ArgoCD/Flux annotations to mark
 // GitOps-managed resources.
 
 use crate::AppState;
@@ -35,7 +35,7 @@ const RELEVANT_KINDS: &[&str] = &[
 
 /// Run a single change-tracking cycle: fetch K8s events, filter to
 /// relevant network resources, check for GitOps annotations, and
-/// persist new changes to Redis.
+/// persist new changes to the in-memory cache.
 async fn track_changes(state: &AppState) -> anyhow::Result<()> {
     let data = state
         .k8s
@@ -82,10 +82,10 @@ async fn track_changes(state: &AppState) -> anyhow::Result<()> {
 
         // Short UID for the change ID
         let uid_short = &uid[..uid.len().min(8)];
-        let redis_key = format!("{}{}", CHANGES_PREFIX, uid);
+        let cache_key = format!("{}{}", CHANGES_PREFIX, uid);
 
         // Check if we already stored this event
-        if let Ok(Some(_)) = state.cache.get::<serde_json::Value>(&redis_key).await {
+        if let Ok(Some(_)) = state.cache.get::<serde_json::Value>(&cache_key).await {
             continue;
         }
 
@@ -118,7 +118,7 @@ async fn track_changes(state: &AppState) -> anyhow::Result<()> {
             "rollback_available": false,
         });
 
-        if let Err(e) = state.cache.set(&redis_key, &change, CHANGES_TTL).await {
+        if let Err(e) = state.cache.set_durable(&cache_key, &change, CHANGES_TTL).await {
             tracing::debug!("Failed to store change {}: {}", uid_short, e);
             continue;
         }

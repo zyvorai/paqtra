@@ -1,165 +1,99 @@
-import React, { useState, useEffect } from 'react';
-import { Lock, User, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 
-const LoginPage: React.FC = () => {
+const WRONG = 'Wrong username or password.';
+
+export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [busy, setBusy] = useState(false);
   const login = useAuthStore((s) => s.login);
+  const host = window.location.host || window.location.hostname;
 
-  // Load saved username on mount
   useEffect(() => {
-    const savedUsername = localStorage.getItem('cilium-vision-username');
-    if (savedUsername) {
-      setUsername(savedUsername);
-      setRememberMe(true);
-    }
+    const saved = localStorage.getItem('paqtra-username');
+    if (saved) setUsername(saved);
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!username || !password) return;
-    setLoading(true);
+    if (!username.trim() || !password) {
+      setError(WRONG);
+      return;
+    }
+    setBusy(true);
     setError('');
     try {
-      await login(username, password);
-
-      if (rememberMe) {
-        localStorage.setItem('cilium-vision-username', username);
-        localStorage.setItem('cilium-vision-remember', 'true');
-      } else {
-        localStorage.removeItem('cilium-vision-username');
-        localStorage.removeItem('cilium-vision-remember');
-      }
-    } catch (err) {
-      void err; // Intentionally discard error details to avoid leaking server info
-      setError('Invalid credentials. Please try again.');
+      await login(username.trim(), password);
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === 'object' && 'response' in e
+          ? (e as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
+      setError(msg || WRONG);
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-4 page-bg">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-600/20">
-            <Lock className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-gradient-blue">
-            Cilium Vision
-          </h1>
-          <p className="text-sm text-slate-400 mt-2">
-            Sign in to your account
-          </p>
-        </div>
-
-        {/* Login form */}
-        <form
-          onSubmit={handleSubmit}
-          className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-8 shadow-2xl border-gradient"
-        >
-          {/* Error Message */}
-          {error && (
-            <div className="flex items-center gap-2.5 bg-red-900/30 border border-red-800/50 rounded-lg p-3 mb-6">
-              <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0" />
-              <span className="text-sm text-red-400">{error}</span>
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-slate-300 mb-1.5">
-                Username
-              </label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                <input
-                  id="username"
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  required
-                  disabled={loading}
-                  autoComplete="username"
-                  autoFocus
-                  placeholder="Enter username"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-900/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-1.5">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  disabled={loading}
-                  autoComplete="current-password"
-                  placeholder="Enter password"
-                  className="w-full pl-10 pr-10 py-2.5 bg-slate-900/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Remember Me Checkbox */}
-          <div className="mt-4">
-            <label className="flex items-center cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                disabled={loading}
-                className="w-4 h-4 mr-2 rounded border-slate-600 bg-slate-900 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 disabled:cursor-not-allowed accent-blue-500"
-              />
-              <span className="text-sm text-slate-400 font-medium">
-                Remember me
-              </span>
-            </label>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading || !username || !password}
-            className="w-full mt-6 flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-medium rounded-lg py-2.5 px-4 transition-all hover:scale-[1.02] text-sm disabled:opacity-50 disabled:hover:scale-100"
-          >
-            {loading ? (
-              <><Loader2 className="h-4 w-4 animate-spin" /> Signing in...</>
-            ) : (
-              <><Lock className="h-4 w-4" /> Sign in</>
-            )}
-          </button>
-
-          {/* Footer Note */}
-          <div className="mt-5 pt-4 border-t border-slate-700/50 text-center">
-            <span className="text-slate-500 text-xs">
-              Authentication is configured on the server. When auth is disabled, any credentials are accepted.
-            </span>
-          </div>
-        </form>
+    <div className="login-shell">
+      <div className="login-info">
+        <img src="/zyvor-mark.svg" alt="Zyvor" className="login-logo" />
+        <p className="eyebrow">Paqtra · Zyvor</p>
+        <h1>Trace every flow.</h1>
+        <p>
+          See where network traffic goes and why it is allowed or dropped — full-stack observability for Kubernetes
+          networks powered by Cilium eBPF.
+        </p>
+        <p className="login-host">
+          Connecting to <code>{host}</code>
+        </p>
       </div>
+      <form className="card login-card" onSubmit={submit} noValidate>
+        <h1>Sign in.</h1>
+        <label className="tokenbox">
+          Username
+          <input
+            value={username}
+            onChange={(e) => {
+              setUsername(e.target.value);
+              if (error) setError('');
+            }}
+            autoFocus
+            autoComplete="username"
+            disabled={busy}
+            aria-invalid={Boolean(error)}
+          />
+        </label>
+        <label className="tokenbox">
+          Password
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (error) setError('');
+            }}
+            autoComplete="current-password"
+            disabled={busy}
+            aria-invalid={Boolean(error)}
+          />
+        </label>
+        {error ? (
+          <p className="login-error" role="alert" aria-live="assertive">
+            {error}
+          </p>
+        ) : null}
+        <button type="submit" className="primary" disabled={busy}>
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
+        <p className="login-hint">
+          Use the credentials configured for this deployment (
+          <code>ADMIN_USERNAME</code> / <code>ADMIN_PASSWORD</code>).
+        </p>
+      </form>
     </div>
   );
-};
-
-export default LoginPage;
+}

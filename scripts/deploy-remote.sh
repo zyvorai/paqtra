@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-# Cilium Vision — Remote Deployment via SSH + rsync
-# Supports password auth (sshpass), --quick mode, K3s deploy
+# Paqtra — Remote Kubernetes Deployment via SSH + rsync
+# Builds container images on the host and installs via Helm into K3s/K8s.
+# No host systemd units — Paqtra runs in-cluster only.
 #
 # Usage:
 #   ./scripts/deploy-remote.sh <host> <user> [password] [options]
-#   ./scripts/deploy-remote.sh 10.0.1.5 root mypass --quick
-#   ./scripts/deploy-remote.sh 10.0.1.5 root mypass --k3s
-#   ./scripts/deploy-remote.sh 10.0.1.5 root --key  (SSH key auth)
-#   ./scripts/deploy-remote.sh --fleet hosts.txt
+#   ./scripts/deploy-remote.sh 10.0.1.5 root --key
 #   ./scripts/deploy-remote.sh 10.0.1.5 root mypass --uninstall
+#   ./scripts/deploy-remote.sh --fleet hosts.txt
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -30,8 +29,7 @@ KEY_AUTH=false
 
 for arg in "$@"; do
     case "$arg" in
-        --quick)     QUICK_MODE=true ;;
-        --k3s)       K3S_MODE=true ;;
+        --quick|--k3s)  ;;  # legacy flags ignored — always Kubernetes
         --uninstall) UNINSTALL=true ;;
         --key)       KEY_AUTH=true; TARGET_PASS="" ;;
         --fleet)     FLEET_FILE="${4:-}" ;;
@@ -70,14 +68,14 @@ _rsync() {
 
 validate() {
     if [ -z "${TARGET_HOST}" ]; then
-        echo "Usage: $0 <host> <user> [password] [--quick|--k3s|--uninstall|--key]"
+        echo "Usage: $0 <host> <user> [password] [--uninstall|--key]"
+        echo ""
+        echo "Deploys Paqtra into the remote Kubernetes cluster (Helm + container images)."
         echo ""
         echo "Examples:"
-        echo "  $0 10.0.1.5 root mypassword              # Full deploy with password"
-        echo "  $0 10.0.1.5 root mypassword --quick       # Rsync + install only"
-        echo "  $0 10.0.1.5 root mypassword --k3s         # Deploy with K3s + Helm"
+        echo "  $0 10.0.1.5 root mypassword              # Build images + Helm install"
         echo "  $0 10.0.1.5 root --key                    # SSH key auth"
-        echo "  $0 10.0.1.5 root mypassword --uninstall   # Remove everything"
+        echo "  $0 10.0.1.5 root mypassword --uninstall   # Remove Helm release + images"
         echo "  $0 --fleet hosts.txt                      # Deploy to multiple hosts"
         exit 1
     fi
@@ -104,7 +102,7 @@ check_connectivity() {
     # Resolve remote home directory
     REMOTE_HOME=$(_ssh "echo \$HOME" 2>/dev/null | tr -d '\r')
     REMOTE_HOME="${REMOTE_HOME:-/home/${TARGET_USER}}"
-    REMOTE_DIR="${REMOTE_HOME}/cilium-vision"
+    REMOTE_DIR="${REMOTE_HOME}/paqtra"
     info "Remote deploy directory: ${REMOTE_DIR}"
 }
 
@@ -134,10 +132,10 @@ sync_binaries() {
     info "Syncing pre-built binaries..."
 
     # API binary
-    if [ -f "${PROJECT_DIR}/web-api/target/release/cilium-vision-api" ]; then
+    if [ -f "${PROJECT_DIR}/web-api/target/release/paqtra-api" ]; then
         _rsync \
-            "${PROJECT_DIR}/web-api/target/release/cilium-vision-api" \
-            "${TARGET_USER}@${TARGET_HOST}:/tmp/cilium-vision-api"
+            "${PROJECT_DIR}/web-api/target/release/paqtra-api" \
+            "${TARGET_USER}@${TARGET_HOST}:/tmp/paqtra-api"
         ok "API binary synced"
     else
         warn "API binary not found — run 'make api-build' first"
@@ -147,115 +145,30 @@ sync_binaries() {
     if [ -d "${PROJECT_DIR}/web-ui/dist" ]; then
         _rsync \
             "${PROJECT_DIR}/web-ui/dist/" \
-            "${TARGET_USER}@${TARGET_HOST}:/tmp/cilium-vision-ui/"
+            "${TARGET_USER}@${TARGET_HOST}:/tmp/paqtra-ui/"
         ok "UI files synced"
     else
         warn "UI not built — run 'make ui-build' first"
     fi
 
     # Install script
-    _rsync "${PROJECT_DIR}/install.sh" "${TARGET_USER}@${TARGET_HOST}:/tmp/cilium-vision-install.sh"
+    _rsync "${PROJECT_DIR}/install.sh" "${TARGET_USER}@${TARGET_HOST}:/tmp/paqtra-install.sh"
 }
 
 # ─── Uninstall old version ───────────────────────────────────
 
 uninstall_old() {
-    info "Removing old version..."
+    info "Removing legacy host installs (systemd) if present..."
     _ssh bash <<'REMOTE'
-systemctl stop cilium-vision-api 2>/dev/null || true
-systemctl stop cilium-vision-ui 2>/dev/null || true
-systemctl disable cilium-vision-api cilium-vision-ui 2>/dev/null || true
-rm -f /usr/local/bin/cilium-vision-api
-rm -f /usr/lib/systemd/system/cilium-vision-api.service
-rm -f /usr/lib/systemd/system/cilium-vision-ui.service
-systemctl daemon-reload 2>/dev/null || true
+systemctl stop paqtra-api paqtra-ui hubble-port-forward 2>/dev/null || true
+systemctl disable paqtra-api paqtra-ui hubble-port-forward 2>/dev/null || true
+sudo rm -f /usr/local/bin/paqtra-api
+sudo rm -f /usr/lib/systemd/system/paqtra-api.service
+sudo rm -f /usr/lib/systemd/system/paqtra-ui.service
+sudo rm -f /usr/lib/systemd/system/hubble-port-forward.service
+sudo systemctl daemon-reload 2>/dev/null || true
 REMOTE
-    ok "Old version removed"
-}
-
-# ─── Install on remote (quick mode) ─────────────────────────
-
-install_quick() {
-    info "Installing binaries on ${TARGET_HOST}..."
-    _ssh bash <<'REMOTE'
-set -e
-
-# Install API binary
-if [ -f /tmp/cilium-vision-api ]; then
-    install -m 755 /tmp/cilium-vision-api /usr/local/bin/cilium-vision-api
-    echo "  API binary installed"
-fi
-
-# Install UI files
-if [ -d /tmp/cilium-vision-ui ]; then
-    mkdir -p /var/lib/cilium-vision/ui
-    cp -r /tmp/cilium-vision-ui/* /var/lib/cilium-vision/ui/
-    echo "  UI files installed"
-fi
-
-# Create user if needed
-id cilium-vision &>/dev/null || useradd -r -s /sbin/nologin -m -d /var/lib/cilium-vision cilium-vision 2>/dev/null || true
-
-# Create config
-mkdir -p /etc/cilium-vision /var/log/cilium-vision
-if [ ! -f /etc/cilium-vision/config.env ]; then
-    JWT=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 64)
-    cat > /etc/cilium-vision/config.env <<EOF
-CILIUM_VISION_HOST=0.0.0.0
-CILIUM_VISION_PORT=9191
-HUBBLE_ADDRESS=localhost:4245
-REDIS_URL=redis://localhost:6379
-JWT_SECRET=${JWT}
-RUST_LOG=info
-UI_DIST_DIR=/var/lib/cilium-vision/ui
-EOF
-    chmod 600 /etc/cilium-vision/config.env
-fi
-
-# Systemd service
-cat > /usr/lib/systemd/system/cilium-vision-api.service <<'EOF'
-[Unit]
-Description=Cilium Vision API Server
-After=network-online.target redis.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=cilium-vision
-EnvironmentFile=/etc/cilium-vision/config.env
-ExecStart=/usr/local/bin/cilium-vision-api
-Restart=on-failure
-RestartSec=5
-LimitNOFILE=65536
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/var/log/cilium-vision /var/lib/cilium-vision /etc/cilium-vision
-PrivateTmp=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-
-# Install and start Redis if available
-if command -v redis-server &>/dev/null; then
-    systemctl enable redis --now 2>/dev/null || true
-fi
-
-# Start API
-systemctl enable cilium-vision-api --now 2>/dev/null || true
-sleep 2
-
-# Health check
-if curl -sf http://localhost:9191/health >/dev/null 2>&1; then
-    echo "  ✅ API health check passed"
-else
-    echo "  ⚠️  API not responding (may need Redis)"
-fi
-REMOTE
-    ok "Installation complete"
+    ok "Legacy host units removed"
 }
 
 # ─── Setup K8s + Cilium + Hubble stack ─────────────────────
@@ -271,7 +184,7 @@ if ! command -v k3s &>/dev/null; then
     curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --flannel-backend=none --disable-network-policy --disable-kube-proxy" sh -
     echo "  Waiting for K3s API..."
     for i in \$(seq 1 60); do
-        KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes &>/dev/null && break
+        sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes &>/dev/null && break
         sleep 2
     done
     echo "  ✅ K3s installed"
@@ -279,7 +192,12 @@ else
     echo "  ✅ K3s already installed"
 fi
 
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+# User-readable kubeconfig (non-root cannot open /etc/rancher/k3s/k3s.yaml)
+mkdir -p "\$HOME/.kube"
+sudo cp /etc/rancher/k3s/k3s.yaml "\$HOME/.kube/config"
+sudo chown "\$(id -u):\$(id -g)" "\$HOME/.kube/config"
+chmod 600 "\$HOME/.kube/config"
+export KUBECONFIG="\$HOME/.kube/config"
 
 # ── Helm ─────────────────────────────────────────────────────
 if ! command -v helm &>/dev/null; then
@@ -340,16 +258,6 @@ echo "  Waiting for Cilium pods to be ready..."
 kubectl -n kube-system wait --for=condition=ready pod -l k8s-app=cilium --timeout=120s 2>/dev/null || true
 kubectl -n kube-system wait --for=condition=ready pod -l k8s-app=hubble-relay --timeout=120s 2>/dev/null || true
 
-# ── Port-forward Hubble relay for local access ───────────────
-# Kill any existing port-forward
-pkill -f "kubectl.*port-forward.*hubble-relay" 2>/dev/null || true
-sleep 1
-
-# Start port-forward in background so the API can reach Hubble at localhost:4245
-nohup kubectl -n kube-system port-forward deploy/hubble-relay 4245:4245 --address=127.0.0.1 \
-    > /tmp/hubble-relay-port-forward.log 2>&1 &
-echo "  ✅ Hubble relay port-forwarded to localhost:4245"
-
 # ── Verify ───────────────────────────────────────────────────
 echo ""
 echo "  === Cluster Status ==="
@@ -365,213 +273,159 @@ REMOTE
     ok "K8s + Cilium + Hubble stack ready"
 }
 
-# ─── Full install (build on remote) ─────────────────────────
+# ─── Kubernetes deployment (images + Helm) ───────────────────
 
-install_full() {
-    info "Running full installation on ${TARGET_HOST}..."
+deploy_kubernetes() {
+    info "Deploying Paqtra into Kubernetes on ${TARGET_HOST}..."
 
-    # First ensure K8s + Cilium + Hubble are set up
     setup_k8s_stack
+    uninstall_old
 
-    info "Building and installing Cilium Vision..."
     _ssh bash <<REMOTE
 set -e
 cd ${REMOTE_DIR}
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+mkdir -p "\$HOME/.kube"
+sudo cp /etc/rancher/k3s/k3s.yaml "\$HOME/.kube/config"
+sudo chown "\$(id -u):\$(id -g)" "\$HOME/.kube/config"
+chmod 600 "\$HOME/.kube/config"
+export KUBECONFIG="\$HOME/.kube/config"
+export PATH="\$HOME/.local/bin:/usr/local/bin:\$PATH"
 
-# Install system deps
-if command -v dnf &>/dev/null; then
-    dnf install -y gcc make openssl-devel pkg-config curl wget git redis nodejs npm 2>/dev/null || true
-elif command -v apt-get &>/dev/null; then
-    apt-get update -qq && apt-get install -y -qq build-essential pkg-config libssl-dev curl wget git redis-server nodejs npm 2>/dev/null || true
+RUNTIME=podman
+command -v podman >/dev/null || RUNTIME=docker
+if ! command -v "\$RUNTIME" >/dev/null; then
+    echo "Need podman or docker to build images"
+    exit 1
 fi
 
-# Install Rust if needed
-if ! command -v rustc &>/dev/null; then
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source "\$HOME/.cargo/env"
-fi
+ARCH=\$(uname -m)
+case "\$ARCH" in
+    aarch64|arm64) TARGETARCH=arm64 ;;
+    *) TARGETARCH=amd64 ;;
+esac
 
-# Build API
-echo "Building API..."
-cd web-api && cargo build --release && cd ..
+API_IMAGE=localhost/paqtra-api:latest
+UI_IMAGE=localhost/paqtra-ui:latest
+AGENT_IMAGE=localhost/paqtra:latest
 
-# Build UI
-echo "Building UI..."
-cd web-ui && npm ci --silent && npm run build && cd ..
+echo "Building API image (\$RUNTIME, arch=\$TARGETARCH)..."
+\$RUNTIME build --build-arg TARGETARCH=\$TARGETARCH -t "\$API_IMAGE" -f web-api/Dockerfile web-api/
 
-# Install the built binary
-sudo systemctl stop cilium-vision-api 2>/dev/null || true
-sudo install -m 755 web-api/target/release/cilium-vision-api /usr/local/bin/cilium-vision-api
-echo "  API binary installed to /usr/local/bin/"
+echo "Building UI image..."
+\$RUNTIME build -t "\$UI_IMAGE" -f web-ui/Dockerfile web-ui/
 
-# Install UI files
-if [ -d web-ui/dist ]; then
-    sudo mkdir -p /var/lib/cilium-vision/ui
-    sudo cp -r web-ui/dist/* /var/lib/cilium-vision/ui/
-    echo "  UI files installed"
-fi
+echo "Building agent/CLI image..."
+\$RUNTIME build -t "\$AGENT_IMAGE" -f Dockerfile .
 
-# Update config to point at Hubble relay
-sudo mkdir -p /etc/cilium-vision
-if [ -f /etc/cilium-vision/config.env ]; then
-    # Ensure HUBBLE_ADDRESS is set correctly
-    if ! grep -q "HUBBLE_ADDRESS" /etc/cilium-vision/config.env; then
-        echo "HUBBLE_ADDRESS=localhost:4245" | sudo tee -a /etc/cilium-vision/config.env > /dev/null
-    fi
-    # Ensure K8S_CONTEXT is not set (use default kubeconfig)
-    if ! grep -q "KUBECONFIG" /etc/cilium-vision/config.env; then
-        echo "KUBECONFIG=/etc/rancher/k3s/k3s.yaml" | sudo tee -a /etc/cilium-vision/config.env > /dev/null
-    fi
-    # Set CORS origins for both HTTP and HTTPS
-    HOST_IP=\$(hostname -I | awk '{print \$1}')
-    sudo sed -i '/^ALLOWED_ORIGINS=/d' /etc/cilium-vision/config.env
-    echo "ALLOWED_ORIGINS=https://\${HOST_IP},http://\${HOST_IP}:9191,http://\${HOST_IP}:3001,http://localhost:3001" | sudo tee -a /etc/cilium-vision/config.env > /dev/null
-fi
+echo "Importing images into k3s..."
+\$RUNTIME save "\$API_IMAGE" | sudo k3s ctr images import -
+\$RUNTIME save "\$UI_IMAGE" | sudo k3s ctr images import -
+\$RUNTIME save "\$AGENT_IMAGE" | sudo k3s ctr images import -
 
-# Generate self-signed TLS certificate if none exists
-if [ ! -f /etc/cilium-vision/tls.crt ]; then
-    echo "  Generating self-signed TLS certificate..."
-    sudo openssl req -x509 -newkey rsa:2048 -nodes \
-        -keyout /etc/cilium-vision/tls.key \
-        -out /etc/cilium-vision/tls.crt \
-        -days 365 \
-        -subj "/CN=cilium-vision/O=cilium-vision" \
-        -addext "subjectAltName=IP:\$(hostname -I | awk '{print \$1}')"
-    sudo chmod 644 /etc/cilium-vision/tls.crt
-    sudo chmod 644 /etc/cilium-vision/tls.key
-    echo "  ✅ TLS certificate generated"
-fi
+sudo k3s ctr images tag "\$API_IMAGE" docker.io/library/paqtra-api:latest 2>/dev/null || true
+sudo k3s ctr images tag "\$UI_IMAGE" docker.io/library/paqtra-ui:latest 2>/dev/null || true
+sudo k3s ctr images tag "\$AGENT_IMAGE" docker.io/library/paqtra:latest 2>/dev/null || true
 
-# Add TLS config if not already present
-if ! grep -q "TLS_CERT_PATH" /etc/cilium-vision/config.env; then
-    echo "TLS_CERT_PATH=/etc/cilium-vision/tls.crt" | sudo tee -a /etc/cilium-vision/config.env > /dev/null
-    echo "TLS_KEY_PATH=/etc/cilium-vision/tls.key" | sudo tee -a /etc/cilium-vision/config.env > /dev/null
-    echo "TLS_PORT=443" | sudo tee -a /etc/cilium-vision/config.env > /dev/null
-fi
+NS=paqtra
+kubectl get ns "\$NS" >/dev/null 2>&1 || kubectl create namespace "\$NS"
 
-# Open HTTPS port in firewall
-if command -v firewall-cmd &>/dev/null; then
-    firewall-cmd --permanent --add-port=443/tcp 2>/dev/null || true
-    firewall-cmd --reload 2>/dev/null || true
-elif command -v ufw &>/dev/null; then
-    ufw allow 443/tcp 2>/dev/null || true
-fi
+JWT=\$(openssl rand -hex 32)
 
-# Run installer for services/config
-bash install.sh setup-services
-bash install.sh start
+echo "Installing Helm release..."
+helm upgrade --install paqtra ${REMOTE_DIR}/chart \
+    --namespace "\$NS" \
+    --create-namespace \
+    --set global.namespace="\$NS" \
+    --set api.image.repository=localhost/paqtra-api \
+    --set api.image.tag=latest \
+    --set api.image.pullPolicy=Never \
+    --set ui.image.repository=localhost/paqtra-ui \
+    --set ui.image.tag=latest \
+    --set ui.image.pullPolicy=Never \
+    --set agent.enabled=true \
+    --set agent.image.repository=localhost/paqtra \
+    --set agent.image.tag=latest \
+    --set agent.image.pullPolicy=Never \
+    --set api.replicas=1 \
+    --set ui.replicas=1 \
+    --set api.hpa.enabled=false \
+    --set monitoring.enabled=false \
+    --set api.env.hubbleAddress=hubble-relay.kube-system.svc.cluster.local:4245 \
+    --set api.env.jwtSecret="\$JWT" \
+    --set api.service.type=NodePort \
+    --set ui.service.type=NodePort \
+    --wait --timeout 300s
 
-# Create a systemd service for Hubble port-forward (survives reboots)
-sudo tee /usr/lib/systemd/system/hubble-port-forward.service > /dev/null <<'SVCEOF'
-[Unit]
-Description=Hubble Relay Port Forward
-After=k3s.service
-Wants=k3s.service
-
-[Service]
-Type=simple
-Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-ExecStartPre=/bin/sh -c 'until kubectl -n kube-system get deploy hubble-relay; do sleep 5; done'
-ExecStart=/usr/local/bin/kubectl -n kube-system port-forward deploy/hubble-relay 4245:4245 --address=127.0.0.1
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-SVCEOF
-sudo systemctl daemon-reload
-sudo systemctl enable hubble-port-forward --now 2>/dev/null || true
-sleep 3
-
-# Final health check
 echo ""
-echo "  === Final Health Check ==="
-curl -sfk https://localhost:443/health 2>/dev/null | python3 -m json.tool 2>/dev/null \
-    || curl -sf http://localhost:9191/health 2>/dev/null | python3 -m json.tool 2>/dev/null \
-    || echo "  API not responding yet (may need a few seconds to start)"
-REMOTE
-    ok "Full installation complete"
-}
-
-# ─── K3s deployment ──────────────────────────────────────────
-
-deploy_k3s() {
-    info "Deploying Cilium Vision on K3s..."
-
-    # Set up K8s + Cilium + Hubble stack first
-    setup_k8s_stack
-
-    _ssh bash <<REMOTE
-set -e
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-
-# Deploy Cilium Vision via Helm if chart exists
-if [ -d ${REMOTE_DIR}/chart ]; then
-    echo "Installing Cilium Vision via Helm chart..."
-    helm upgrade --install cilium-vision ${REMOTE_DIR}/chart \
-        --namespace cilium-system --create-namespace \
-        --set redis.enabled=true \
-        --set api.replicas=1 \
-        --set ui.replicas=1 \
-        --wait --timeout 120s 2>/dev/null || {
-            echo "  Helm install failed, deploying via kubectl..."
-            kubectl apply -f ${REMOTE_DIR}/deployments/k8s/ 2>/dev/null || true
-        }
+echo "  === Paqtra pods ==="
+kubectl -n "\$NS" get pods,svc
+echo ""
+API_PORT=\$(kubectl -n "\$NS" get svc paqtra-api -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || true)
+UI_PORT=\$(kubectl -n "\$NS" get svc paqtra-ui -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || true)
+HOST_IP=\$(hostname -I | awk '{print \$1}')
+UI_URL="https://\${HOST_IP}:\${UI_PORT}"
+echo ""
+echo "  =============================================="
+echo "   Paqtra console — sign in here"
+echo "  =============================================="
+echo "   URL:      \${UI_URL}"
+echo "   Username: admin"
+ADMIN_PASS=\$(kubectl -n "\$NS" get secret paqtra-secret -o jsonpath='{.data.ADMIN_PASSWORD}' 2>/dev/null | base64 -d 2>/dev/null || true)
+if [ -n "\$ADMIN_PASS" ]; then
+  echo "   Password: \${ADMIN_PASS}"
 else
-    # Fallback to raw manifests
-    kubectl apply -f ${REMOTE_DIR}/deployments/k8s/ 2>/dev/null || true
+  echo "   Password: (from Helm secret ADMIN_PASSWORD — auto-generated if unset)"
 fi
-
+echo "  =============================================="
+echo "   (self-signed TLS — accept the browser warning)"
+echo "   API NodePort: http://\${HOST_IP}:\${API_PORT}"
 echo ""
-echo "  K3s cluster status:"
-kubectl get nodes
-echo ""
-echo "  Cilium pods:"
-kubectl -n kube-system get pods -l k8s-app=cilium
-echo ""
-echo "  Hubble Relay:"
-kubectl -n kube-system get pods -l k8s-app=hubble-relay
-echo ""
-echo "  Cilium Vision pods:"
-kubectl -n cilium-system get pods 2>/dev/null || echo "  (deployed via systemd, not K8s)"
-echo ""
-echo "  ✅ K3s deployment complete"
+if [ -n "\$UI_PORT" ]; then
+  curl -skf "https://127.0.0.1:\${UI_PORT}/" >/dev/null && echo "  UI HTTPS: ok" || echo "  UI HTTPS: not ready yet"
+fi
+if [ -n "\$API_PORT" ]; then
+  curl -sf "http://127.0.0.1:\${API_PORT}/health" | head -c 400 || echo "  health not ready yet"
+  echo ""
+fi
+echo "PAQTRA_URL=\${UI_URL}"
+echo "done — open \${UI_URL} (credentials from secret ADMIN_PASSWORD)"
 REMOTE
-    ok "K3s deployment complete on ${TARGET_HOST}"
+    ok "Kubernetes deployment complete on ${TARGET_HOST}"
+    echo ""
+    echo "  Login: https://<host>:<UI NodePort>"
+    echo "  User:  admin"
+    echo "  Pass:  from Kubernetes secret ADMIN_PASSWORD (auto-generated if unset)"
+    echo ""
 }
 
 # ─── Uninstall ───────────────────────────────────────────────
 
 do_uninstall() {
-    info "Uninstalling Cilium Vision from ${TARGET_HOST}..."
+    info "Uninstalling Paqtra from ${TARGET_HOST}..."
     _ssh bash <<REMOTE
 set -e
-
-# Stop services
-systemctl stop cilium-vision-api cilium-vision-ui hubble-port-forward 2>/dev/null || true
-systemctl disable cilium-vision-api cilium-vision-ui hubble-port-forward 2>/dev/null || true
-rm -f /usr/lib/systemd/system/hubble-port-forward.service
-
-# Remove K8s deployment
-if command -v kubectl &>/dev/null; then
-    kubectl delete namespace cilium-system 2>/dev/null || true
-fi
-if command -v helm &>/dev/null; then
-    helm uninstall cilium-vision -n cilium-system 2>/dev/null || true
+export KUBECONFIG="\${KUBECONFIG:-\$HOME/.kube/config}"
+if [ ! -r "\$KUBECONFIG" ] && [ -f /etc/rancher/k3s/k3s.yaml ]; then
+    mkdir -p "\$HOME/.kube"
+    sudo cp /etc/rancher/k3s/k3s.yaml "\$HOME/.kube/config"
+    sudo chown "\$(id -u):\$(id -g)" "\$HOME/.kube/config"
+    export KUBECONFIG="\$HOME/.kube/config"
 fi
 
-# Remove files
-rm -f /usr/local/bin/cilium-vision-api /usr/local/bin/cilium-tui
-rm -f /usr/lib/systemd/system/cilium-vision-api.service
-rm -f /usr/lib/systemd/system/cilium-vision-ui.service
-rm -f /etc/pam.d/cilium-vision
-rm -rf /var/lib/cilium-vision /etc/cilium-vision /var/log/cilium-vision
+helm uninstall paqtra -n paqtra 2>/dev/null || true
+kubectl delete namespace paqtra --wait=false 2>/dev/null || true
+helm uninstall paqtra -n cilium-system 2>/dev/null || true
+
+# Legacy host cleanup
+systemctl stop paqtra-api paqtra-ui hubble-port-forward 2>/dev/null || true
+systemctl disable paqtra-api paqtra-ui hubble-port-forward 2>/dev/null || true
+sudo rm -f /usr/lib/systemd/system/paqtra-api.service /usr/lib/systemd/system/paqtra-ui.service /usr/lib/systemd/system/hubble-port-forward.service
+sudo rm -f /usr/local/bin/paqtra-api /usr/local/bin/paqtra
+sudo rm -rf /var/lib/paqtra /etc/paqtra /var/log/paqtra
+sudo systemctl daemon-reload 2>/dev/null || true
 rm -rf ${REMOTE_DIR}
-userdel cilium-vision 2>/dev/null || true
-systemctl daemon-reload
 
-echo "  ✅ Cilium Vision uninstalled"
+echo "  ✅ Paqtra uninstalled"
 REMOTE
     ok "Uninstall complete on ${TARGET_HOST}"
 }
@@ -611,49 +465,34 @@ deploy_fleet() {
 # ─── Verify ──────────────────────────────────────────────────
 
 verify() {
-    info "Verifying deployment on ${TARGET_HOST}..."
+    info "Verifying Kubernetes deployment on ${TARGET_HOST}..."
     _ssh bash <<'REMOTE'
-echo ""
-echo "=== Service Status ==="
-systemctl is-active cilium-vision-api 2>/dev/null && echo "  API: ✅ active" || echo "  API: ❌ inactive"
-systemctl is-active hubble-port-forward 2>/dev/null && echo "  Hubble Port-Forward: ✅ active" || echo "  Hubble Port-Forward: ⚠️  inactive"
-
-echo ""
-echo "=== Health Check ==="
-HEALTH=$(curl -sf http://localhost:9191/health 2>/dev/null)
-if [ -n "$HEALTH" ]; then
-    echo "  $HEALTH" | python3 -m json.tool 2>/dev/null || echo "  $HEALTH"
-else
-    echo "  ❌ API not responding"
+export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
+if [ ! -r "$KUBECONFIG" ] && [ -f /etc/rancher/k3s/k3s.yaml ]; then
+    mkdir -p "$HOME/.kube"
+    sudo cp /etc/rancher/k3s/k3s.yaml "$HOME/.kube/config"
+    sudo chown "$(id -u):$(id -g)" "$HOME/.kube/config"
+    export KUBECONFIG="$HOME/.kube/config"
 fi
 
 echo ""
-echo "=== Versions ==="
-cilium-vision-api --version 2>/dev/null || echo "  API version: unknown"
+echo "=== Cluster ==="
+kubectl get nodes
 
-if command -v k3s &>/dev/null; then
-    echo ""
-    echo "=== K3s ==="
-    k3s --version
-    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+echo ""
+echo "=== Cilium / Hubble ==="
+kubectl -n kube-system get pods -l k8s-app=cilium
+kubectl -n kube-system get pods -l k8s-app=hubble-relay
 
-    echo ""
-    echo "=== Cilium ==="
-    cilium status --brief 2>/dev/null || kubectl -n kube-system get pods -l k8s-app=cilium 2>/dev/null || true
+echo ""
+echo "=== Paqtra ==="
+kubectl -n paqtra get pods,svc 2>/dev/null || echo "  (namespace paqtra not found)"
 
+API_PORT=$(kubectl -n paqtra get svc paqtra-api -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || true)
+if [ -n "$API_PORT" ]; then
     echo ""
-    echo "=== Hubble ==="
-    kubectl -n kube-system get pods -l k8s-app=hubble-relay 2>/dev/null || true
-
-    echo ""
-    echo "=== Hubble Connectivity ==="
-    if curl -sf --connect-timeout 2 localhost:4245 2>/dev/null; then
-        echo "  ✅ Hubble relay reachable at localhost:4245"
-    elif nc -z localhost 4245 2>/dev/null; then
-        echo "  ✅ Hubble relay port open at localhost:4245"
-    else
-        echo "  ⚠️  Hubble relay not reachable at localhost:4245"
-    fi
+    echo "=== Health ==="
+    curl -sf "http://127.0.0.1:${API_PORT}/health" | python3 -m json.tool 2>/dev/null         || curl -sf "http://127.0.0.1:${API_PORT}/health"         || echo "  API not responding yet"
 fi
 REMOTE
 }
@@ -663,7 +502,7 @@ REMOTE
 main() {
     echo ""
     echo "🔷 ══════════════════════════════════════════════════"
-    echo "🔷    Cilium Vision v${VERSION} — Remote Deploy"
+    echo "🔷    Paqtra v${VERSION} — Remote Deploy"
     echo "🔷 ══════════════════════════════════════════════════"
     echo ""
 
@@ -681,29 +520,17 @@ main() {
         exit 0
     fi
 
-    if [ "$QUICK_MODE" = true ]; then
-        uninstall_old
-        sync_binaries
-        install_quick
-    elif [ "$K3S_MODE" = true ]; then
-        sync_files
-        deploy_k3s
-    else
-        sync_files
-        uninstall_old
-        install_full
-    fi
-
+    sync_files
+    deploy_kubernetes
     verify
 
     echo ""
     echo "✅ ══════════════════════════════════════════════════"
-    echo "✅    Deployment complete: ${TARGET_HOST}"
+    echo "✅    Kubernetes deployment complete: ${TARGET_HOST}"
     echo "✅ ══════════════════════════════════════════════════"
     echo ""
-    echo "  HTTPS: https://${TARGET_HOST}:443"
-    echo "  HTTP:  http://${TARGET_HOST}:9191  (redirects to HTTPS)"
-    echo "  UI:    https://${TARGET_HOST}:443"
+    echo "  UI/API: kubectl -n paqtra get svc  (NodePorts)"
+    echo "  Host:   ${TARGET_HOST}"
     echo ""
 }
 

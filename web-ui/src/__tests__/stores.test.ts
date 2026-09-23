@@ -39,16 +39,18 @@ describe('Theme Store', () => {
 describe('Auth Store', () => {
   it('has initial state', () => {
     const state = useAuthStore.getState();
-    expect(state.authRequired).toBe(false);
+    expect(state.authRequired).toBe(true);
+    expect(state.sessionReady).toBe(false);
     expect(typeof state.login).toBe('function');
     expect(typeof state.logout).toBe('function');
     expect(typeof state.checkSession).toBe('function');
   });
 
-  it('logout clears token', () => {
+  it('logout clears token and requires auth', () => {
     useAuthStore.getState().logout();
     expect(useAuthStore.getState().token).toBeNull();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().authRequired).toBe(true);
   });
 });
 

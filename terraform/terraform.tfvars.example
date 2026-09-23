@@ -1,8 +1,8 @@
-# ─── Cilium Vision — Terraform Configuration Example ─────────
+# ─── Paqtra — Terraform Configuration Example ─────────
 # Copy to terraform.tfvars and customize
 
 aws_region         = "us-west-2"
-cluster_name       = "cilium-vision-cluster"
+cluster_name       = "paqtra-cluster"
 kubernetes_version = "1.29"
 environment        = "dev"
 
@@ -17,22 +17,22 @@ install_cilium    = true
 cilium_version    = "1.15.3"
 enable_encryption = false
 
-# Cilium Vision
+# Paqtra
 namespace            = "cilium-system"
-api_image_repository = "ghcr.io/ssahani/cilium-flow-api"
+api_image_repository = "ghcr.io/ssahani/paqtra-api"
 api_image_tag        = "latest"
 api_replicas         = 2
 ui_replicas          = 2
 
 # Ingress (optional)
 enable_ingress = false
-ingress_hosts  = ["cilium-vision.example.com"]
+ingress_hosts  = ["paqtra.example.com"]
 
 # Monitoring (optional)
 enable_monitoring = false
 
 tags = {
-  Project     = "cilium-vision"
+  Project     = "paqtra"
   Environment = "dev"
   ManagedBy   = "terraform"
 }

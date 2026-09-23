@@ -1,11 +1,11 @@
 ################################################################################
-# Cilium Vision — Terraform Module for AWS EKS Deployment
+# Paqtra — Terraform Module for AWS EKS Deployment
 ################################################################################
 
 terraform {
   # Uncomment and configure for production use:
   # backend "s3" {
-  #   bucket         = "cilium-vision-terraform-state"
+  #   bucket         = "paqtra-terraform-state"
   #   key            = "terraform.tfstate"
   #   region         = "us-west-2"
   #   dynamodb_table = "terraform-lock"
@@ -78,15 +78,15 @@ module "eks" {
   cluster_endpoint_private_access      = true
 
   eks_managed_node_groups = {
-    cilium_vision = {
-      name           = "cilium-vision-ng"
+    paqtra = {
+      name           = "paqtra-ng"
       instance_types = [var.node_instance_type]
       min_size       = var.node_min_count
       max_size       = var.node_max_count
       desired_size   = var.node_desired_count
 
       labels = {
-        role = "cilium-vision"
+        role = "paqtra"
       }
     }
   }
@@ -152,10 +152,10 @@ resource "helm_release" "cilium" {
   }
 }
 
-# ─── Cilium Vision (Helm) ───────────────────────────────────
+# ─── Paqtra (Helm) ───────────────────────────────────
 
-resource "helm_release" "cilium_vision" {
-  name             = "cilium-vision"
+resource "helm_release" "paqtra" {
+  name             = "paqtra"
   chart            = "${path.module}/../chart"
   namespace        = var.namespace
   create_namespace = true

@@ -3,9 +3,9 @@
 /// Tests the replay engine's recording lifecycle, filter system,
 /// and configuration using MockMapReader for eBPF data and
 /// K8sClient::mock() for Kubernetes interactions.
-use cilium_tui::ebpf::{MockMapReader, PolicyVerdict};
-use cilium_tui::kubernetes::K8sClient;
-use cilium_tui::modules::replay::{
+use paqtra::ebpf::{MockMapReader, PolicyVerdict};
+use paqtra::kubernetes::K8sClient;
+use paqtra::modules::replay::{
     Recording, ReplayConfig, ReplayEngine, ReplayFilter, ReplayStats,
 };
 use std::path::PathBuf;
@@ -237,7 +237,7 @@ fn test_replay_config_recording_dir_default() {
     let config = ReplayConfig::default();
     assert_eq!(
         config.recording_dir,
-        PathBuf::from("/tmp/cilium-vision/recordings")
+        PathBuf::from("/tmp/paqtra/recordings")
     );
 }
 

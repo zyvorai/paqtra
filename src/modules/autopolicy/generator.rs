@@ -107,7 +107,7 @@ metadata:
   name: {}
   namespace: {}
   labels:
-    generated-by: cilium-vision
+    generated-by: paqtra
     autopolicy: "true"
   annotations:
     description: "Auto-generated from {} traffic observations"

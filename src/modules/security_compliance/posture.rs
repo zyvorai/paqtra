@@ -11,7 +11,7 @@ use super::{
 };
 
 /// File where the last posture score is persisted for trend comparison.
-const SCORE_HISTORY_FILE: &str = ".cilium-flow-posture-score";
+const SCORE_HISTORY_FILE: &str = ".paqtra-posture-score";
 
 /// System namespaces excluded from network-policy coverage calculations.
 const SYSTEM_NAMESPACES: &[&str] = &["kube-system", "kube-public", "kube-node-lease"];
@@ -419,7 +419,7 @@ impl SecurityPosture {
     // -----------------------------------------------------------------------
 
     /// Return the path used for persisting the last score. Uses
-    /// `$HOME/.cilium-flow-posture-score`, falling back to `/tmp`.
+    /// `$HOME/.paqtra-posture-score`, falling back to `/tmp`.
     fn score_history_path() -> PathBuf {
         std::env::var("HOME")
             .map(PathBuf::from)

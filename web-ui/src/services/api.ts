@@ -29,7 +29,7 @@ function isValidApiBaseUrl(url: string): boolean {
 
 function loadSettings(): AppSettings {
   try {
-    const raw = localStorage.getItem('cilium-vision-settings');
+    const raw = localStorage.getItem('paqtra-settings');
     if (raw) {
       const merged = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
       // Validate API base URL to prevent SSRF
@@ -59,9 +59,10 @@ const api = axios.create({
 
 // --- Request interceptor ---------------------------------------------------
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  // Attach JWT token from in-memory auth store (imported lazily to avoid circular deps)
-  // The token is set on api.defaults.headers.common by authStore.login()
-  // Add CSRF token header
+  const token = localStorage.getItem('paqtra-token');
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
   if (config.headers) {
     config.headers['X-CSRF-Token'] = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
   }

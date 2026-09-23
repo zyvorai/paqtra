@@ -1,26 +1,26 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cilium-vision-ui
+  name: paqtra-ui
   namespace: cilium-system
   labels:
-    app: cilium-vision
+    app: paqtra
     component: ui
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: cilium-vision
+      app: paqtra
       component: ui
   template:
     metadata:
       labels:
-        app: cilium-vision
+        app: paqtra
         component: ui
     spec:
       containers:
       - name: ui
-        image: ghcr.io/ssahani/cilium-flow-ui:latest
+        image: ghcr.io/ssahani/paqtra-ui:latest
         imagePullPolicy: Always
         ports:
         - name: http
@@ -28,7 +28,7 @@ spec:
           protocol: TCP
         env:
         - name: API_URL
-          value: "http://cilium-vision-api:9191"
+          value: "http://paqtra-api:9191"
         resources:
           requests:
             memory: "128Mi"
@@ -76,10 +76,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: cilium-vision-ui
+  name: paqtra-ui
   namespace: cilium-system
   labels:
-    app: cilium-vision
+    app: paqtra
     component: ui
 spec:
   type: ClusterIP
@@ -89,5 +89,5 @@ spec:
     targetPort: http
     protocol: TCP
   selector:
-    app: cilium-vision
+    app: paqtra
     component: ui

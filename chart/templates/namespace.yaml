@@ -1,8 +1,1 @@
-{{- if .Values.global.namespace }}
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: {{ .Values.global.namespace }}
-  labels:
-    {{- include "cilium-vision.labels" . | nindent 4 }}
-{{- end }}
+{{- /* Namespace is created by `helm --create-namespace`; do not also emit a Namespace object. */ -}}

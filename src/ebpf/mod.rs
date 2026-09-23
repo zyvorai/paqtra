@@ -9,6 +9,7 @@
 /// - Drop reasons
 use anyhow::Result;
 
+pub mod attachments;
 pub mod aya_events;
 pub mod aya_reader;
 pub mod aya_writer;
@@ -20,6 +21,11 @@ pub mod enriched_reader;
 pub mod reader;
 
 // Re-export for convenience
+#[allow(unused_imports)]
+pub use attachments::{
+    classify_owner, collect_inventory, drift_findings, feature_catalog, Attachment,
+    AttachmentInventory, BpfOwner, DriftFinding, FeatureRow,
+};
 #[allow(unused_imports)]
 pub use aya_events::{BpfEvent, BpfEventData, BpfEventStream, BpfEventType};
 #[allow(unused_imports)]

@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Bell, BellOff } from 'lucide-react';
 
-const STORAGE_KEY = 'cilium-vision-notifications';
+const STORAGE_KEY = 'paqtra-notifications';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function useNotifications() {

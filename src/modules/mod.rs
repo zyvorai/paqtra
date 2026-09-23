@@ -33,7 +33,7 @@ pub fn sanitize_k8s_name(s: &str) -> String {
 pub mod autopolicy;
 pub mod canary;
 pub mod chaos;
-/// Intelligent modules for cilium-vision
+/// Intelligent modules for paqtra
 ///
 /// Each module provides a specific capability:
 /// - healer: Automatic problem detection and fixing

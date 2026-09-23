@@ -4,14 +4,14 @@ fullnameOverride: ""
 # -- Global settings
 global:
   # -- Namespace to deploy into
-  namespace: cilium-vision
+  namespace: paqtra
   # -- Image pull secrets
   imagePullSecrets: []
 
 # -- API server configuration
 api:
   image:
-    repository: ghcr.io/ssahani/cilium-vision-api
+    repository: ghcr.io/ssahani/paqtra-api
     tag: ""  # defaults to appVersion
     pullPolicy: IfNotPresent
   replicas: 2
@@ -25,7 +25,6 @@ api:
       cpu: "500m"
   env:
     hubbleAddress: "hubble-relay.kube-system.svc.cluster.local:4245"
-    redisUrl: ""  # auto-configured if redis.enabled
     jwtSecret: ""  # auto-generated if empty
     rustLog: "info"
   probes:
@@ -65,20 +64,30 @@ api:
     capabilities:
       drop:
         - ALL
+  # -- Persist alert rules, audit log, exports and change history in SQLite so
+  # they survive restarts. SQLite is single-writer, so enabling this pins the API
+  # to 1 replica (strategy Recreate) and disables the HPA. Leave disabled to keep
+  # the HA default (state is then memory-only and per-replica).
+  persistence:
+    enabled: false
+    size: 1Gi
+    storageClass: ""
+    existingClaim: ""
+    mountPath: /data
   # -- Mount kubeconfig for out-of-cluster access (optional)
   kubeconfig:
     enabled: false
     secretName: ""
     mountPath: /etc/kubeconfig
 
-# -- UI configuration
+# -- UI configuration (HTTPS by default, like Netra)
 ui:
   image:
-    repository: ghcr.io/ssahani/cilium-vision-ui
+    repository: ghcr.io/ssahani/paqtra-ui
     tag: ""  # defaults to appVersion
     pullPolicy: IfNotPresent
   replicas: 1
-  port: 8080
+  port: 8443
   resources:
     requests:
       memory: "128Mi"
@@ -88,34 +97,36 @@ ui:
       cpu: "200m"
   service:
     type: ClusterIP
-    port: 8080
+    port: 8443
 
-# -- Redis configuration
-redis:
+# -- TLS for the UI (self-signed P-256 via init container). Set enabled=false
+# only when TLS is terminated by a trusted ingress/proxy.
+tls:
+  enabled: true
+  opensslImage: docker.io/alpine/openssl:3.3.2
+
+# -- Node agent (DaemonSet on every node, like Cilium agent)
+agent:
   enabled: true
   image:
-    repository: redis
-    tag: "7-alpine"
+    repository: ghcr.io/ssahani/paqtra
+    tag: ""  # defaults to appVersion
     pullPolicy: IfNotPresent
+  port: 9192
   resources:
     requests:
       memory: "64Mi"
       cpu: "50m"
     limits:
-      memory: "128Mi"
-      cpu: "100m"
-  persistence:
-    enabled: true
-    size: 1Gi
-    storageClass: ""
-    accessModes:
-      - ReadWriteOnce
-  backup:
-    enabled: false
-    schedule: "0 2 * * *"
-    storage:
-      size: 1Gi
-      storageClass: ""
+      memory: "256Mi"
+      cpu: "200m"
+  tolerations:
+    - operator: Exists
+  updateStrategy:
+    type: RollingUpdate
+  bpf:
+    # Mount host BPF filesystem for local map access
+    mountPath: /sys/fs/bpf
 
 # -- Ingress configuration
 ingress:
@@ -124,7 +135,7 @@ ingress:
   annotations: {}
   # cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
-    - host: cilium-vision.example.com
+    - host: paqtra.example.com
       paths:
         - path: /
           pathType: Prefix
@@ -139,18 +150,21 @@ ingress:
           service: api
           port: 9191
   tls: []
-  # - secretName: cilium-vision-tls
+  # - secretName: paqtra-tls
   #   hosts:
-  #     - cilium-vision.example.com
+  #     - paqtra.example.com
 
-# -- Authentication configuration
+# -- Authentication (empty password/apiKey → auto-generated on install)
 auth:
   jwtSecret: ""  # If empty, auto-generated
   autoGenerate: true
+  adminUsername: admin
+  adminPassword: ""
+  apiKey: ""
 
 # -- Monitoring configuration
 monitoring:
-  enabled: true
+  enabled: false
   serviceMonitor:
     interval: 30s
     scrapeTimeout: 10s

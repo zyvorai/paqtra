@@ -28,7 +28,7 @@ impl BootstrapManager {
         auto_install: bool,
         auto_upgrade: bool,
     ) -> Result<BootstrapResult> {
-        println!("🚀 Bootstrapping Cilium-TUI...");
+        println!("🚀 Bootstrapping Paqtra...");
 
         // Step 1: Detect cluster
         let context = self.detect_cluster().await?;

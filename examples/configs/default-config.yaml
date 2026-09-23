@@ -1,5 +1,5 @@
-# Cilium Vision - Default Configuration
-# Copy to ~/.config/cilium-vision/config.yaml
+# Paqtra - Default Configuration
+# Copy to ~/.config/paqtra/config.yaml
 
 # Kubernetes settings
 kubernetes:
@@ -141,7 +141,7 @@ replay:
   auto_save_interval_secs: 300
 
   # Recording directory
-  recordings_dir: "~/.config/cilium-vision/recordings"
+  recordings_dir: "~/.config/paqtra/recordings"
 
 # UI settings
 ui:
@@ -161,11 +161,11 @@ logging:
 
   # Log to file
   log_to_file: false
-  log_file_path: "~/.config/cilium-vision/cilium-vision.log"
+  log_file_path: "~/.config/paqtra/paqtra.log"
 
   # Audit logging for policy changes
   audit_log: true
-  audit_log_path: "~/.config/cilium-vision/audit.log"
+  audit_log_path: "~/.config/paqtra/audit.log"
 
 # Security settings
 security:

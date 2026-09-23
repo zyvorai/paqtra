@@ -3,7 +3,7 @@
 //
 // Only modules that do not depend on AppState are re-exported here,
 // keeping the library target self-contained and free of runtime
-// dependencies like Redis, Hubble, or Kubernetes.
+// dependencies like Hubble, or Kubernetes.
 
 pub mod config;
 pub mod error;
@@ -28,7 +28,7 @@ pub mod auth_types {
 }
 
 /// Pure utility functions extracted from handlers and services for testability.
-/// These have no runtime dependencies (no Redis, Hubble, or Kubernetes).
+/// These have no runtime dependencies (no Hubble, or Kubernetes).
 pub mod utils {
     use regex::Regex;
     use serde_json::Value;

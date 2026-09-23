@@ -1,28 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cilium-vision-api
+  name: paqtra-api
   namespace: cilium-system
   labels:
-    app: cilium-vision
+    app: paqtra
     component: api
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: cilium-vision
+      app: paqtra
       component: api
   template:
     metadata:
       labels:
-        app: cilium-vision
+        app: paqtra
         component: api
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9191"
         prometheus.io/path: "/metrics"
     spec:
-      serviceAccountName: cilium-vision-api
+      serviceAccountName: paqtra-api
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -33,32 +33,30 @@ spec:
                     - key: app
                       operator: In
                       values:
-                        - cilium-vision-api
+                        - paqtra-api
                 topologyKey: kubernetes.io/hostname
       containers:
       - name: api
-        image: ghcr.io/ssahani/cilium-flow-api:latest  # TODO: Use versioned tags in production
+        image: ghcr.io/ssahani/paqtra-api:latest  # TODO: Use versioned tags in production
         imagePullPolicy: Always
         ports:
         - name: http
           containerPort: 9191
           protocol: TCP
         env:
-        - name: HOST
+        - name: PAQTRA_HOST
           value: "0.0.0.0"
-        - name: PORT
+        - name: PAQTRA_PORT
           value: "9191"
-        - name: REDIS_URL
-          value: "redis://cilium-vision-redis:6379"
         - name: HUBBLE_ADDRESS
           value: "hubble-relay.kube-system.svc.cluster.local:4245"
         - name: JWT_SECRET
           valueFrom:
             secretKeyRef:
-              name: cilium-vision-secrets
+              name: paqtra-secrets
               key: jwt-secret
         - name: RUST_LOG
-          value: "info,cilium_vision_api=debug"
+          value: "info,paqtra_api=debug"
         resources:
           requests:
             memory: "256Mi"
@@ -94,10 +92,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: cilium-vision-api
+  name: paqtra-api
   namespace: cilium-system
   labels:
-    app: cilium-vision
+    app: paqtra
     component: api
 spec:
   type: ClusterIP
@@ -107,5 +105,5 @@ spec:
     targetPort: http
     protocol: TCP
   selector:
-    app: cilium-vision
+    app: paqtra
     component: api

@@ -37,6 +37,7 @@ pub async fn auth_middleware(
     if path == "/health"
         || path == "/ready"
         || path == "/metrics"
+        || path == "/api/v1/auth/login"
         || path.starts_with("/api/v1/ws/")
         || path.starts_with("/api-docs/")
         || path == "/swagger-ui"

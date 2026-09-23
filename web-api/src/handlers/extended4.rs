@@ -368,7 +368,7 @@ pub async fn list_changes(
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    // Read changes stored by the background change tracker from Redis
+    // Read changes stored by the background change tracker from the in-memory cache
     let items = state
         .cache
         .list_values(CHANGES_PREFIX)

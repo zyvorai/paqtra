@@ -1,6 +1,6 @@
 // Background flow export pipeline
 //
-// Periodically reads active export configs from Redis and exports Hubble flows
+// Periodically reads active export configs from the in-memory cache and exports Hubble flows
 // in the configured format (JSON, CSV, CEF) to the configured destination
 // (local file, S3, syslog, or default path).
 
@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tokio::time::{interval, Duration};
 
 const EXPORT_CONFIGS_PREFIX: &str = "cv:export_configs:";
-const DEFAULT_EXPORT_DIR: &str = "/var/lib/cilium-vision/exports";
+const DEFAULT_EXPORT_DIR: &str = "/var/lib/paqtra/exports";
 
 /// Spawn the background export pipeline as a detached tokio task.
 pub fn spawn_export_pipeline(state: Arc<AppState>) {
@@ -80,7 +80,7 @@ async fn run_exports(state: &AppState) -> anyhow::Result<()> {
             continue;
         }
 
-        // Update the config in Redis with export metadata
+        // Update the config in cache with export metadata
         let mut updated = config.clone();
         let prev_count = config
             .get("exported_count")
@@ -145,7 +145,7 @@ async fn write_export(
             }
         }
     } else {
-        // Default: write to /var/lib/cilium-vision/exports/{config_id}.{ext}
+        // Default: write to /var/lib/paqtra/exports/{config_id}.{ext}
         let dir = std::path::Path::new(DEFAULT_EXPORT_DIR);
         tokio::fs::create_dir_all(dir).await?;
         let path = dir.join(format!("{}.{}", config_id, ext));
@@ -196,13 +196,13 @@ fn csv_escape(s: &str) -> String {
 }
 
 /// Serialize flows in Common Event Format (CEF) for SIEM integration.
-/// Format: CEF:0|CiliumVision|FlowExport|1.0|flow|Flow Event|1|...
+/// Format: CEF:0|Paqtra|FlowExport|1.0|flow|Flow Event|1|...
 fn format_flows_cef(flows: &[Flow]) -> String {
     let mut out = String::new();
     for f in flows {
         let severity = if f.verdict == "DROPPED" { "7" } else { "1" };
         let line = format!(
-            "CEF:0|CiliumVision|FlowExport|1.0|flow|Flow Event|{}|\
+            "CEF:0|Paqtra|FlowExport|1.0|flow|Flow Event|{}|\
              rt={} src={} spt=0 dst={} dpt={} proto={} \
              cs1={} cs1Label=SrcNamespace cs2={} cs2Label=SrcPod \
              cs3={} cs3Label=DstNamespace cs4={} cs4Label=DstPod \

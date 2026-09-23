@@ -1,24 +1,24 @@
-# Cilium Vision - Quick Start Guide
+# Paqtra — Quick Start
 
-Get up and running with Cilium Vision in minutes.
+**Paqtra — trace every flow.** Get up and running in minutes.
 
 ## Prerequisites
 
 | Component | Requirement |
 |-----------|-------------|
-| Rust | 1.70+ (TUI and web-api) |
-| Node.js | 20+ with npm (web-ui) |
+| Rust | 1.75+ (TUI and web-api) |
+| Node.js | 18+ with npm (20+ recommended for web-ui) |
 | Docker | Optional, for containerised deployment |
 | kubectl | Required for TUI; cluster must have Cilium + Hubble enabled |
 
 ## Quick Start (TUI)
 
 ```bash
-git clone https://github.com/ssahani/cilium-flow.git
-cd cilium-flow
+git clone https://github.com/ssahani/paqtra.git
+cd paqtra
 
 cargo build --release
-./target/release/cilium-tui
+./target/release/paqtra
 ```
 
 ### Key Bindings
@@ -45,7 +45,9 @@ cp deployments/.env.example deployments/.env
 # 2. Start all services (API + UI + Redis)
 make docker-up
 
-# UI: http://localhost:3001   API: http://localhost:9191
+# Combined stack (typical remote deploy): http://localhost:9191
+# Compose UI-only mapping may also expose http://localhost:3001
+# API: http://localhost:9191
 ```
 
 To stop:
@@ -67,7 +69,7 @@ JWT_SECRET=change-me-to-a-real-secret-at-least-32-chars \
 cd web-ui
 npm ci
 npm run build     # production build in dist/
-npm run dev       # or start the dev server on :3000
+npm run dev       # or start the dev server on :3000 (proxies /api to :9191)
 ```
 
 ## Development
@@ -76,7 +78,7 @@ npm run dev       # or start the dev server on :3000
 make dev          # TUI: format, check, build
 make api-dev      # Web API dev server
 make ui-dev       # Web UI Vite dev server (port 3000, proxies /api to :9191)
-make test-all     # Run all tests (TUI + API)
+make test-all     # Run all tests (TUI + API + UI)
 make check-all    # Lint/check all components
 make build-all    # Production build of everything
 ```
@@ -91,6 +93,8 @@ kubectl apply -f deployments/k8s/
 
 Review and update `deployments/k8s/secrets.yaml` with your own JWT secret before applying.
 
+Helm chart: `helm install paqtra ./chart`.
+
 ## Web UI Keyboard Shortcuts
 
 ```
@@ -101,7 +105,9 @@ g h = Dashboard  g f = Flows  g t = Topology  g p = Policies
 
 ## Next Steps
 
-- Read [docs/FEATURES.md](docs/FEATURES.md) for a detailed feature guide
-- Read [docs/WEB_APP_README.md](docs/WEB_APP_README.md) for web UI details
-- See [docs/WEB_APP_ARCHITECTURE.md](docs/WEB_APP_ARCHITECTURE.md) for system architecture
-- See [docs/WEB_APP_DEPLOYMENT.md](docs/WEB_APP_DEPLOYMENT.md) for deployment options
+- [docs/features.md](docs/features.md) — feature guide
+- [docs/web-app.md](docs/web-app.md) — web UI
+- [docs/web-architecture.md](docs/web-architecture.md) — system architecture
+- [docs/web-deployment.md](docs/web-deployment.md) — deployment options
+- [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md) — Cilium / Netra boundaries
+- [docs/overview.md](docs/overview.md) — product overview

@@ -239,7 +239,7 @@ pub async fn list_anomalies(
         "total": total,
         "limit": limit,
         "offset": offset,
-        "detection_engine": "cilium-vision-heuristic",
+        "detection_engine": "paqtra-heuristic",
         "engine_version": "1.0.0",
         "detection_window_secs": 300,
     })))

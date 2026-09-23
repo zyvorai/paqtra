@@ -7,7 +7,7 @@
 /// - PolicyVerdict serialization/deserialization round-trips correctly
 /// - ConntrackState equality works as expected
 /// - All map types can be read from the mock reader
-use cilium_tui::ebpf::{
+use paqtra::ebpf::{
     ConntrackState, DropReasonType, EbpfMetrics, MapReader, MockMapReader, PolicyVerdict,
 };
 

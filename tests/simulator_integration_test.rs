@@ -3,9 +3,9 @@
 /// Tests the simulator's scenario preparation, risk scoring, and
 /// impact analysis using MockMapReader for eBPF data and
 /// K8sClient::mock() for Kubernetes interactions.
-use cilium_tui::ebpf::MockMapReader;
-use cilium_tui::kubernetes::K8sClient;
-use cilium_tui::modules::simulator::{
+use paqtra::ebpf::MockMapReader;
+use paqtra::kubernetes::K8sClient;
+use paqtra::modules::simulator::{
     DependencyCriticality, ImpactType, RiskLevel, SimulationScenario, Simulator, SimulatorConfig,
 };
 use std::collections::HashMap;

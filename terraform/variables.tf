@@ -1,5 +1,5 @@
 ################################################################################
-# Cilium Vision — Terraform Variables
+# Paqtra — Terraform Variables
 ################################################################################
 
 # ─── AWS ─────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ variable "public_subnets" {
 variable "cluster_name" {
   description = "EKS cluster name"
   type        = string
-  default     = "cilium-vision-cluster"
+  default     = "paqtra-cluster"
 }
 
 variable "kubernetes_version" {
@@ -100,10 +100,10 @@ variable "enable_encryption" {
   default     = false
 }
 
-# ─── Cilium Vision ───────────────────────────────────────────
+# ─── Paqtra ───────────────────────────────────────────
 
 variable "namespace" {
-  description = "Kubernetes namespace for Cilium Vision"
+  description = "Kubernetes namespace for Paqtra"
   type        = string
   default     = "cilium-system"
 }
@@ -117,7 +117,7 @@ variable "environment" {
 variable "api_image_repository" {
   description = "API Docker image repository"
   type        = string
-  default     = "ghcr.io/ssahani/cilium-flow-api"
+  default     = "ghcr.io/ssahani/paqtra-api"
 }
 
 variable "api_image_tag" {
@@ -129,7 +129,7 @@ variable "api_image_tag" {
 variable "ui_image_repository" {
   description = "UI Docker image repository"
   type        = string
-  default     = "ghcr.io/ssahani/cilium-flow-ui"
+  default     = "ghcr.io/ssahani/paqtra-ui"
 }
 
 variable "ui_image_tag" {
@@ -159,7 +159,7 @@ variable "enable_ingress" {
 variable "ingress_hosts" {
   description = "Ingress hostnames"
   type        = list(string)
-  default     = ["cilium-vision.example.com"]
+  default     = ["paqtra.example.com"]
 }
 
 variable "enable_monitoring" {
@@ -172,7 +172,7 @@ variable "tags" {
   description = "Resource tags"
   type        = map(string)
   default = {
-    Project     = "cilium-vision"
+    Project     = "paqtra"
     ManagedBy   = "terraform"
   }
 }

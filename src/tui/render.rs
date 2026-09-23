@@ -25,7 +25,7 @@ impl TuiApp {
 
         // Title
         let title = Paragraph::new(format!(
-            "🚀 Cilium Vision - Intelligence Platform - {}",
+            "🚀 Paqtra — trace every flow - {}",
             self.context
         ))
         .style(

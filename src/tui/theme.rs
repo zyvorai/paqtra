@@ -1,4 +1,4 @@
-// Theme colors for Cilium Vision TUI
+// Theme colors for Paqtra TUI
 // Inspired by GuestKit's Coral-Terracotta Orange Theme (Pantone 7416 C)
 
 use ratatui::style::{Color, Modifier, Style};

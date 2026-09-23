@@ -71,7 +71,10 @@ impl TuiApp {
         Ok(())
     }
 
-    async fn run_app<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
+    async fn run_app<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()>
+    where
+        B::Error: Send + Sync + 'static,
+    {
         let mut flow_fetch_timer = std::time::Instant::now();
         loop {
             // Clear expired status messages (older than 5 seconds)

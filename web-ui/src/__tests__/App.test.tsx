@@ -1,17 +1,31 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
 
+beforeEach(() => {
+  localStorage.clear();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      status: 401,
+      ok: false,
+      headers: { get: () => 'application/json' },
+    }),
+  );
+});
+
 describe('App', () => {
-  it('renders without crashing', () => {
+  it('renders without crashing', async () => {
     const { container } = render(<App />);
-    expect(container.firstChild).toBeTruthy();
+    await waitFor(() => expect(container.firstChild).toBeTruthy());
   });
 
-  it('renders the main layout', () => {
+  it('shows the login page when there is no session', async () => {
     render(<App />);
-    // Check that something meaningful from the app is rendered
-    // e.g., the app title, navigation, or a loading state
-    expect(document.body.querySelector('[class*="min-h-screen"], [class*="app"], main, nav')).toBeTruthy();
+    await waitFor(() => {
+      expect(document.body.querySelector('.login-shell')).toBeTruthy();
+    });
+    expect(screen.getByRole('button', { name: /Sign in/i })).toBeTruthy();
+    expect(screen.getByText(/ADMIN_PASSWORD/)).toBeTruthy();
   });
 });

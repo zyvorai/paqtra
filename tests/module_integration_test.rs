@@ -3,19 +3,19 @@
 /// Tests that the major modules work correctly independently and with
 /// mock data: AutoPolicy, RootCause, Simulator, Replay, Chaos,
 /// Canary, MultiCluster, and PacketExplainer.
-use cilium_tui::ebpf::MockMapReader;
-use cilium_tui::kubernetes::K8sClient;
-use cilium_tui::modules::autopolicy::{AutoPolicy, AutoPolicyConfig, LabelSet, Protocol};
-use cilium_tui::modules::canary::{CanaryConfig, CanaryEngine, CanaryMetrics, TrafficSplit};
-use cilium_tui::modules::chaos::{ChaosConfig, ChaosEngine, ChaosExperiment, ChaosSeverity};
-use cilium_tui::modules::multicluster::{
+use paqtra::ebpf::MockMapReader;
+use paqtra::kubernetes::K8sClient;
+use paqtra::modules::autopolicy::{AutoPolicy, AutoPolicyConfig, LabelSet, Protocol};
+use paqtra::modules::canary::{CanaryConfig, CanaryEngine, CanaryMetrics, TrafficSplit};
+use paqtra::modules::chaos::{ChaosConfig, ChaosEngine, ChaosExperiment, ChaosSeverity};
+use paqtra::modules::multicluster::{
     CloudProvider, ClusterHealth, ClusterResources, ClusterState, MultiClusterAutopilot,
     MultiClusterConfig,
 };
-use cilium_tui::modules::packet_explainer::PacketExplainer;
-use cilium_tui::modules::replay::{ReplayConfig, ReplayEngine, ReplayFilter};
-use cilium_tui::modules::rootcause::{DropReason, RootCauseConfig, RootCauseEngine};
-use cilium_tui::modules::simulator::{Simulator, SimulatorConfig};
+use paqtra::modules::packet_explainer::PacketExplainer;
+use paqtra::modules::replay::{ReplayConfig, ReplayEngine, ReplayFilter};
+use paqtra::modules::rootcause::{DropReason, RootCauseConfig, RootCauseEngine};
+use paqtra::modules::simulator::{Simulator, SimulatorConfig};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -187,7 +187,7 @@ fn test_rootcause_config_defaults() {
 #[test]
 fn test_drop_reason_from_ebpf_covers_all_known_types() {
     // Verify that from_ebpf works for all well-known DropReasonType variants
-    use cilium_tui::ebpf::DropReasonType;
+    use paqtra::ebpf::DropReasonType;
 
     let known_types = vec![
         DropReasonType::PolicyDenied,

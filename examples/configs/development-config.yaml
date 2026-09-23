@@ -1,4 +1,4 @@
-# Cilium Vision - Development Configuration
+# Paqtra - Development Configuration
 # Permissive settings for testing and experimentation
 
 kubernetes:
@@ -72,7 +72,7 @@ replay:
   max_recorded_flows: 5000
   auto_save: true
   auto_save_interval_secs: 600
-  recordings_dir: "~/.config/cilium-vision/dev-recordings"
+  recordings_dir: "~/.config/paqtra/dev-recordings"
 
 ui:
   refresh_rate_ms: 16
@@ -82,9 +82,9 @@ ui:
 logging:
   level: "debug"                    # Verbose logging
   log_to_file: true
-  log_file_path: "~/.config/cilium-vision/dev.log"
+  log_file_path: "~/.config/paqtra/dev.log"
   audit_log: true
-  audit_log_path: "~/.config/cilium-vision/dev-audit.log"
+  audit_log_path: "~/.config/paqtra/dev-audit.log"
 
 security:
   require_policy_confirmation: false  # No confirmations in dev

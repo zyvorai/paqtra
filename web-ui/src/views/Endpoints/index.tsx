@@ -1,151 +1,81 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { CircleDot, Loader2, Search } from 'lucide-react';
-import { fetchEndpoints, CiliumEndpoint } from '../../services/api';
-import { isAxiosError } from 'axios';
-import { usePageTitle } from '../../hooks/usePageTitle';
-import { usePagination } from '../../hooks/usePagination';
-import { useAutoRefresh } from '../../hooks/useAutoRefresh';
-import DataFreshness from '../../components/DataFreshness';
-import ExportButton from '../../components/ExportButton';
-import EmptyState from '../../components/EmptyState';
-import { useNamespaceStore } from '../../stores/namespaceStore';
+import { useCallback, useEffect, useState } from 'react';
+import { fetchEndpoints, type CiliumEndpoint } from '../../services/api';
+import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
 
-const STATUS_BADGE: Record<string, string> = {
-  ready: 'bg-green-500/15 text-green-400 border-green-500/30',
-  not_ready: 'bg-red-500/15 text-red-400 border-red-500/30',
-  disconnecting: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
-};
-
-const ENFORCEMENT_BADGE: Record<string, string> = {
-  always: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
-  default: 'bg-slate-500/15 text-slate-400 border-slate-500/30',
-  never: 'bg-red-500/15 text-red-400 border-red-500/30',
-};
-
-const Endpoints: React.FC = () => {
-  usePageTitle('Endpoints');
-  const { selectedNamespace } = useNamespaceStore();
+export default function Endpoints() {
   const [endpoints, setEndpoints] = useState<CiliumEndpoint[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [err, setErr] = useState('');
   const [search, setSearch] = useState('');
-  const [autoRefreshOn, setAutoRefreshOn] = useState(true);
-  const pagination = usePagination({ initialLimit: 24 });
 
-  const fetchData = useCallback(async () => {
-    setError(null);
-    try { setEndpoints((await fetchEndpoints()).data.endpoints ?? []); }
-    catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to fetch endpoints'); }
+  const load = useCallback(async () => {
+    try {
+      setEndpoints((await fetchEndpoints()).data.endpoints ?? []);
+      setErr('');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
   }, []);
 
-  const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
+  useEffect(() => {
+    void load();
+    const t = setInterval(() => void load(), 15000);
+    return () => clearInterval(t);
+  }, [load]);
 
-  // Apply global namespace filter, then local search filter
-  const namespacedEndpoints = useMemo(() => {
-    if (!selectedNamespace) return endpoints;
-    return endpoints.filter((e) => e.namespace === selectedNamespace);
-  }, [endpoints, selectedNamespace]);
-
-  const filtered = useMemo(() => search
-    ? namespacedEndpoints.filter((e) => e.name.toLowerCase().includes(search.toLowerCase()) || e.namespace.toLowerCase().includes(search.toLowerCase()) || e.labels.some((l) => l.toLowerCase().includes(search.toLowerCase())))
-    : namespacedEndpoints, [namespacedEndpoints, search]);
-
-  // Keep pagination total in sync with filtered count and reset page on search change
-  useMemo(() => { pagination.setTotal(filtered.length); pagination.resetPage(); }, [filtered.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const paginatedEndpoints = useMemo(
-    () => filtered.slice(pagination.offset, pagination.offset + pagination.limit),
-    [filtered, pagination.offset, pagination.limit],
-  );
+  const filtered = search
+    ? endpoints.filter(
+        (e) =>
+          e.name?.toLowerCase().includes(search.toLowerCase()) ||
+          e.namespace?.toLowerCase().includes(search.toLowerCase()),
+      )
+    : endpoints;
+  const ready = endpoints.filter((e) => (e.status || '').toLowerCase() === 'ready').length;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500 to-green-700 flex items-center justify-center shadow-lg shadow-green-500/20"><CircleDot className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Cilium Endpoints</h1></div>
-          <p className="text-sm text-slate-400 mt-1">Managed endpoints with identity and policy status</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <ExportButton data={filtered as Record<string, unknown>[]} filename="endpoints" />
-          <DataFreshness lastUpdated={lastUpdated} onRefresh={manualRefresh} refreshing={loading}
-            autoRefresh={autoRefreshOn} onAutoRefreshToggle={() => setAutoRefreshOn(v => !v)} intervalSecs={30} />
-        </div>
-      </div>
+    <Board>
+      {err ? (
+        <Card span={3}>
+          <Warning>{err}</Warning>
+        </Card>
+      ) : null}
 
-      {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
-
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-        <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search endpoints, labels..."
-          className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 col-span-full mx-auto my-8" />}
-        {!loading && paginatedEndpoints.length === 0 && (
-          <div className="col-span-full">
-            <EmptyState
-              icon={<CircleDot className="w-8 h-8 text-slate-400" />}
-              title="No endpoints found"
-              description="Connect to a Cilium cluster to see managed endpoints and their identity/policy status."
-            />
-          </div>
-        )}
-        {paginatedEndpoints.map((ep) => (
-          <div key={ep.id} className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-4 card-glow transition-all hover:scale-[1.01]">
-            <div className="flex items-center justify-between mb-3">
-              <div className="font-semibold text-white truncate">{ep.name}</div>
-              <span className={`px-2 py-0.5 rounded-full text-xs border ${STATUS_BADGE[ep.status] ?? ''}`}>{ep.status}</span>
-            </div>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Namespace</span>
-                <span className="px-2 py-0.5 rounded border border-slate-700/50 text-xs">{ep.namespace}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Identity</span>
-                <span className="font-mono text-white">{ep.identity}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">IPv4</span>
-                <span className="font-mono text-white">{ep.ipv4}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Policy</span>
-                <span className={`px-2 py-0.5 rounded-full text-xs border ${ENFORCEMENT_BADGE[ep.policy_enforcement] ?? ''}`}>{ep.policy_enforcement}</span>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-1 mt-3 pt-3 border-t border-slate-700/50">
-              {ep.labels.map((l) => (
-                <span key={l} className="px-2 py-0.5 rounded bg-slate-900/50 text-xs text-slate-400">{l}</span>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between mt-4 px-4 py-3 rounded-xl border border-slate-700/50 bg-slate-800/50 text-sm text-slate-400">
-        <span>Showing {pagination.pageRange.start}–{pagination.pageRange.end} of {filtered.length} endpoints</span>
-        <div className="flex items-center gap-2">
-          <span className="text-xs">Page {pagination.page + 1} of {pagination.totalPages || 1}</span>
-          <button
-            disabled={!pagination.hasPrevPage}
-            onClick={pagination.prevPage}
-            className="px-3 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Previous
+      <Card span={3}>
+        <Eyebrow>ENDPOINTS</Eyebrow>
+        <h3>Cilium-managed workloads</h3>
+        <Metrics>
+          <Metric value={endpoints.length} label="endpoints" />
+          <Metric value={ready} label="ready" />
+          <Metric value={new Set(endpoints.map((e) => e.namespace)).size} label="namespaces" />
+        </Metrics>
+        <Toolbar>
+          <label>
+            Search
+            <input value={search} placeholder="name or namespace" onChange={(e) => setSearch(e.target.value)} />
+          </label>
+          <button type="button" className="btn-refresh" onClick={() => void load()}>
+            Refresh
           </button>
-          <button
-            disabled={!pagination.hasNextPage}
-            onClick={pagination.nextPage}
-            className="px-3 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Next
-          </button>
+        </Toolbar>
+      </Card>
+
+      <Card span={3}>
+        <Eyebrow>INVENTORY</Eyebrow>
+        <h3>Endpoint list</h3>
+        {filtered.length === 0 ? <Empty>No endpoints reported yet.</Empty> : null}
+        <div className="list">
+          {filtered.slice(0, 100).map((e) => (
+            <div className="agent wide" key={`${e.namespace}/${e.name}/${e.id ?? e.identity}`}>
+              <b>
+                {e.namespace}/{e.name}
+              </b>
+              <span>{e.status || '—'}</span>
+              <small>
+                identity {e.identity ?? '—'} · { (e.labels || []).slice(0, 3).join(', ') || 'no labels'}
+              </small>
+            </div>
+          ))}
         </div>
-      </div>
-    </div>
+      </Card>
+    </Board>
   );
-};
-
-export default Endpoints;
+}

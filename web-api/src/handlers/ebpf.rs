@@ -13,6 +13,18 @@ use std::time::Duration;
 use super::{check_admin, paginate_json, PaginationQuery};
 use crate::AppState;
 
+/// Classify BPF program name into brotherhood owner (cilium | netra | other).
+fn classify_owner(name: &str) -> &'static str {
+    let n = name.trim();
+    if n.starts_with("cil_") || n.starts_with("cilium") {
+        "cilium"
+    } else if n.starts_with("netra_") || n.starts_with("netra") {
+        "netra"
+    } else {
+        "other"
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Helper: run bpftool with a 5-second timeout, return parsed JSON
 // ---------------------------------------------------------------------------
@@ -151,6 +163,111 @@ async fn list_cilium_map_ids() -> Result<Vec<u64>, String> {
         })
         .filter_map(map_id)
         .collect())
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/ebpf/attachments — read-only inventory with owner classification
+// ---------------------------------------------------------------------------
+
+pub async fn list_attachments(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    check_admin(&state, &claims)?;
+
+    let progs = match run_bpftool(&["prog", "list", "-j"]).await {
+        Ok(v) => v,
+        Err(_) => {
+            return Ok(Json(json!({
+                "source": "unavailable",
+                "attachments": [],
+                "total": 0,
+                "cilium": 0,
+                "netra": 0,
+                "other": 0,
+            })));
+        }
+    };
+
+    let empty = vec![];
+    let arr = progs.as_array().unwrap_or(&empty);
+    let mut cilium = 0usize;
+    let mut netra = 0usize;
+    let mut other = 0usize;
+    let items: Vec<Value> = arr
+        .iter()
+        .filter_map(|p| {
+            let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            if name.is_empty() {
+                return None;
+            }
+            let owner = classify_owner(name);
+            match owner {
+                "cilium" => cilium += 1,
+                "netra" => netra += 1,
+                _ => other += 1,
+            }
+            Some(json!({
+                "id": p.get("id"),
+                "name": name,
+                "owner": owner,
+                "type": p.get("type"),
+                "tag": p.get("tag"),
+            }))
+        })
+        .collect();
+    let total = items.len();
+
+    Ok(Json(json!({
+        "source": "bpftool",
+        "attachments": items,
+        "total": total,
+        "cilium": cilium,
+        "netra": netra,
+        "other": other,
+    })))
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/ebpf/drift — warn-only brotherhood drift findings
+// ---------------------------------------------------------------------------
+
+pub async fn get_drift(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    check_admin(&state, &claims)?;
+
+    let mut findings = Vec::new();
+    match run_bpftool(&["prog", "list", "-j"]).await {
+        Err(_) => {
+            findings.push(json!({
+                "kind": "bpf-inventory-unavailable",
+                "severity": "info",
+                "message": "BPF program inventory unavailable (bpftool missing or failed).",
+            }));
+        }
+        Ok(progs) => {
+            let empty = vec![];
+            let arr = progs.as_array().unwrap_or(&empty);
+            let cilium = arr
+                .iter()
+                .filter(|p| {
+                    let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                    !name.is_empty() && classify_owner(name) == "cilium"
+                })
+                .count();
+            if cilium == 0 {
+                findings.push(json!({
+                    "kind": "bpf-cilium-missing",
+                    "severity": "warning",
+                    "message": "No cil_* programs visible — Cilium datapath may be absent.",
+                }));
+            }
+        }
+    }
+
+    Ok(Json(json!({ "findings": findings })))
 }
 
 // ---------------------------------------------------------------------------
@@ -849,4 +966,17 @@ pub async fn get_ebpf_summary(
         "total_drops": total_drops,
         "top_drop_reason": top_drop_reason,
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::classify_owner;
+
+    #[test]
+    fn classify_brotherhood_owners() {
+        assert_eq!(classify_owner("cil_from_container"), "cilium");
+        assert_eq!(classify_owner("cilium_host"), "cilium");
+        assert_eq!(classify_owner("netra_tcx_ingress"), "netra");
+        assert_eq!(classify_owner("custom_xdp"), "other");
+    }
 }

@@ -1,5 +1,5 @@
 #![recursion_limit = "256"]
-// Cilium Vision Web API Server
+// Paqtra Web API Server
 mod config;
 mod error;
 pub mod handlers;
@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "cilium_vision_api=debug,tower_http=debug".into()),
+                .unwrap_or_else(|_| "paqtra_api=debug,tower_http=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer().json())
         .init();
@@ -47,11 +47,6 @@ async fn main() -> anyhow::Result<()> {
     // Load configuration
     let config = Config::load()?;
     tracing::info!("Configuration loaded");
-
-    // Initialize Redis
-    let redis_client = redis::Client::open(config.redis_url.as_str())?;
-    let redis_conn = redis_client.get_connection_manager().await?;
-    tracing::info!("Connected to Redis");
 
     // Initialize services
     let hubble = HubbleService::new(&config.hubble_address, config.hubble_addresses.clone())?;
@@ -69,8 +64,20 @@ async fn main() -> anyhow::Result<()> {
     let k8s = K8sService::new(config.k8s_context.clone());
     tracing::info!("K8sService initialized (context: {:?})", config.k8s_context);
 
-    let cache = CacheService::new(redis_conn.clone());
-    tracing::info!("CacheService initialized");
+    let cache = match &config.data_dir {
+        Some(dir) => {
+            let db_path = std::path::Path::new(dir).join("paqtra.db");
+            let cache = CacheService::with_persistence(&db_path)?;
+            tracing::info!("CacheService initialized with SQLite persistence at {}", db_path.display());
+            cache
+        }
+        None => {
+            tracing::warn!(
+                "PAQTRA_DATA_DIR not set: alert rules, audit log and other state are memory-only and will be lost on restart"
+            );
+            CacheService::new()
+        }
+    };
 
     let prometheus = PrometheusService::new(config.prometheus_url.clone());
     if prometheus.is_configured() {
@@ -85,7 +92,6 @@ async fn main() -> anyhow::Result<()> {
     // Build shared application state
     let app_state = Arc::new(AppState {
         config: config.clone(),
-        redis: redis_conn,
         hubble,
         k8s,
         cache,
@@ -127,6 +133,8 @@ async fn main() -> anyhow::Result<()> {
         // Health checks (no auth required - handled by middleware)
         .route("/health", get(handlers::health::health_check))
         .route("/ready", get(handlers::health::readiness_check))
+        // Login (no auth required)
+        .route("/api/v1/auth/login", post(handlers::auth::login))
         // OpenAPI / Swagger UI (no auth required - handled by middleware)
         .route("/api-docs/openapi.json", get(openapi::openapi_json))
         .route("/swagger-ui", get(openapi::swagger_ui))
@@ -256,6 +264,11 @@ async fn main() -> anyhow::Result<()> {
             get(handlers::extended::zero_trust_score),
         )
         // eBPF Profiler (real kernel data via bpftool)
+        .route(
+            "/api/v1/ebpf/attachments",
+            get(handlers::ebpf::list_attachments),
+        )
+        .route("/api/v1/ebpf/drift", get(handlers::ebpf::get_drift))
         .route(
             "/api/v1/ebpf/programs",
             get(handlers::ebpf::list_real_programs),
@@ -596,7 +609,7 @@ async fn main() -> anyhow::Result<()> {
             "HTTP redirect server listening on {} -> https://...:{}", http_addr, tls_port
         );
 
-        tracing::info!("Starting Cilium Vision API server (HTTPS) on {}", tls_addr);
+        tracing::info!("Starting Paqtra API server (HTTPS) on {}", tls_addr);
 
         tokio::select! {
             res = axum_server::bind_rustls(tls_addr, tls_config)
@@ -615,7 +628,7 @@ async fn main() -> anyhow::Result<()> {
         let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
         let listener = tokio::net::TcpListener::bind(addr).await?;
         let actual_addr = listener.local_addr()?;
-        tracing::info!("Starting Cilium Vision API server on {}", actual_addr);
+        tracing::info!("Starting Paqtra API server on {}", actual_addr);
 
         axum::serve(
             listener,
@@ -686,7 +699,6 @@ impl Default for AppMetrics {
 // Application state shared across handlers
 pub struct AppState {
     pub config: Config,
-    pub redis: redis::aio::ConnectionManager,
     pub hubble: HubbleService,
     pub k8s: K8sService,
     pub cache: CacheService,

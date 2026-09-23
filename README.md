@@ -1,6 +1,8 @@
-# Cilium Vision
+# Paqtra
 
-**Real-Time Network Intelligence Platform for Kubernetes**
+**Paqtra — trace every flow.**
+
+See where network traffic goes and why it is allowed or dropped. Full-stack observability and operations for Kubernetes networks powered by Cilium eBPF.
 
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 [![React](https://img.shields.io/badge/react-19-blue.svg)](https://react.dev/)
@@ -10,7 +12,26 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Cilium](https://img.shields.io/badge/cilium-1.14%2B-purple.svg)](https://cilium.io/)
 
-Cilium Vision is a full-stack observability and operations platform for Kubernetes networks powered by Cilium eBPF. It provides a **web dashboard** (64 pages), **REST API** (75+ endpoints), and **terminal TUI** (13 tabs) in a single deployable package. The dashboard includes real kernel eBPF data views powered by bpftool, exposing live conntrack tables, policy maps, IP cache, LB maps, and drop analytics.
+It ships a **web dashboard** (64 pages), **REST API** (75+ endpoints), and **terminal TUI** (13 tabs) in a single deployable package. The dashboard includes real kernel eBPF data views powered by bpftool, exposing live conntrack tables, policy maps, IP cache, LB maps, and drop analytics.
+
+📖 **[Quick start](QUICKSTART.md)** · **[Features](docs/features.md)** · **[Architecture](docs/architecture.md)** · **[Cilium brotherhood](docs/cilium-brotherhood.md)**
+
+## Contents
+
+- [What It Does](#what-it-does)
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [Web Dashboard](#web-dashboard)
+- [REST API](#rest-api)
+- [Terminal TUI](#terminal-tui)
+- [Suite placement](#suite-placement)
+- [Repository](#repository)
+- [Testing](#testing)
+- [Deployment Options](#deployment-options)
+- [Security](#security)
+- [Roadmap](#roadmap)
+- [Requirements](#requirements)
+- [License](#license)
 
 ---
 
@@ -42,8 +63,8 @@ Cilium Vision is a full-stack observability and operations platform for Kubernet
 ### Install & Run
 
 ```bash
-git clone https://github.com/ssahani/cilium-flow.git
-cd cilium-flow
+git clone https://github.com/ssahani/paqtra.git
+cd paqtra
 
 # Build everything
 cargo build --release                    # TUI binary (13MB)
@@ -54,8 +75,8 @@ cd web-ui && npm ci && npm run build     # Web dashboard
 ./scripts/deploy-k3s-test.sh <host> <user> <password> --test
 
 # Or run locally
-cilium-tui                               # Terminal UI
-cilium-tui --skip-bootstrap              # Skip auto-setup
+paqtra                               # Terminal UI
+paqtra --skip-bootstrap              # Skip auto-setup
 ```
 
 ### Access
@@ -162,7 +183,7 @@ curl -X POST http://localhost:9191/api/v1/modules/autopolicy/generate \
   -d '{"namespace":"default","observation_duration":"5m"}'
 ```
 
-See full endpoint list in [docs/WEB_APP_ARCHITECTURE.md](docs/WEB_APP_ARCHITECTURE.md).
+See full endpoint list in [docs/web-architecture.md](docs/web-architecture.md) and [docs/client/api-reference.html](docs/client/api-reference.html).
 
 ---
 
@@ -179,6 +200,47 @@ See full endpoint list in [docs/WEB_APP_ARCHITECTURE.md](docs/WEB_APP_ARCHITECTU
 | `d` | Detect problems (Healer) |
 | `s` | Simulate / Stop |
 | `t` | Enter time-travel mode |
+
+---
+
+## Suite placement
+
+Paqtra is the **Cilium-native** observe/ops sibling. **Netra** is the independent eBPF sibling (own maps under `/sys/fs/bpf/netra`). They must not fight.
+
+| Role | Owns | Must not |
+|------|------|----------|
+| **Cilium** | CNI, policy maps, identity, datapath (`cil_*`) | — |
+| **Paqtra** | Hubble/API/UI, install/status CLI, **read-only** map + program inventory | Write Cilium maps; attach/replace Cilium programs; second CNI |
+| **Netra** | Own programs under `/sys/fs/bpf/netra`, TCX/XDP, netlink | Modify Cilium maps |
+
+Full rules: [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md). Agent instructions: [AGENTS.md](AGENTS.md).
+
+---
+
+## Repository
+
+| Path | Description |
+|------|-------------|
+| [QUICKSTART.md](QUICKSTART.md) | Install and smoke paths |
+| [docs/overview.md](docs/overview.md) | Product overview |
+| [docs/features.md](docs/features.md) | Feature / TUI catalog |
+| [docs/architecture.md](docs/architecture.md) | System architecture |
+| [docs/web-app.md](docs/web-app.md) | Web UI stack |
+| [docs/web-architecture.md](docs/web-architecture.md) | API + UI architecture |
+| [docs/web-deployment.md](docs/web-deployment.md) | Deploy options |
+| [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md) | Cilium / Netra boundaries |
+| [docs/autopolicy.md](docs/autopolicy.md) | AutoPolicy guide |
+| [docs/simulator.md](docs/simulator.md) | Policy simulator |
+| [docs/replay.md](docs/replay.md) | Flow replay |
+| [docs/rootcause.md](docs/rootcause.md) | Root-cause analysis |
+| [docs/ebpf-integration.md](docs/ebpf-integration.md) | eBPF integration |
+| [docs/tui.md](docs/tui.md) | TUI integration |
+| [docs/auto-install.md](docs/auto-install.md) | Auto-install |
+| [docs/autopolicy-quickstart.md](docs/autopolicy-quickstart.md) | AutoPolicy quick start |
+| [docs/client/](docs/client/) | Client HTML (API ref, security whitepaper, …) |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guide |
+| [AGENTS.md](AGENTS.md) | Coding-agent boundaries |
 
 ---
 
@@ -199,19 +261,18 @@ cd web-ui && npm test     # UI tests
 |--------|---------|
 | **Remote K3s** | `./scripts/deploy-k3s-test.sh <host> <user> <pass> --test` |
 | **Docker** | `docker compose -f deployments/docker-compose.yaml up` |
-| **Helm** | `helm install cilium-vision ./deployments/k8s/chart` |
+| **Helm** | `helm install paqtra ./deployments/k8s/chart` |
 | **Systemd** | `bash install.sh setup-services && bash install.sh start` |
-| **Binary** | `cargo build --release && cp target/release/cilium-tui /usr/local/bin/` |
+| **Binary** | `cargo build --release && cp target/release/paqtra /usr/local/bin/` |
 
 ### Environment Variables
 
 ```bash
-HOST=0.0.0.0              # API listen address
-PORT=9191                  # API port
-REDIS_URL=redis://localhost:6379
+PAQTRA_HOST=0.0.0.0        # API listen address
+PAQTRA_PORT=9191           # API port
 JWT_SECRET=<min-32-chars>  # Required for auth
 HUBBLE_ADDRESS=localhost:4245
-UI_DIST_DIR=/var/lib/cilium-vision/ui  # Path to built web UI
+UI_DIST_DIR=/var/lib/paqtra/ui  # Path to built web UI
 AUTH_DISABLED=true         # Dev mode only
 ```
 
@@ -284,7 +345,7 @@ AUTH_DISABLED=true         # Dev mode only
 
 ## License
 
-Apache License 2.0
+Apache License 2.0 — see [LICENSE](LICENSE).
 
 ---
 

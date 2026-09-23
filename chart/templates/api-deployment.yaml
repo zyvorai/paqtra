@@ -1,27 +1,31 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "cilium-vision.fullname" . }}-api
+  name: {{ include "paqtra.fullname" . }}-api
   namespace: {{ .Values.global.namespace | default .Release.Namespace }}
   labels:
-    {{- include "cilium-vision.labels" . | nindent 4 }}
+    {{- include "paqtra.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
 spec:
-  {{- if not .Values.api.hpa.enabled }}
+  {{- if .Values.api.persistence.enabled }}
+  replicas: 1
+  strategy:
+    type: Recreate
+  {{- else if not .Values.api.hpa.enabled }}
   replicas: {{ .Values.api.replicas }}
   {{- end }}
   selector:
     matchLabels:
-      {{- include "cilium-vision.api.selectorLabels" . | nindent 6 }}
+      {{- include "paqtra.api.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
       labels:
-        {{- include "cilium-vision.api.selectorLabels" . | nindent 8 }}
+        {{- include "paqtra.api.selectorLabels" . | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "cilium-vision.serviceAccountName" . }}
+      serviceAccountName: {{ include "paqtra.serviceAccountName" . }}
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -30,7 +34,7 @@ spec:
         {{- toYaml .Values.api.podSecurityContext | nindent 8 }}
       containers:
         - name: api
-          image: {{ include "cilium-vision.api.image" . }}
+          image: {{ include "paqtra.api.image" . }}
           imagePullPolicy: {{ .Values.api.image.pullPolicy }}
           ports:
             - name: http
@@ -38,20 +42,39 @@ spec:
               protocol: TCP
           envFrom:
             - configMapRef:
-                name: {{ include "cilium-vision.fullname" . }}-config
+                name: {{ include "paqtra.fullname" . }}-config
           env:
+            {{- if .Values.api.persistence.enabled }}
+            - name: PAQTRA_DATA_DIR
+              value: {{ .Values.api.persistence.mountPath | quote }}
+            {{- end }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "cilium-vision.fullname" . }}-secret
+                  name: {{ include "paqtra.fullname" . }}-secret
                   key: JWT_SECRET
+            - name: ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "paqtra.fullname" . }}-secret
+                  key: ADMIN_USERNAME
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "paqtra.fullname" . }}-secret
+                  key: ADMIN_PASSWORD
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "paqtra.fullname" . }}-secret
+                  key: API_KEY
           livenessProbe:
             httpGet:
               path: {{ .Values.api.probes.liveness.path }}
               port: http
             initialDelaySeconds: {{ .Values.api.probes.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.api.probes.liveness.periodSeconds }}
-            timeoutSeconds: {{ .Values.api.probes.liveness.timeoutSeconds }}
+            timeoutSeconds: 10
             failureThreshold: {{ .Values.api.probes.liveness.failureThreshold }}
           readinessProbe:
             httpGet:
@@ -59,21 +82,34 @@ spec:
               port: http
             initialDelaySeconds: {{ .Values.api.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.api.probes.readiness.periodSeconds }}
-            timeoutSeconds: {{ .Values.api.probes.readiness.timeoutSeconds }}
+            timeoutSeconds: 10
             failureThreshold: {{ .Values.api.probes.readiness.failureThreshold }}
           resources:
             {{- toYaml .Values.api.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.api.containerSecurityContext | nindent 12 }}
-          {{- if .Values.api.kubeconfig.enabled }}
+          {{- if or .Values.api.kubeconfig.enabled .Values.api.persistence.enabled }}
           volumeMounts:
+            {{- if .Values.api.kubeconfig.enabled }}
             - name: kubeconfig
               mountPath: {{ .Values.api.kubeconfig.mountPath }}
               readOnly: true
+            {{- end }}
+            {{- if .Values.api.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.api.persistence.mountPath }}
+            {{- end }}
           {{- end }}
-      {{- if .Values.api.kubeconfig.enabled }}
+      {{- if or .Values.api.kubeconfig.enabled .Values.api.persistence.enabled }}
       volumes:
+        {{- if .Values.api.kubeconfig.enabled }}
         - name: kubeconfig
           secret:
             secretName: {{ .Values.api.kubeconfig.secretName }}
+        {{- end }}
+        {{- if .Values.api.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.api.persistence.existingClaim | default (printf "%s-api-data" (include "paqtra.fullname" .)) }}
+        {{- end }}
       {{- end }}

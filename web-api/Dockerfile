@@ -1,6 +1,6 @@
-# Multi-stage build for Cilium Vision API
+# Multi-stage build for Paqtra API
 # Stage 1: Build (use bookworm to match runtime glibc)
-FROM rust:bookworm AS builder
+FROM docker.io/library/rust:bookworm AS builder
 
 WORKDIR /build
 
@@ -19,13 +19,19 @@ COPY src/ src/
 RUN cargo build --release
 
 # Stage 2: Runtime (same Debian release as builder)
-FROM debian:bookworm-slim
+FROM docker.io/library/debian:bookworm-slim
 
-# Install runtime dependencies
+# Runtime deps + kubectl (API shells out to kubectl using in-cluster SA)
+ARG TARGETARCH=amd64
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     wget \
+    curl \
+    && KVER=$(curl -fsSL https://dl.k8s.io/release/stable.txt) \
+    && curl -fsSL -o /usr/local/bin/kubectl \
+      "https://dl.k8s.io/release/${KVER}/bin/linux/${TARGETARCH}/kubectl" \
+    && chmod +x /usr/local/bin/kubectl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -34,10 +40,10 @@ RUN useradd -m -u 1000 -s /bin/bash appuser
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /build/target/release/cilium-vision-api ./
+COPY --from=builder /build/target/release/paqtra-api ./
 
-# Change ownership
-RUN chown -R appuser:appuser /app
+# Change ownership; /data holds the SQLite state when PAQTRA_DATA_DIR=/data
+RUN mkdir -p /data && chown -R appuser:appuser /app /data
 
 # Switch to non-root user
 USER appuser
@@ -50,4 +56,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD wget --quiet --tries=1 --spider http://localhost:9191/health || exit 1
 
 # Run
-CMD ["./cilium-vision-api"]
+CMD ["./paqtra-api"]

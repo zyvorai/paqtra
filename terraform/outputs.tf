@@ -1,5 +1,5 @@
 ################################################################################
-# Cilium Vision — Terraform Outputs
+# Paqtra — Terraform Outputs
 ################################################################################
 
 output "cluster_name" {
@@ -32,12 +32,12 @@ output "kubeconfig_command" {
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${var.cluster_name}"
 }
 
-output "cilium_vision_namespace" {
-  description = "Namespace where Cilium Vision is deployed"
+output "paqtra_namespace" {
+  description = "Namespace where Paqtra is deployed"
   value       = var.namespace
 }
 
 output "port_forward_command" {
-  description = "Command to access Cilium Vision locally"
-  value       = "kubectl -n ${var.namespace} port-forward svc/cilium-vision-api 9191:9191 & kubectl -n ${var.namespace} port-forward svc/cilium-vision-ui 3001:8080"
+  description = "Command to access Paqtra locally"
+  value       = "kubectl -n ${var.namespace} port-forward svc/paqtra-api 9191:9191 & kubectl -n ${var.namespace} port-forward svc/paqtra-ui 3001:8080"
 }

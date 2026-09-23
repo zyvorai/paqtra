@@ -124,7 +124,7 @@ spec:
   ingress:
     - fromEndpoints:
         - matchLabels:
-            app: cilium-tui
+            app: paqtra
 "#;
 
         self.k8s_client

@@ -1,5 +1,5 @@
-// Cilium Vision Service Worker — Offline Support
-const CACHE_NAME = 'cilium-vision-v2';
+// Paqtra Service Worker — Offline Support
+const CACHE_NAME = 'paqtra-v2';
 const OFFLINE_URL = '/';
 
 const PRECACHE_URLS = [

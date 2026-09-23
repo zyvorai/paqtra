@@ -13,7 +13,7 @@ Test microservices resilience during a controlled GameDay exercise.
   - Verify graceful degradation
   - Measure recovery time
 
-## Experiments Using Cilium Vision
+## Experiments Using Paqtra
 
 ### Experiment 1: Network Partition (15 minutes)
 

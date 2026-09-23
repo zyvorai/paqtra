@@ -3,7 +3,7 @@
 ## Problem
 Production service `payment-api` started failing at 14:32 UTC. Users report intermittent 500 errors.
 
-## Investigation Steps Using Cilium Vision
+## Investigation Steps Using Paqtra
 
 ### 1. Navigate to Replay Tab
 ```
@@ -96,7 +96,7 @@ Observe traffic now FORWARDED from payment-api → postgres-db
 ```
 
 ## Time to Resolution
-- **Without Cilium Vision**: 45-60 minutes (log aggregation, kubectl debugging, trial and error)
+- **Without Paqtra**: 45-60 minutes (log aggregation, kubectl debugging, trial and error)
 - **With Time-Travel**: 5-8 minutes (visual timeline, instant root cause, one-click fix)
 
 ## Prevention

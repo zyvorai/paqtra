@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-# Cilium Vision — Hyper SDK Cloud Deployment
+# Paqtra — Hyper SDK Cloud Deployment
 # Deploy to Hyper.sh / Hyper_ container cloud platform
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -12,14 +12,13 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 HYPER_REGION="${HYPER_REGION:-us-west-1}"
 HYPER_SIZE="${HYPER_SIZE:-s4}"
 IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/ssahani}"
-API_IMAGE="${IMAGE_REGISTRY}/cilium-flow-api:latest"
-UI_IMAGE="${IMAGE_REGISTRY}/cilium-flow-ui:latest"
-COMBINED_IMAGE="${IMAGE_REGISTRY}/cilium-flow:latest"
+API_IMAGE="${IMAGE_REGISTRY}/paqtra-api:latest"
+UI_IMAGE="${IMAGE_REGISTRY}/paqtra-ui:latest"
+COMBINED_IMAGE="${IMAGE_REGISTRY}/paqtra:latest"
 API_PORT="${API_PORT:-9191}"
 UI_PORT="${UI_PORT:-8080}"
-HYPER_API_NAME="cilium-vision-api"
-HYPER_UI_NAME="cilium-vision-ui"
-HYPER_REDIS_NAME="cilium-vision-redis"
+HYPER_API_NAME="paqtra-api"
+HYPER_UI_NAME="paqtra-ui"
 HYPER_FIP="${HYPER_FIP:-}"
 
 GREEN='\033[0;32m'
@@ -67,26 +66,6 @@ build_and_push() {
     ok "Images pushed to ${IMAGE_REGISTRY}"
 }
 
-# ─── Deploy Redis ────────────────────────────────────────────
-deploy_redis() {
-    info "Deploying Redis..."
-
-    # Check if already running
-    if hyper ps -a --filter "name=${HYPER_REDIS_NAME}" 2>/dev/null | grep -q "${HYPER_REDIS_NAME}"; then
-        warn "Redis container already exists, skipping"
-        return
-    fi
-
-    hyper run -d \
-        --name "${HYPER_REDIS_NAME}" \
-        --size s1 \
-        --restart=always \
-        redis:7-alpine \
-        redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
-
-    ok "Redis deployed"
-}
-
 # ─── Deploy API ──────────────────────────────────────────────
 deploy_api() {
     local jwt_secret
@@ -101,10 +80,8 @@ deploy_api() {
         --name "${HYPER_API_NAME}" \
         --size "${HYPER_SIZE}" \
         --restart=always \
-        --link "${HYPER_REDIS_NAME}:redis" \
-        -e "CILIUM_VISION_HOST=0.0.0.0" \
-        -e "CILIUM_VISION_PORT=${API_PORT}" \
-        -e "REDIS_URL=redis://redis:6379" \
+        -e "PAQTRA_HOST=0.0.0.0" \
+        -e "PAQTRA_PORT=${API_PORT}" \
         -e "JWT_SECRET=${jwt_secret}" \
         -e "RUST_LOG=info" \
         -e "ALLOWED_ORIGINS=http://${HYPER_FIP:-localhost}:${UI_PORT}" \
@@ -125,7 +102,7 @@ deploy_ui() {
         --name "${HYPER_UI_NAME}" \
         --size s1 \
         --restart=always \
-        --link "${HYPER_API_NAME}:cilium-vision-api" \
+        --link "${HYPER_API_NAME}:paqtra-api" \
         -p "${UI_PORT}:8080" \
         "${UI_IMAGE}"
 
@@ -156,12 +133,11 @@ attach_fip() {
 full_deploy() {
     echo ""
     echo "🔷 ═══════════════════════════════════════════════════"
-    echo "🔷    Cilium Vision — Hyper SDK Deployment"
+    echo "🔷    Paqtra — Hyper SDK Deployment"
     echo "🔷 ═══════════════════════════════════════════════════"
     echo ""
 
     check_hyper
-    deploy_redis
     deploy_api
     deploy_ui
     attach_fip
@@ -174,7 +150,7 @@ full_deploy() {
 show_status() {
     echo "🔷 ═══ Deployment Status ═══"
     echo ""
-    hyper ps -a --filter "name=cilium-vision" 2>/dev/null || echo "  No containers found"
+    hyper ps -a --filter "name=paqtra" 2>/dev/null || echo "  No containers found"
     echo ""
 
     if [ -n "${HYPER_FIP}" ]; then
@@ -190,7 +166,6 @@ teardown() {
     warn "Tearing down Hyper deployment..."
     hyper rm -f "${HYPER_UI_NAME}" 2>/dev/null || true
     hyper rm -f "${HYPER_API_NAME}" 2>/dev/null || true
-    hyper rm -f "${HYPER_REDIS_NAME}" 2>/dev/null || true
 
     if [ -n "${HYPER_FIP}" ]; then
         hyper fip detach "${HYPER_API_NAME}" 2>/dev/null || true
@@ -213,22 +188,13 @@ compose_deploy() {
     cat > /tmp/hyper-compose.yml <<EOF
 version: '2'
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: ${HYPER_REDIS_NAME}
-    size: s1
-    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
-
   api:
     image: ${COMBINED_IMAGE}
     container_name: ${HYPER_API_NAME}
     size: ${HYPER_SIZE}
-    links:
-      - redis
     environment:
-      CILIUM_VISION_HOST: "0.0.0.0"
-      CILIUM_VISION_PORT: "${API_PORT}"
-      REDIS_URL: "redis://redis:6379"
+      PAQTRA_HOST: "0.0.0.0"
+      PAQTRA_PORT: "${API_PORT}"
       JWT_SECRET: "$(openssl rand -hex 32)"
       RUST_LOG: "info"
       ALLOWED_ORIGINS: "http://${HYPER_FIP:-localhost}:${UI_PORT}"
@@ -240,7 +206,7 @@ services:
     container_name: ${HYPER_UI_NAME}
     size: s1
     links:
-      - api:cilium-vision-api
+      - api:paqtra-api
     ports:
       - "${UI_PORT}:8080"
 EOF
@@ -253,12 +219,12 @@ EOF
 # ─── Usage ───────────────────────────────────────────────────
 usage() {
     cat <<EOF
-Cilium Vision — Hyper SDK Cloud Deployment
+Paqtra — Hyper SDK Cloud Deployment
 
 Usage: $0 <command>
 
 Commands:
-  deploy          Full deployment (Redis + API + UI + FIP)
+  deploy          Full deployment (API + UI + FIP)
   build-push      Build and push images to registry
   compose         Deploy via Hyper Compose
   status          Show deployment status

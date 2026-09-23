@@ -153,7 +153,7 @@ metadata:
   name: allow-{src}-to-{dst}-{port}
   namespace: {namespace}
   annotations:
-    zero-trust.cilium-flow/discovered: "true"
+    zero-trust.paqtra/discovered: "true"
 spec:
   endpointSelector:
     matchLabels:
@@ -234,7 +234,7 @@ metadata:
   name: allow-{src}-to-{dst}
   namespace: {namespace}
   annotations:
-    zero-trust.cilium-flow/discovered: "true"
+    zero-trust.paqtra/discovered: "true"
 spec:
   endpointSelector:
     matchLabels:

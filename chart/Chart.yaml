@@ -1,6 +1,6 @@
 apiVersion: v2
-name: cilium-vision
-description: Cilium Vision - Network Observability Platform for Kubernetes
+name: paqtra
+description: Paqtra — trace every flow. Network observability for Kubernetes
 type: application
 version: 1.0.0
 appVersion: "2.0.0"
@@ -12,6 +12,6 @@ keywords:
   - kubernetes
 maintainers:
   - name: Susant Sahani
-home: https://github.com/ssahani/cilium-flow
+home: https://github.com/ssahani/paqtra
 sources:
-  - https://github.com/ssahani/cilium-flow
+  - https://github.com/ssahani/paqtra

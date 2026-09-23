@@ -1,16 +1,15 @@
 openapi: "3.0.3"
 
 info:
-  title: Cilium Vision API
+  title: Paqtra API
   version: "2.0.0"
   description: >
-    Cilium Vision is a comprehensive network observability and security platform
-    built on top of Cilium, Hubble, and eBPF. It provides real-time flow
-    monitoring, anomaly detection, policy management, zero-trust security
-    scoring, multi-cluster visibility, cost analysis, and automated
-    troubleshooting for Kubernetes-native networking.
+    Paqtra — trace every flow. Network observability and security for
+    Cilium, Hubble, and eBPF on Kubernetes. Real-time flow monitoring,
+    anomaly detection, policy management, zero-trust scoring, multi-cluster
+    visibility, cost analysis, and automated troubleshooting.
   contact:
-    name: Cilium Vision Team
+    name: Paqtra Team
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
@@ -2051,7 +2050,7 @@ components:
         subsystems:
           type: object
           properties:
-            redis:
+            cache:
               type: string
               enum: [ok, error]
             hubble_relay:

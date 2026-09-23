@@ -8,7 +8,7 @@ use std::path::Path;
 use super::Metric;
 
 /// Default directory for persisted baselines
-pub const DEFAULT_BASELINE_DIR: &str = "/var/lib/cilium-vision/baselines/";
+pub const DEFAULT_BASELINE_DIR: &str = "/var/lib/paqtra/baselines/";
 
 /// Learns and maintains baseline behavior for metrics
 #[derive(Debug, Clone, Serialize, Deserialize)]

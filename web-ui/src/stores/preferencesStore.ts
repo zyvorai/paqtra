@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-const STORAGE_KEY = 'cilium-vision-prefs';
+const STORAGE_KEY = 'paqtra-prefs';
 
 interface Preferences {
   tablePageSize: number;

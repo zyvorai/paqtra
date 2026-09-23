@@ -11,7 +11,7 @@ import threading
 import struct
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3001
-DIRECTORY = sys.argv[2] if len(sys.argv) > 2 else '/var/lib/cilium-vision/ui'
+DIRECTORY = sys.argv[2] if len(sys.argv) > 2 else '/var/lib/paqtra/ui'
 API_HOST = os.environ.get('API_HOST', 'localhost')
 API_PORT = int(os.environ.get('API_PORT', '9191'))
 
@@ -147,7 +147,7 @@ class SPAProxyHandler(http.server.SimpleHTTPRequestHandler):
             sys.stderr.write(f"[{self.log_date_time_string()}] {format % args}\n")
 
 if __name__ == '__main__':
-    print(f"🌐 Cilium Vision SPA server on http://0.0.0.0:{PORT}")
+    print(f"🌐 Paqtra SPA server on http://0.0.0.0:{PORT}")
     print(f"🔗 Proxying /api/* -> http://{API_HOST}:{API_PORT}")
     print(f"📂 Serving {DIRECTORY}")
     with http.server.ThreadingHTTPServer(('0.0.0.0', PORT), SPAProxyHandler) as httpd:

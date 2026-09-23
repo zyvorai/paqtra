@@ -1,14 +1,14 @@
-// Integration tests for the Cilium Vision Web API.
+// Integration tests for the Paqtra Web API.
 //
 // These tests exercise configuration validation, model serialization,
 // error response formatting, and auth token claim structures WITHOUT
-// requiring a running Redis instance or any other external service.
+// requiring any external service.
 
-use cilium_vision_api::auth_types::Claims;
-use cilium_vision_api::config::Config;
-use cilium_vision_api::error::ApiError;
-use cilium_vision_api::models::flow::{Flow, FlowEndpoint, FlowStats};
-use cilium_vision_api::models::policy::{CreatePolicyRequest, Policy};
+use paqtra_api::auth_types::Claims;
+use paqtra_api::config::Config;
+use paqtra_api::error::ApiError;
+use paqtra_api::models::flow::{Flow, FlowEndpoint, FlowStats};
+use paqtra_api::models::policy::{CreatePolicyRequest, Policy};
 
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -38,10 +38,14 @@ fn clear_config_env() {
         std::env::remove_var("JWT_SECRET");
         std::env::remove_var("HOST");
         std::env::remove_var("PORT");
-        std::env::remove_var("REDIS_URL");
+        std::env::remove_var("PAQTRA_HOST");
+        std::env::remove_var("PAQTRA_PORT");
         std::env::remove_var("HUBBLE_ADDRESS");
         std::env::remove_var("K8S_CONTEXT");
         std::env::remove_var("AUTH_DISABLED");
+        std::env::remove_var("ADMIN_USERNAME");
+        std::env::remove_var("ADMIN_PASSWORD");
+        std::env::remove_var("API_KEY");
     }
 }
 
@@ -92,6 +96,31 @@ fn test_jwt_secret_missing() {
     );
 }
 
+/// Config::load() must reject a missing ADMIN_PASSWORD when auth is enabled.
+#[test]
+fn test_admin_password_missing() {
+    let _lock = ENV_MUTEX.lock().unwrap();
+    clear_config_env();
+
+    let secret = "a]3kF9#mP!xQ7$wL2^rT5&vB8*nJ0dYcHgUeZsAiOlCbNfR";
+    unsafe {
+        std::env::set_var("JWT_SECRET", secret);
+    }
+    let result = Config::load();
+    assert!(
+        result.is_err(),
+        "Config::load should fail when ADMIN_PASSWORD is missing"
+    );
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(
+        err_msg.contains("ADMIN_PASSWORD"),
+        "Error message should reference ADMIN_PASSWORD, got: {}",
+        err_msg
+    );
+
+    clear_config_env();
+}
+
 /// Config::load() must succeed when a sufficiently long JWT_SECRET is provided
 /// and must populate default values for optional fields.
 #[test]
@@ -102,6 +131,7 @@ fn test_config_load_with_valid_secret() {
     let secret = "a]3kF9#mP!xQ7$wL2^rT5&vB8*nJ0dYcHgUeZsAiOlCbNfR";
     unsafe {
         std::env::set_var("JWT_SECRET", secret);
+        std::env::set_var("ADMIN_PASSWORD", "test-admin-pass-ok");
     }
 
     let config = Config::load().expect("Config::load should succeed with a valid secret");
@@ -109,10 +139,6 @@ fn test_config_load_with_valid_secret() {
     assert_eq!(config.jwt_secret, secret);
     assert_eq!(config.host, "0.0.0.0", "Default host should be 0.0.0.0");
     assert_eq!(config.port, 9191, "Default port should be 9191");
-    assert_eq!(
-        config.redis_url, "redis://localhost:6379",
-        "Default Redis URL should be redis://localhost:6379"
-    );
     assert_eq!(
         config.hubble_address, "localhost:4245",
         "Default Hubble address should be localhost:4245"
@@ -134,9 +160,9 @@ fn test_config_load_with_all_env_vars() {
     let secret = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef";
     unsafe {
         std::env::set_var("JWT_SECRET", secret);
+        std::env::set_var("ADMIN_PASSWORD", "test-admin-pass-ok");
         std::env::set_var("HOST", "127.0.0.1");
         std::env::set_var("PORT", "8080");
-        std::env::set_var("REDIS_URL", "redis://redis:6379/1");
         std::env::set_var("HUBBLE_ADDRESS", "hubble-relay:4245");
         std::env::set_var("K8S_CONTEXT", "my-cluster");
     }
@@ -145,7 +171,6 @@ fn test_config_load_with_all_env_vars() {
 
     assert_eq!(config.host, "127.0.0.1");
     assert_eq!(config.port, 8080);
-    assert_eq!(config.redis_url, "redis://redis:6379/1");
     assert_eq!(config.hubble_address, "hubble-relay:4245");
     assert_eq!(config.k8s_context.as_deref(), Some("my-cluster"));
 

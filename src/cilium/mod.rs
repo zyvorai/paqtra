@@ -406,7 +406,7 @@ impl CiliumManager {
         // Create ServiceAccount
         let sa = ServiceAccount {
             metadata: ObjectMeta {
-                name: Some("cilium-tui".to_string()),
+                name: Some("paqtra".to_string()),
                 namespace: Some("kube-system".to_string()),
                 ..Default::default()
             },
@@ -421,12 +421,12 @@ impl CiliumManager {
         // The TUI only needs to read pods, services, configmaps, and Cilium resources
         let crb = ClusterRoleBinding {
             metadata: ObjectMeta {
-                name: Some("cilium-tui-binding".to_string()),
+                name: Some("paqtra-binding".to_string()),
                 ..Default::default()
             },
             subjects: Some(vec![Subject {
                 kind: "ServiceAccount".to_string(),
-                name: "cilium-tui".to_string(),
+                name: "paqtra".to_string(),
                 namespace: Some("kube-system".to_string()),
                 ..Default::default()
             }]),

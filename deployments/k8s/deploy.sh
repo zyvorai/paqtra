@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-# Cilium Vision — Kubernetes Deployment Script
+# Paqtra — Kubernetes Deployment Script
 # Auto TLS, RBAC, Deployment, Service, Ingress, Health Check
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-cilium-system}"
 IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/ssahani}"
-API_IMAGE="${IMAGE_REGISTRY}/cilium-flow-api:latest"
-UI_IMAGE="${IMAGE_REGISTRY}/cilium-flow-ui:latest"
+API_IMAGE="${IMAGE_REGISTRY}/paqtra-api:latest"
+UI_IMAGE="${IMAGE_REGISTRY}/paqtra-ui:latest"
 API_REPLICAS="${API_REPLICAS:-2}"
 UI_REPLICAS="${UI_REPLICAS:-2}"
 NODE_PORT="${NODE_PORT:-30919}"
@@ -67,23 +67,23 @@ generate_tls() {
     tmpdir=$(mktemp -d)
     openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
         -keyout "${tmpdir}/tls.key" -out "${tmpdir}/tls.crt" \
-        -subj "/CN=cilium-vision.${NAMESPACE}.svc" \
-        -addext "subjectAltName=DNS:cilium-vision.${NAMESPACE}.svc,DNS:cilium-vision.${NAMESPACE}.svc.cluster.local,DNS:localhost" \
+        -subj "/CN=paqtra.${NAMESPACE}.svc" \
+        -addext "subjectAltName=DNS:paqtra.${NAMESPACE}.svc,DNS:paqtra.${NAMESPACE}.svc.cluster.local,DNS:localhost" \
         2>/dev/null
 
-    kubectl -n "${NAMESPACE}" create secret tls cilium-vision-tls \
+    kubectl -n "${NAMESPACE}" create secret tls paqtra-tls \
         --cert="${tmpdir}/tls.crt" --key="${tmpdir}/tls.key" \
         --dry-run=client -o yaml | kubectl apply -f -
 
     rm -rf "${tmpdir}"
-    ok "TLS secret created: cilium-vision-tls"
+    ok "TLS secret created: paqtra-tls"
 }
 
 # ─── Generate JWT secret ────────────────────────────────────
 generate_jwt_secret() {
     local secret
     secret=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 64)
-    kubectl -n "${NAMESPACE}" create secret generic cilium-vision-secrets \
+    kubectl -n "${NAMESPACE}" create secret generic paqtra-secrets \
         --from-literal=jwt-secret="${secret}" \
         --dry-run=client -o yaml | kubectl apply -f -
     ok "JWT secret created"
@@ -91,7 +91,7 @@ generate_jwt_secret() {
 
 # ─── Deploy ──────────────────────────────────────────────────
 deploy() {
-    info "Deploying Cilium Vision to namespace: ${NAMESPACE}"
+    info "Deploying Paqtra to namespace: ${NAMESPACE}"
 
     # Create namespace
     kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
@@ -131,15 +131,15 @@ deploy() {
 
     # Wait for rollout
     info "Waiting for deployments to be ready..."
-    kubectl -n "${NAMESPACE}" rollout status deployment/cilium-vision-api --timeout=120s 2>/dev/null || true
-    kubectl -n "${NAMESPACE}" rollout status deployment/cilium-vision-ui --timeout=120s 2>/dev/null || true
+    kubectl -n "${NAMESPACE}" rollout status deployment/paqtra-api --timeout=120s 2>/dev/null || true
+    kubectl -n "${NAMESPACE}" rollout status deployment/paqtra-ui --timeout=120s 2>/dev/null || true
 
     # Health check
     info "Running health check..."
     local retries=15
     for i in $(seq 1 $retries); do
         local pod
-        pod=$(kubectl -n "${NAMESPACE}" get pods -l app=cilium-vision-api -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        pod=$(kubectl -n "${NAMESPACE}" get pods -l app=paqtra-api -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
         if [ -n "$pod" ]; then
             if kubectl -n "${NAMESPACE}" exec "$pod" -- wget -qO- http://localhost:9191/health 2>/dev/null | grep -q "ok\|healthy"; then
                 ok "API health check passed"
@@ -155,9 +155,9 @@ deploy() {
 
 # ─── Delete ──────────────────────────────────────────────────
 delete_deployment() {
-    info "Removing Cilium Vision from namespace: ${NAMESPACE}"
+    info "Removing Paqtra from namespace: ${NAMESPACE}"
     kubectl delete -f deployments/k8s/ --ignore-not-found -n "${NAMESPACE}" 2>/dev/null || true
-    kubectl delete secret cilium-vision-tls cilium-vision-secrets -n "${NAMESPACE}" --ignore-not-found 2>/dev/null || true
+    kubectl delete secret paqtra-tls paqtra-secrets -n "${NAMESPACE}" --ignore-not-found 2>/dev/null || true
     ok "Deployment removed"
 }
 
@@ -165,12 +165,12 @@ delete_deployment() {
 show_status() {
     echo ""
     echo "🔷 ═══════════════════════════════════════════════════"
-    echo "🔷    Cilium Vision — Kubernetes Deployment Status"
+    echo "🔷    Paqtra — Kubernetes Deployment Status"
     echo "🔷 ═══════════════════════════════════════════════════"
     echo ""
-    kubectl -n "${NAMESPACE}" get pods -l 'app in (cilium-vision-api,cilium-vision-ui)' -o wide 2>/dev/null || echo "  No pods found"
+    kubectl -n "${NAMESPACE}" get pods -l 'app in (paqtra-api,paqtra-ui)' -o wide 2>/dev/null || echo "  No pods found"
     echo ""
-    kubectl -n "${NAMESPACE}" get svc -l 'app in (cilium-vision-api,cilium-vision-ui)' 2>/dev/null || echo "  No services found"
+    kubectl -n "${NAMESPACE}" get svc -l 'app in (paqtra-api,paqtra-ui)' 2>/dev/null || echo "  No services found"
     echo ""
 
     # NodePort access
@@ -178,28 +178,28 @@ show_status() {
     node_ip=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || echo "localhost")
     echo -e "  ${BLUE}Access:"
     echo -e "    API: http://${node_ip}:${NODE_PORT}"
-    echo -e "    UI:  kubectl -n ${NAMESPACE} port-forward svc/cilium-vision-ui 3001:80"
+    echo -e "    UI:  kubectl -n ${NAMESPACE} port-forward svc/paqtra-ui 3001:80"
     echo ""
 }
 
 # ─── Logs ────────────────────────────────────────────────────
 show_logs() {
     local component="${1:-api}"
-    kubectl -n "${NAMESPACE}" logs -l "app=cilium-vision-${component}" --tail=100 -f
+    kubectl -n "${NAMESPACE}" logs -l "app=paqtra-${component}" --tail=100 -f
 }
 
 # ─── Port Forward ────────────────────────────────────────────
 port_forward() {
     info "Port-forwarding: API on :9191, UI on :3001"
-    kubectl -n "${NAMESPACE}" port-forward svc/cilium-vision-api 9191:9191 &
-    kubectl -n "${NAMESPACE}" port-forward svc/cilium-vision-ui 3001:80 &
+    kubectl -n "${NAMESPACE}" port-forward svc/paqtra-api 9191:9191 &
+    kubectl -n "${NAMESPACE}" port-forward svc/paqtra-ui 3001:80 &
     wait
 }
 
 # ─── Usage ───────────────────────────────────────────────────
 usage() {
     cat <<EOF
-Cilium Vision — Kubernetes Deployment
+Paqtra — Kubernetes Deployment
 
 Usage: $0 <command>
 

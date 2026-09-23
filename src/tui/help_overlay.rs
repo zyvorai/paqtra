@@ -17,7 +17,7 @@ pub fn render_help_overlay(f: &mut Frame) {
 
     let help_content = vec![
         Line::from(vec![Span::styled(
-            "Cilium Vision - Keyboard Shortcuts",
+            "Paqtra - Keyboard Shortcuts",
             Style::default()
                 .fg(TITLE_COLOR)
                 .add_modifier(Modifier::BOLD),

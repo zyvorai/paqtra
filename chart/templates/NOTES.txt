@@ -1,14 +1,16 @@
 
-Cilium Vision has been deployed successfully!
+Paqtra has been deployed successfully!
 
 Namespace: {{ .Values.global.namespace | default .Release.Namespace }}
 
 Components:
-  - API Server: {{ include "cilium-vision.fullname" . }}-api (port {{ .Values.api.service.port }})
-  - UI Dashboard: {{ include "cilium-vision.fullname" . }}-ui (port {{ .Values.ui.service.port }})
-{{- if .Values.redis.enabled }}
-  - Redis: {{ include "cilium-vision.fullname" . }}-redis (port 6379)
-{{- end }}
+  - Agent (DaemonSet): {{ include "paqtra.fullname" . }}-agent (port {{ .Values.agent.port }})
+  - API Server: {{ include "paqtra.fullname" . }}-api (port {{ .Values.api.service.port }})
+  - UI Dashboard: {{ include "paqtra.fullname" . }}-ui (port {{ .Values.ui.service.port }})
+
+Check status from your workstation:
+
+  paqtra status
 
 {{- if .Values.ingress.enabled }}
 
@@ -29,15 +31,23 @@ Access the application using port-forward:
 
   # API Server
   kubectl port-forward -n {{ .Values.global.namespace | default .Release.Namespace }} \
-    svc/{{ include "cilium-vision.fullname" . }}-api {{ .Values.api.service.port }}:{{ .Values.api.service.port }}
+    svc/{{ include "paqtra.fullname" . }}-api {{ .Values.api.service.port }}:{{ .Values.api.service.port }}
 
   # UI Dashboard
   kubectl port-forward -n {{ .Values.global.namespace | default .Release.Namespace }} \
-    svc/{{ include "cilium-vision.fullname" . }}-ui {{ .Values.ui.service.port }}:{{ .Values.ui.service.port }}
+    svc/{{ include "paqtra.fullname" . }}-ui {{ .Values.ui.service.port }}:{{ .Values.ui.service.port }}
 
 Then open:
+{{- if .Values.tls.enabled }}
+  UI:  https://localhost:{{ .Values.ui.service.port }}  (self-signed — accept the browser warning)
+{{- else }}
   UI:  http://localhost:{{ .Values.ui.service.port }}
+{{- end }}
   API: http://localhost:{{ .Values.api.service.port }}
+
+Sign in:
+  Username: {{ .Values.auth.adminUsername | default "admin" }}
+  Password: {{ .Values.auth.adminPassword | default "Admin@321" }}
 {{- end }}
 
 {{- if .Values.monitoring.enabled }}

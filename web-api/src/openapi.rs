@@ -11,7 +11,7 @@ pub async fn swagger_ui() -> impl IntoResponse {
     let html = r#"<!DOCTYPE html>
 <html>
 <head>
-  <title>Cilium Vision API</title>
+  <title>Paqtra API</title>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"/>
@@ -39,11 +39,11 @@ pub fn openapi_spec() -> serde_json::Value {
     serde_json::json!({
         "openapi": "3.0.3",
         "info": {
-            "title": "Cilium Vision API",
+            "title": "Paqtra API",
             "version": "1.0.0",
-            "description": "Network observability and security platform for Cilium-powered Kubernetes clusters. Provides real-time flow monitoring, policy management, anomaly detection, compliance auditing, eBPF kernel introspection, and multi-cluster operations.",
+            "description": "Paqtra — trace every flow. Network observability and security for Cilium-powered Kubernetes clusters. Provides real-time flow monitoring, policy management, anomaly detection, compliance auditing, eBPF kernel introspection, and multi-cluster operations.",
             "contact": {
-                "name": "Cilium Vision Team"
+                "name": "Paqtra Team"
             },
             "license": {
                 "name": "Apache 2.0",
@@ -1197,6 +1197,30 @@ fn paths_diagnostics_infra_ebpf_ws() -> serde_json::Value {
         },
 
         // ---- eBPF ----
+        "/ebpf/attachments": {
+            "get": {
+                "tags": ["eBPF"],
+                "summary": "Read-only BPF attachment inventory",
+                "description": "List loaded BPF programs classified as cilium|netra|other. Never attaches or modifies.",
+                "responses": {
+                    "200": { "description": "Attachment inventory" },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "500": { "$ref": "#/components/responses/InternalError" }
+                }
+            }
+        },
+        "/ebpf/drift": {
+            "get": {
+                "tags": ["eBPF"],
+                "summary": "BPF brotherhood drift findings",
+                "description": "Warn-only findings (inventory unavailable, cilium missing). No datapath mutation.",
+                "responses": {
+                    "200": { "description": "Drift findings" },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "500": { "$ref": "#/components/responses/InternalError" }
+                }
+            }
+        },
         "/ebpf/programs": {
             "get": {
                 "tags": ["eBPF"],

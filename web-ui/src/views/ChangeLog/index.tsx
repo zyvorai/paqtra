@@ -37,8 +37,8 @@ const ChangeLog: React.FC = () => {
   const filtered = search ? changes.filter((c) => c.resource.toLowerCase().includes(search.toLowerCase()) || c.author.toLowerCase().includes(search.toLowerCase()) || c.diff_summary.toLowerCase().includes(search.toLowerCase())) : changes;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="netra-page">
+      <div className="page-chrome flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center shadow-lg shadow-slate-500/20"><History className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Change Log</h1></div>
           <p className="text-sm text-slate-400 mt-1">Configuration change history with rollback</p>

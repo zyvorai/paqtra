@@ -6,9 +6,9 @@ metadata:
   name: dns-egress-policy
   namespace: default
   annotations:
-    cilium-vision.io/generated: "true"
-    cilium-vision.io/confidence: "98.7"
-    cilium-vision.io/description: "Allow DNS queries to cluster DNS and public DNS"
+    paqtra.io/generated: "true"
+    paqtra.io/confidence: "98.7"
+    paqtra.io/description: "Allow DNS queries to cluster DNS and public DNS"
 spec:
   endpointSelector: {}
   egress:

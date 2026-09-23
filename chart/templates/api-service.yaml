@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "cilium-vision.fullname" . }}-api
+  name: {{ include "paqtra.fullname" . }}-api
   namespace: {{ .Values.global.namespace | default .Release.Namespace }}
   labels:
-    {{- include "cilium-vision.labels" . | nindent 4 }}
+    {{- include "paqtra.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
 spec:
   type: {{ .Values.api.service.type }}
@@ -14,4 +14,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "cilium-vision.api.selectorLabels" . | nindent 4 }}
+    {{- include "paqtra.api.selectorLabels" . | nindent 4 }}

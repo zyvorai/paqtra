@@ -47,7 +47,7 @@ metadata:
   name: shadow-{shadow_id_short}
   namespace: {namespace}
   labels:
-    cilium-flow/shadow-id: "{shadow_id}"
+    paqtra/shadow-id: "{shadow_id}"
 spec:
   endpointSelector:
     matchLabels:

@@ -55,7 +55,7 @@ const Canary: React.FC = () => {
   };
 
   return (
-    <div>
+    <div className="netra-page">
       <div className="mb-6">
         <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500 to-green-700 flex items-center justify-center shadow-lg shadow-emerald-500/20"><Bird className="w-5 h-5 text-white" /></div><h1 className="text-2xl font-bold text-white">Canary Deployments</h1></div>
         <p className="text-sm text-slate-400 mt-1">Progressive traffic shifting with auto-promote and auto-rollback</p>
@@ -99,7 +99,7 @@ const Canary: React.FC = () => {
       {/* Result */}
       {data && (
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-6 animate-scale-in">
-          <div className="flex items-center justify-between mb-6">
+          <div className="page-chrome flex items-center justify-between mb-6">
             <h2 className="text-lg font-semibold text-white">{data.name}</h2>
             <span className={`px-3 py-1 rounded-full text-sm font-medium border ${
               data.status === 'promoting' ? 'bg-green-500/15 text-green-400 border-green-500/30' :
