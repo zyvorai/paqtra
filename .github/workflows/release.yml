@@ -85,7 +85,7 @@ jobs:
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push API image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: web-api
           push: true
@@ -105,7 +105,7 @@ jobs:
         continue-on-error: true
 
       - name: Build and push UI image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: web-ui
           push: true
