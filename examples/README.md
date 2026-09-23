@@ -237,7 +237,7 @@ Generated with **92.3% ML confidence** after 14 days of learning.
 - **Main Documentation**: [README.md](../README.md)
 - **Feature Guide**: [docs/features.md](../docs/features.md)
 - **Keyboard Shortcuts**: Press `?` in the TUI
-- **GitHub Issues**: [Report bugs or request features](https://github.com/ssahani/paqtra/issues)
+- **GitHub Issues**: [Report bugs or request features](https://github.com/zyvorai/paqtra/issues)
 
 ## Contributing Examples
 

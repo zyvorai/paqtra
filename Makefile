@@ -108,9 +108,9 @@ docker-combined: ## Build combined API+UI image
 	docker build -t paqtra:latest -f Dockerfile.combined .
 
 docker-push: ## Push images to registry
-	docker push ghcr.io/ssahani/paqtra-api:latest
-	docker push ghcr.io/ssahani/paqtra-ui:latest
-	docker push ghcr.io/ssahani/paqtra:latest
+	docker push ghcr.io/zyvorai/paqtra-api:latest
+	docker push ghcr.io/zyvorai/paqtra-ui:latest
+	docker push ghcr.io/zyvorai/paqtra:latest
 
 # ─── Installation ─────────────────────────────────────────────────────
 install-full: ## Full system installation (build + install + systemd)

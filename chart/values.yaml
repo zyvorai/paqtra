@@ -11,7 +11,7 @@ global:
 # -- API server configuration
 api:
   image:
-    repository: ghcr.io/ssahani/paqtra-api
+    repository: ghcr.io/zyvorai/paqtra-api
     tag: ""  # defaults to appVersion
     pullPolicy: IfNotPresent
   replicas: 2
@@ -83,7 +83,7 @@ api:
 # -- UI configuration (HTTPS by default, like Netra)
 ui:
   image:
-    repository: ghcr.io/ssahani/paqtra-ui
+    repository: ghcr.io/zyvorai/paqtra-ui
     tag: ""  # defaults to appVersion
     pullPolicy: IfNotPresent
   replicas: 1
@@ -109,7 +109,7 @@ tls:
 agent:
   enabled: true
   image:
-    repository: ghcr.io/ssahani/paqtra
+    repository: ghcr.io/zyvorai/paqtra
     tag: ""  # defaults to appVersion
     pullPolicy: IfNotPresent
   port: 9192

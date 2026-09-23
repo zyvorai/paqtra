@@ -330,6 +330,28 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/alerts/rules/{id}",
             axum::routing::put(handlers::extended2::toggle_alert_rule),
         )
+        .route(
+            "/api/v1/alerts/channels",
+            get(handlers::notifications::list_channels)
+                .post(handlers::notifications::create_channel),
+        )
+        .route(
+            "/api/v1/alerts/channels/{id}",
+            axum::routing::delete(handlers::notifications::delete_channel),
+        )
+        .route(
+            "/api/v1/alerts/channels/{id}/test",
+            post(handlers::notifications::test_channel),
+        )
+        .route(
+            "/api/v1/alerts/silences",
+            get(handlers::notifications::list_silences)
+                .post(handlers::notifications::create_silence),
+        )
+        .route(
+            "/api/v1/alerts/silences/{id}",
+            axum::routing::delete(handlers::notifications::delete_silence),
+        )
         // Service Map
         .route("/api/v1/servicemap", get(handlers::extended2::service_map))
         // Packet Capture

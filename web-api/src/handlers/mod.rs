@@ -13,6 +13,7 @@ pub mod flows;
 pub mod health;
 pub mod metrics;
 pub mod modules;
+pub mod notifications;
 pub mod nodes;
 pub mod policies;
 

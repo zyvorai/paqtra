@@ -4,5 +4,6 @@ pub mod change_tracker;
 pub mod exporter;
 pub mod hubble;
 pub mod k8s;
+pub mod notifier;
 pub mod prometheus;
 pub mod tracing_svc;

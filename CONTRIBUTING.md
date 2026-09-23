@@ -1,5 +1,7 @@
 # Contributing
 
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
+
 1. Open an issue describing the behavior or change.
 2. Keep the Cilium/Paqtra/Netra responsibility boundary intact: never write
    Cilium BPF maps, pin over `cil_*`, or attach/replace Cilium programs. See

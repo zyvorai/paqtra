@@ -117,7 +117,7 @@ variable "environment" {
 variable "api_image_repository" {
   description = "API Docker image repository"
   type        = string
-  default     = "ghcr.io/ssahani/paqtra-api"
+  default     = "ghcr.io/zyvorai/paqtra-api"
 }
 
 variable "api_image_tag" {
@@ -129,7 +129,7 @@ variable "api_image_tag" {
 variable "ui_image_repository" {
   description = "UI Docker image repository"
   type        = string
-  default     = "ghcr.io/ssahani/paqtra-ui"
+  default     = "ghcr.io/zyvorai/paqtra-ui"
 }
 
 variable "ui_image_tag" {

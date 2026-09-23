@@ -6,7 +6,7 @@
 set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-cilium-system}"
-IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/ssahani}"
+IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/zyvorai}"
 API_IMAGE="${IMAGE_REGISTRY}/paqtra-api:latest"
 UI_IMAGE="${IMAGE_REGISTRY}/paqtra-ui:latest"
 API_REPLICAS="${API_REPLICAS:-2}"
@@ -214,7 +214,7 @@ Commands:
 
 Environment:
   NAMESPACE        K8s namespace (default: cilium-system)
-  IMAGE_REGISTRY   Image registry (default: ghcr.io/ssahani)
+  IMAGE_REGISTRY   Image registry (default: ghcr.io/zyvorai)
   API_REPLICAS     API pod replicas (default: 2)
   UI_REPLICAS      UI pod replicas (default: 2)
   TLS_ENABLED      Generate TLS certs (default: false)

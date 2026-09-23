@@ -1,13 +1,24 @@
 // Background alerting engine
 //
-// Evaluates alert rules stored in the in-memory cache every 60 seconds and fires alerts
-// when conditions are met. Alert history is persisted back to the cache.
+// Evaluates alert rules stored in the cache every 60 seconds and fires alerts
+// when conditions are met. Alert history is persisted back to the cache, and
+// firing/resolved events are delivered through the notifier (see notifier.rs).
 
+use crate::services::notifier;
 use crate::AppState;
 use std::sync::Arc;
 
 const ALERT_RULES_PREFIX: &str = "cv:alert_rules:";
 const ALERT_HISTORY_PREFIX: &str = "cv:alert_history:";
+const ALERT_STATE_PREFIX: &str = "cv:alert_state:";
+
+/// Per-rule firing state, used to notify once per incident instead of on every
+/// evaluation cycle, and to send a "resolved" message when the rule clears.
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+struct RuleState {
+    firing: bool,
+    last_notified_epoch: i64,
+}
 
 /// Start the background alerting engine.
 /// Evaluates alert rules from the cache every 60 seconds.
@@ -65,10 +76,11 @@ async fn evaluate_rules(state: &AppState) -> anyhow::Result<()> {
                     "Alert fired: {}",
                     message
                 );
-                fire_alert(state, rule_id, rule_name, severity, &message).await;
-                update_rule_trigger(state, rule_id).await;
+                handle_fired(state, rule_id, rule_name, severity, &message).await;
             }
-            ConditionResult::Ok => {}
+            ConditionResult::Ok => {
+                handle_ok(state, rule_id, rule_name, severity).await;
+            }
             ConditionResult::Skipped(reason) => {
                 tracing::debug!(rule_id = rule_id, "Rule skipped: {}", reason);
             }
@@ -237,6 +249,95 @@ fn parse_rate_threshold(condition: &str) -> Option<f64> {
     num_str.parse::<f64>().ok()
 }
 
+fn now_epoch() -> i64 {
+    chrono::Utc::now().timestamp()
+}
+
+async fn load_state(state: &AppState, rule_id: &str) -> RuleState {
+    state
+        .cache
+        .get(&format!("{}{}", ALERT_STATE_PREFIX, rule_id))
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+
+async fn save_state(state: &AppState, rule_id: &str, st: &RuleState) {
+    if let Err(e) = state
+        .cache
+        .set_persistent(&format!("{}{}", ALERT_STATE_PREFIX, rule_id), st)
+        .await
+    {
+        tracing::warn!("Failed to save alert state for {}: {}", rule_id, e);
+    }
+}
+
+/// A rule's condition is breached. Records history and notifies once per
+/// incident; while the rule keeps firing, repeats only after the cooldown.
+async fn handle_fired(
+    state: &AppState,
+    rule_id: &str,
+    rule_name: &str,
+    severity: &str,
+    message: &str,
+) {
+    let mut st = load_state(state, rule_id).await;
+    let now = now_epoch();
+    let cooldown = state.config.alert_cooldown_secs as i64;
+    if st.firing && now - st.last_notified_epoch < cooldown {
+        return;
+    }
+
+    let silenced = notifier::is_silenced(state, rule_id).await;
+    fire_alert(state, rule_id, rule_name, severity, message, silenced).await;
+    update_rule_trigger(state, rule_id).await;
+
+    if !silenced {
+        notifier::notify(
+            state,
+            notifier::AlertEvent {
+                kind: notifier::EventKind::Firing,
+                rule_id: rule_id.to_string(),
+                rule_name: rule_name.to_string(),
+                severity: severity.to_string(),
+                message: message.to_string(),
+                at: chrono::Utc::now().to_rfc3339(),
+            },
+        )
+        .await;
+    }
+
+    st.firing = true;
+    st.last_notified_epoch = now;
+    save_state(state, rule_id, &st).await;
+}
+
+/// A rule evaluated within threshold. If it was firing, the incident is over:
+/// send a resolved notification and clear the state.
+async fn handle_ok(state: &AppState, rule_id: &str, rule_name: &str, severity: &str) {
+    let st = load_state(state, rule_id).await;
+    if !st.firing {
+        return;
+    }
+    save_state(state, rule_id, &RuleState::default()).await;
+
+    if !notifier::is_silenced(state, rule_id).await {
+        notifier::notify(
+            state,
+            notifier::AlertEvent {
+                kind: notifier::EventKind::Resolved,
+                rule_id: rule_id.to_string(),
+                rule_name: rule_name.to_string(),
+                severity: severity.to_string(),
+                message: "Condition is back within threshold".to_string(),
+                at: chrono::Utc::now().to_rfc3339(),
+            },
+        )
+        .await;
+    }
+}
+
 /// Write a fired alert to cache alert history.
 async fn fire_alert(
     state: &AppState,
@@ -244,6 +345,7 @@ async fn fire_alert(
     rule_name: &str,
     severity: &str,
     message: &str,
+    silenced: bool,
 ) {
     let alert_id = format!("alert-{}", uuid::Uuid::new_v4());
     let now = chrono::Utc::now().to_rfc3339();
@@ -256,6 +358,7 @@ async fn fire_alert(
         "message": message,
         "fired_at": now,
         "status": "firing",
+        "silenced": silenced,
     });
 
     let key = format!("{}{}", ALERT_HISTORY_PREFIX, alert_id);

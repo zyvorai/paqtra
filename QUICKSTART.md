@@ -14,7 +14,7 @@
 ## Quick Start (TUI)
 
 ```bash
-git clone https://github.com/ssahani/paqtra.git
+git clone https://github.com/zyvorai/paqtra.git
 cd paqtra
 
 cargo build --release
@@ -40,7 +40,7 @@ p = Promote  r = Rollback  (Canary)
 ```bash
 # 1. Configure environment
 cp deployments/.env.example deployments/.env
-# Edit deployments/.env and set a strong JWT_SECRET (min 32 chars)
+# Edit deployments/.env: set JWT_SECRET (≥32 chars) and ADMIN_PASSWORD (≥12 chars)
 
 # 2. Start all services (API + UI + Redis)
 make docker-up
@@ -63,6 +63,7 @@ make docker-down
 cd web-api
 cargo build --release
 JWT_SECRET=change-me-to-a-real-secret-at-least-32-chars \
+ADMIN_PASSWORD=change-me-to-a-strong-password \
   cargo run --release
 
 # Terminal 2 - build and run the UI

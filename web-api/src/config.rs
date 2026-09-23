@@ -42,6 +42,9 @@ pub struct Config {
     /// exports, etc. across restarts. Read from PAQTRA_DATA_DIR. When unset,
     /// state is memory-only and lost on restart.
     pub data_dir: Option<String>,
+    /// Seconds a still-firing alert waits before it is recorded and notified
+    /// again. Read from ALERT_COOLDOWN_SECS (default 900).
+    pub alert_cooldown_secs: u64,
 }
 
 impl Config {
@@ -164,6 +167,10 @@ impl Config {
                 .unwrap_or_else(|_| "9443".to_string())
                 .parse()?,
             data_dir: env::var("PAQTRA_DATA_DIR").ok().filter(|s| !s.is_empty()),
+            alert_cooldown_secs: env::var("ALERT_COOLDOWN_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(900),
         })
     }
 }

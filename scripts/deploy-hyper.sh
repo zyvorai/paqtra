@@ -11,7 +11,7 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # Configuration
 HYPER_REGION="${HYPER_REGION:-us-west-1}"
 HYPER_SIZE="${HYPER_SIZE:-s4}"
-IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/ssahani}"
+IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/zyvorai}"
 API_IMAGE="${IMAGE_REGISTRY}/paqtra-api:latest"
 UI_IMAGE="${IMAGE_REGISTRY}/paqtra-ui:latest"
 COMBINED_IMAGE="${IMAGE_REGISTRY}/paqtra:latest"
@@ -235,7 +235,7 @@ Environment:
   HYPER_REGION       Hyper region (default: us-west-1)
   HYPER_SIZE         Container size (default: s4)
   HYPER_FIP          Existing floating IP to attach
-  IMAGE_REGISTRY     Image registry (default: ghcr.io/ssahani)
+  IMAGE_REGISTRY     Image registry (default: ghcr.io/zyvorai)
   API_PORT           API port (default: 9191)
   UI_PORT            UI port (default: 8080)
 

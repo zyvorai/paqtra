@@ -47,7 +47,13 @@ Then open:
 
 Sign in:
   Username: {{ .Values.auth.adminUsername | default "admin" }}
-  Password: {{ .Values.auth.adminPassword | default "Admin@321" }}
+  {{- if .Values.auth.adminPassword }}
+  Password: {{ .Values.auth.adminPassword }}
+  {{- else }}
+  Password: auto-generated — retrieve with:
+    kubectl get secret {{ include "paqtra.fullname" . }}-secret -n {{ .Values.global.namespace | default .Release.Namespace }} \
+      -o jsonpath='{.data.ADMIN_PASSWORD}' | base64 -d; echo
+  {{- end }}
 {{- end }}
 
 {{- if .Values.monitoring.enabled }}

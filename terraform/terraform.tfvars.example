@@ -19,7 +19,7 @@ enable_encryption = false
 
 # Paqtra
 namespace            = "cilium-system"
-api_image_repository = "ghcr.io/ssahani/paqtra-api"
+api_image_repository = "ghcr.io/zyvorai/paqtra-api"
 api_image_tag        = "latest"
 api_replicas         = 2
 ui_replicas          = 2

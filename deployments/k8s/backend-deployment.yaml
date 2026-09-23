@@ -37,7 +37,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
       - name: api
-        image: ghcr.io/ssahani/paqtra-api:latest  # TODO: Use versioned tags in production
+        image: ghcr.io/zyvorai/paqtra-api:latest  # TODO: Use versioned tags in production
         imagePullPolicy: Always
         ports:
         - name: http
@@ -55,6 +55,22 @@ spec:
             secretKeyRef:
               name: paqtra-secrets
               key: jwt-secret
+        - name: ADMIN_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: paqtra-secrets
+              key: admin-username
+        - name: ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: paqtra-secrets
+              key: admin-password
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: paqtra-secrets
+              key: api-key
+              optional: true
         - name: RUST_LOG
           value: "info,paqtra_api=debug"
         resources:

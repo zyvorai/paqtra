@@ -14,7 +14,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REGISTRY="${REGISTRY:-ghcr.io}"
-REPO="${REPO:-ssahani/paqtra}"
+REPO="${REPO:-zyvorai/paqtra}"
 TAG="${TAG:-latest}"
 K8S_NS="${K8S_NS:-cilium-system}"
 
@@ -186,7 +186,7 @@ case "${1:-help}" in
         echo ""
         echo "Environment variables:"
         echo "  REGISTRY    Container registry (default: ghcr.io)"
-        echo "  REPO        Repository name (default: ssahani/paqtra)"
+        echo "  REPO        Repository name (default: zyvorai/paqtra)"
         echo "  TAG         Image tag (default: latest)"
         echo "  K8S_NS      Kubernetes namespace (default: cilium-system)"
         ;;

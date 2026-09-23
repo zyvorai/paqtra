@@ -63,7 +63,7 @@ It ships a **web dashboard** (64 pages), **REST API** (75+ endpoints), and **ter
 ### Install & Run
 
 ```bash
-git clone https://github.com/ssahani/paqtra.git
+git clone https://github.com/zyvorai/paqtra.git
 cd paqtra
 
 # Build everything
@@ -239,8 +239,11 @@ Full rules: [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md). Agent inst
 | [docs/autopolicy-quickstart.md](docs/autopolicy-quickstart.md) | AutoPolicy quick start |
 | [docs/client/](docs/client/) | Client HTML (API ref, security whitepaper, …) |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community standards |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guide |
 | [AGENTS.md](AGENTS.md) | Coding-agent boundaries |
+| [NOTICE](NOTICE) | Apache attribution |
 
 ---
 
@@ -271,9 +274,11 @@ cd web-ui && npm test     # UI tests
 PAQTRA_HOST=0.0.0.0        # API listen address
 PAQTRA_PORT=9191           # API port
 JWT_SECRET=<min-32-chars>  # Required for auth
+ADMIN_PASSWORD=<min-12>    # Required when auth is enabled
+ADMIN_USERNAME=admin       # Optional (default: admin)
 HUBBLE_ADDRESS=localhost:4245
 UI_DIST_DIR=/var/lib/paqtra/ui  # Path to built web UI
-AUTH_DISABLED=true         # Dev mode only
+AUTH_DISABLED=true         # Dev mode only (requires ENVIRONMENT=development|test)
 ```
 
 ---

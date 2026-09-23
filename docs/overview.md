@@ -14,7 +14,7 @@ header-includes:
   - \usepackage{fancyhdr}
   - \pagestyle{fancy}
   - \fancyhead[L]{Paqtra}
-  - \fancyhead[R]{Confidential}
+  - \fancyhead[R]{Apache-2.0}
   - \fancyfoot[C]{\thepage}
 ---
 
@@ -176,7 +176,7 @@ The test suite covers core logic, parsers, engine state machines, cross-module i
 ## Installation
 
 ```bash
-git clone https://github.com/ssahani/paqtra.git
+git clone https://github.com/zyvorai/paqtra.git
 cd paqtra
 cargo build --release
 sudo cp target/release/paqtra /usr/local/bin/
@@ -202,8 +202,8 @@ The tool auto-detects the cluster, verifies Cilium, enables Hubble relay, starts
 
 # Contact
 
-- Repository: [github.com/ssahani/paqtra](https://github.com/ssahani/paqtra)
-- Issues: [GitHub Issues](https://github.com/ssahani/paqtra/issues)
+- Repository: [github.com/zyvorai/paqtra](https://github.com/zyvorai/paqtra)
+- Issues: [GitHub Issues](https://github.com/zyvorai/paqtra/issues)
 
 ---
 

@@ -5,8 +5,8 @@ edition = "2021"
 authors = ["Paqtra Contributors"]
 description = "REST API server for Paqtra — trace every flow"
 license = "Apache-2.0"
-repository = "https://github.com/ssahani/paqtra"
-homepage = "https://github.com/ssahani/paqtra"
+repository = "https://github.com/zyvorai/paqtra"
+homepage = "https://github.com/zyvorai/paqtra"
 readme = "../README.md"
 
 [dependencies]

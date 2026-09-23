@@ -10,6 +10,8 @@ services:
       - PAQTRA_HOST=0.0.0.0
       - PAQTRA_PORT=9191
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET environment variable is required}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD environment variable is required}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - HUBBLE_ADDRESS=${HUBBLE_ADDRESS:-hubble-relay.kube-system.svc.cluster.local:4245}
       - RUST_LOG=${RUST_LOG:-info,paqtra_api=debug}
       - ALLOWED_ORIGINS=http://localhost:3001,http://localhost:3000,http://localhost:8080
