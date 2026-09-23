@@ -1,6 +1,6 @@
 // Background alerting engine
 //
-// Evaluates alert rules stored in the cache every 60 seconds and fires alerts
+// Evaluates alert rules stored in the cache (default every 60 seconds) and fires alerts
 // when conditions are met. Alert history is persisted back to the cache, and
 // firing/resolved events are delivered through the notifier (see notifier.rs).
 
@@ -21,10 +21,12 @@ struct RuleState {
 }
 
 /// Start the background alerting engine.
-/// Evaluates alert rules from the cache every 60 seconds.
+/// Evaluates alert rules from the cache every `alert_eval_interval_secs`.
 pub fn spawn_alerting_engine(state: Arc<AppState>) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(
+            state.config.alert_eval_interval_secs,
+        ));
         loop {
             interval.tick().await;
             if let Err(e) = evaluate_rules(&state).await {

@@ -45,6 +45,9 @@ pub struct Config {
     /// Seconds a still-firing alert waits before it is recorded and notified
     /// again. Read from ALERT_COOLDOWN_SECS (default 900).
     pub alert_cooldown_secs: u64,
+    /// Seconds between alert rule evaluations. Read from ALERT_EVAL_INTERVAL_SECS
+    /// (default 60, minimum 1).
+    pub alert_eval_interval_secs: u64,
 }
 
 impl Config {
@@ -171,6 +174,11 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(900),
+            alert_eval_interval_secs: env::var("ALERT_EVAL_INTERVAL_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .map(|v| v.max(1))
+                .unwrap_or(60),
         })
     }
 }
