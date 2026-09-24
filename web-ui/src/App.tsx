@@ -76,6 +76,7 @@ const LBMapViewer = React.lazy(() => import('./views/LBMapViewer'));
 const DropDashboard = React.lazy(() => import('./views/DropDashboard'));
 const Settings = React.lazy(() => import('./views/Settings'));
 const Users = React.lazy(() => import('./views/Users'));
+const FlowHistory = React.lazy(() => import('./views/FlowHistory'));
 const NotFound = React.lazy(() => import('./views/NotFound'));
 
 /** Wrap each route element in its own ErrorBoundary so a single view crash
@@ -187,6 +188,7 @@ const App: React.FC = () => {
                   <Route path="/drops" element={<V><DropDashboard /></V>} />
                   <Route path="/settings" element={<V><Settings /></V>} />
                   <Route path="/users" element={<V><Users /></V>} />
+                  <Route path="/flows/history" element={<V><FlowHistory /></V>} />
                   <Route path="*" element={<V><NotFound /></V>} />
                 </Route>
               </Routes>

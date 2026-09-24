@@ -30,6 +30,11 @@ export const NAV_GROUPS: NavGroup[] = [
         blurb: 'Hubble flows with verdict coloring — see where traffic goes and why it is allowed or dropped.',
       },
       {
+        path: '/flows/history',
+        label: 'History',
+        blurb: 'Search stored flows over time: what was forwarded or dropped, and when.',
+      },
+      {
         path: '/endpoints',
         label: 'Endpoints',
         blurb: 'Cilium-managed endpoints and workload identities.',
@@ -190,6 +195,12 @@ export const PAGE_HEROES: Record<string, PageHeroCopy> = {
     eyebrow: 'Investigate',
     title: 'Why can’t A reach B?',
     lede: 'Evidence-backed path diagnosis — DNS, Service, identity, policy, node path, and changes — with observed / inferred / unavailable labels.',
+    tint: 'green',
+  },
+  '/flows/history': {
+    eyebrow: 'Investigate',
+    title: 'What happened, and when.',
+    lede: 'Search stored flows over time: what was forwarded or dropped, and when.',
     tint: 'green',
   },
   '/flows': {

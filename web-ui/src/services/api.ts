@@ -199,6 +199,83 @@ export const fetchAnomalies = () =>
 export const remediateAnomaly = (id: string) =>
   api.post(`/anomalies/${id}/remediate`);
 
+// Flow history
+export interface HistoryFlow {
+  id: string;
+  timestamp: string;
+  cluster: string;
+  verdict: string;
+  drop_reason: string;
+  protocol: string;
+  port: number;
+  source: { namespace: string; pod: string; ip: string };
+  destination: { namespace: string; pod: string; ip: string };
+}
+
+export interface FlowCoverage {
+  /** Oldest and newest stored flow the caller may see. */
+  oldest: string | null;
+  newest: string | null;
+  stored_flows: number;
+  retention_days: number;
+  /** False when history is held in memory: lost on restart and capped. */
+  durable: boolean;
+  /** True when the range starts before the oldest stored flow; null when nothing is stored. */
+  range_starts_before_oldest: boolean | null;
+}
+
+export interface FlowCapture {
+  interval_secs: number;
+  batch: number;
+  last_capture_ok: boolean;
+  last_capture_at: string | null;
+  /** What the capture can miss; shown to readers verbatim. */
+  note: string;
+}
+
+interface HistoryContext {
+  range: { from: string; to: string };
+  coverage: FlowCoverage;
+  capture: FlowCapture;
+}
+
+export interface FlowHistoryResponse extends HistoryContext {
+  flows: HistoryFlow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface TimelineBucketData {
+  start: string;
+  forwarded: number;
+  dropped: number;
+  other: number;
+}
+
+export interface FlowTimelineResponse extends HistoryContext {
+  bucket_secs: number;
+  total: number;
+  buckets: TimelineBucketData[];
+}
+
+export interface FlowHistoryParams {
+  from?: string;
+  to?: string;
+  namespace?: string;
+  pod?: string;
+  port?: number;
+  verdict?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const fetchFlowHistory = (params: FlowHistoryParams) =>
+  api.get<FlowHistoryResponse>('/flows/history', { params });
+
+export const fetchFlowTimeline = (params: Omit<FlowHistoryParams, 'limit' | 'offset'>) =>
+  api.get<FlowTimelineResponse>('/flows/history/timeline', { params });
+
 // Compliance
 export interface ComplianceFramework {
   id: string;
