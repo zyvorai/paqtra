@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Copy, RefreshCw, Loader2, Plus, Trash2, X } from 'lucide-react';
-import { fetchMirrorRules, createMirrorRule, deleteMirrorRule, MirrorRule } from '../../services/api';
-import { isAxiosError } from 'axios';
+import { fetchMirrorRules, createMirrorRule, deleteMirrorRule, MirrorRule, apiErrorMessage } from '../../services/api';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 
 const STATUS_BADGE: Record<string, string> = { active: 'bg-green-500/15 text-green-400 border-green-500/30', paused: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' };
+
+/** Flip to true once the backend action is implemented. */
+const CREATE_AVAILABLE = false;
+const NOT_AVAILABLE_MSG = 'Traffic mirroring is not implemented yet: rules cannot be created because nothing would be mirrored.';
 
 const TrafficMirror: React.FC = () => {
   usePageTitle('Traffic Mirroring');
@@ -23,7 +26,7 @@ const TrafficMirror: React.FC = () => {
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null);
     try { setRules((await fetchMirrorRules()).data.rules ?? []); }
-    catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
+    catch (err) { setError(apiErrorMessage(err, 'Failed')); }
     finally { setLoading(false); }
   }, []);
 
@@ -33,14 +36,14 @@ const TrafficMirror: React.FC = () => {
     if (!newName || !newSrc || !newDst || !newMirror) return;
     setCreating(true); setError(null);
     try { await createMirrorRule({ name: newName, source_selector: newSrc, destination: newDst, mirror_to: newMirror }); setSuccess('Mirror rule created'); setShowCreate(false); setNewName(''); fetchData(); }
-    catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
+    catch (err) { setError(apiErrorMessage(err, 'Failed')); }
     finally { setCreating(false); }
   };
 
   const handleDelete = async (id: string) => {
     setError(null);
     try { await deleteMirrorRule(id); setSuccess('Rule deleted'); fetchData(); }
-    catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
+    catch (err) { setError(apiErrorMessage(err, 'Failed')); }
   };
 
   return (
@@ -55,6 +58,7 @@ const TrafficMirror: React.FC = () => {
           <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm hover:from-blue-500 hover:to-blue-600 transition-colors"><Plus className="w-4 h-4" /> New Rule</button>
         </div>
       </div>
+      {!CREATE_AVAILABLE && <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">{NOT_AVAILABLE_MSG}</div>}
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
@@ -67,7 +71,7 @@ const TrafficMirror: React.FC = () => {
             <input value={newDst} onChange={(e) => setNewDst(e.target.value)} placeholder="Destination (e.g. api-gateway:8080)" className="px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/50 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <input value={newMirror} onChange={(e) => setNewMirror(e.target.value)} placeholder="Mirror to (e.g. shadow-service:8080)" className="px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/50 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
-          <button onClick={handleCreate} disabled={creating || !newName} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 transition-colors">
+          <button onClick={handleCreate} disabled={creating || !newName || !CREATE_AVAILABLE} title={CREATE_AVAILABLE ? undefined : NOT_AVAILABLE_MSG} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 transition-colors">
             {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create
           </button>
         </div>

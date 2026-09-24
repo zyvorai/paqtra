@@ -519,22 +519,13 @@ pub async fn list_clusters(
 pub async fn sync_cluster(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
-    Path(name): Path<String>,
+    Path(_name): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    audit_log(
-        &state,
-        "cluster.sync",
-        &name,
-        "",
-        "Cluster sync initiated",
-        &actor_from_claims(&claims),
-        "success",
-    )
-    .await;
-    Ok(Json(
-        serde_json::json!({ "cluster": name, "status": "syncing", "message": "Policy sync initiated" }),
+    Err(super::not_implemented(
+        "Cross-cluster policy sync",
+        "no policies were copied. Apply policies to each cluster directly for now",
     ))
 }
 

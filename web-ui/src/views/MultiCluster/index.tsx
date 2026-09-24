@@ -1,7 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { Globe, Loader2, Wifi, WifiOff, ArrowRightLeft, Clock } from 'lucide-react';
-import { fetchClusters, syncClusterPolicies, ClusterInfo } from '../../services/api';
-import { isAxiosError } from 'axios';
+import { fetchClusters, syncClusterPolicies, ClusterInfo, apiErrorMessage } from '../../services/api';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
@@ -14,6 +13,10 @@ const STATUS_BADGE: Record<string, string> = {
   disconnected: 'bg-red-500/15 text-red-400 border-red-500/30',
 };
 
+/** Flip to true once the backend action is implemented. */
+const SYNC_AVAILABLE = false;
+const NOT_AVAILABLE_MSG = 'Cross-cluster policy sync is not implemented yet: apply policies to each cluster directly for now.';
+
 const MultiCluster: React.FC = () => {
   usePageTitle('Multi-Cluster');
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
@@ -25,7 +28,7 @@ const MultiCluster: React.FC = () => {
   const fetchData = useCallback(async () => {
     setError(null);
     try { setClusters((await fetchClusters()).data.clusters ?? []); }
-    catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
+    catch (err) { setError(apiErrorMessage(err, 'Failed')); }
   }, []);
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
@@ -33,7 +36,7 @@ const MultiCluster: React.FC = () => {
   const handleSync = async (name: string) => {
     setSyncing(name); setError(null);
     try { await syncClusterPolicies(name); setSuccess(`Sync initiated for ${name}`); }
-    catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Sync failed'); }
+    catch (err) { setError(apiErrorMessage(err, 'Sync failed')); }
     finally { setSyncing(null); }
   };
 
@@ -53,6 +56,7 @@ const MultiCluster: React.FC = () => {
         </div>
       </div>
 
+      {!SYNC_AVAILABLE && <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">{NOT_AVAILABLE_MSG}</div>}
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
@@ -112,7 +116,7 @@ const MultiCluster: React.FC = () => {
               Last sync: {new Date(c.last_sync).toLocaleTimeString()}
             </div>
 
-            <button onClick={() => handleSync(c.name)} disabled={syncing === c.name}
+            <button onClick={() => handleSync(c.name)} disabled={syncing === c.name || !SYNC_AVAILABLE} title={SYNC_AVAILABLE ? undefined : NOT_AVAILABLE_MSG}
               className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm hover:bg-slate-700/30 disabled:opacity-50 transition-colors">
               {syncing === c.name ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightLeft className="w-4 h-4" />}
               Sync Policies

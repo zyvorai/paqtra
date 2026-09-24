@@ -1,5 +1,14 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
+/** Readable message for a failed request: prefers the API's `error` field, then `message`. */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data as { error?: string; message?: string } | undefined;
+    return data?.error ?? data?.message ?? err.message;
+  }
+  return fallback;
+}
+
 /** Settings stored in localStorage by the Settings page */
 interface AppSettings {
   apiBaseUrl: string;

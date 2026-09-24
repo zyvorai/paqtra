@@ -51,6 +51,19 @@ pub async fn track_request(state: &AppState, f: impl FnOnce(&AppMetrics)) {
     f(&state.metrics);
 }
 
+/// Response for endpoints whose feature is not built yet. Used instead of
+/// reporting success for an action that does nothing: the caller learns the
+/// truth and no record of a phantom action is created.
+pub fn not_implemented(feature: &str, detail: &str) -> (StatusCode, Json<Value>) {
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(serde_json::json!({
+            "error": format!("{feature} is not implemented yet: {detail}"),
+            "code": "not_implemented",
+        })),
+    )
+}
+
 /// Increment total_errors.
 pub async fn track_error(state: &AppState) {
     state.metrics.total_errors.fetch_add(1, Ordering::Relaxed);

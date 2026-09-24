@@ -765,8 +765,9 @@ pub async fn connect_mesh_peer(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    Ok(Json(
-        serde_json::json!({ "status": "connecting", "message": "Peer connection initiated" }),
+    Err(super::not_implemented(
+        "ClusterMesh peer connection",
+        "no peer was connected. Use `cilium clustermesh connect` for now",
     ))
 }
 
