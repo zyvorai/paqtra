@@ -5,13 +5,16 @@ use crate::AppState;
 use std::sync::Arc;
 use std::time::Duration;
 
-const INGEST_INTERVAL_SECS: u64 = 30;
-const INGEST_BATCH: usize = 500;
+/// Flows requested from Hubble per capture. Public because history responses
+/// tell readers how much of the traffic this can capture.
+pub const INGEST_BATCH: usize = 500;
 
 /// Spawn detached ingest loop.
 pub fn spawn_flow_ingest(state: Arc<AppState>) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(INGEST_INTERVAL_SECS));
+        let mut interval = tokio::time::interval(Duration::from_secs(
+            state.config.flow_ingest_interval_secs,
+        ));
         // First tick fires immediately — skip so startup isn't blocked on Hubble.
         interval.tick().await;
         loop {

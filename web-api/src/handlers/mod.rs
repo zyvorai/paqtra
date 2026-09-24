@@ -9,6 +9,7 @@ pub mod extended;
 pub mod extended2;
 pub mod extended3;
 pub mod extended4;
+pub mod flow_history;
 pub mod flows;
 pub mod health;
 pub mod investigate;

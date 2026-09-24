@@ -537,6 +537,72 @@ fn paths_health_and_flows() -> serde_json::Value {
                     "500": { "$ref": "#/components/responses/InternalError" }
                 }
             }
+        },
+        "/flows/history": {
+            "get": {
+                "tags": ["Flows"],
+                "summary": "Search stored flow history",
+                "description": "Stored flows in a time range, newest first, with the total that matches. Flows are captured by polling Hubble (the most recent 500 every FLOW_INGEST_INTERVAL_SECS, default 30) and kept for PAQTRA_FLOW_RETENTION_DAYS (default 7), so counts are lower bounds and a quiet stretch can be a gap in capture; the response's `capture` and `coverage` objects say so. Namespace-limited accounts see only flows with a side in their namespaces, and `coverage` is limited the same way.",
+                "parameters": [
+                    { "name": "from", "in": "query", "schema": { "type": "string", "format": "date-time" }, "description": "Range start, inclusive (default: one hour before `to`)." },
+                    { "name": "to", "in": "query", "schema": { "type": "string", "format": "date-time" }, "description": "Range end, exclusive (default: now). The range may cover at most 30 days." },
+                    { "name": "namespace", "in": "query", "schema": { "type": "string" }, "description": "Either side is in this namespace." },
+                    { "name": "pod", "in": "query", "schema": { "type": "string" }, "description": "Either side's pod name contains this text (matched literally)." },
+                    { "name": "port", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 65535 } },
+                    { "name": "verdict", "in": "query", "schema": { "type": "string", "enum": ["FORWARDED", "DROPPED", "ERROR", "AUDIT", "REDIRECTED", "TRACED", "TRANSLATED"] }, "description": "Case-insensitive." },
+                    { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 100, "maximum": 500 } },
+                    { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0, "maximum": 100000 } }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Matching flows with range, coverage and capture information",
+                        "content": { "application/json": { "schema": {
+                            "type": "object",
+                            "properties": {
+                                "flows": { "type": "array", "items": { "type": "object" } },
+                                "total": { "type": "integer" },
+                                "limit": { "type": "integer" },
+                                "offset": { "type": "integer" },
+                                "range": { "type": "object" },
+                                "coverage": { "type": "object", "description": "oldest, newest, stored_flows, retention_days, durable, and range_starts_before_oldest (null when nothing is stored)." },
+                                "capture": { "type": "object", "description": "interval_secs, batch, last_capture_ok, last_capture_at and a note on what the capture can miss." }
+                            }
+                        } } }
+                    },
+                    "400": { "description": "Invalid range or filter" },
+                    "401": { "$ref": "#/components/responses/Unauthorized" }
+                }
+            }
+        },
+        "/flows/history/timeline": {
+            "get": {
+                "tags": ["Flows"],
+                "summary": "Flow counts over time",
+                "description": "Forwarded, dropped and other flow counts per time bucket over the range, with quiet buckets included as zeros. Takes the same range and filters as /flows/history. The bucket size is chosen to give about 120 buckets unless `bucket_secs` is set.",
+                "parameters": [
+                    { "name": "bucket_secs", "in": "query", "schema": { "type": "integer", "enum": [60, 300, 900, 3600, 21600, 86400] } }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Buckets, oldest first",
+                        "content": { "application/json": { "schema": {
+                            "type": "object",
+                            "properties": {
+                                "bucket_secs": { "type": "integer" },
+                                "total": { "type": "integer" },
+                                "buckets": { "type": "array", "items": { "type": "object", "properties": {
+                                    "start": { "type": "string", "format": "date-time" },
+                                    "forwarded": { "type": "integer" },
+                                    "dropped": { "type": "integer" },
+                                    "other": { "type": "integer" }
+                                } } }
+                            }
+                        } } }
+                    },
+                    "400": { "description": "Invalid range, filter or bucket size" },
+                    "401": { "$ref": "#/components/responses/Unauthorized" }
+                }
+            }
         }
     })
 }

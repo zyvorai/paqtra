@@ -101,6 +101,9 @@ pub const EDITOR_WRITES: &[(&str, &str)] = &[
 /// Scoped users find single items in the list endpoints instead.
 pub const SCOPED_ACCESS: &[(&str, &str)] = &[
     ("GET", "/api/v1/flows"),
+    // Both filter by the caller's namespaces inside the query itself.
+    ("GET", "/api/v1/flows/history"),
+    ("GET", "/api/v1/flows/history/timeline"),
     ("GET", "/api/v1/policies"),
     ("GET", "/api/v1/events"),
     ("GET", "/api/v1/endpoints"),
