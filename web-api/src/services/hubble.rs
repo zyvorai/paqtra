@@ -240,13 +240,19 @@ impl HubbleService {
     }
 }
 
-/// Convert a raw Hubble JSON object into our canonical Flow struct
+/// Convert a raw Hubble JSON object into our canonical Flow struct.
+///
+/// Hubble CLI (`hubble observe --output json`) emits each event as
+/// `{"flow": { ...fields... }}`. Older/flat payloads put fields at the root.
+/// IPs live under `IP.source` / `IP.destination`, not on the endpoint object.
 pub fn hubble_json_to_flow(index: usize, v: &serde_json::Value) -> Flow {
-    let src = v.get("source").unwrap_or(v);
-    let dst = v.get("destination").unwrap_or(v);
+    let flow = v.get("flow").unwrap_or(v);
+    let src = flow.get("source").unwrap_or(flow);
+    let dst = flow.get("destination").unwrap_or(flow);
+    let ip = flow.get("IP").or_else(|| flow.get("ip"));
 
     // Extract L7 HTTP fields if present
-    let l7_http = v.get("l7").and_then(|l7| {
+    let l7_http = flow.get("l7").and_then(|l7| {
         l7.get("http")
             .or_else(|| l7.get("Http"))
             .or_else(|| l7.get("HTTP"))
@@ -273,66 +279,135 @@ pub fn hubble_json_to_flow(index: usize, v: &serde_json::Value) -> Flow {
             .map(|c| c as u16)
     });
 
+    let src_ip = json_str(src, "ip")
+        .or_else(|| json_str(src, "IP"))
+        .or_else(|| {
+            ip.and_then(|i| i.get("source"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string()
+        });
+    let dst_ip = json_str(dst, "ip")
+        .or_else(|| json_str(dst, "IP"))
+        .or_else(|| {
+            ip.and_then(|i| i.get("destination"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string()
+        });
+
+    // Prefer pod_name; fall back to workload name or identity label for host/reserved.
+    let src_pod = json_str(src, "pod_name")
+        .or_else(|| json_str(src, "pod"))
+        .or_else(|| workload_name(src))
+        .or_else(|| reserved_label(src));
+    let dst_pod = json_str(dst, "pod_name")
+        .or_else(|| json_str(dst, "pod"))
+        .or_else(|| workload_name(dst))
+        .or_else(|| reserved_label(dst));
+
     Flow {
-        id: v
+        id: flow
             .get("uuid")
-            .or_else(|| v.get("id"))
+            .or_else(|| flow.get("id"))
             .and_then(|x| x.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("flow-{}", index)),
-        timestamp: v
+        timestamp: flow
             .get("time")
-            .or_else(|| v.get("timestamp"))
+            .or_else(|| flow.get("timestamp"))
             .and_then(|x| x.as_str())
             .unwrap_or("")
             .to_string(),
         source: FlowEndpoint {
-            namespace: json_str(src, "namespace"),
-            pod: json_str(src, "pod_name").or_else(|| json_str(src, "pod")),
-            ip: json_str(src, "ip").or_else(|| json_str(src, "IP")),
+            namespace: json_str(src, "namespace").or_else(|| namespace_from_labels(src)),
+            pod: src_pod,
+            ip: src_ip,
         },
         destination: FlowEndpoint {
-            namespace: json_str(dst, "namespace"),
-            pod: json_str(dst, "pod_name").or_else(|| json_str(dst, "pod")),
-            ip: json_str(dst, "ip").or_else(|| json_str(dst, "IP")),
+            namespace: json_str(dst, "namespace").or_else(|| namespace_from_labels(dst)),
+            pod: dst_pod,
+            ip: dst_ip,
         },
-        verdict: v
+        verdict: flow
             .get("verdict")
             .and_then(|x| x.as_str())
             .unwrap_or("UNKNOWN")
             .to_string(),
-        protocol: v
+        protocol: flow
             .get("l4")
             .and_then(|l4| {
                 if l4.get("TCP").is_some() {
                     Some("TCP")
                 } else if l4.get("UDP").is_some() {
                     Some("UDP")
-                } else if l4.get("ICMPv4").is_some() {
+                } else if l4.get("ICMPv4").is_some() || l4.get("ICMP").is_some() {
                     Some("ICMPv4")
+                } else if l4.get("ICMPv6").is_some() {
+                    Some("ICMPv6")
                 } else {
                     None
                 }
             })
             .unwrap_or("UNKNOWN")
             .to_string(),
-        port: v
+        port: flow
             .get("l4")
             .and_then(|l4| {
                 l4.get("TCP")
                     .or_else(|| l4.get("UDP"))
-                    .and_then(|proto| proto.get("destination_port"))
+                    .and_then(|proto| {
+                        proto
+                            .get("destination_port")
+                            .or_else(|| proto.get("destinationPort"))
+                    })
                     .and_then(|p| p.as_u64())
             })
             .unwrap_or(0) as u16,
         http_method,
         http_url,
         http_code,
-        cluster: v
+        cluster: flow
             .get("cluster")
+            .or_else(|| src.get("cluster_name"))
             .and_then(|x| x.as_str())
             .map(|s| s.to_string()),
     }
+}
+
+fn workload_name(ep: &serde_json::Value) -> String {
+    ep.get("workloads")
+        .and_then(|w| w.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|w| w.get("name"))
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+fn reserved_label(ep: &serde_json::Value) -> String {
+    ep.get("labels")
+        .and_then(|l| l.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|x| x.as_str())
+        .find(|l| l.starts_with("reserved:"))
+        .map(|l| l.trim_start_matches("reserved:").to_string())
+        .unwrap_or_default()
+}
+
+fn namespace_from_labels(ep: &serde_json::Value) -> String {
+    ep.get("labels")
+        .and_then(|l| l.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|x| x.as_str())
+        .find_map(|l| {
+            l.strip_prefix("k8s:io.kubernetes.pod.namespace=")
+                .or_else(|| l.strip_prefix("k8s:io.cilium.k8s.namespace.labels.kubernetes.io/metadata.name="))
+        })
+        .unwrap_or("")
+        .to_string()
 }
 
 /// Helper: extract a string field from a JSON value, returning empty string if absent
@@ -355,5 +430,62 @@ impl StringOrElse for String {
         } else {
             self
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parses_wrapped_hubble_cli_json() {
+        let v = json!({
+            "flow": {
+                "time": "2026-09-24T04:30:16.104Z",
+                "uuid": "abc-123",
+                "verdict": "FORWARDED",
+                "IP": { "source": "10.42.0.48", "destination": "10.42.0.1", "ipVersion": "IPv4" },
+                "l4": { "TCP": { "source_port": 51466, "destination_port": 4245 } },
+                "source": {
+                    "namespace": "kube-system",
+                    "pod_name": "hubble-relay-xyz",
+                    "labels": ["k8s:k8s-app=hubble-relay"]
+                },
+                "destination": {
+                    "identity": 1,
+                    "labels": ["reserved:host", "reserved:kube-apiserver"]
+                }
+            }
+        });
+        let f = hubble_json_to_flow(0, &v);
+        assert_eq!(f.id, "abc-123");
+        assert_eq!(f.verdict, "FORWARDED");
+        assert_eq!(f.protocol, "TCP");
+        assert_eq!(f.port, 4245);
+        assert_eq!(f.source.namespace, "kube-system");
+        assert_eq!(f.source.pod, "hubble-relay-xyz");
+        assert_eq!(f.source.ip, "10.42.0.48");
+        assert_eq!(f.destination.pod, "host");
+        assert_eq!(f.destination.ip, "10.42.0.1");
+        assert!(!f.timestamp.is_empty());
+    }
+
+    #[test]
+    fn parses_flat_flow_payload() {
+        let v = json!({
+            "time": "2026-01-01T00:00:00Z",
+            "uuid": "flat-1",
+            "verdict": "DROPPED",
+            "IP": { "source": "1.1.1.1", "destination": "2.2.2.2" },
+            "l4": { "UDP": { "destination_port": 53 } },
+            "source": { "namespace": "default", "pod_name": "a" },
+            "destination": { "namespace": "kube-system", "pod_name": "coredns" }
+        });
+        let f = hubble_json_to_flow(0, &v);
+        assert_eq!(f.verdict, "DROPPED");
+        assert_eq!(f.protocol, "UDP");
+        assert_eq!(f.port, 53);
+        assert_eq!(f.destination.pod, "coredns");
     }
 }
