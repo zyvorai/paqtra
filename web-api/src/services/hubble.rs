@@ -151,22 +151,7 @@ impl HubbleService {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let cluster_tag = cluster_name.map(|s| s.to_string());
-        let flows: Vec<Flow> = stdout
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-            .enumerate()
-            .map(|(i, v)| {
-                let mut flow = hubble_json_to_flow(i, &v);
-                if cluster_tag.is_some() {
-                    flow.cluster = cluster_tag.clone();
-                }
-                flow
-            })
-            .collect();
-
-        Ok(flows)
+        Ok(parse_hubble_output(&stdout, cluster_name))
     }
 
     /// Retrieve flows from Hubble via the `hubble` CLI with `--server`.
@@ -211,15 +196,7 @@ impl HubbleService {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let flows: Vec<Flow> = stdout
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-            .enumerate()
-            .map(|(i, v)| hubble_json_to_flow(i, &v))
-            .collect();
-
-        Ok(flows)
+        Ok(parse_hubble_output(&stdout, None))
     }
 
     /// Compute aggregate flow statistics
@@ -240,19 +217,79 @@ impl HubbleService {
     }
 }
 
-/// Convert a raw Hubble JSON object into our canonical Flow struct.
+/// Parse the stdout of `hubble observe --output json`.
 ///
-/// Hubble CLI (`hubble observe --output json`) emits each event as
-/// `{"flow": { ...fields... }}`. Older/flat payloads put fields at the root.
-/// IPs live under `IP.source` / `IP.destination`, not on the endpoint object.
-pub fn hubble_json_to_flow(index: usize, v: &serde_json::Value) -> Flow {
-    let flow = v.get("flow").unwrap_or(v);
-    let src = flow.get("source").unwrap_or(flow);
-    let dst = flow.get("destination").unwrap_or(flow);
-    let ip = flow.get("IP").or_else(|| flow.get("ip"));
+/// Hubble's `json` output is an alias for `jsonpb`: one `GetFlowsResponse` per
+/// line, i.e. `{"flow": {...}, "node_name": "...", "time": "..."}`. Only a CLI
+/// configured with `compat.legacy-json-output` prints the bare flow instead.
+/// Both are accepted. Lines that are not flows (lost-event and node-status
+/// messages) are skipped, so they cannot become empty "UNKNOWN" flows.
+pub fn parse_hubble_output(stdout: &str, cluster: Option<&str>) -> Vec<Flow> {
+    stdout
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter_map(|v| flow_from_hubble_line(0, &v))
+        .map(|mut flow| {
+            if let Some(c) = cluster {
+                flow.cluster = Some(c.to_string());
+            }
+            flow
+        })
+        .collect()
+}
+
+/// One line of Hubble output as a flow, or None if the line is not a flow.
+pub fn flow_from_hubble_line(index: usize, line: &serde_json::Value) -> Option<Flow> {
+    let flow = match line.get("flow") {
+        Some(f) if f.is_object() => f,
+        // The bare-flow (legacy) shape has the verdict at the top level.
+        _ if line.get("verdict").is_some() => line,
+        _ => return None,
+    };
+    let mut out = hubble_json_to_flow(index, flow);
+    if out.timestamp.is_empty() {
+        // The response envelope carries a time too.
+        if let Some(t) = line.get("time").and_then(|x| x.as_str()) {
+            out.timestamp = t.to_string();
+        }
+    }
+    Some(out)
+}
+
+/// FNV-1a over the parts, with a separator so ("ab","c") differs from ("a","bc").
+/// Chosen over `DefaultHasher` because its output is specified and will not
+/// change with a Rust upgrade.
+fn fnv1a(parts: &[&str]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for part in parts {
+        for b in part.bytes().chain(std::iter::once(0xff)) {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x100000001b3);
+        }
+    }
+    h
+}
+
+/// Convert one Hubble flow object into our canonical Flow struct.
+///
+/// `_index` is unused: an id derived from a position in a batch changes as the
+/// window slides, which duplicated history rows.
+pub fn hubble_json_to_flow(_index: usize, v: &serde_json::Value) -> Flow {
+    let src = v.get("source").unwrap_or(v);
+    let dst = v.get("destination").unwrap_or(v);
+    // Endpoints carry no IP in real Hubble output: addresses live in a separate
+    // `IP: {source, destination}` object, which is the only place a flow to or
+    // from the outside world has one.
+    let ip_obj = v.get("IP");
+    let ip_of = |ep: &serde_json::Value, side: &str| {
+        json_str(ep, "ip")
+            .or_else(|| json_str(ep, "IP"))
+            .or_else(|| ip_obj.map(|o| json_str(o, side)).unwrap_or_default())
+    };
 
     // Extract L7 HTTP fields if present
-    let l7_http = flow.get("l7").and_then(|l7| {
+    let l7_http = v.get("l7").and_then(|l7| {
         l7.get("http")
             .or_else(|| l7.get("Http"))
             .or_else(|| l7.get("HTTP"))
@@ -279,135 +316,94 @@ pub fn hubble_json_to_flow(index: usize, v: &serde_json::Value) -> Flow {
             .map(|c| c as u16)
     });
 
-    let src_ip = json_str(src, "ip")
-        .or_else(|| json_str(src, "IP"))
-        .or_else(|| {
-            ip.and_then(|i| i.get("source"))
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string()
-        });
-    let dst_ip = json_str(dst, "ip")
-        .or_else(|| json_str(dst, "IP"))
-        .or_else(|| {
-            ip.and_then(|i| i.get("destination"))
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string()
-        });
+    let timestamp = v
+        .get("time")
+        .or_else(|| v.get("timestamp"))
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let source = FlowEndpoint {
+        namespace: json_str(src, "namespace"),
+        pod: json_str(src, "pod_name").or_else(|| json_str(src, "pod")),
+        ip: ip_of(src, "source"),
+    };
+    let destination = FlowEndpoint {
+        namespace: json_str(dst, "namespace"),
+        pod: json_str(dst, "pod_name").or_else(|| json_str(dst, "pod")),
+        ip: ip_of(dst, "destination"),
+    };
+    let verdict = v
+        .get("verdict")
+        .and_then(|x| x.as_str())
+        .unwrap_or("UNKNOWN")
+        .to_string();
+    let protocol = v
+        .get("l4")
+        .and_then(|l4| {
+            if l4.get("TCP").is_some() {
+                Some("TCP")
+            } else if l4.get("UDP").is_some() {
+                Some("UDP")
+            } else if l4.get("ICMPv4").is_some() {
+                Some("ICMPv4")
+            } else {
+                None
+            }
+        })
+        .unwrap_or("UNKNOWN")
+        .to_string();
+    let port = v
+        .get("l4")
+        .and_then(|l4| {
+            l4.get("TCP")
+                .or_else(|| l4.get("UDP"))
+                .and_then(|proto| proto.get("destination_port"))
+                .and_then(|p| p.as_u64())
+        })
+        .unwrap_or(0) as u16;
 
-    // Prefer pod_name; fall back to workload name or identity label for host/reserved.
-    let src_pod = json_str(src, "pod_name")
-        .or_else(|| json_str(src, "pod"))
-        .or_else(|| workload_name(src))
-        .or_else(|| reserved_label(src));
-    let dst_pod = json_str(dst, "pod_name")
-        .or_else(|| json_str(dst, "pod"))
-        .or_else(|| workload_name(dst))
-        .or_else(|| reserved_label(dst));
+    // Hubble's own id when it sends one (`uuid`, Cilium 1.14+); otherwise one
+    // derived from the flow's content, which is the same on every poll that
+    // returns this flow.
+    let id = v
+        .get("uuid")
+        .or_else(|| v.get("id"))
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            format!(
+                "h-{:016x}",
+                fnv1a(&[
+                    &timestamp,
+                    &source.namespace,
+                    &source.pod,
+                    &source.ip,
+                    &destination.namespace,
+                    &destination.pod,
+                    &destination.ip,
+                    &verdict,
+                    &protocol,
+                    &port.to_string(),
+                ])
+            )
+        });
 
     Flow {
-        id: flow
-            .get("uuid")
-            .or_else(|| flow.get("id"))
-            .and_then(|x| x.as_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| format!("flow-{}", index)),
-        timestamp: flow
-            .get("time")
-            .or_else(|| flow.get("timestamp"))
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string(),
-        source: FlowEndpoint {
-            namespace: json_str(src, "namespace").or_else(|| namespace_from_labels(src)),
-            pod: src_pod,
-            ip: src_ip,
-        },
-        destination: FlowEndpoint {
-            namespace: json_str(dst, "namespace").or_else(|| namespace_from_labels(dst)),
-            pod: dst_pod,
-            ip: dst_ip,
-        },
-        verdict: flow
-            .get("verdict")
-            .and_then(|x| x.as_str())
-            .unwrap_or("UNKNOWN")
-            .to_string(),
-        protocol: flow
-            .get("l4")
-            .and_then(|l4| {
-                if l4.get("TCP").is_some() {
-                    Some("TCP")
-                } else if l4.get("UDP").is_some() {
-                    Some("UDP")
-                } else if l4.get("ICMPv4").is_some() || l4.get("ICMP").is_some() {
-                    Some("ICMPv4")
-                } else if l4.get("ICMPv6").is_some() {
-                    Some("ICMPv6")
-                } else {
-                    None
-                }
-            })
-            .unwrap_or("UNKNOWN")
-            .to_string(),
-        port: flow
-            .get("l4")
-            .and_then(|l4| {
-                l4.get("TCP")
-                    .or_else(|| l4.get("UDP"))
-                    .and_then(|proto| {
-                        proto
-                            .get("destination_port")
-                            .or_else(|| proto.get("destinationPort"))
-                    })
-                    .and_then(|p| p.as_u64())
-            })
-            .unwrap_or(0) as u16,
+        id,
+        timestamp,
+        source,
+        destination,
+        verdict,
+        protocol,
+        port,
         http_method,
         http_url,
         http_code,
-        cluster: flow
+        cluster: v
             .get("cluster")
-            .or_else(|| src.get("cluster_name"))
             .and_then(|x| x.as_str())
             .map(|s| s.to_string()),
     }
-}
-
-fn workload_name(ep: &serde_json::Value) -> String {
-    ep.get("workloads")
-        .and_then(|w| w.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|w| w.get("name"))
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .to_string()
-}
-
-fn reserved_label(ep: &serde_json::Value) -> String {
-    ep.get("labels")
-        .and_then(|l| l.as_array())
-        .into_iter()
-        .flatten()
-        .filter_map(|x| x.as_str())
-        .find(|l| l.starts_with("reserved:"))
-        .map(|l| l.trim_start_matches("reserved:").to_string())
-        .unwrap_or_default()
-}
-
-fn namespace_from_labels(ep: &serde_json::Value) -> String {
-    ep.get("labels")
-        .and_then(|l| l.as_array())
-        .into_iter()
-        .flatten()
-        .filter_map(|x| x.as_str())
-        .find_map(|l| {
-            l.strip_prefix("k8s:io.kubernetes.pod.namespace=")
-                .or_else(|| l.strip_prefix("k8s:io.cilium.k8s.namespace.labels.kubernetes.io/metadata.name="))
-        })
-        .unwrap_or("")
-        .to_string()
 }
 
 /// Helper: extract a string field from a JSON value, returning empty string if absent
@@ -434,58 +430,222 @@ impl StringOrElse for String {
 }
 
 #[cfg(test)]
-mod tests {
+mod hubble_format_tests {
     use super::*;
     use serde_json::json;
 
-    #[test]
-    fn parses_wrapped_hubble_cli_json() {
-        let v = json!({
+    /// A drop as `hubble observe --output json` prints it: a GetFlowsResponse with
+    /// the flow under `flow`, proto field names (snake_case), and addresses in `IP`.
+    fn wrapped_drop() -> serde_json::Value {
+        json!({
             "flow": {
-                "time": "2026-09-24T04:30:16.104Z",
-                "uuid": "abc-123",
-                "verdict": "FORWARDED",
-                "IP": { "source": "10.42.0.48", "destination": "10.42.0.1", "ipVersion": "IPv4" },
-                "l4": { "TCP": { "source_port": 51466, "destination_port": 4245 } },
-                "source": {
-                    "namespace": "kube-system",
-                    "pod_name": "hubble-relay-xyz",
-                    "labels": ["k8s:k8s-app=hubble-relay"]
-                },
-                "destination": {
-                    "identity": 1,
-                    "labels": ["reserved:host", "reserved:kube-apiserver"]
-                }
-            }
-        });
-        let f = hubble_json_to_flow(0, &v);
-        assert_eq!(f.id, "abc-123");
-        assert_eq!(f.verdict, "FORWARDED");
-        assert_eq!(f.protocol, "TCP");
-        assert_eq!(f.port, 4245);
-        assert_eq!(f.source.namespace, "kube-system");
-        assert_eq!(f.source.pod, "hubble-relay-xyz");
-        assert_eq!(f.source.ip, "10.42.0.48");
-        assert_eq!(f.destination.pod, "host");
-        assert_eq!(f.destination.ip, "10.42.0.1");
-        assert!(!f.timestamp.is_empty());
+                "time": "2026-09-24T04:34:47.290678123Z",
+                "uuid": "0f9c3a2e-7b1d-4c55-9a40-1e2d3c4b5a69",
+                "verdict": "DROPPED",
+                "drop_reason": 133,
+                "ethernet": { "source": "aa:bb:cc:dd:ee:01", "destination": "aa:bb:cc:dd:ee:02" },
+                "IP": { "source": "10.0.1.5", "destination": "10.0.2.7", "ipVersion": "IPv4" },
+                "l4": { "TCP": { "source_port": 41234, "destination_port": 8080, "flags": { "SYN": true } } },
+                "source": { "ID": 1234, "identity": 54321, "cluster_name": "default", "namespace": "shop",
+                            "labels": ["k8s:app=web"], "pod_name": "web-1",
+                            "workloads": [{ "name": "web", "kind": "Deployment" }] },
+                "destination": { "ID": 88, "identity": 12345, "namespace": "pay", "labels": ["k8s:app=gw"], "pod_name": "gw-1" },
+                "Type": "L3_L4",
+                "node_name": "kind-worker",
+                "event_type": { "type": 1, "sub_type": 133 },
+                "traffic_direction": "INGRESS",
+                "trace_observation_point": "TO_ENDPOINT",
+                "drop_reason_desc": "POLICY_DENIED",
+                "is_reply": false,
+                "Summary": "TCP Flags: SYN"
+            },
+            "node_name": "kind-worker",
+            "time": "2026-09-24T04:34:47.290678123Z"
+        })
     }
 
     #[test]
-    fn parses_flat_flow_payload() {
-        let v = json!({
-            "time": "2026-01-01T00:00:00Z",
-            "uuid": "flat-1",
-            "verdict": "DROPPED",
-            "IP": { "source": "1.1.1.1", "destination": "2.2.2.2" },
-            "l4": { "UDP": { "destination_port": 53 } },
-            "source": { "namespace": "default", "pod_name": "a" },
-            "destination": { "namespace": "kube-system", "pod_name": "coredns" }
-        });
-        let f = hubble_json_to_flow(0, &v);
+    fn parses_the_default_wrapped_output() {
+        let f = flow_from_hubble_line(0, &wrapped_drop()).expect("a flow");
+        assert_eq!(f.id, "0f9c3a2e-7b1d-4c55-9a40-1e2d3c4b5a69");
+        assert_eq!(f.timestamp, "2026-09-24T04:34:47.290678123Z");
         assert_eq!(f.verdict, "DROPPED");
-        assert_eq!(f.protocol, "UDP");
-        assert_eq!(f.port, 53);
-        assert_eq!(f.destination.pod, "coredns");
+        assert_eq!((f.protocol.as_str(), f.port), ("TCP", 8080));
+        assert_eq!(
+            (f.source.namespace.as_str(), f.source.pod.as_str()),
+            ("shop", "web-1")
+        );
+        assert_eq!(
+            (f.destination.namespace.as_str(), f.destination.pod.as_str()),
+            ("pay", "gw-1")
+        );
+    }
+
+    #[test]
+    fn takes_addresses_from_the_ip_object_because_endpoints_have_none() {
+        let f = flow_from_hubble_line(0, &wrapped_drop()).unwrap();
+        assert_eq!(f.source.ip, "10.0.1.5");
+        assert_eq!(f.destination.ip, "10.0.2.7");
+    }
+
+    #[test]
+    fn a_flow_from_outside_the_cluster_has_an_address_but_no_namespace_or_pod() {
+        let mut line = wrapped_drop();
+        line["flow"]["source"] = json!({ "identity": 2, "labels": ["reserved:world"] });
+        line["flow"]["IP"]["source"] = json!("203.0.113.9");
+        let f = flow_from_hubble_line(0, &line).unwrap();
+        assert_eq!(
+            (
+                f.source.namespace.as_str(),
+                f.source.pod.as_str(),
+                f.source.ip.as_str()
+            ),
+            ("", "", "203.0.113.9")
+        );
+    }
+
+    #[test]
+    fn still_accepts_the_bare_legacy_shape() {
+        let bare = wrapped_drop()["flow"].clone();
+        let legacy = flow_from_hubble_line(0, &bare).expect("legacy flow");
+        let wrapped = flow_from_hubble_line(0, &wrapped_drop()).unwrap();
+        assert_eq!(
+            serde_json::to_value(&legacy).unwrap(),
+            serde_json::to_value(&wrapped).unwrap()
+        );
+    }
+
+    #[test]
+    fn skips_lines_that_are_not_flows() {
+        for line in [
+            json!({ "lost_events": { "source": "HUBBLE_RING_BUFFER", "num_events_lost": 5 }, "node_name": "n" }),
+            json!({ "node_status": { "state_changes": [], "node_names": ["a"] } }),
+            json!({}),
+            json!({ "flow": "not an object" }),
+            json!([1, 2, 3]),
+        ] {
+            assert!(flow_from_hubble_line(0, &line).is_none(), "{line}");
+        }
+    }
+
+    #[test]
+    fn parse_output_keeps_flows_in_order_and_drops_everything_else() {
+        let a = wrapped_drop();
+        let mut b = wrapped_drop();
+        b["flow"]["uuid"] = json!("second");
+        b["flow"]["verdict"] = json!("FORWARDED");
+        let stdout = format!(
+            "{}\n\n{}\nnot json at all\n{}\n{}\n",
+            a,
+            json!({ "lost_events": { "num_events_lost": 1 } }),
+            b,
+            json!({ "node_status": {} })
+        );
+        let flows = parse_hubble_output(&stdout, Some("east"));
+        assert_eq!(flows.len(), 2);
+        assert_eq!(
+            (flows[0].verdict.as_str(), flows[1].verdict.as_str()),
+            ("DROPPED", "FORWARDED")
+        );
+        assert_eq!(flows[1].id, "second");
+        assert!(flows.iter().all(|f| f.cluster.as_deref() == Some("east")));
+        assert!(parse_hubble_output("", None).is_empty());
+    }
+
+    #[test]
+    fn falls_back_to_the_envelope_time_when_the_flow_has_none() {
+        let mut line = wrapped_drop();
+        line["flow"].as_object_mut().unwrap().remove("time");
+        line["time"] = json!("2026-09-24T05:00:00Z");
+        assert_eq!(
+            flow_from_hubble_line(0, &line).unwrap().timestamp,
+            "2026-09-24T05:00:00Z"
+        );
+        // A flow's own time wins over the envelope's.
+        let mut both = wrapped_drop();
+        both["time"] = json!("2030-01-01T00:00:00Z");
+        assert_eq!(
+            flow_from_hubble_line(0, &both).unwrap().timestamp,
+            "2026-09-24T04:34:47.290678123Z"
+        );
+    }
+
+    #[test]
+    fn derived_ids_are_stable_wherever_the_flow_sits_in_the_batch() {
+        let mut line = wrapped_drop();
+        line["flow"].as_object_mut().unwrap().remove("uuid");
+        let at_0 = flow_from_hubble_line(0, &line).unwrap();
+        let at_7 = flow_from_hubble_line(7, &line).unwrap();
+        assert_eq!(
+            at_0.id, at_7.id,
+            "a sliding window must not change a flow's id"
+        );
+        assert!(
+            at_0.id.starts_with("h-") && at_0.id.len() == 18,
+            "{}",
+            at_0.id
+        );
+        assert!(at_0.id[2..].chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn derived_ids_differ_when_any_identifying_field_differs() {
+        let base = || {
+            let mut l = wrapped_drop();
+            l["flow"].as_object_mut().unwrap().remove("uuid");
+            l
+        };
+        let id = |l: &serde_json::Value| flow_from_hubble_line(0, l).unwrap().id;
+        let original = id(&base());
+        for mutate in [
+            |l: &mut serde_json::Value| l["flow"]["time"] = json!("2026-09-24T04:34:47.290678124Z"),
+            |l: &mut serde_json::Value| l["flow"]["verdict"] = json!("FORWARDED"),
+            |l: &mut serde_json::Value| l["flow"]["l4"]["TCP"]["destination_port"] = json!(8081),
+            |l: &mut serde_json::Value| l["flow"]["source"]["pod_name"] = json!("web-2"),
+            |l: &mut serde_json::Value| l["flow"]["destination"]["namespace"] = json!("other"),
+            |l: &mut serde_json::Value| l["flow"]["IP"]["destination"] = json!("10.0.2.8"),
+        ] {
+            let mut l = base();
+            mutate(&mut l);
+            assert_ne!(id(&l), original);
+        }
+    }
+
+    #[test]
+    fn a_uuid_is_used_as_the_id_when_hubble_sends_one() {
+        assert_eq!(
+            flow_from_hubble_line(3, &wrapped_drop()).unwrap().id,
+            "0f9c3a2e-7b1d-4c55-9a40-1e2d3c4b5a69"
+        );
+    }
+
+    #[test]
+    fn hash_separates_fields_so_boundaries_matter() {
+        assert_ne!(fnv1a(&["ab", "c"]), fnv1a(&["a", "bc"]));
+        assert_eq!(fnv1a(&["x", "y"]), fnv1a(&["x", "y"]));
+        // FNV-1a is a fixed algorithm: pin one value so an accidental change to it
+        // (which would re-key every stored flow) fails loudly.
+        assert_eq!(fnv1a(&[]), 0xcbf29ce484222325);
+    }
+
+    #[test]
+    fn reads_udp_icmp_and_http_details() {
+        let mut udp = wrapped_drop();
+        udp["flow"]["l4"] = json!({ "UDP": { "source_port": 5353, "destination_port": 53 } });
+        let f = flow_from_hubble_line(0, &udp).unwrap();
+        assert_eq!((f.protocol.as_str(), f.port), ("UDP", 53));
+
+        let mut icmp = wrapped_drop();
+        icmp["flow"]["l4"] = json!({ "ICMPv4": { "type": 8, "code": 0 } });
+        let f = flow_from_hubble_line(0, &icmp).unwrap();
+        assert_eq!((f.protocol.as_str(), f.port), ("ICMPv4", 0));
+
+        let mut http = wrapped_drop();
+        http["flow"]["l7"] = json!({ "type": "RESPONSE", "http": { "code": 503, "method": "GET", "url": "http://gw/pay", "protocol": "HTTP/1.1" } });
+        let f = flow_from_hubble_line(0, &http).unwrap();
+        assert_eq!(
+            (f.http_method.as_deref(), f.http_url.as_deref(), f.http_code),
+            (Some("GET"), Some("http://gw/pay"), Some(503))
+        );
     }
 }

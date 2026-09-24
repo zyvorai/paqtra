@@ -269,6 +269,8 @@ pub struct FlowStoreStats {
     pub last_ingest_at: Option<String>,
     pub last_ingest_count: u64,
     pub ingest_source: String,
+    /// Flows Hubble returned without a usable timestamp, which are not stored.
+    pub skipped_no_time: u64,
 }
 
 pub struct FlowStore {
@@ -276,6 +278,7 @@ pub struct FlowStore {
     memory: Mutex<Vec<StoredFlow>>,
     retention_days: i64,
     pub ingested_total: AtomicU64,
+    skipped_no_time: AtomicU64,
     pub last_ingest_ok: AtomicU64, // 1 = ok, 0 = fail
     pub last_ingest_count: AtomicU64,
     last_ingest_at: Mutex<Option<String>>,
@@ -290,6 +293,7 @@ impl FlowStore {
             memory: Mutex::new(Vec::new()),
             retention_days: DEFAULT_RETENTION_DAYS,
             ingested_total: AtomicU64::new(0),
+            skipped_no_time: AtomicU64::new(0),
             last_ingest_ok: AtomicU64::new(0),
             last_ingest_count: AtomicU64::new(0),
             last_ingest_at: Mutex::new(None),
@@ -335,6 +339,7 @@ impl FlowStore {
             memory: Mutex::new(Vec::new()),
             retention_days,
             ingested_total: AtomicU64::new(0),
+            skipped_no_time: AtomicU64::new(0),
             last_ingest_ok: AtomicU64::new(0),
             last_ingest_count: AtomicU64::new(0),
             last_ingest_at: Mutex::new(None),
@@ -361,12 +366,19 @@ impl FlowStore {
             last_ingest_ok: self.last_ingest_ok.load(Ordering::Relaxed) == 1,
             last_ingest_at: self.last_ingest_at.lock().ok().and_then(|g| g.clone()),
             last_ingest_count: self.last_ingest_count.load(Ordering::Relaxed),
+            skipped_no_time: self.skipped_no_time.load(Ordering::Relaxed),
             ingest_source: self
                 .ingest_source
                 .lock()
                 .map(|g| g.clone())
                 .unwrap_or_else(|_| "unavailable".into()),
         }
+    }
+
+    /// Count flows that were left out for lack of a timestamp. Returns the total
+    /// before this call, so a caller can log only the first time.
+    pub fn note_skipped_no_time(&self, n: u64) -> u64 {
+        self.skipped_no_time.fetch_add(n, Ordering::Relaxed)
     }
 
     pub fn record_ingest(&self, ok: bool, count: u64, source: FlowSource) {

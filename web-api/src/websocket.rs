@@ -1,6 +1,6 @@
 // WebSocket handlers for real-time updates
 use crate::middleware::auth::Claims;
-use crate::services::hubble::hubble_json_to_flow;
+use crate::services::hubble::flow_from_hubble_line;
 use crate::AppState;
 use axum::{
     extract::{
@@ -394,7 +394,10 @@ async fn handle_live_flows(
                             Ok(v) => v,
                             Err(_) => continue,
                         };
-                        let flow = hubble_json_to_flow(flow_index, &parsed);
+                        // Skip lines that are not flows (lost-event and node-status messages).
+                        let Some(flow) = flow_from_hubble_line(flow_index, &parsed) else {
+                            continue;
+                        };
                         flow_index = flow_index.wrapping_add(1);
 
                         let msg = serde_json::json!({

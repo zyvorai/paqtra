@@ -223,6 +223,8 @@ fn context(state: &AppState, range: &Range, cov: &Coverage) -> Value {
             "batch": INGEST_BATCH,
             "last_capture_ok": stats.last_ingest_ok,
             "last_capture_at": stats.last_ingest_at,
+            // Flows Hubble sent without a usable timestamp: not stored, so not counted.
+            "skipped_no_time": stats.skipped_no_time,
             "note": format!(
                 "Flows are captured by polling Hubble every {}s and keeping the most recent {} it returns, \
                  so a busy cluster can produce more flows between captures than are stored. Counts are \
