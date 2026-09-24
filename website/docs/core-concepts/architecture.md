@@ -1,4 +1,7 @@
-# Paqtra - Architecture Documentation
+---
+title: Architecture
+sidebar_position: 1
+---
 
 ## Table of Contents
 1. [High-Level Architecture](#high-level-architecture)
