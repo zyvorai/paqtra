@@ -211,6 +211,10 @@ async fn main() -> anyhow::Result<()> {
             post(handlers::investigate::investigate_path),
         )
         .route(
+            "/api/v1/investigate/flow",
+            post(handlers::investigate::investigate_flow),
+        )
+        .route(
             "/api/v1/investigate/bundles/{id}",
             get(handlers::investigate::get_bundle),
         )

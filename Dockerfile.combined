@@ -41,7 +41,8 @@ COPY --from=ui-builder --chown=paqtra:paqtra /ui/dist ./ui/
 # Default configuration
 ENV PAQTRA_HOST=0.0.0.0 \
     PAQTRA_PORT=9191 \
-    HUBBLE_ADDRESS=hubble-relay.kube-system.svc.cluster.local:4245 \
+    HUBBLE_ADDRESS=hubble-relay.kube-system.svc.cluster.local:80 \
+    HUBBLE_MODE=grpc \
     RUST_LOG=info \
     UI_DIST_DIR=/app/ui
 

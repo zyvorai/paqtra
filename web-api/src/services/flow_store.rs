@@ -271,6 +271,12 @@ pub struct FlowStoreStats {
     pub ingest_source: String,
     /// Flows Hubble returned without a usable timestamp, which are not stored.
     pub skipped_no_time: u64,
+    pub stream_connected: bool,
+    pub disconnect_count: u64,
+    pub gap_count: u64,
+    pub last_gap_at: Option<String>,
+    pub events_per_sec: f64,
+    pub lag_secs: Option<i64>,
 }
 
 pub struct FlowStore {
@@ -283,6 +289,11 @@ pub struct FlowStore {
     pub last_ingest_count: AtomicU64,
     last_ingest_at: Mutex<Option<String>>,
     ingest_source: Mutex<String>,
+    stream_connected: AtomicU64,
+    disconnect_count: AtomicU64,
+    gap_count: AtomicU64,
+    last_gap_at: Mutex<Option<String>>,
+    rate_window: Mutex<Vec<i64>>,
 }
 
 impl FlowStore {
@@ -298,6 +309,11 @@ impl FlowStore {
             last_ingest_count: AtomicU64::new(0),
             last_ingest_at: Mutex::new(None),
             ingest_source: Mutex::new("unavailable".into()),
+            stream_connected: AtomicU64::new(0),
+            disconnect_count: AtomicU64::new(0),
+            gap_count: AtomicU64::new(0),
+            last_gap_at: Mutex::new(None),
+            rate_window: Mutex::new(Vec::new()),
         }
     }
 
@@ -344,6 +360,11 @@ impl FlowStore {
             last_ingest_count: AtomicU64::new(0),
             last_ingest_at: Mutex::new(None),
             ingest_source: Mutex::new("unavailable".into()),
+            stream_connected: AtomicU64::new(0),
+            disconnect_count: AtomicU64::new(0),
+            gap_count: AtomicU64::new(0),
+            last_gap_at: Mutex::new(None),
+            rate_window: Mutex::new(Vec::new()),
         };
         let _ = store.purge_expired();
         Ok(store)
@@ -372,6 +393,44 @@ impl FlowStore {
                 .lock()
                 .map(|g| g.clone())
                 .unwrap_or_else(|_| "unavailable".into()),
+            stream_connected: self.stream_connected.load(Ordering::Relaxed) == 1,
+            disconnect_count: self.disconnect_count.load(Ordering::Relaxed),
+            gap_count: self.gap_count.load(Ordering::Relaxed),
+            last_gap_at: self.last_gap_at.lock().ok().and_then(|g| g.clone()),
+            events_per_sec: self.events_per_sec(),
+            lag_secs: self.lag_secs(),
+        }
+    }
+
+    fn events_per_sec(&self) -> f64 {
+        let now = Utc::now().timestamp();
+        let Ok(mut w) = self.rate_window.lock() else { return 0.0; };
+        w.retain(|t| now - *t <= 60);
+        if w.is_empty() { 0.0 } else { w.len() as f64 / 60.0 }
+    }
+
+    fn lag_secs(&self) -> Option<i64> {
+        let newest = self.coverage(None).ok()?.newest?;
+        let ts = DateTime::parse_from_rfc3339(&newest).ok()?.with_timezone(&Utc);
+        Some((Utc::now() - ts).num_seconds().max(0))
+    }
+
+    pub fn set_stream_connected(&self, connected: bool) {
+        self.stream_connected.store(if connected { 1 } else { 0 }, Ordering::Relaxed);
+    }
+
+    pub fn record_stream_gap(&self) {
+        self.disconnect_count.fetch_add(1, Ordering::Relaxed);
+        self.gap_count.fetch_add(1, Ordering::Relaxed);
+        self.stream_connected.store(0, Ordering::Relaxed);
+        if let Ok(mut g) = self.last_gap_at.lock() { *g = Some(Utc::now().to_rfc3339()); }
+    }
+
+    pub fn note_stream_event(&self) {
+        let now = Utc::now().timestamp();
+        if let Ok(mut w) = self.rate_window.lock() {
+            w.push(now);
+            w.retain(|t| now - *t <= 60);
         }
     }
 
@@ -715,6 +774,7 @@ mod tests {
                 http_url: None,
                 http_code: None,
                 cluster: Some("local".into()),
+                ..Default::default()
             },
             FlowSource::HubbleCli,
             "Policy denied",
@@ -926,6 +986,7 @@ mod tests {
                 http_url: None,
                 http_code: None,
                 cluster: None,
+                ..Default::default()
             }
         }
     }

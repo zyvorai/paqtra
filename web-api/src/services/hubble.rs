@@ -6,6 +6,7 @@
 
 pub use crate::config::HubbleMode;
 use crate::models::flow::{Flow, FlowEndpoint, FlowStats};
+use crate::services::flow_store::FlowSource;
 use crate::services::hubble_grpc;
 use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -128,6 +129,7 @@ impl HubbleService {
             handles.push(tokio::spawn(async move {
                 let flows = fetch_flows(mode, &addr, limit, namespace.as_deref(), Some(&name))
                     .await
+                    .map(|(flows, _)| flows)
                     .unwrap_or_default();
                 (name, flows)
             }));
@@ -144,6 +146,15 @@ impl HubbleService {
 
     /// Retrieve the most recent flows from the primary Hubble address.
     pub async fn get_flows(&self, limit: usize, namespace: Option<&str>) -> Result<Vec<Flow>> {
+        Ok(self.get_flows_with_source(limit, namespace).await?.0)
+    }
+
+    /// Same as [`get_flows`], plus which backend produced the rows.
+    pub async fn get_flows_with_source(
+        &self,
+        limit: usize,
+        namespace: Option<&str>,
+    ) -> Result<(Vec<Flow>, FlowSource)> {
         fetch_flows(self.mode, &self.address, limit, namespace, None).await
     }
 
@@ -205,24 +216,33 @@ async fn fetch_flows(
     limit: usize,
     namespace: Option<&str>,
     cluster: Option<&str>,
-) -> Result<Vec<Flow>> {
+) -> Result<(Vec<Flow>, FlowSource)> {
     // Cap the limit to prevent excessive resource consumption
     let limit = limit.min(10_000);
     validate_namespace(namespace)?;
 
     match mode {
-        HubbleMode::Cli => Ok(cli_flows(address, limit, namespace, cluster).await),
-        HubbleMode::Grpc => hubble_grpc::last_flows(address, limit, namespace, cluster).await,
+        HubbleMode::Cli => Ok((
+            cli_flows(address, limit, namespace, cluster).await,
+            FlowSource::HubbleCli,
+        )),
+        HubbleMode::Grpc => {
+            let flows = hubble_grpc::last_flows(address, limit, namespace, cluster).await?;
+            Ok((flows, FlowSource::HubbleGrpc))
+        }
         HubbleMode::Auto => match hubble_grpc::last_flows(address, limit, namespace, cluster).await
         {
-            Ok(flows) => Ok(flows),
+            Ok(flows) => Ok((flows, FlowSource::HubbleGrpc)),
             Err(e) if on_path("hubble") => {
                 tracing::debug!("Hubble gRPC failed for {address} ({e:#}); trying the CLI");
-                Ok(cli_flows(address, limit, namespace, cluster).await)
+                Ok((
+                    cli_flows(address, limit, namespace, cluster).await,
+                    FlowSource::HubbleCli,
+                ))
             }
             Err(e) => {
                 tracing::debug!("Hubble gRPC failed for {address} and no hubble CLI: {e:#}");
-                Ok(Vec::new())
+                Ok((Vec::new(), FlowSource::Unavailable))
             }
         },
     }
@@ -506,6 +526,57 @@ pub fn hubble_json_to_flow(_index: usize, v: &serde_json::Value) -> Flow {
             content_id(&timestamp, &source, &destination, &verdict, &protocol, port)
         });
 
+    let l7_dns = v.get("l7").and_then(|l7| {
+        l7.get("dns")
+            .or_else(|| l7.get("Dns"))
+            .or_else(|| l7.get("DNS"))
+    });
+    let dns_query = l7_dns
+        .and_then(|d| d.get("query").or_else(|| d.get("Query")))
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string());
+    let dns_qtypes = l7_dns.and_then(|d| {
+        d.get("qtypes")
+            .or_else(|| d.get("Qtypes"))
+            .and_then(|x| x.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .filter(|v| !v.is_empty())
+    });
+    let dns_rcode = l7_dns
+        .and_then(|d| d.get("rcode").or_else(|| d.get("Rcode")))
+        .and_then(|x| x.as_u64())
+        .map(|n| n as u32);
+    let dns_rcode_name = dns_rcode.map(crate::models::flow::dns_rcode_name).map(str::to_string);
+    let dns_ips = l7_dns.and_then(|d| {
+        d.get("ips")
+            .or_else(|| d.get("Ips"))
+            .and_then(|x| x.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .filter(|v| !v.is_empty())
+    });
+    let dns_latency_ns = v
+        .get("l7")
+        .and_then(|l7| l7.get("latency_ns").or_else(|| l7.get("latencyNs")))
+        .and_then(|x| x.as_u64())
+        .filter(|&n| n > 0);
+    let drop_reason = v
+        .get("drop_reason_desc")
+        .or_else(|| v.get("drop_reason"))
+        .and_then(|x| {
+            x.as_str()
+                .map(|s| s.to_string())
+                .or_else(|| x.as_u64().map(|n| n.to_string()))
+        })
+        .filter(|s| !s.is_empty() && s != "DROP_REASON_UNKNOWN" && s != "0");
+
     Flow {
         id,
         timestamp,
@@ -521,6 +592,13 @@ pub fn hubble_json_to_flow(_index: usize, v: &serde_json::Value) -> Flow {
             .get("cluster")
             .and_then(|x| x.as_str())
             .map(|s| s.to_string()),
+        dns_query,
+        dns_qtypes,
+        dns_rcode,
+        dns_rcode_name,
+        dns_ips,
+        dns_latency_ns,
+        drop_reason,
     }
 }
 

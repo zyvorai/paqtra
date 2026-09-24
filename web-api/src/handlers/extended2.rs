@@ -607,6 +607,15 @@ pub async fn stop_capture(
 
 // ── DNS Monitor ─────────────────────────────────────────────
 
+fn dns_rcode_label(code: Option<u32>, name: Option<&str>) -> String {
+    if let Some(n) = name.filter(|s| !s.is_empty()) {
+        return n.to_string();
+    }
+    code.map(crate::models::flow::dns_rcode_name)
+        .unwrap_or("UNKNOWN")
+        .to_string()
+}
+
 pub async fn dns_queries(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
@@ -614,62 +623,152 @@ pub async fn dns_queries(
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
-    // Get DNS-related flows from Hubble (port 53)
-    let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
-    let dns_flows: Vec<serde_json::Value> = flows
-        .iter()
-        .filter(|f| f.port == 53)
-        .enumerate()
-        .map(|(i, f)| {
-            // Map flow fields to DNS query format expected by frontend
-            let query_name = if !f.destination.pod.is_empty() {
-                format!("{}.{}.svc.cluster.local", f.destination.pod, f.destination.namespace)
-            } else if !f.destination.ip.is_empty() {
-                f.destination.ip.clone()
-            } else {
-                "unknown".to_string()
-            };
-            let response_code = if f.verdict == "FORWARDED" { "NOERROR" } else { "SERVFAIL" };
-            serde_json::json!({
-                "id": format!("dns-{:03}", i + 1),
-                "timestamp": f.timestamp,
-                "source_pod": f.source.pod,
-                "namespace": f.source.namespace,
-                "query_name": query_name,
-                "query_type": if f.protocol == "UDP" { "A" } else { "AAAA" },
-                "response_code": response_code,
-                "response_ips": if f.verdict == "FORWARDED" { vec![&f.destination.ip] } else { vec![] },
-                "latency_ms": 0.0,
-                "verdict": f.verdict,
-            })
+    // Prefer indexed store (continuous ingest); fall back to a live snapshot.
+    let stored = state
+        .flow_store
+        .query(&crate::services::flow_store::FlowQuery {
+            port: Some(53),
+            limit: 500,
+            ..Default::default()
         })
-        .collect();
+        .unwrap_or_default();
 
-    let total = dns_flows.len();
+    let live = if stored.is_empty() {
+        state.hubble.get_flows(500, None).await.unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let mut queries: Vec<serde_json::Value> = Vec::new();
+
+    // L7 DNS from live flows
+    for f in &live {
+        if f.port != 53 && f.dns_query.is_none() {
+            continue;
+        }
+        let has_l7 = f.dns_query.is_some();
+        let response_code = if has_l7 {
+            dns_rcode_label(f.dns_rcode, f.dns_rcode_name.as_deref())
+        } else {
+            // Never invent SERVFAIL from a policy drop — L4-only is incomplete.
+            "UNKNOWN".into()
+        };
+        let policy_corr = if f.verdict.eq_ignore_ascii_case("DROPPED") {
+            serde_json::json!({
+                "confidence": "observed",
+                "detail": "Matching flow was DROPPED by the datapath; may correlate with a policy deny.",
+                "drop_reason": f.drop_reason,
+            })
+        } else {
+            serde_json::json!({ "confidence": "unavailable", "detail": null })
+        };
+        queries.push(serde_json::json!({
+            "id": f.id,
+            "timestamp": f.timestamp,
+            "source_pod": f.source.pod,
+            "namespace": f.source.namespace,
+            "query_name": f.dns_query.clone().unwrap_or_default(),
+            "query_type": f.dns_qtypes.as_ref().and_then(|q| q.first().cloned()).unwrap_or_else(|| {
+                if f.protocol == "UDP" { "A".into() } else { "AAAA".into() }
+            }),
+            "response_code": response_code,
+            "response_ips": f.dns_ips.clone().unwrap_or_default(),
+            "latency_ms": f.dns_latency_ns.map(|ns| (ns as f64) / 1_000_000.0).unwrap_or(0.0),
+            "verdict": f.verdict,
+            "confidence": if has_l7 { "observed" } else { "unavailable" },
+            "evidence": if has_l7 { "l7_dns" } else { "l4_only" },
+            "policy_correlation": policy_corr,
+        }));
+    }
+
+    // From store: only emit as DNS when we have L7 fields or port 53 with clear incomplete marker
+    for s in &stored {
+        // StoredFlow does not yet carry DNS L7 — emit L4 port-53 with unavailable confidence
+        // unless we can pull matching live L7 (already handled above).
+        if s.port != 53 {
+            continue;
+        }
+        if queries.iter().any(|q| q.get("id").and_then(|v| v.as_str()) == Some(&s.id)) {
+            continue;
+        }
+        let policy_corr = if s.verdict.eq_ignore_ascii_case("DROPPED") {
+            serde_json::json!({
+                "confidence": "observed",
+                "detail": "Port-53 flow was DROPPED; DNS rcode unknown without L7 visibility.",
+                "drop_reason": s.drop_reason,
+            })
+        } else {
+            serde_json::json!({ "confidence": "unavailable", "detail": null })
+        };
+        queries.push(serde_json::json!({
+            "id": s.id,
+            "timestamp": s.ts,
+            "source_pod": s.src_pod,
+            "namespace": s.src_namespace,
+            "query_name": "",
+            "query_type": "",
+            "response_code": "UNKNOWN",
+            "response_ips": [],
+            "latency_ms": 0.0,
+            "verdict": s.verdict,
+            "confidence": "unavailable",
+            "evidence": "l4_only",
+            "policy_correlation": policy_corr,
+        }));
+    }
+
+    let total = queries.len();
     Ok(Json(
-        serde_json::json!({ "queries": dns_flows, "total": total }),
+        serde_json::json!({ "queries": queries, "total": total }),
     ))
 }
 
 pub async fn dns_stats(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    // Compute real DNS stats from Hubble flows
     let flows = state.hubble.get_flows(1000, None).await.unwrap_or_default();
-    let dns_flows: Vec<_> = flows.iter().filter(|f| f.port == 53).collect();
-    let total = dns_flows.len() as u64;
-    let forwarded = dns_flows
+    let dns_l7: Vec<_> = flows.iter().filter(|f| f.dns_query.is_some()).collect();
+    let dns_l4: Vec<_> = flows
         .iter()
-        .filter(|f| f.verdict == "FORWARDED")
+        .filter(|f| f.port == 53 && f.dns_query.is_none())
+        .collect();
+
+    let total = dns_l7.len() as u64 + dns_l4.len() as u64;
+    let failures = dns_l7
+        .iter()
+        .filter(|f| f.dns_rcode.map(|c| c != 0).unwrap_or(false))
         .count() as u64;
-    let dropped = dns_flows.iter().filter(|f| f.verdict == "DROPPED").count() as u64;
+    let dropped = flows
+        .iter()
+        .filter(|f| f.port == 53 && f.verdict.eq_ignore_ascii_case("DROPPED"))
+        .count() as u64;
+    let avg_latency_ms = {
+        let samples: Vec<f64> = dns_l7
+            .iter()
+            .filter_map(|f| f.dns_latency_ns.map(|ns| ns as f64 / 1_000_000.0))
+            .collect();
+        if samples.is_empty() {
+            0.0
+        } else {
+            samples.iter().sum::<f64>() / samples.len() as f64
+        }
+    };
 
     Json(serde_json::json!({
         "total_queries": total,
-        "successful": forwarded,
+        "total": total,
+        "successful": dns_l7.iter().filter(|f| f.dns_rcode == Some(0)).count() as u64,
+        "failures": failures,
         "dropped": dropped,
+        "l7_observed": dns_l7.len(),
+        "l4_only": dns_l4.len(),
+        "avg_latency_ms": (avg_latency_ms * 10.0).round() / 10.0,
         "drop_rate": if total > 0 { dropped as f64 / total as f64 * 100.0 } else { 0.0 },
-        "source": "hubble L4 flows (port 53)",
+        "source": if dns_l7.is_empty() {
+            "hubble L4 flows (port 53); enable Cilium DNS visibility for L7"
+        } else {
+            "hubble L7 DNS"
+        },
     }))
 }
 

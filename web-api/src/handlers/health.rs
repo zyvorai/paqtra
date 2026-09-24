@@ -52,6 +52,17 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> (StatusCode, Js
                     "source": flow_stats.ingest_source,
                     "indexed": flow_stats.total,
                     "last_at": flow_stats.last_ingest_at,
+                    "hubble_mode": match state.hubble.mode() {
+                        crate::config::HubbleMode::Auto => "auto",
+                        crate::config::HubbleMode::Grpc => "grpc",
+                        crate::config::HubbleMode::Cli => "cli",
+                    },
+                    "connected": flow_stats.stream_connected,
+                    "disconnects": flow_stats.disconnect_count,
+                    "gaps": flow_stats.gap_count,
+                    "last_gap_at": flow_stats.last_gap_at,
+                    "events_per_sec": flow_stats.events_per_sec,
+                    "lag_secs": flow_stats.lag_secs,
                 },
             }
         })),

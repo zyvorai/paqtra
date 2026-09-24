@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchFlows, fetchFlowStats, type Flow, type FlowEndpoint } from '../../services/api';
+import api, { fetchFlows, fetchFlowStats, type Flow, type FlowEndpoint } from '../../services/api';
 import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
 import TerminalFrame from '../../components/TerminalFrame';
 
@@ -22,6 +22,13 @@ function flowLine(f: Flow): string {
   return `${t}  ${f.verdict || '—'}  ${f.protocol || '—'}  ${src} → ${dst}${port}`;
 }
 
+type ExplainResult = {
+  id?: string;
+  likely_owner?: string;
+  steps?: { title: string; detail: string; confidence: string }[];
+  next_actions?: string[];
+};
+
 export default function Flows() {
   const [flows, setFlows] = useState<Flow[]>([]);
   const [stats, setStats] = useState<{
@@ -33,6 +40,8 @@ export default function Flows() {
   const [verdict, setVerdict] = useState('');
   const [namespace, setNamespace] = useState('');
   const [err, setErr] = useState('');
+  const [explain, setExplain] = useState<ExplainResult | null>(null);
+  const [explaining, setExplaining] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -58,6 +67,23 @@ export default function Flows() {
     return () => clearInterval(t);
   }, [load]);
 
+  const whyDenied = async (f: Flow) => {
+    setExplaining(true);
+    setExplain(null);
+    try {
+      const { data } = await api.post<ExplainResult>('/investigate/flow', {
+        flow_id: f.id,
+        flow: f,
+      });
+      setExplain(data);
+      setErr('');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExplaining(false);
+    }
+  };
+
   const forwarded = stats?.forwarded ?? 0;
   const dropped = stats?.dropped ?? 0;
   const total = stats?.total ?? stats?.total_flows ?? flows.length;
@@ -73,7 +99,10 @@ export default function Flows() {
       <Card span={2}>
         <Eyebrow>LIVE STREAM</Eyebrow>
         <h3>Filters</h3>
-        <p>Optional Cilium/Hubble enrichment. When Hubble is unavailable, use Drops and eBPF for node-local evidence.</p>
+        <p>
+          Optional Cilium/Hubble enrichment. Select a DROPPED row to open the deny explanation
+          workflow.
+        </p>
         <Toolbar>
           <label>
             Verdict
@@ -105,12 +134,53 @@ export default function Flows() {
           {flows.length === 0 ? (
             <Empty>No flows yet — waiting on Hubble Relay.</Empty>
           ) : (
-            <pre style={{ margin: 0, fontSize: 12, lineHeight: 1.45 }}>
-              {flows.slice(0, 120).map(flowLine).join('\n')}
-            </pre>
+            <div style={{ fontSize: 12, lineHeight: 1.55, fontFamily: 'ui-monospace, monospace' }}>
+              {flows.slice(0, 120).map((f) => (
+                <div key={f.id} style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                  <span style={{ flex: 1 }}>{flowLine(f)}</span>
+                  {String(f.verdict).toUpperCase() === 'DROPPED' ? (
+                    <button
+                      type="button"
+                      className="btn-refresh"
+                      style={{ fontSize: 11, padding: '2px 8px' }}
+                      disabled={explaining}
+                      onClick={() => void whyDenied(f)}
+                    >
+                      Why denied?
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           )}
         </TerminalFrame>
       </div>
+
+      {explain ? (
+        <Card span={3}>
+          <Eyebrow>WHY DENIED</Eyebrow>
+          <h3>Owner: {explain.likely_owner || 'unknown'}</h3>
+          <ol style={{ margin: '0.5rem 0', paddingLeft: '1.2rem' }}>
+            {(explain.steps ?? []).map((s, i) => (
+              <li key={i} style={{ marginBottom: 8 }}>
+                <strong>{s.title}</strong>{' '}
+                <span style={{ opacity: 0.65 }}>({s.confidence})</span>
+                <div style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>{s.detail}</div>
+              </li>
+            ))}
+          </ol>
+          {(explain.next_actions ?? []).length > 0 ? (
+            <>
+              <Eyebrow>NEXT</Eyebrow>
+              <ul>
+                {(explain.next_actions ?? []).map((a, i) => (
+                  <li key={i}>{a}</li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+        </Card>
+      ) : null}
     </Board>
   );
 }

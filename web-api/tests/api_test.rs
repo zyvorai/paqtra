@@ -204,6 +204,7 @@ fn test_flow_model_serialization() {
         http_url: None,
         http_code: None,
         cluster: None,
+        ..Default::default()
     };
 
     let restored: Flow = roundtrip_json(&flow);
@@ -397,6 +398,7 @@ fn test_flow_list_serialization() {
             http_url: None,
             http_code: None,
             cluster: None,
+            ..Default::default()
         },
         Flow {
             id: "f2".to_string(),
@@ -418,6 +420,7 @@ fn test_flow_list_serialization() {
             http_url: None,
             http_code: None,
             cluster: None,
+            ..Default::default()
         },
     ];
 

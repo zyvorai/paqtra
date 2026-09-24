@@ -163,7 +163,7 @@ helm uninstall paqtra -n cilium-system
 - `PAQTRA_PORT`: Server port (default: 9191)
 - `JWT_SECRET`: JWT signing secret (change in production!)
 - `HUBBLE_ADDRESS`: Hubble Relay address (`host:port`, plaintext gRPC; in-cluster this is the `hubble-relay` service)
-- `HUBBLE_MODE`: `auto` (default) reads flows over the Hubble gRPC API and uses the `hubble` CLI only if gRPC fails and the binary is installed; `grpc` never uses the CLI; `cli` only uses it. No `hubble` binary is needed for `auto`/`grpc`.
+- `HUBBLE_MODE`: Helm chart defaults to `grpc` (Observer API only). `auto` reads flows over gRPC and uses the `hubble` CLI only if gRPC fails and the binary is installed; `cli` only uses the binary. No `hubble` binary is needed for `grpc`.
 - `K8S_CONTEXT`: Kubernetes context (optional)
 - `RUST_LOG`: Log level (info, debug, trace)
 

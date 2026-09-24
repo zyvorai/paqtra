@@ -2,8 +2,30 @@ import { useCallback, useEffect, useState } from 'react';
 import { fetchDnsQueries, fetchDnsStats } from '../../services/api';
 import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
 
-type Query = { query_name?: string; namespace?: string; rcode?: string; latency_ms?: number };
-type Stats = { total?: number; failures?: number; avg_latency_ms?: number; [key: string]: unknown };
+type Query = {
+  query_name?: string;
+  namespace?: string;
+  source_pod?: string;
+  response_code?: string;
+  rcode?: string;
+  latency_ms?: number;
+  response_ips?: string[];
+  confidence?: string;
+  evidence?: string;
+  verdict?: string;
+  policy_correlation?: { confidence?: string; detail?: string | null; drop_reason?: string };
+};
+
+type Stats = {
+  total?: number;
+  total_queries?: number;
+  failures?: number;
+  avg_latency_ms?: number;
+  l7_observed?: number;
+  l4_only?: number;
+  source?: string;
+  [key: string]: unknown;
+};
 
 export default function DnsMonitor() {
   const [queries, setQueries] = useState<Query[]>([]);
@@ -37,10 +59,12 @@ export default function DnsMonitor() {
       <Card span={3}>
         <Eyebrow>DNS PULSE</Eyebrow>
         <Metrics>
-          <Metric value={stats?.total ?? queries.length} label="queries" />
-          <Metric value={stats?.failures ?? 0} label="failures" />
+          <Metric value={stats?.total ?? stats?.total_queries ?? queries.length} label="queries" />
+          <Metric value={stats?.failures ?? 0} label="DNS failures" />
+          <Metric value={stats?.l7_observed ?? 0} label="L7 observed" />
           <Metric value={stats?.avg_latency_ms ?? '—'} label="avg latency ms" />
         </Metrics>
+        {stats?.source ? <p style={{ opacity: 0.7, fontSize: 13 }}>{stats.source}</p> : null}
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>
             Refresh
@@ -52,18 +76,35 @@ export default function DnsMonitor() {
         <h3>Observed DNS</h3>
         {queries.length === 0 ? <Empty>No DNS queries yet.</Empty> : null}
         <div className="datatable-scroll">
-          <div className="datahead" style={{ gridTemplateColumns: '2fr 1fr 0.8fr 0.8fr' }}>
+          <div
+            className="datahead"
+            style={{ gridTemplateColumns: '1.6fr 1fr 0.9fr 0.7fr 0.7fr 1.2fr' }}
+          >
             <span>QUERY</span>
-            <span>NAMESPACE</span>
+            <span>POD</span>
             <span>RCODE</span>
             <span>LATENCY</span>
+            <span>EVIDENCE</span>
+            <span>POLICY</span>
           </div>
           {queries.slice(0, 80).map((q, i) => (
-            <div className="datarow" key={i} style={{ gridTemplateColumns: '2fr 1fr 0.8fr 0.8fr' }}>
-              <span className="truncate">{q.query_name || '—'}</span>
-              <span>{q.namespace || '—'}</span>
-              <span>{q.rcode || '—'}</span>
-              <span>{q.latency_ms != null ? `${q.latency_ms} ms` : '—'}</span>
+            <div
+              className="datarow"
+              key={i}
+              style={{ gridTemplateColumns: '1.6fr 1fr 0.9fr 0.7fr 0.7fr 1.2fr' }}
+            >
+              <span className="truncate">{q.query_name || '(L4 only — no query name)'}</span>
+              <span className="truncate">
+                {q.namespace ? `${q.namespace}/` : ''}
+                {q.source_pod || '—'}
+              </span>
+              <span>{q.response_code || q.rcode || '—'}</span>
+              <span>{q.latency_ms != null && q.latency_ms > 0 ? `${q.latency_ms} ms` : '—'}</span>
+              <span>{q.evidence || q.confidence || '—'}</span>
+              <span className="truncate">
+                {q.policy_correlation?.detail ||
+                  (q.verdict === 'DROPPED' ? 'dropped' : '—')}
+              </span>
             </div>
           ))}
         </div>

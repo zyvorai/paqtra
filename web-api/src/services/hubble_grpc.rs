@@ -197,6 +197,16 @@ pub fn flow_to_model(f: &PbFlow) -> Flow {
         Some(layer7::Record::Http(h)) => Some(h),
         _ => None,
     };
+    let (dns, latency_ns) = match f.l7.as_ref() {
+        Some(l7) => {
+            let dns = match l7.record.as_ref() {
+                Some(layer7::Record::Dns(d)) => Some(d),
+                _ => None,
+            };
+            (dns, Some(l7.latency_ns).filter(|&n| n > 0))
+        }
+        None => (None, None),
+    };
 
     let timestamp = f.time.as_ref().map(format_timestamp).unwrap_or_default();
 
@@ -206,6 +216,26 @@ pub fn flow_to_model(f: &PbFlow) -> Flow {
         super::hubble::content_id(&timestamp, &source, &destination, &verdict, &protocol, port)
     } else {
         f.uuid.clone()
+    };
+
+    let drop_reason = {
+        use pb::flow::DropReason;
+        DropReason::try_from(f.drop_reason_desc)
+            .ok()
+            .filter(|d| *d != DropReason::Unknown)
+            .map(|d| d.as_str_name().to_string())
+    };
+
+    let (dns_query, dns_qtypes, dns_rcode, dns_rcode_name, dns_ips) = if let Some(d) = dns {
+        (
+            Some(d.query.clone()).filter(|q| !q.is_empty()),
+            Some(d.qtypes.clone()).filter(|q| !q.is_empty()),
+            Some(d.rcode),
+            Some(crate::models::flow::dns_rcode_name(d.rcode).to_string()),
+            Some(d.ips.clone()).filter(|i| !i.is_empty()),
+        )
+    } else {
+        (None, None, None, None, None)
     };
 
     Flow {
@@ -220,6 +250,13 @@ pub fn flow_to_model(f: &PbFlow) -> Flow {
         http_url: http.map(|h| h.url.clone()),
         http_code: http.map(|h| u16::try_from(h.code).unwrap_or(0)),
         cluster: None,
+        dns_query,
+        dns_qtypes,
+        dns_rcode,
+        dns_rcode_name,
+        dns_ips,
+        dns_latency_ns: latency_ns,
+        drop_reason,
     }
 }
 
@@ -446,6 +483,33 @@ mod tests {
         assert!(flow_to_model(&tcp_flow("u", Verdict::Forwarded, 80))
             .http_method
             .is_none());
+    }
+
+    #[test]
+    fn dns_fields_come_from_l7_not_from_drop_verdict() {
+        use super::pb::flow::Dns;
+        let mut f = tcp_flow("u", Verdict::Dropped, 53);
+        f.l7 = Some(Layer7 {
+            latency_ns: 2_500_000,
+            record: Some(layer7::Record::Dns(Dns {
+                query: "payments.shop.svc.cluster.local.".into(),
+                ips: vec!["10.0.0.9".into()],
+                rcode: 3,
+                qtypes: vec!["A".into()],
+                ..Default::default()
+            })),
+            ..Default::default()
+        });
+        let m = flow_to_model(&f);
+        assert_eq!(m.dns_query.as_deref(), Some("payments.shop.svc.cluster.local."));
+        assert_eq!(m.dns_rcode, Some(3));
+        assert_eq!(m.dns_rcode_name.as_deref(), Some("NXDOMAIN"));
+        assert_eq!(m.dns_ips.as_ref().map(|v| v.as_slice()), Some(&["10.0.0.9".to_string()][..]));
+        assert_eq!(m.dns_latency_ns, Some(2_500_000));
+        // A drop without L7 DNS must not invent an rcode.
+        let bare = flow_to_model(&tcp_flow("d", Verdict::Dropped, 53));
+        assert!(bare.dns_query.is_none());
+        assert!(bare.dns_rcode.is_none());
     }
 
     #[test]

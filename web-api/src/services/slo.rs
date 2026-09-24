@@ -136,6 +136,7 @@ mod tests {
             http_url: None,
             http_code: None,
             cluster: None,
+            ..Default::default()
         }
     }
 
