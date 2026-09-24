@@ -17,11 +17,8 @@ Paqtra is the free, Apache-2.0 community edition of **PacketWolf**, Zyvor's comm
 
 Paqtra is observe-first and **read-only toward the datapath**. It never writes Cilium BPF maps, never attaches, detaches or replaces Cilium (or Netra) programs, and is not a second CNI. See [What Paqtra never does](#what-paqtra-never-does).
 
-![Paqtra dashboard — Overview](docs/ux/00-overview.png)
-
 ## Contents
 
-- [Dashboard gallery](#dashboard-gallery)
 - [What it does](#what-it-does)
 - [What Paqtra never does](#what-paqtra-never-does)
 - [Paqtra vs PacketWolf](#paqtra-vs-packetwolf)
@@ -35,29 +32,8 @@ Paqtra is observe-first and **read-only toward the datapath**. It never writes C
 - [Deployment options](#deployment-options)
 - [Testing](#testing)
 - [Security](#security)
-- [Roadmap](#roadmap)
 - [Requirements](#requirements)
 - [License](#license)
-
-## Dashboard gallery
-
-Live UI captures from a lab cluster running Cilium and Hubble, not mockups.
-
-![Hubble flows with verdict coloring](docs/ux/01-flows.png)
-
-![Path investigation — why can't A reach B?](docs/ux/02-investigate.png)
-
-![Drop analytics by Cilium reason](docs/ux/03-drops.png)
-
-![Service map from observed flows](docs/ux/04-service-map.png)
-
-![Observed-traffic topology](docs/ux/05-topology.png)
-
-![Policies](docs/ux/06-policies.png)
-
-![eBPF map and program inventory (read-only)](docs/ux/07-ebpf.png)
-
-![Diagnostics](docs/ux/08-diagnostics.png)
 
 ## What it does
 
@@ -326,45 +302,6 @@ CI also exercises the chart, CLI and remote smoke scripts under `scripts/ci-*.sh
 - Secure temp files via `tempfile::NamedTempFile`
 
 Report vulnerabilities through [SECURITY.md](SECURITY.md). Deeper reading: [docs/client/security-whitepaper.html](docs/client/security-whitepaper.html).
-
-## Roadmap
-
-### v1.1 - Network Intelligence (Next)
-- [ ] **Live flow WebSocket in Flows page** - Stream flows in real-time instead of polling
-- [ ] **Policy diff viewer** - Side-by-side YAML comparison before/after updates
-- [ ] **Anomaly detection ML pipeline** - Real anomaly scoring from Hubble metrics (currently uses baseline stats)
-- [ ] **Read-only BPF attachment inventory, verifier/map pressure, and drift diagnostics** - Observe Cilium/Netra/other programs; never attach or hot-reload from the UI
-- [ ] **Path investigation (“Why can’t A reach B?”)** - Evidence-backed explain API + UI with observed/inferred/unavailable labels
-- [ ] **Evidence-backed policy preview** - Match proposed CNP against indexed flows; unsupported constructs → unknown
-- [ ] **Topology graph with D3 force layout** - Interactive node-link diagram with traffic volume edges
-
-### v1.2 - Multi-Cluster & Scale
-- [ ] **Multi-cluster dashboard** - Aggregate metrics across clusters in a single pane
-- [ ] **Cross-cluster policy sync UI** - Visual diff and push policies between clusters
-- [ ] **Pagination on all large data views** - Server-side pagination for Flows, Events, Endpoints
-- [ ] **gRPC Hubble integration** - Direct gRPC to Hubble relay instead of CLI fallback
-- [ ] **Prometheus metrics export** - Expose platform metrics for Grafana dashboards
-
-### v1.3 - Advanced Security
-- [ ] **Network policy recommendation engine** - Suggest least-privilege policies based on 30-day traffic history
-- [ ] **CVE-aware policy generation** - Cross-reference container CVEs with network exposure
-- [ ] **Compliance report PDF export** - Generate downloadable CIS/NIST/SOC2 compliance reports
-- [ ] **Secret detection in DNS** - Flag DNS queries to known bad domains or data exfiltration patterns
-- [ ] **mTLS enforcement dashboard** - Track which services have mutual TLS enabled vs plaintext
-
-### v1.4 - Operations & Automation
-- [ ] **Runbook automation** - Define remediation playbooks triggered by alerts
-- [ ] **GitOps policy sync** - Watch a Git repo for policy changes and auto-apply
-- [ ] **Slack/PagerDuty integration** - Send alerts to incident management tools
-- [ ] **Scheduled chaos experiments** - Cron-based chaos testing with result history
-- [ ] **Capacity planning** - Predict when IP pools, conntrack tables, or policy maps will fill
-
-### v1.5 - Platform
-- [ ] **Multi-tenancy** - Namespace-scoped views and RBAC per user/team
-- [ ] **Plugin system** - Custom dashboard widgets and API extensions
-- [ ] **OpenTelemetry integration** - Correlate network events with application traces
-- [ ] **Mobile-responsive dashboard** - Touch-friendly tables and navigation
-- [ ] **SSO / OIDC authentication** - Integrate with corporate identity providers
 
 ## Requirements
 
