@@ -1,154 +1,172 @@
 # Paqtra
 
-**Paqtra — trace every flow.**
-
-See where network traffic goes and why it is allowed or dropped. Full-stack observability and operations for Kubernetes networks powered by Cilium eBPF.
-
-[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
-[![React](https://img.shields.io/badge/react-19-blue.svg)](https://react.dev/)
-[![Tests](https://img.shields.io/badge/tests-961%20passing-brightgreen.svg)](#testing)
-[![API](https://img.shields.io/badge/API-75%2B%20endpoints-blueviolet.svg)](#web-api)
-[![Pages](https://img.shields.io/badge/dashboard-64%20pages-cyan.svg)](#web-dashboard)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![CI](https://github.com/zyvorai/paqtra/actions/workflows/ci.yml/badge.svg)](https://github.com/zyvorai/paqtra/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Cilium](https://img.shields.io/badge/cilium-1.14%2B-purple.svg)](https://cilium.io/)
+[![Changelog](https://img.shields.io/badge/changelog-Keep%20a%20Changelog-informational.svg)](CHANGELOG.md)
 
-It ships a **web dashboard** (64 pages), **REST API** (75+ endpoints), and **terminal TUI** (13 tabs) in a single deployable package. The dashboard includes real kernel eBPF data views powered by bpftool, exposing live conntrack tables, policy maps, IP cache, LB maps, and drop analytics.
+![Paqtra — Cilium-native network observability and operations for Kubernetes](docs/social/paqtra-share-card.png)
 
-📖 **[Quick start](QUICKSTART.md)** · **[Features](docs/features.md)** · **[Architecture](docs/architecture.md)** · **[Cilium brotherhood](docs/cilium-brotherhood.md)**
+**Cilium-native network observability and operations for Kubernetes — trace every flow.**
+
+📖 **[Read the full docs](https://zyvorai.github.io/paqtra/)** — quickstart, architecture, the Cilium boundary, and a product tour.
+
+See where network traffic goes and why it is allowed or dropped. Paqtra ships a web dashboard, a REST API and a terminal TUI in one deployable package. Flows come from Hubble; node-local enrichment may read the BPF map inventory. Enforcement stays with Cilium: policy changes go through `CiliumNetworkPolicy` (CNP), never through Paqtra's own datapath.
+
+Paqtra is the free, Apache-2.0 community edition of **PacketWolf**, Zyvor's commercial Cilium platform. See [Paqtra vs PacketWolf](#paqtra-vs-packetwolf) for what the paid edition adds.
+
+Paqtra is observe-first and **read-only toward the datapath**. It never writes Cilium BPF maps, never attaches, detaches or replaces Cilium (or Netra) programs, and is not a second CNI. See [What Paqtra never does](#what-paqtra-never-does).
+
+![Paqtra dashboard — Overview](docs/ux/00-overview.png)
 
 ## Contents
 
-- [What It Does](#what-it-does)
-- [Quick Start](#quick-start)
+- [Dashboard gallery](#dashboard-gallery)
+- [What it does](#what-it-does)
+- [What Paqtra never does](#what-paqtra-never-does)
+- [Paqtra vs PacketWolf](#paqtra-vs-packetwolf)
+- [Suite placement (Cilium, Paqtra, Netra)](#suite-placement-cilium-paqtra-netra)
 - [Architecture](#architecture)
-- [Web Dashboard](#web-dashboard)
+- [Web dashboard](#web-dashboard)
 - [REST API](#rest-api)
 - [Terminal TUI](#terminal-tui)
-- [Suite placement](#suite-placement)
 - [Repository](#repository)
+- [Quick start](#quick-start)
+- [Deployment options](#deployment-options)
 - [Testing](#testing)
-- [Deployment Options](#deployment-options)
 - [Security](#security)
 - [Roadmap](#roadmap)
 - [Requirements](#requirements)
 - [License](#license)
 
----
+## Dashboard gallery
 
-## What It Does
+Live UI captures from a lab cluster running Cilium and Hubble, not mockups.
+
+![Hubble flows with verdict coloring](docs/ux/01-flows.png)
+
+![Path investigation — why can't A reach B?](docs/ux/02-investigate.png)
+
+![Drop analytics by Cilium reason](docs/ux/03-drops.png)
+
+![Service map from observed flows](docs/ux/04-service-map.png)
+
+![Observed-traffic topology](docs/ux/05-topology.png)
+
+![Policies](docs/ux/06-policies.png)
+
+![eBPF map and program inventory (read-only)](docs/ux/07-ebpf.png)
+
+![Diagnostics](docs/ux/08-diagnostics.png)
+
+## What it does
 
 | Area | Capabilities |
 |------|-------------|
-| **Flow Monitoring** | Real-time Hubble flows, per-packet explanations, verdict coloring, WebSocket streaming |
-| **Policy Management** | Visual rule builder, YAML editor, ML-powered AutoPolicy, simulate before applying |
+| **Flow monitoring** | Real-time Hubble flows, per-packet explanations, verdict coloring, WebSocket streaming |
+| **Policy management** | Visual rule builder, YAML editor, ML-powered AutoPolicy, simulate before applying |
 | **Security** | Zero-trust policy generation, compliance audits (CIS/NIST/SOC2), anomaly detection |
-| **Root Cause** | Packet drop analysis, policy correlation, one-click fixes, network healer |
-| **Chaos Engineering** | Fault injection (loss/latency/DNS), circuit breaker, preset experiments |
-| **Canary Deployments** | Progressive traffic shifting, health gates, auto-promote/rollback |
-| **Multi-Cluster** | Cluster registration, health checks, policy sync, topology view |
+| **Root cause** | Packet drop analysis, policy correlation, one-click fixes, network healer |
+| **Chaos engineering** | Fault injection (loss/latency/DNS), circuit breaker, preset experiments |
+| **Canary deployments** | Progressive traffic shifting, health gates, auto-promote/rollback |
+| **Multi-cluster** | Cluster registration, health checks, policy sync, topology view |
 | **Networking** | Load balancer, ingress/egress, IPAM, encryption, BGP, ClusterMesh, WireGuard |
 | **Observability** | Service map, heatmap, DNS monitor, latency analysis, bandwidth, cost analytics |
 | **Operations** | Diagnostics, troubleshooter, packet capture, SLOs, alerts, audit log, incidents |
 
----
+The dashboard includes real kernel eBPF data views powered by `bpftool`: conntrack tables, policy maps, IP cache, LB maps and drop analytics. These are read-only; see [docs/ebpf-integration.md](docs/ebpf-integration.md).
 
-## Quick Start
+## What Paqtra never does
 
-### Prerequisites
+These are hard boundaries, enforced by review and repeated in [AGENTS.md](AGENTS.md):
 
-- Kubernetes cluster with Cilium installed
-- `kubectl` configured
-- Rust 1.75+ and Node.js 18+ (for building from source)
+- Never writes Cilium BPF maps or pins over `cil_*` programs.
+- Never attaches, detaches or replaces Cilium (or Netra) programs. Attachment inventory is **read-only** classification (`cil_*` / `netra_*` / other).
+- The agent observes, reports health and inventories. Policy apply goes through Cilium CRDs.
+- Does not collect application payloads, argv/cmdline, or Secret contents.
+- Does not introduce a second CNI or compete with Cilium's datapath.
+- Prefers Hubble for flows; uses maps for node-local enrichment only.
 
-### Install & Run
+Details: [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md) and [docs/ebpf-integration.md](docs/ebpf-integration.md).
 
-```bash
-git clone https://github.com/zyvorai/paqtra.git
-cd paqtra
+## Paqtra vs PacketWolf
 
-# Build everything
-cargo build --release                    # TUI binary (13MB)
-cd web-api && cargo build --release      # API server
-cd web-ui && npm ci && npm run build     # Web dashboard
+Paqtra is the free community edition. **PacketWolf** is the commercial platform on the same Cilium-native foundation, for teams that need to go from *seeing* the network to *securing and operating* it.
 
-# Deploy to remote K3s cluster
-./scripts/deploy-k3s-test.sh <host> <user> <password> --test
+| | **Paqtra** (Apache 2.0) | **PacketWolf** (commercial) |
+|---|---|---|
+| Flows, verdicts, service map, drops, root cause | ✅ | ✅ |
+| AutoPolicy, simulator, healer, chaos, canary, replay, multi-cluster | ✅ | ✅ |
+| Which **process** opened each socket (kernel attribution, syscall tracing, `netpred explain`) | — | ✅ |
+| Custom eBPF probes with honest attach status | — (read-only by design) | ✅ opt-in |
+| **Threat detection**: learned baselines, DGA and beaconing, attack graph, GeoThreat, Tetragon correlation | — | ✅ |
+| **Containment**: six profiles, gated auto-response with rollback, forensic pack | — | ✅ |
+| Zero-Trust Pilot, policy insight scorecard, blast radius, drift scan, KubePosture | — | ✅ |
+| **Ask Zyra** network copilot (58 read-only tools, gated write actions) | — | ✅ |
+| Compliance Lens (SOC 2, PCI-DSS, HIPAA), CVE posture, cost-aware egress, risk forecast | Basic audits (CIS, NIST, SOC 2) | ✅ |
+| Kubernetes operator and CRDs, `netpred` CLI | — | ✅ |
+| OIDC, SAML, LDAP sign-in, tenant views, SIEM export | JWT | ✅ |
+| KubeVirt VM console and VNC, in-browser shell, podman/docker visibility | — | ✅ |
+| Support | Community | ZyvorAI Labs |
 
-# Or run locally
-paqtra                               # Terminal UI
-paqtra --skip-bootstrap              # Skip auto-setup
-```
+The full breakdown is in [docs/paqtra-vs-packetwolf.md](docs/paqtra-vs-packetwolf.md). For a demo, a trial or pricing, contact [info@zyvor.dev](mailto:info@zyvor.dev) or visit [zyvor.dev](https://zyvor.dev).
 
-### Access
+## Suite placement (Cilium, Paqtra, Netra)
 
-| Interface | URL | Description |
-|-----------|-----|-------------|
-| **Web Dashboard** | `http://<host>:9191` | 64-page React dashboard |
-| **REST API** | `http://<host>:9191/api/v1/` | 75+ JSON endpoints |
-| **WebSocket** | `ws://<host>:9191/api/v1/ws/metrics` | Real-time metrics stream |
-| **Health Check** | `http://<host>:9191/health` | API health + subsystem status |
-| **Presentation** | `http://<host>:9191/presentation.html` | Client presentation (13 slides) |
+Paqtra is the **Cilium-native** observe/ops sibling. **Netra** is the independent eBPF sibling (own programs and maps under `/sys/fs/bpf/netra`, leased emergency control). They must not fight.
 
----
+| Role | Owns | Must not |
+|------|------|----------|
+| **PacketWolf** | Commercial superset of Paqtra: kernel attribution, threat detection, containment, operator | See its own license and docs |
+| **Cilium** | CNI, policy maps, identity, datapath (`cil_*`) | — |
+| **Paqtra** | Hubble/API/UI, install/status CLI, **read-only** map + program inventory | Write Cilium maps; attach/replace Cilium programs; second CNI |
+| **Netra** | Own programs under `/sys/fs/bpf/netra`, TCX/XDP, netlink | Modify Cilium maps |
+
+| Choose **Paqtra** when… | Choose **Netra** when… |
+| --- | --- |
+| Cilium is already the CNI of record | You need CNI-independent observe on cgroup v2 alone |
+| You want Hubble flows, path investigation and policy preview in one place | You want a leased emergency deny with automatic return to observe |
+| Policy changes should stay in Cilium CNPs | You need kernel drop attribution and packet capture without a CNI |
+
+Full rules: [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md). Agent instructions: [AGENTS.md](AGENTS.md).
 
 ## Architecture
 
 ```
 +------------------------------------------------------------------+
 |                    Web Dashboard (React 19 + TypeScript)           |
-|  64 Pages | 34 Components | WebSocket | Dark/Light Theme         |
+|  60+ pages | WebSocket | Dark/Light theme                          |
 +------------------------------------------------------------------+
 |                    REST API (Rust + Axum)                          |
-|  75+ Endpoints | JWT Auth | Redis Cache | Rate Limiting          |
+|  OpenAPI-documented | JWT auth | Redis cache | Rate limiting       |
 +------------------------------------------------------------------+
 |                    Terminal TUI (Rust + Ratatui)                   |
-|  13 Tabs | 32K Lines | Live Monitoring | Packet Explainer        |
+|  13 tabs | Live monitoring | Packet explainer                      |
 +------------------------------------------------------------------+
-|  eBPF Maps (Aya)  |  Hubble Relay  |  Kubernetes API  |  Redis   |
+|  eBPF maps (Aya, read-only) | Hubble Relay | Kubernetes API | Redis |
 +------------------------------------------------------------------+
-|  bpftool (real kernel data: 117 progs, 132 maps, 12K CT entries) |
+|  bpftool (read-only kernel data: conntrack, policy, IP cache, LB)  |
 +------------------------------------------------------------------+
-|              Cilium Agent  |  Linux Kernel eBPF Datapath          |
+|              Cilium agent  |  Linux kernel eBPF datapath           |
 +------------------------------------------------------------------+
 ```
 
----
+See [docs/architecture.md](docs/architecture.md) and [docs/web-architecture.md](docs/web-architecture.md).
 
-## Web Dashboard
+## Web dashboard
 
-64 pages organized in 7 navigation groups:
+60+ pages, grouped in the navigation as Overview · Investigate · Diagnostics · Security · Reports · Fleet. The routes and their descriptions live in [`web-ui/src/navConfig.ts`](web-ui/src/navConfig.ts).
 
-### Overview
-Dashboard, Flows, Topology, Endpoints, Nodes, Events, Metrics
+- **Investigate**: Path ("why can't A reach B?"), Flows, Endpoints, Identities, DNS, Capture, Topology, Service Map
+- **Diagnostics**: Health, latency, Drops, eBPF profiler and map explorer, Root Cause, Healer
+- **Security**: Policies, Policy Editor, Visual Rule Builder, Templates, Anomalies, Compliance, RBAC
+- **Intelligence**: AutoPolicy, Chaos Engineering, Canary Deployments
+- **Operations**: Alerts, Audit Log, SLOs, Incident Timeline, Settings
+- **Networking**: ClusterMesh, BGP, Load Balancer, Ingress/Egress Gateway, IPAM, Encryption, WireGuard
 
-### Observability
-Service Map, Heatmap, DNS Monitor, Latency Analysis, Bandwidth, Cost Analytics, Forecasting, Service Dependencies
+Every view has auto-refresh (30 s, with a toggle), a data-freshness indicator, CSV/JSON export, empty-state messaging and error handling with retry.
 
-### Security
-Policies, Policy Editor, Visual Rule Builder, Policy Templates, Anomaly Detection, Compliance, Security Dashboard, Pod Security, RBAC Visualizer, Cilium Status, Identities
-
-### Intelligence
-AutoPolicy Engine, Chaos Engineering, Canary Deployments, Network Healer, Root Cause Analysis, eBPF Profiler
-
-### Operations
-Cluster Health, Alerts, Audit Log, SLO Dashboard, Incident Timeline, Change Log, Diagnostics, Troubleshooter, Node Drain, Settings
-
-### eBPF Data
-Conntrack Table (12K+ entries), Policy Map, IP Cache (35 entries), LB Map, Drop Analytics (16 categories), eBPF Profiler with Map Explorer (117 programs, 132 maps)
-
-### Networking
-ClusterMesh, BGP Peering, Load Balancer, Ingress Gateway, Egress Gateway, IPAM, Encryption, WireGuard, Network Interfaces, Traffic Mirror, Packet Capture, Flow Exporter, Service Mesh, KubeProxy Replacement
-
-### Dashboard Features
-
-Every view includes:
-- **Auto-refresh** (30s interval with toggle)
-- **Data freshness indicator** (color aging: green/yellow/red)
-- **Export** (CSV/JSON download)
-- **Empty state** messaging
-- **Error handling** with retry
-
-### Policy Management
+### Policy management
 
 | Feature | How |
 |---------|-----|
@@ -156,16 +174,16 @@ Every view includes:
 | **Create (Visual)** | Form-based rule builder with live YAML preview |
 | **Create (Template)** | Pre-built policy templates library |
 | **Create (ML)** | AutoPolicy engine learns traffic and generates policies |
-| **Edit/Update** | Click pencil icon, modify, apply |
+| **Edit / update** | Click the pencil icon, modify, apply |
 | **Delete** | Single or bulk (multi-select checkboxes) |
 | **Simulate** | Dry-run impact analysis before applying |
 | **Validate** | Schema validation with error details |
 
----
+Policies are applied as `CiliumNetworkPolicy` objects through the Kubernetes API. Cilium enforces them.
 
 ## REST API
 
-75+ endpoints serving JSON over HTTP with JWT authentication, including 11 eBPF-specific endpoints querying real kernel data via bpftool.
+The REST API serves JSON over HTTP with JWT authentication and is documented in [docs/openapi.yaml](docs/openapi.yaml). It includes eBPF endpoints that read kernel data through `bpftool`.
 
 ```bash
 # Health check
@@ -183,13 +201,18 @@ curl -X POST http://localhost:9191/api/v1/modules/autopolicy/generate \
   -d '{"namespace":"default","observation_duration":"5m"}'
 ```
 
-See full endpoint list in [docs/web-architecture.md](docs/web-architecture.md) and [docs/client/api-reference.html](docs/client/api-reference.html).
+Full endpoint list: [docs/web-architecture.md](docs/web-architecture.md) and [docs/client/api-reference.html](docs/client/api-reference.html).
 
----
+| Interface | URL |
+|-----------|-----|
+| Web dashboard | `http://<host>:9191` |
+| REST API | `http://<host>:9191/api/v1/` |
+| WebSocket | `ws://<host>:9191/api/v1/ws/metrics` |
+| Health check | `http://<host>:9191/health` |
 
 ## Terminal TUI
 
-13 interactive tabs with vim-style navigation:
+13 interactive tabs with vim-style navigation: Flows, Connections, Endpoints, Policies, Metrics, Healer, AutoPolicy, RootCause, Simulator, Replay, Chaos, Canary and MultiCluster.
 
 | Key | Action |
 |-----|--------|
@@ -200,22 +223,6 @@ See full endpoint list in [docs/web-architecture.md](docs/web-architecture.md) a
 | `d` | Detect problems (Healer) |
 | `s` | Simulate / Stop |
 | `t` | Enter time-travel mode |
-
----
-
-## Suite placement
-
-Paqtra is the **Cilium-native** observe/ops sibling. **Netra** is the independent eBPF sibling (own maps under `/sys/fs/bpf/netra`). They must not fight.
-
-| Role | Owns | Must not |
-|------|------|----------|
-| **Cilium** | CNI, policy maps, identity, datapath (`cil_*`) | — |
-| **Paqtra** | Hubble/API/UI, install/status CLI, **read-only** map + program inventory | Write Cilium maps; attach/replace Cilium programs; second CNI |
-| **Netra** | Own programs under `/sys/fs/bpf/netra`, TCX/XDP, netlink | Modify Cilium maps |
-
-Full rules: [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md). Agent instructions: [AGENTS.md](AGENTS.md).
-
----
 
 ## Repository
 
@@ -229,6 +236,7 @@ Full rules: [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md). Agent inst
 | [docs/web-architecture.md](docs/web-architecture.md) | API + UI architecture |
 | [docs/web-deployment.md](docs/web-deployment.md) | Deploy options |
 | [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md) | Cilium / Netra boundaries |
+| [docs/paqtra-vs-packetwolf.md](docs/paqtra-vs-packetwolf.md) | Community vs commercial edition |
 | [docs/investigate.md](docs/investigate.md) | Path investigation + policy preview |
 | [docs/autopolicy.md](docs/autopolicy.md) | AutoPolicy guide |
 | [docs/simulator.md](docs/simulator.md) | Policy simulator |
@@ -239,6 +247,8 @@ Full rules: [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md). Agent inst
 | [docs/auto-install.md](docs/auto-install.md) | Auto-install |
 | [docs/autopolicy-quickstart.md](docs/autopolicy-quickstart.md) | AutoPolicy quick start |
 | [docs/client/](docs/client/) | Client HTML (API ref, security whitepaper, …) |
+| [docs/social/](docs/social/) | Social cards and how to rebuild them |
+| [website/](website/) | Docusaurus docs site (GitHub Pages) |
 | [SECURITY.md](SECURITY.md) | Vulnerability reporting |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Community standards |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
@@ -246,30 +256,39 @@ Full rules: [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md). Agent inst
 | [AGENTS.md](AGENTS.md) | Coding-agent boundaries |
 | [NOTICE](NOTICE) | Apache attribution |
 
----
+## Quick start
 
-## Testing
+Prerequisites: a Kubernetes cluster with Cilium and Hubble enabled, `kubectl` configured, and Rust and Node.js to build from source (see [Requirements](#requirements)).
 
 ```bash
-cargo test              # 961 tests (0 failures)
-cargo check             # 0 errors, 0 warnings
-cd web-api && cargo test  # API tests
-cd web-ui && npm test     # UI tests
+git clone https://github.com/zyvorai/paqtra.git
+cd paqtra
+
+# Build everything
+cargo build --release                    # TUI binary
+cd web-api && cargo build --release      # API server
+cd ../web-ui && npm ci && npm run build  # Web dashboard
+
+# Run the TUI
+./target/release/paqtra                  # or: paqtra --skip-bootstrap
+
+# Or deploy to a remote K3s cluster
+./scripts/deploy-k3s-test.sh <host> <user> <password> --test
 ```
 
----
+See [QUICKSTART.md](QUICKSTART.md) for the Docker Compose and manual web-stack paths.
 
-## Deployment Options
+## Deployment options
 
 | Method | Command |
 |--------|---------|
 | **Remote K3s** | `./scripts/deploy-k3s-test.sh <host> <user> <pass> --test` |
 | **Docker** | `docker compose -f deployments/docker-compose.yaml up` |
-| **Helm** | `helm install paqtra ./deployments/k8s/chart` |
+| **Helm** | `helm install paqtra ./chart` |
 | **Systemd** | `bash install.sh setup-services && bash install.sh start` |
 | **Binary** | `cargo build --release && cp target/release/paqtra /usr/local/bin/` |
 
-### Environment Variables
+### Environment variables
 
 ```bash
 PAQTRA_HOST=0.0.0.0        # API listen address
@@ -282,19 +301,29 @@ UI_DIST_DIR=/var/lib/paqtra/ui  # Path to built web UI
 AUTH_DISABLED=true         # Dev mode only (requires ENVIRONMENT=development|test)
 ```
 
----
+## Testing
+
+Run the same gates contributors use before a PR:
+
+```bash
+make check-all
+make test-all
+make build-all
+```
+
+CI also exercises the chart, CLI and remote smoke scripts under `scripts/ci-*.sh` when those jobs are enabled. Individual suites: `cargo test`, `cd web-api && cargo test`, `cd web-ui && npm test`.
 
 ## Security
 
-- JWT authentication (HS256, 32+ char secret)
+- JWT authentication (HS256, 32+ char secret); no default credentials, `ADMIN_PASSWORD` is required when auth is enabled
 - RBAC-ready middleware
 - Input validation on all kubectl-bound fields
-- CORS with explicit origin allowlist
+- CORS with an explicit origin allowlist
 - Rate limiting
 - Confirmation dialogs on destructive operations
 - Secure temp files via `tempfile::NamedTempFile`
 
----
+Report vulnerabilities through [SECURITY.md](SECURITY.md). Deeper reading: [docs/client/security-whitepaper.html](docs/client/security-whitepaper.html).
 
 ## Roadmap
 
@@ -335,8 +364,6 @@ AUTH_DISABLED=true         # Dev mode only (requires ENVIRONMENT=development|tes
 - [ ] **Mobile-responsive dashboard** - Touch-friendly tables and navigation
 - [ ] **SSO / OIDC authentication** - Integrate with corporate identity providers
 
----
-
 ## Requirements
 
 | Component | Minimum | Recommended |
@@ -346,16 +373,10 @@ AUTH_DISABLED=true         # Dev mode only (requires ENVIRONMENT=development|tes
 | Kubernetes | 1.25 | 1.28+ |
 | Cilium | 1.14 | 1.19+ |
 | Redis | 6.0 | 7.0+ |
-| API Memory | 2 MB | 10 MB |
-| TUI Binary | 13 MB | - |
-
----
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
-
----
+Licensed under the **[Apache License 2.0](LICENSE)**. Contributions are accepted under the same license. See [NOTICE](NOTICE).
 
 ## Acknowledgments
 

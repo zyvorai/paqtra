@@ -44,3 +44,7 @@ crash.log
 data/
 *.sqlite
 *.db
+
+# Docs site / screenshot tooling
+website/build/
+website/.docusaurus/
