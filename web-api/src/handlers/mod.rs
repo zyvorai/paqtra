@@ -18,6 +18,7 @@ pub mod notifications;
 pub mod nodes;
 pub mod policies;
 pub mod slo_incidents;
+pub mod users;
 
 use crate::{AppMetrics, AppState};
 use axum::{http::StatusCode, Json};

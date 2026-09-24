@@ -155,6 +155,17 @@ async fn main() -> anyhow::Result<()> {
         .route("/ready", get(handlers::health::readiness_check))
         // Login (no auth required)
         .route("/api/v1/auth/login", post(handlers::auth::login))
+        .route("/api/v1/auth/me", get(handlers::auth::me))
+        .route("/api/v1/auth/password", post(handlers::auth::change_password))
+        .route(
+            "/api/v1/users",
+            get(handlers::users::list_users).post(handlers::users::create_user),
+        )
+        .route(
+            "/api/v1/users/{username}",
+            axum::routing::put(handlers::users::update_user)
+                .delete(handlers::users::delete_user),
+        )
         // OpenAPI / Swagger UI (no auth required - handled by middleware)
         .route("/api-docs/openapi.json", get(openapi::openapi_json))
         .route("/swagger-ui", get(openapi::swagger_ui))
