@@ -1,6 +1,7 @@
 use super::{
     actor_from_claims, audit_log, check_admin, paginate_json, track_request, PaginationQuery,
 };
+use crate::services::healer;
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -148,110 +149,132 @@ pub async fn list_healer_problems(
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    // Detect real problems from Hubble dropped flows
     let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
-
     let mut problems = Vec::new();
-    let mut dns_drops: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
-    let mut policy_drops: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
-
-    for flow in &flows {
-        if flow.verdict != "DROPPED" {
-            continue;
-        }
-        let ns = if flow.source.namespace.is_empty() {
-            "unknown"
-        } else {
-            &flow.source.namespace
-        };
-
-        if flow.port == 53 {
-            dns_drops
-                .entry(ns.to_string())
-                .or_default()
-                .push(flow.source.pod.clone());
-        } else {
-            policy_drops
-                .entry(ns.to_string())
-                .or_default()
-                .push(flow.source.pod.clone());
-        }
+    for p in healer::detect(&flows) {
+        let applied = state
+            .cache
+            .get::<serde_json::Value>(&format!("{}{}", healer::FIXES_PREFIX, p.id))
+            .await
+            .ok()
+            .flatten()
+            .is_some();
+        problems.push(p.to_json(applied));
     }
-
-    let mut idx = 0;
-    for (ns, pods) in &dns_drops {
-        idx += 1;
-        let unique_pods: Vec<String> = {
-            let mut s: Vec<_> = pods
-                .iter()
-                .cloned()
-                .collect::<std::collections::HashSet<_>>()
-                .into_iter()
-                .collect();
-            s.truncate(5);
-            s
-        };
-        problems.push(serde_json::json!({
-            "id": format!("heal-dns-{:03}", idx),
-            "type": "dns_blocked",
-            "severity": "high",
-            "description": format!("DNS traffic (port 53) blocked for {} pods in namespace '{}'", pods.len(), ns),
-            "affected_pods": unique_pods,
-            "namespace": ns,
-            "status": "open",
-            "proposed_fix": format!("Add CiliumNetworkPolicy allowing UDP/TCP port 53 egress to kube-system in namespace '{}'", ns),
-        }));
-    }
-
-    for (ns, pods) in &policy_drops {
-        idx += 1;
-        let unique_pods: Vec<String> = {
-            let mut s: Vec<_> = pods
-                .iter()
-                .cloned()
-                .collect::<std::collections::HashSet<_>>()
-                .into_iter()
-                .collect();
-            s.truncate(5);
-            s
-        };
-        problems.push(serde_json::json!({
-            "id": format!("heal-pol-{:03}", idx),
-            "type": "policy_denial",
-            "severity": "medium",
-            "description": format!("{} dropped flows in namespace '{}'", pods.len(), ns),
-            "affected_pods": unique_pods,
-            "namespace": ns,
-            "status": "open",
-            "proposed_fix": format!("Review CiliumNetworkPolicies in namespace '{}' for missing allow rules", ns),
-        }));
-    }
-
     Json(paginate_json(problems, &params, "problems"))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ApplyFixQuery {
+    /// Return the manifest that would be applied without touching the cluster.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+fn healer_error(status: StatusCode, msg: &str) -> (StatusCode, Json<serde_json::Value>) {
+    (status, Json(serde_json::json!({ "error": msg })))
+}
+
+/// Apply the fix for a detected problem. The problem is re-detected from live
+/// flows and matched by its stable ID, so the fix always targets what the
+/// caller saw. Problems with no automated remediation are refused rather than
+/// reported as applied.
 pub async fn apply_healer_fix(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
+    Query(q): Query<ApplyFixQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    audit_log(
-        &state,
-        "healer.apply",
-        &id,
-        "",
-        "Healer fix applied",
-        &actor_from_claims(&claims),
-        "success",
-    )
-    .await;
-    Ok(Json(
-        serde_json::json!({ "id": id, "status": "applied", "message": "Fix applied successfully" }),
-    ))
+    let actor = actor_from_claims(&claims);
+
+    let flows = state.hubble.get_flows(500, None).await.unwrap_or_default();
+    let problem = healer::detect(&flows)
+        .into_iter()
+        .find(|p| p.id == id)
+        .ok_or_else(|| {
+            healer_error(
+                StatusCode::NOT_FOUND,
+                "Problem not found: it is no longer detected in live flows. Refresh the problem list.",
+            )
+        })?;
+
+    if !problem.auto_fixable() {
+        let msg = if problem.kind == healer::ProblemKind::DnsBlocked {
+            "Namespace could not be determined for these flows, so no fix was applied"
+        } else {
+            "No automated fix for this problem type: review the namespace's policies and add the allow rules you intend"
+        };
+        return Err(healer_error(StatusCode::UNPROCESSABLE_ENTITY, msg));
+    }
+
+    let request = crate::models::policy::CreatePolicyRequest {
+        name: healer::DNS_POLICY_NAME.to_string(),
+        namespace: problem.namespace.clone(),
+        spec: healer::dns_allow_spec(),
+    };
+
+    if q.dry_run {
+        return Ok(Json(serde_json::json!({
+            "id": id,
+            "status": "dry_run",
+            "policy": format!("{}/{}", request.namespace, request.name),
+            "spec": request.spec,
+        })));
+    }
+
+    match state.k8s.create_policy(&request).await {
+        Ok(_) => {
+            let policy = format!("{}/{}", request.namespace, request.name);
+            let record = serde_json::json!({
+                "id": id,
+                "policy": policy,
+                "applied_by": actor,
+                "applied_at": chrono::Utc::now().to_rfc3339(),
+            });
+            if let Err(e) = state
+                .cache
+                .set_persistent(&format!("{}{}", healer::FIXES_PREFIX, id), &record)
+                .await
+            {
+                tracing::warn!("Failed to record healer fix {}: {}", id, e);
+            }
+            audit_log(
+                &state,
+                "healer.apply",
+                &id,
+                "",
+                &format!("Applied CiliumNetworkPolicy {}", policy),
+                &actor,
+                "success",
+            )
+            .await;
+            Ok(Json(serde_json::json!({
+                "id": id,
+                "status": "applied",
+                "policy": policy,
+                "message": format!("CiliumNetworkPolicy {} applied", policy),
+            })))
+        }
+        Err(e) => {
+            tracing::warn!("Healer fix {} failed: {}", id, e);
+            audit_log(
+                &state,
+                "healer.apply",
+                &id,
+                "",
+                &format!("Fix failed: {}", e),
+                &actor,
+                "failure",
+            )
+            .await;
+            Err(healer_error(
+                StatusCode::BAD_GATEWAY,
+                &format!("Failed to apply fix: {}", e),
+            ))
+        }
+    }
 }
 
 // ── RootCause ───────────────────────────────────────────────

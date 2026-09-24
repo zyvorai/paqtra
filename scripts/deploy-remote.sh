@@ -529,7 +529,7 @@ main() {
     echo "✅    Kubernetes deployment complete: ${TARGET_HOST}"
     echo "✅ ══════════════════════════════════════════════════"
     echo ""
-    echo "  UI/API: kubectl -n paqtra get svc  (NodePorts)"
+    echo "  UI/API: kubectl -n paqtra get svc — NodePorts"
     echo "  Host:   ${TARGET_HOST}"
     echo ""
 }
