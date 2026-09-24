@@ -321,10 +321,6 @@ mount | grep /sys/fs/bpf
 nix = { version = "0.29", features = ["fs"] }
 byteorder = "1.5"
 serde_json = "1.0"
-
-[dependencies.libbpf-rs]
-version = "0.24"
-optional = true
 ```
 
 ---
@@ -660,20 +656,7 @@ CPU usage:
 
 ## Future Enhancements
 
-### v1.1 - Direct libbpf Integration
-
-```rust
-#[cfg(feature = "libbpf")]
-use libbpf_rs::Map;
-
-// Direct map iteration (fastest)
-let map = Map::from_pin("/sys/fs/bpf/tc/globals/cilium_ct4_global")?;
-for (key, value) in map.iter() {
-    // Process entry
-}
-```
-
-### v1.2 - Realtime Events
+### Realtime Events
 
 ```rust
 // Subscribe to BPF events
@@ -684,12 +667,7 @@ for event in events {
 }
 ```
 
-### v1.3 - Map Writing
-
-```rust
-// Update policy map (requires permissions)
-reader.update_policy_map(policy_decision)?;
-```
+Paqtra never writes BPF maps: map access is read-only. See the [Cilium boundary](cilium-brotherhood.md).
 
 ---
 
@@ -709,9 +687,7 @@ reader.update_policy_map(policy_decision)?;
 - Drop metrics parsing
 
 📋 **Planned**
-- libbpf-rs integration (optional feature)
 - Real-time event subscription
-- Map write operations
 - Performance optimizations
 
 ---

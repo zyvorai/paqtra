@@ -9,8 +9,10 @@ web dashboard, REST API, and terminal TUI. Flows prefer Hubble; node-local
 enrichment may read BPF map inventory. Enforcement stays with Cilium
 (`CiliumNetworkPolicy` / CNP).
 
-Suite sibling to **Netra** (independent eBPF observe + leased emergency
-control). Co-existence rules: `docs/cilium-brotherhood.md`.
+Free, Apache-2.0 community edition of **PacketWolf** (Zyvor's commercial Cilium
+platform; see `docs/paqtra-vs-packetwolf.md`). Suite sibling to **Netra**
+(independent eBPF observe + leased emergency control). Co-existence rules:
+`docs/cilium-brotherhood.md`.
 
 ## Hard boundaries
 
