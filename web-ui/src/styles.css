@@ -2182,6 +2182,34 @@ code {
   margin-top: 8px;
 }
 
+/* Every control in a Board toolbar gets a stacked label and the same look as the
+   text inputs. `.filters` styles inputs but not selects, and its labels have no
+   display, so a label around a select rendered inline beside an unstyled control
+   while inputs beside it were stacked. The gap replaces the input's margin-top. */
+.board-toolbar label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.board-toolbar input {
+  margin-top: 0;
+}
+.board-toolbar select {
+  display: block;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  /* Same type as the inputs beside it (they inherit the label's size), so the
+     row is one height. */
+  font-size: inherit;
+  line-height: 1.5;
+  /* A native select ignores line-height: match the input's line + padding + border. */
+  min-height: calc(1.5em + 24px);
+  min-width: 9rem;
+}
+
 .verdict-badge {
   font-size: 12px;
   font-weight: 600;
