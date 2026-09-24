@@ -121,7 +121,7 @@ Full rules: [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md). Agent inst
 |                    Terminal TUI (Rust + Ratatui)                   |
 |  13 tabs | Live monitoring | Packet explainer                      |
 +------------------------------------------------------------------+
-|  eBPF maps (Aya, read-only) | Hubble Relay | Kubernetes API | Redis |
+|  eBPF maps (read-only) | Hubble Relay | Kubernetes API | Redis |
 +------------------------------------------------------------------+
 |  bpftool (read-only kernel data: conntrack, policy, IP cache, LB)  |
 +------------------------------------------------------------------+
@@ -322,7 +322,6 @@ Licensed under the **[Apache License 2.0](LICENSE)**. Contributions are accepted
 - [Cilium](https://cilium.io/) - eBPF-based networking
 - [Hubble](https://docs.cilium.io/en/stable/observability/hubble/) - Network observability
 - [Ratatui](https://ratatui.rs/) - Terminal UI framework
-- [Aya](https://aya-rs.dev/) - Rust eBPF library
 - [Axum](https://github.com/tokio-rs/axum) - Rust web framework
 - [React](https://react.dev/) - UI framework
 - [Tailwind CSS](https://tailwindcss.com/) - Utility-first CSS

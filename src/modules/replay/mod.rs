@@ -429,6 +429,7 @@ mod tests {
     use super::*;
     use crate::ebpf::MockMapReader;
 
+    #[ignore = "needs a Kubernetes cluster"]
     #[tokio::test]
     async fn test_replay_engine_creation() {
         let config = ReplayConfig::default();
@@ -446,6 +447,7 @@ mod tests {
         assert!(filter.limit.is_none());
     }
 
+    #[ignore = "needs a Kubernetes cluster"]
     #[tokio::test]
     async fn test_start_recording() {
         let config = ReplayConfig::default();

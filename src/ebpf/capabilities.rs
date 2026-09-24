@@ -131,14 +131,6 @@ impl BpfCapabilities {
             .and_then(|v| v.split_whitespace().nth(2).map(String::from))
     }
 
-    /// Whether Aya-based operations should be attempted.
-    pub fn can_use_aya(&self) -> bool {
-        matches!(
-            self.capability,
-            BpfCapability::Full | BpfCapability::ReadOnly
-        )
-    }
-
     /// Whether program loading is possible.
     pub fn can_load_programs(&self) -> bool {
         self.capability == BpfCapability::Full
@@ -675,7 +667,7 @@ mod tests {
     }
 
     #[test]
-    fn test_can_use_aya() {
+    fn test_capability_gates() {
         let mut caps = BpfCapabilities {
             capability: BpfCapability::Full,
             bpf_fs_available: true,
@@ -683,24 +675,20 @@ mod tests {
             bpftool_available: true,
             kernel_version: None,
         };
-        assert!(caps.can_use_aya());
         assert!(caps.can_load_programs());
         assert!(caps.can_read_maps());
         assert!(caps.can_write_maps());
 
         caps.capability = BpfCapability::ReadOnly;
-        assert!(caps.can_use_aya());
         assert!(!caps.can_load_programs());
         assert!(caps.can_read_maps());
         assert!(!caps.can_write_maps());
 
         caps.capability = BpfCapability::BpftoolOnly;
-        assert!(!caps.can_use_aya());
         assert!(!caps.can_load_programs());
         assert!(caps.can_read_maps());
 
         caps.capability = BpfCapability::None;
-        assert!(!caps.can_use_aya());
         assert!(!caps.can_load_programs());
         assert!(!caps.can_read_maps());
         assert!(!caps.can_write_maps());

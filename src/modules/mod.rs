@@ -46,7 +46,6 @@ pub mod chaos;
 /// - canary: Progressive traffic shifting and canary deployments
 /// - multicluster: Multi-cluster orchestration
 /// - anomaly_detection: AI/ML-powered anomaly detection (experimental)
-/// - ebpf_advanced: Advanced eBPF capabilities (experimental)
 /// - security_compliance: Zero-trust and compliance frameworks (experimental)
 /// - dev_tools: Developer experience tools (experimental)
 pub mod healer;
@@ -59,5 +58,4 @@ pub mod simulator;
 // Experimental cutting-edge features
 pub mod anomaly_detection;
 pub mod dev_tools;
-pub mod ebpf_advanced;
 pub mod security_compliance;

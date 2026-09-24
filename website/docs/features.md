@@ -152,9 +152,6 @@ These modules are implemented as library APIs and can be integrated into custom 
 ### Anomaly Detection
 Multi-algorithm threat detection: Z-Score, Isolation Forest, LSTM, MACD, Seasonal Hybrid ESD.
 
-### Advanced eBPF
-Performance profiling (CPU/memory/network/syscall/lock), packet filtering, CO-RE support, flame graph generation.
-
 ### Security & Compliance
 Zero-trust policy generation, compliance framework auditing (PCI-DSS, SOC2, HIPAA, GDPR, ISO 27001, NIST).
 

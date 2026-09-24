@@ -598,6 +598,7 @@ mod tests {
     use super::*;
     use crate::ebpf::MockMapReader;
 
+    #[ignore = "needs a Kubernetes cluster"]
     #[tokio::test]
     async fn test_simulator_creation() {
         let config = SimulatorConfig::default();

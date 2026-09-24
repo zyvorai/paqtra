@@ -220,6 +220,7 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("must differ"));
     }
 
+    #[ignore = "needs a Kubernetes cluster"]
     #[tokio::test]
     async fn test_create_mirror_valid_config() {
         let mirror = EnvironmentMirror::new().unwrap();

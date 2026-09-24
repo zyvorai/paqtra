@@ -14,7 +14,6 @@ categories = ["command-line-utilities", "network-programming"]
 [features]
 default = []
 grpc = ["tonic", "tonic-prost", "prost", "tonic-prost-build"]
-aya-ebpf = ["aya", "aya-log"]
 
 [dependencies]
 # Kubernetes client
@@ -64,14 +63,8 @@ tempfile = "3.27"
 libc = "0.2"
 
 # BPF map access
-libbpf-rs = { version = "0.27", optional = true }
 nix = { version = "0.31", features = ["fs"] }
 byteorder = "1.5"
-
-# Aya eBPF (optional, feature-gated)
-aya = { version = "0.14", optional = true }
-aya-log = { version = "0.3", optional = true }
-bytes = "1.12"
 
 [build-dependencies]
 tonic-prost-build = { version = "0.14", optional = true }

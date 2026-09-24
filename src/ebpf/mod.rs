@@ -10,9 +10,6 @@
 use anyhow::Result;
 
 pub mod attachments;
-pub mod aya_events;
-pub mod aya_reader;
-pub mod aya_writer;
 pub mod bpf_parser;
 pub mod bpf_reader;
 pub mod bpf_syscall;
@@ -26,12 +23,6 @@ pub use attachments::{
     classify_owner, collect_inventory, drift_findings, feature_catalog, Attachment,
     AttachmentInventory, BpfOwner, DriftFinding, FeatureRow,
 };
-#[allow(unused_imports)]
-pub use aya_events::{BpfEvent, BpfEventData, BpfEventStream, BpfEventType};
-#[allow(unused_imports)]
-pub use aya_reader::AyaMapReader;
-#[allow(unused_imports)]
-pub use aya_writer::AyaMapWriter;
 pub use bpf_reader::CiliumMapReader;
 pub use bpf_syscall::IdentityInfo;
 #[allow(unused_imports)]
