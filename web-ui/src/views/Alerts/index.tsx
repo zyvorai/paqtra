@@ -60,6 +60,8 @@ const Alerts: React.FC = () => {
     finally { setToggling(null); }
   };
 
+  // Silence expiry is evaluated against the current time on every render.
+  // eslint-disable-next-line react-hooks/purity
   const now = Date.now();
   const activeSilences = silences.filter((s) => new Date(s.until).getTime() > now);
   const silencedUntil = (ruleId: string): string | null => {

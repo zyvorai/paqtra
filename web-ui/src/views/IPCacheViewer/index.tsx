@@ -57,9 +57,6 @@ const IPCacheViewer: React.FC = () => {
     return entries.filter((e) => (e.ip ?? e.cidr ?? '').toLowerCase().includes(q));
   }, [entries, search]);
 
-  // Reset to page 1 when search changes
-  useMemo(() => { setCurrentPage(1); }, [search]);
-
   const paginatedFiltered = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE;
     return filtered.slice(start, start + PAGE_SIZE);
@@ -98,7 +95,7 @@ const IPCacheViewer: React.FC = () => {
           type="text"
           placeholder="Search by IP or CIDR..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
           className="w-full max-w-sm px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500"
         />
       </div>
