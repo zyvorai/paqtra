@@ -85,10 +85,7 @@ pub struct InvestigateResult {
     pub created_at: String,
 }
 
-pub async fn investigate_path(
-    state: &AppState,
-    req: &InvestigatePathRequest,
-) -> InvestigateResult {
+pub async fn investigate_path(state: &AppState, req: &InvestigatePathRequest) -> InvestigateResult {
     let id = format!("inv-{}", Uuid::new_v4());
     let since = (Utc::now() - ChronoDuration::minutes(req.time_window_minutes.max(1))).to_rfc3339();
     let mut steps = Vec::new();
@@ -102,25 +99,11 @@ pub async fn investigate_path(
     let (src_pods, dst_eps) = if k8s_ok {
         let src = state
             .k8s
-            .kubectl_json(&[
-                "get",
-                "pods",
-                "-n",
-                &req.source.namespace,
-                "-o",
-                "json",
-            ])
+            .kubectl_json(&["get", "pods", "-n", &req.source.namespace, "-o", "json"])
             .await;
         let svc = state
             .k8s
-            .kubectl_json(&[
-                "get",
-                "svc",
-                "-n",
-                &req.destination.namespace,
-                "-o",
-                "json",
-            ])
+            .kubectl_json(&["get", "svc", "-n", &req.destination.namespace, "-o", "json"])
             .await;
         let eps = state
             .k8s
@@ -424,11 +407,8 @@ pub async fn investigate_path(
         "no_backend"
     } else if !dropped.is_empty() {
         "policy"
-    } else if !forwarded.is_empty() {
-        "unknown"
-    } else if !k8s_ok && path_flows.is_empty() {
-        "unknown"
     } else {
+        // Forwarded flows, no k8s data, or nothing observed: no root cause to name.
         "unknown"
     };
 
@@ -446,9 +426,8 @@ pub async fn investigate_path(
             }
         }
         "dns" => {
-            next_actions.push(
-                "Allow DNS egress (UDP/TCP 53) to kube-dns / node-local-dns via CNP.".into(),
-            );
+            next_actions
+                .push("Allow DNS egress (UDP/TCP 53) to kube-dns / node-local-dns via CNP.".into());
         }
         "no_backend" => {
             next_actions.push(
@@ -457,14 +436,12 @@ pub async fn investigate_path(
         }
         _ => {
             next_actions.push(
-                "Widen the time window or confirm Hubble ingest is healthy, then re-run."
-                    .into(),
+                "Widen the time window or confirm Hubble ingest is healthy, then re-run.".into(),
             );
         }
     }
     next_actions.push(
-        "Enforcement stays in Cilium CRDs — Paqtra will not attach or rewrite BPF programs."
-            .into(),
+        "Enforcement stays in Cilium CRDs — Paqtra will not attach or rewrite BPF programs.".into(),
     );
 
     // Persist bundle snapshot in cache
@@ -724,8 +701,6 @@ pub async fn preview_policy(
 
     let confidence = if !unsupported.is_empty() {
         Confidence::Unavailable
-    } else if !recent.is_empty() && k8s_ok {
-        Confidence::Inferred
     } else if k8s_ok {
         Confidence::Inferred
     } else {
@@ -824,7 +799,9 @@ fn collect_ports(spec: &Value) -> Vec<u16> {
                                     .get("port")
                                     .and_then(|x| x.as_str())
                                     .and_then(|s| s.parse().ok())
-                                    .or_else(|| p.get("port").and_then(|x| x.as_u64()).map(|n| n as u16))
+                                    .or_else(|| {
+                                        p.get("port").and_then(|x| x.as_u64()).map(|n| n as u16)
+                                    })
                                 {
                                     ports.push(n);
                                 }
@@ -857,7 +834,10 @@ mod tests {
             "endpointSelector": {"matchLabels": {"app": "web"}},
             "ingress": [{"toPorts": [{"ports": [{"port": "443", "protocol": "TCP"}]}]}]
         });
-        assert_eq!(endpoint_selector_labels(&spec), vec![("app".into(), "web".into())]);
+        assert_eq!(
+            endpoint_selector_labels(&spec),
+            vec![("app".into(), "web".into())]
+        );
         assert_eq!(collect_ports(&spec), vec![443]);
     }
 }

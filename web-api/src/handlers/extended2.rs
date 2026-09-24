@@ -64,11 +64,26 @@ pub async fn host_info(
     // Parse disk usage from df
     let df_output = K8sService::run_cmd("sh", &["-c", "df -B1 / | tail -1"]).await;
     let df_parts: Vec<&str> = df_output.split_whitespace().collect();
-    let disk_total_gb = df_parts.get(1).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0) / 1_073_741_824.0;
-    let disk_used_gb = df_parts.get(2).and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.0) / 1_073_741_824.0;
+    let disk_total_gb = df_parts
+        .get(1)
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.0)
+        / 1_073_741_824.0;
+    let disk_used_gb = df_parts
+        .get(2)
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.0)
+        / 1_073_741_824.0;
 
     // CPU model
-    let cpu_model = K8sService::run_cmd("sh", &["-c", "grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs"]).await;
+    let cpu_model = K8sService::run_cmd(
+        "sh",
+        &[
+            "-c",
+            "grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs",
+        ],
+    )
+    .await;
 
     // CPU usage from /proc/stat (1-second sample)
     let cpu_usage_str = K8sService::run_cmd("sh", &["-c",
@@ -79,28 +94,42 @@ pub async fn host_info(
     let cpu_usage: f64 = cpu_usage_str.trim().parse().unwrap_or(0.0);
 
     // Network interfaces
-    let ip_output = K8sService::run_cmd("sh", &["-c",
-        "ip -j addr show 2>/dev/null || echo '[]'"
-    ]).await;
-    let net_interfaces: Vec<serde_json::Value> = serde_json::from_str::<Vec<serde_json::Value>>(&ip_output)
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|iface| {
-            let name = iface.get("ifname")?.as_str()?.to_string();
-            let state = iface.get("operstate").and_then(|v| v.as_str()).unwrap_or("unknown").to_lowercase();
-            let mac = iface.get("address").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let ip = iface.get("addr_info").and_then(|v| v.as_array())
-                .and_then(|arr| arr.iter().find(|a| a.get("family").and_then(|f| f.as_str()) == Some("inet")))
-                .and_then(|a| a.get("local").and_then(|v| v.as_str()))
-                .unwrap_or("").to_string();
-            Some(serde_json::json!({
-                "name": name,
-                "status": if state == "up" { "up" } else { "down" },
-                "ip": ip,
-                "mac": mac,
-            }))
-        })
-        .collect();
+    let ip_output =
+        K8sService::run_cmd("sh", &["-c", "ip -j addr show 2>/dev/null || echo '[]'"]).await;
+    let net_interfaces: Vec<serde_json::Value> =
+        serde_json::from_str::<Vec<serde_json::Value>>(&ip_output)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|iface| {
+                let name = iface.get("ifname")?.as_str()?.to_string();
+                let state = iface
+                    .get("operstate")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_lowercase();
+                let mac = iface
+                    .get("address")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let ip = iface
+                    .get("addr_info")
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| {
+                        arr.iter()
+                            .find(|a| a.get("family").and_then(|f| f.as_str()) == Some("inet"))
+                    })
+                    .and_then(|a| a.get("local").and_then(|v| v.as_str()))
+                    .unwrap_or("")
+                    .to_string();
+                Some(serde_json::json!({
+                    "name": name,
+                    "status": if state == "up" { "up" } else { "down" },
+                    "ip": ip,
+                    "mac": mac,
+                }))
+            })
+            .collect();
 
     Ok(Json(serde_json::json!({
         "hostname": hostname,

@@ -1,8 +1,7 @@
 // SLO targets and incidents.
 
 use super::{
-    actor_from_claims, audit_log as emit_audit, paginate_json, track_request,
-    PaginationQuery,
+    actor_from_claims, audit_log as emit_audit, paginate_json, track_request, PaginationQuery,
 };
 use crate::services::incidents;
 use crate::services::notifier::is_valid_severity;
@@ -316,7 +315,7 @@ pub async fn ack_incident(
     })
     .await
     .ok_or_else(|| err(StatusCode::NOT_FOUND, "Incident not found"))?
-    .map_err(|r| transition_error(r))?;
+    .map_err(transition_error)?;
     emit_audit(
         &state,
         "incident.ack",
@@ -375,7 +374,7 @@ pub async fn resolve_incident(
     })
     .await
     .ok_or_else(|| err(StatusCode::NOT_FOUND, "Incident not found"))?
-    .map_err(|r| transition_error(r))?;
+    .map_err(transition_error)?;
     emit_audit(
         &state,
         "incident.resolve",
@@ -418,6 +417,6 @@ pub async fn add_incident_note(
     })
     .await
     .ok_or_else(|| err(StatusCode::NOT_FOUND, "Incident not found"))?
-    .map_err(|r| transition_error(r))?;
+    .map_err(transition_error)?;
     Ok(Json(incident))
 }

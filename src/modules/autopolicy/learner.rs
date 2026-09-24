@@ -102,7 +102,7 @@ impl TrafficLearner {
     /// Get top communicating pairs
     pub fn top_pairs(&self, limit: usize) -> Vec<&TrafficObservation> {
         let mut observations: Vec<&TrafficObservation> = self.observations.values().collect();
-        observations.sort_by(|a, b| b.count.cmp(&a.count));
+        observations.sort_by_key(|a| std::cmp::Reverse(a.count));
         observations.into_iter().take(limit).collect()
     }
 

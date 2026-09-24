@@ -68,7 +68,10 @@ async fn main() -> anyhow::Result<()> {
         Some(dir) => {
             let db_path = std::path::Path::new(dir).join("paqtra.db");
             let cache = CacheService::with_persistence(&db_path)?;
-            tracing::info!("CacheService initialized with SQLite persistence at {}", db_path.display());
+            tracing::info!(
+                "CacheService initialized with SQLite persistence at {}",
+                db_path.display()
+            );
             cache
         }
         None => {
@@ -89,7 +92,9 @@ async fn main() -> anyhow::Result<()> {
             Arc::new(store)
         }
         None => {
-            tracing::warn!("FlowStore running in-memory (set PAQTRA_DATA_DIR for durable flow index)");
+            tracing::warn!(
+                "FlowStore running in-memory (set PAQTRA_DATA_DIR for durable flow index)"
+            );
             Arc::new(services::flow_store::FlowStore::memory_only())
         }
     };
@@ -156,15 +161,17 @@ async fn main() -> anyhow::Result<()> {
         // Login (no auth required)
         .route("/api/v1/auth/login", post(handlers::auth::login))
         .route("/api/v1/auth/me", get(handlers::auth::me))
-        .route("/api/v1/auth/password", post(handlers::auth::change_password))
+        .route(
+            "/api/v1/auth/password",
+            post(handlers::auth::change_password),
+        )
         .route(
             "/api/v1/users",
             get(handlers::users::list_users).post(handlers::users::create_user),
         )
         .route(
             "/api/v1/users/{username}",
-            axum::routing::put(handlers::users::update_user)
-                .delete(handlers::users::delete_user),
+            axum::routing::put(handlers::users::update_user).delete(handlers::users::delete_user),
         )
         // OpenAPI / Swagger UI (no auth required - handled by middleware)
         .route("/api-docs/openapi.json", get(openapi::openapi_json))
@@ -683,11 +690,7 @@ async fn main() -> anyhow::Result<()> {
             server_config.alpn_protocols = vec![b"http/1.1".to_vec()];
             axum_server::tls_rustls::RustlsConfig::from_config(Arc::new(server_config))
         };
-        tracing::info!(
-            "TLS configured (cert={}, key={})",
-            cert_path,
-            key_path
-        );
+        tracing::info!("TLS configured (cert={}, key={})", cert_path, key_path);
 
         // HTTP redirect router — sends all requests to HTTPS
         let redirect_tls_port = tls_port;
@@ -708,7 +711,9 @@ async fn main() -> anyhow::Result<()> {
 
         let http_listener = tokio::net::TcpListener::bind(http_addr).await?;
         tracing::info!(
-            "HTTP redirect server listening on {} -> https://...:{}", http_addr, tls_port
+            "HTTP redirect server listening on {} -> https://...:{}",
+            http_addr,
+            tls_port
         );
 
         tracing::info!("Starting Paqtra API server (HTTPS) on {}", tls_addr);

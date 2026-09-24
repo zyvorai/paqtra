@@ -217,6 +217,8 @@ pub async fn generate_autopolicy(
         // Confidence: ratio of flows backing this policy vs total observed flows,
         // capped at 0.99 and floored at 0.1
         let raw_confidence = pair_flow_count as f64 / total_flows as f64;
+        // Not `clamp`: `min`/`max` map a NaN ratio to 0.99, `clamp` would return NaN.
+        #[allow(clippy::manual_clamp)]
         let confidence = raw_confidence.min(0.99).max(0.1);
 
         let policy_name = format!("allow-ingress-to-{}-{}", dst_app, namespace);

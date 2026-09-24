@@ -412,7 +412,13 @@ pub async fn rollback_change(
         return Err(change_error(status, block.message()));
     }
 
-    let field = |k: &str| change.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let field = |k: &str| {
+        change
+            .get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
     let (namespace, name) = (field("namespace"), field("resource"));
     let target = format!("deployment/{}", name);
 
@@ -480,7 +486,9 @@ pub async fn rollback_change(
 
 // ── Node Drain ────────────────────────────────────────────
 
-pub async fn node_drain_status(State(state): State<Arc<AppState>>) -> Json<serde_json::value::Value> {
+pub async fn node_drain_status(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::value::Value> {
     track_request(&state, |_| {}).await;
 
     let data = state
@@ -492,8 +500,12 @@ pub async fn node_drain_status(State(state): State<Arc<AppState>>) -> Json<serde
     let pods_data = state
         .k8s
         .kubectl_json(&[
-            "get", "pods", "--all-namespaces",
-            "--field-selector=status.phase=Running", "-o", "json",
+            "get",
+            "pods",
+            "--all-namespaces",
+            "--field-selector=status.phase=Running",
+            "-o",
+            "json",
         ])
         .await;
 
@@ -553,10 +565,7 @@ pub async fn node_drain_status(State(state): State<Arc<AppState>>) -> Json<serde
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
 
-                    let pods_remaining = node_pod_counts
-                        .get(name)
-                        .copied()
-                        .unwrap_or(0);
+                    let pods_remaining = node_pod_counts.get(name).copied().unwrap_or(0);
 
                     serde_json::json!({
                         "node": name,
@@ -644,10 +653,8 @@ pub async fn pod_security(State(state): State<Arc<AppState>>) -> Json<serde_json
         .await;
 
     // Build per-namespace pod stats: (total, compliant, violations)
-    let mut ns_total: std::collections::HashMap<String, u64> =
-        std::collections::HashMap::new();
-    let mut ns_compliant: std::collections::HashMap<String, u64> =
-        std::collections::HashMap::new();
+    let mut ns_total: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+    let mut ns_compliant: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
     let mut ns_violations: std::collections::HashMap<String, Vec<serde_json::Value>> =
         std::collections::HashMap::new();
 
@@ -696,14 +703,10 @@ pub async fn pod_security(State(state): State<Arc<AppState>>) -> Json<serde_json
                     {
                         is_privileged = true;
                     }
-                    if !runs_as_root {
-                        if sc
-                            .and_then(|s| s.get("runAsUser"))
-                            .and_then(|v| v.as_u64())
-                            == Some(0)
-                        {
-                            runs_as_root = true;
-                        }
+                    if !runs_as_root
+                        && sc.and_then(|s| s.get("runAsUser")).and_then(|v| v.as_u64()) == Some(0)
+                    {
+                        runs_as_root = true;
                     }
                 }
             }
@@ -759,10 +762,7 @@ pub async fn pod_security(State(state): State<Arc<AppState>>) -> Json<serde_json
 
                     let total_pods = ns_total.get(name).copied().unwrap_or(0);
                     let compliant_pods = ns_compliant.get(name).copied().unwrap_or(0);
-                    let violations = ns_violations
-                        .get(name)
-                        .cloned()
-                        .unwrap_or_default();
+                    let violations = ns_violations.get(name).cloned().unwrap_or_default();
 
                     Some(serde_json::json!({
                         "namespace": name,
@@ -959,9 +959,18 @@ pub async fn kpr_status(State(state): State<Arc<AppState>>) -> Json<serde_json::
     let nat_output = K8sService::run_cmd(
         "kubectl",
         &[
-            "exec", "-n", "kube-system", "-l", "k8s-app=cilium",
-            "-c", "cilium-agent", "--",
-            "cilium", "bpf", "nat", "list",
+            "exec",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=cilium",
+            "-c",
+            "cilium-agent",
+            "--",
+            "cilium",
+            "bpf",
+            "nat",
+            "list",
         ],
     )
     .await;
@@ -969,22 +978,40 @@ pub async fn kpr_status(State(state): State<Arc<AppState>>) -> Json<serde_json::
         0
     } else {
         // Each non-empty line is an entry; skip the header line
-        nat_output.lines().skip(1).filter(|l| !l.trim().is_empty()).count()
+        nat_output
+            .lines()
+            .skip(1)
+            .filter(|l| !l.trim().is_empty())
+            .count()
     };
 
     let ct_output = K8sService::run_cmd(
         "kubectl",
         &[
-            "exec", "-n", "kube-system", "-l", "k8s-app=cilium",
-            "-c", "cilium-agent", "--",
-            "cilium", "bpf", "ct", "list", "global",
+            "exec",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=cilium",
+            "-c",
+            "cilium-agent",
+            "--",
+            "cilium",
+            "bpf",
+            "ct",
+            "list",
+            "global",
         ],
     )
     .await;
     let ct_entries: usize = if ct_output.is_empty() {
         0
     } else {
-        ct_output.lines().skip(1).filter(|l| !l.trim().is_empty()).count()
+        ct_output
+            .lines()
+            .skip(1)
+            .filter(|l| !l.trim().is_empty())
+            .count()
     };
 
     Json(serde_json::json!({

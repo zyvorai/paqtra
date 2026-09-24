@@ -13,7 +13,7 @@ categories = ["command-line-utilities", "network-programming"]
 
 [features]
 default = []
-grpc = ["tonic", "prost", "tonic-build"]
+grpc = ["tonic", "tonic-prost", "prost", "tonic-prost-build"]
 aya-ebpf = ["aya", "aya-log"]
 
 [dependencies]
@@ -45,6 +45,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # gRPC for Hubble (optional)
 tonic = { version = "0.14", optional = true }
 prost = { version = "0.14", optional = true }
+tonic-prost = { version = "0.14", optional = true }
 
 # CLI
 clap = { version = "4.6", features = ["derive"] }
@@ -73,4 +74,4 @@ aya-log = { version = "0.3", optional = true }
 bytes = "1.12"
 
 [build-dependencies]
-tonic-build = { version = "0.14", optional = true }
+tonic-prost-build = { version = "0.14", optional = true }

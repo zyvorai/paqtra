@@ -278,11 +278,9 @@ impl SimulatorView {
             Impacted Services: {}",
             result.impact.total_flows,
             result.impact.blocked_flows,
-            if result.impact.total_flows > 0 {
-                (result.impact.blocked_flows * 100) / result.impact.total_flows
-            } else {
-                0
-            },
+            (result.impact.blocked_flows * 100)
+                .checked_div(result.impact.total_flows)
+                .unwrap_or(0),
             result.impact.allowed_flows,
             result.impact.changed_flows,
             result.impact.impacted_services.len(),

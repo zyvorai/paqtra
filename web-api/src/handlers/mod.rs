@@ -15,8 +15,8 @@ pub mod health;
 pub mod investigate;
 pub mod metrics;
 pub mod modules;
-pub mod notifications;
 pub mod nodes;
+pub mod notifications;
 pub mod policies;
 pub mod slo_incidents;
 pub mod users;
@@ -120,6 +120,7 @@ pub async fn audit_log(
 }
 
 /// Like [`audit_log`] but accepts an optional correlation `request_id`.
+#[allow(clippy::too_many_arguments)]
 pub async fn audit_log_with_request_id(
     state: &AppState,
     action: &str,

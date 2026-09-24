@@ -117,6 +117,8 @@ async fn authenticate(
     }
 }
 
+// Axum handlers return the `Response` itself as the error, so the large `Err` is by design.
+#[allow(clippy::result_large_err)]
 pub async fn login(
     State(state): State<Arc<AppState>>,
     conn: Option<Extension<ConnectInfo<SocketAddr>>>,
@@ -221,6 +223,7 @@ pub struct ChangePasswordRequest {
 
 /// Change the caller's own password. Tokens issued before the change stop
 /// working, so the caller must sign in again.
+#[allow(clippy::result_large_err)]
 pub async fn change_password(
     State(state): State<Arc<AppState>>,
     conn: Option<Extension<ConnectInfo<SocketAddr>>>,

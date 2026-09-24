@@ -189,7 +189,7 @@ pub async fn open_for_alert(
                 &format!("Alert still firing: {message}"),
                 ALERT_ACTOR,
             );
-            save(&state, &existing).await
+            save(state, &existing).await
         }
         None => {
             save(

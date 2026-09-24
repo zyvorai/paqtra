@@ -678,10 +678,9 @@ pub async fn list_dependencies(
     }
 
     // Collect L7 HTTP info per dependency key
-    let mut l7_map: std::collections::HashMap<
-        (String, String, u16),
-        (Option<String>, Option<String>),
-    > = std::collections::HashMap::new();
+    type DepKey = (String, String, u16);
+    type L7Info = (Option<String>, Option<String>);
+    let mut l7_map: std::collections::HashMap<DepKey, L7Info> = std::collections::HashMap::new();
     for flow in &flows {
         let src = if !flow.source.pod.is_empty() {
             flow.source
