@@ -3,6 +3,8 @@ title: Paqtra vs PacketWolf
 sidebar_position: 5
 ---
 
+![Paqtra vs PacketWolf](/paqtra-vs-packetwolf-card.jpg)
+
 **Paqtra** is the free, Apache-2.0 community edition. **PacketWolf** is the commercial platform built on the same Cilium-native foundation. Paqtra shows you what your Cilium cluster is doing and why. PacketWolf goes further: it attributes traffic to processes, detects threats, contains them, and operates policy for you.
 
 Both target Kubernetes clusters running Cilium 1.14+ with Hubble enabled. Paqtra is read-only toward the datapath by design (see [cilium-brotherhood.md](core-concepts/cilium-brotherhood.md)). PacketWolf adds custom eBPF probes, an in-cluster operator and enforcement backends.
@@ -127,6 +129,6 @@ Some PacketWolf features are opt-in, and they are documented that way: custom eB
 
 ## Talk to us
 
-PacketWolf is licensed by ZyvorAI Labs. For a demo, a trial or pricing, contact **[info@zyvor.dev](mailto:info@zyvor.dev)** or visit **[zyvor.dev](https://zyvor.dev)**.
+PacketWolf is licensed by ZyvorAI Labs. For a demo, a trial or pricing, contact **[sales@zyvor.dev](mailto:sales@zyvor.dev)** or visit **[zyvor.dev](https://zyvor.dev)**.
 
 See also: [features.md](features.md) for what Paqtra ships today, and [cilium-brotherhood.md](core-concepts/cilium-brotherhood.md) for the boundaries Paqtra keeps.

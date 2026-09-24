@@ -91,6 +91,8 @@ Details: [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md) and [docs/ebpf
 
 ## Paqtra vs PacketWolf
 
+![Paqtra vs PacketWolf — what the commercial platform adds](docs/social/paqtra-vs-packetwolf-card.jpg)
+
 Paqtra is the free community edition. **PacketWolf** is the commercial platform on the same Cilium-native foundation, for teams that need to go from *seeing* the network to *securing and operating* it.
 
 | | **Paqtra** (Apache 2.0) | **PacketWolf** (commercial) |
@@ -109,7 +111,7 @@ Paqtra is the free community edition. **PacketWolf** is the commercial platform 
 | KubeVirt VM console and VNC, in-browser shell, podman/docker visibility | — | ✅ |
 | Support | Community | ZyvorAI Labs |
 
-The full breakdown is in [docs/paqtra-vs-packetwolf.md](docs/paqtra-vs-packetwolf.md). For a demo, a trial or pricing, contact [info@zyvor.dev](mailto:info@zyvor.dev) or visit [zyvor.dev](https://zyvor.dev).
+The full breakdown is in [docs/paqtra-vs-packetwolf.md](docs/paqtra-vs-packetwolf.md). For a demo, a trial or pricing, contact [sales@zyvor.dev](mailto:sales@zyvor.dev) or visit [zyvor.dev](https://zyvor.dev).
 
 ## Suite placement (Cilium, Paqtra, Netra)
 
