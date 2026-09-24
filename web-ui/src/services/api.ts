@@ -821,15 +821,20 @@ export interface ExportConfig {
 }
 
 export interface SLOTarget {
+  id?: string;
   name: string;
   service: string;
   metric: string;
   target: number;
-  current: number;
-  budget_remaining: number;
+  /** Null when the latest flow sample has nothing in scope (status `no_data`). */
+  current: number | null;
+  /** Minutes, projected from the sample at the current error rate; null when `current` is. */
+  budget_remaining: number | null;
   budget_total: number;
   window: string;
   status: string;
+  sample_size?: number;
+  measurement?: string;
   [key: string]: unknown;
 }
 
@@ -1071,6 +1076,8 @@ export const deleteExportConfig = (id: string) => api.delete(`/flows/exports/${i
 
 // SLOs
 export const fetchSLOs = () => api.get<{ slos: SLOTarget[] }>('/slo/targets');
+export const createSLO = (body: { name: string; target: number; window?: string; namespace?: string }) => api.post('/slo/targets', body);
+export const deleteSLO = (id: string) => api.delete(`/slo/targets/${id}`);
 
 // Incidents
 export const fetchIncidents = () => api.get<{ incidents: Incident[] }>('/incidents');
