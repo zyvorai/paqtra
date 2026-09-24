@@ -6,6 +6,7 @@
 use crate::models::policy::{CreatePolicyRequest, Policy};
 use anyhow::{Context, Result};
 use regex::Regex;
+use std::path::Path;
 use std::sync::LazyLock;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
@@ -13,6 +14,9 @@ use tokio::time::{timeout, Duration};
 /// Kubernetes resource name validation: RFC 1123 DNS subdomain
 static K8S_NAME_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-z0-9][a-z0-9.\-]{0,252}$").unwrap());
+
+const SA_TOKEN: &str = "/var/run/secrets/kubernetes.io/serviceaccount/token";
+const SA_CA: &str = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt";
 
 /// Validate a Kubernetes resource name
 fn validate_k8s_name(name: &str, field: &str) -> Result<()> {
@@ -33,6 +37,26 @@ fn validate_k8s_name(name: &str, field: &str) -> Result<()> {
     Ok(())
 }
 
+/// In-cluster API server URL + credentials from the mounted service account.
+/// kubectl does not reliably auto-detect this when no kubeconfig exists (it
+/// falls back to localhost:8080), so we pass flags explicitly.
+fn incluster_api() -> Option<(String, String)> {
+    let host = std::env::var("KUBERNETES_SERVICE_HOST").ok()?;
+    let port = std::env::var("KUBERNETES_SERVICE_PORT").ok()?;
+    if host.is_empty() || port.is_empty() {
+        return None;
+    }
+    if !Path::new(SA_TOKEN).exists() || !Path::new(SA_CA).exists() {
+        return None;
+    }
+    let token = std::fs::read_to_string(SA_TOKEN).ok()?;
+    let token = token.trim().to_string();
+    if token.is_empty() {
+        return None;
+    }
+    Some((format!("https://{host}:{port}"), token))
+}
+
 pub struct K8sService {
     context: Option<String>,
 }
@@ -46,22 +70,36 @@ impl K8sService {
         self.context.as_deref()
     }
 
-    /// Build a kubectl command with the configured context.
+    /// Build a kubectl command with in-cluster SA auth (preferred) or `--context`.
     fn kubectl(&self, args: &[&str]) -> Command {
         let mut cmd = Command::new("kubectl");
+        // Writable cache for readOnlyRootFilesystem pods (chart mounts emptyDir on /tmp).
+        cmd.env("KUBECACHEDIR", "/tmp/kubectl-cache");
+
+        if let Some((server, token)) = incluster_api() {
+            cmd.arg(format!("--server={server}"));
+            cmd.arg(format!("--certificate-authority={SA_CA}"));
+            cmd.arg(format!("--token={token}"));
+        } else if let Some(ctx) = &self.context {
+            cmd.arg("--context").arg(ctx);
+        }
+
         for arg in args {
             cmd.arg(arg);
-        }
-        if let Some(ctx) = &self.context {
-            cmd.arg("--context").arg(ctx);
         }
         cmd
     }
 
-    /// Check if Kubernetes API is reachable
+    /// Check if Kubernetes API is reachable via a lightweight authenticated call.
     pub async fn is_healthy(&self) -> bool {
-        let mut cmd = self.kubectl(&["cluster-info", "--request-timeout=2s"]);
-        match timeout(Duration::from_secs(30), cmd.output()).await {
+        // Prefer /readyz; fall back to listing namespaces (works with narrow RBAC).
+        let mut cmd = self.kubectl(&["get", "--raw=/readyz", "--request-timeout=3s"]);
+        match timeout(Duration::from_secs(8), cmd.output()).await {
+            Ok(Ok(out)) if out.status.success() => return true,
+            _ => {}
+        }
+        let mut cmd = self.kubectl(&["get", "ns", "--request-timeout=3s"]);
+        match timeout(Duration::from_secs(8), cmd.output()).await {
             Ok(Ok(out)) => out.status.success(),
             _ => false,
         }

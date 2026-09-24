@@ -21,7 +21,7 @@ RUN cargo build --release
 # Stage 2: Runtime (same Debian release as builder)
 FROM docker.io/library/debian:bookworm-slim
 
-# Runtime deps + kubectl (API shells out to kubectl using in-cluster SA)
+# Runtime deps + kubectl + hubble CLI (API shells out for K8s + flow observe)
 ARG TARGETARCH=amd64
 RUN apt-get update && apt-get install -y \
     ca-certificates \
@@ -32,6 +32,12 @@ RUN apt-get update && apt-get install -y \
     && curl -fsSL -o /usr/local/bin/kubectl \
       "https://dl.k8s.io/release/${KVER}/bin/linux/${TARGETARCH}/kubectl" \
     && chmod +x /usr/local/bin/kubectl \
+    && HUBBLE_VERSION=$(curl -fsSL https://raw.githubusercontent.com/cilium/hubble/master/stable.txt) \
+    && curl -fsSL -o /tmp/hubble.tgz \
+      "https://github.com/cilium/hubble/releases/download/${HUBBLE_VERSION}/hubble-linux-${TARGETARCH}.tar.gz" \
+    && tar -xzf /tmp/hubble.tgz -C /usr/local/bin hubble \
+    && chmod +x /usr/local/bin/hubble \
+    && rm -f /tmp/hubble.tgz \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user

@@ -24,7 +24,9 @@ api:
       memory: "512Mi"
       cpu: "500m"
   env:
-    hubbleAddress: "hubble-relay.kube-system.svc.cluster.local:4245"
+    # Cilium's hubble-relay Service maps port 80 → container 4245 (gRPC).
+    # Use the Service port in-cluster; use localhost:4245 with port-forward locally.
+    hubbleAddress: "hubble-relay.kube-system.svc.cluster.local:80"
     jwtSecret: ""  # auto-generated if empty
     rustLog: "info"
   probes:
