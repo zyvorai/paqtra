@@ -26,7 +26,11 @@ const STATUS_BADGE: Record<string, string> = {
   open: 'bg-red-500/15 text-red-400 border-red-500/30',
   investigating: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
   fixed: 'bg-green-500/15 text-green-400 border-green-500/30',
+  fix_applied: 'bg-green-500/15 text-green-400 border-green-500/30',
 };
+
+const errorMessage = (err: unknown, fallback: string): string =>
+  isAxiosError(err) ? err.response?.data?.error ?? err.response?.data?.message ?? err.message : fallback;
 
 const Healer: React.FC = () => {
   usePageTitle('Network Healer');
@@ -39,15 +43,15 @@ const Healer: React.FC = () => {
   const fetchData = useCallback(async () => {
     setError(null);
     try { setProblems((await fetchHealerProblems()).data.problems ?? []); }
-    catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
+    catch (err) { setError(errorMessage(err, 'Failed')); }
   }, []);
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
   const handleFix = async (id: string) => {
     setFixing(id); setError(null);
-    try { await applyHealerFix(id); setSuccess('Fix applied'); manualRefresh(); }
-    catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Fix failed'); }
+    try { const res = await applyHealerFix(id); setSuccess(res.data?.message ?? 'Fix applied'); manualRefresh(); }
+    catch (err) { setError(errorMessage(err, 'Fix failed')); }
     finally { setFixing(null); }
   };
 
@@ -91,10 +95,12 @@ const Healer: React.FC = () => {
                   <div className="text-sm text-white">{p.proposed_fix}</div>
                 </div>
               </div>
-              <button onClick={() => handleFix(p.id)} disabled={fixing === p.id || p.status === 'fixed'}
+              <button onClick={() => handleFix(p.id)}
+                disabled={fixing === p.id || p.status === 'fixed' || p.status === 'fix_applied' || p.auto_fixable === false}
+                title={p.auto_fixable === false ? 'No automated fix for this problem: apply the proposed change manually' : undefined}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50 transition-colors whitespace-nowrap">
                 {fixing === p.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wrench className="w-4 h-4" />}
-                Apply Fix
+                {p.status === 'fix_applied' ? 'Fix applied' : p.auto_fixable === false ? 'Manual fix' : 'Apply Fix'}
               </button>
             </div>
           </div>

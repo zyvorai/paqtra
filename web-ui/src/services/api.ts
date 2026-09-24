@@ -283,6 +283,8 @@ export interface HealerProblem {
   detected_at: string;
   status: string;
   proposed_fix: string;
+  /** False when Paqtra has no safe automated remediation (needs a human). */
+  auto_fixable?: boolean;
   [key: string]: unknown;
 }
 
