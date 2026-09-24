@@ -12,6 +12,7 @@ import { applyTheme, readStoredTheme } from './theme';
 // Lazy-loaded views
 const Dashboard = React.lazy(() => import('./views/Dashboard'));
 const Flows = React.lazy(() => import('./views/Flows'));
+const InvestigatePath = React.lazy(() => import('./views/InvestigatePath'));
 const Topology = React.lazy(() => import('./views/Topology'));
 const Policies = React.lazy(() => import('./views/Policies'));
 const Anomalies = React.lazy(() => import('./views/Anomalies'));
@@ -120,6 +121,7 @@ const App: React.FC = () => {
               <Routes>
                 <Route element={<MainLayout />}>
                   <Route path="/" element={<V><Dashboard /></V>} />
+                  <Route path="/investigate" element={<V><InvestigatePath /></V>} />
                   <Route path="/flows" element={<V><Flows /></V>} />
                   <Route path="/topology" element={<V><Topology /></V>} />
                   <Route path="/policies" element={<V><Policies /></V>} />

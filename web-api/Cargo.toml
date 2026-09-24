@@ -49,8 +49,16 @@ regex = "1.13"
 dashmap = "6"
 rand = "0.10"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
+argon2 = "0.6.0"
+subtle = "2.6.1"
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
+
+# Argon2 is memory-hard: unoptimized debug builds take seconds per hash.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

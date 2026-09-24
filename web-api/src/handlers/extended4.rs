@@ -1,6 +1,7 @@
 use super::{
     actor_from_claims, audit_log, check_admin, paginate_json, track_request, PaginationQuery,
 };
+use crate::services::change_tracker::{RollbackBlock, RollbackIndex, ROLLBACKS_PREFIX};
 use crate::AppState;
 use axum::{
     extract::{Query, State},
@@ -325,42 +326,21 @@ pub async fn delete_export_config(
     })))
 }
 
-// ── SLO Targets ───────────────────────────────────────────
-
-const SLOS_PREFIX: &str = "cv:slos:";
-const INCIDENTS_PREFIX: &str = "cv:incidents:";
-
-pub async fn list_slos(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<PaginationQuery>,
-) -> Json<serde_json::Value> {
-    track_request(&state, |_| {}).await;
-    let stored = state
-        .cache
-        .list_values(SLOS_PREFIX)
-        .await
-        .unwrap_or_default();
-    Json(paginate_json(stored, &params, "slos"))
-}
-
-// ── Incidents ─────────────────────────────────────────────
-
-pub async fn list_incidents(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<PaginationQuery>,
-) -> Json<serde_json::Value> {
-    track_request(&state, |_| {}).await;
-    let stored = state
-        .cache
-        .list_values(INCIDENTS_PREFIX)
-        .await
-        .unwrap_or_default();
-    Json(paginate_json(stored, &params, "incidents"))
-}
-
 // ── Change Log ────────────────────────────────────────────
 
 const CHANGES_PREFIX: &str = "cv:changes:";
+
+/// Ids of changes that have been rolled back.
+async fn rolled_back_ids(state: &AppState) -> Vec<String> {
+    state
+        .cache
+        .list_values(ROLLBACKS_PREFIX)
+        .await
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|v| v.get("id").and_then(|i| i.as_str()).map(String::from))
+        .collect()
+}
 
 pub async fn list_changes(
     State(state): State<Arc<AppState>>,
@@ -368,38 +348,134 @@ pub async fn list_changes(
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    // Read changes stored by the background change tracker from the in-memory cache
-    let items = state
+    // Changes are stored by the background change tracker. Rollback state is
+    // computed here, from the same rules the rollback endpoint enforces, so the
+    // UI only offers a rollback that would be accepted.
+    let mut items = state
         .cache
         .list_values(CHANGES_PREFIX)
         .await
         .unwrap_or_default();
+    let rolled_back = rolled_back_ids(&state).await;
+    let index = RollbackIndex::new(&items, rolled_back.clone());
+    for item in items.iter_mut() {
+        let available = index.check(item).is_ok();
+        let done = item
+            .get("id")
+            .and_then(|i| i.as_str())
+            .is_some_and(|id| rolled_back.iter().any(|r| r == id));
+        item["rollback_available"] = serde_json::json!(available);
+        item["rolled_back"] = serde_json::json!(done);
+    }
     Json(paginate_json(items, &params, "changes"))
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct RollbackQuery {
+    /// Ask the API server to validate the rollback without applying it.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+fn change_error(status: StatusCode, msg: &str) -> (StatusCode, Json<serde_json::Value>) {
+    (status, Json(serde_json::json!({ "error": msg })))
+}
+
+/// Roll a change back with `kubectl rollout undo`. Refuses, with a reason,
+/// anything that cannot be reverted for real, instead of reporting success.
 pub async fn rollback_change(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     axum::extract::Path(id): axum::extract::Path<String>,
+    Query(q): Query<RollbackQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-    audit_log(
-        &state,
-        "change.rollback",
-        &id,
-        "",
-        "Change rolled back",
-        &actor_from_claims(&claims),
-        "success",
-    )
-    .await;
-    Ok(Json(serde_json::json!({
-        "id": id,
-        "status": "rolled_back",
-        "message": "Change successfully rolled back",
-        "rolled_back_at": chrono::Utc::now().to_rfc3339()
-    })))
+    let actor = actor_from_claims(&claims);
+
+    let changes = state
+        .cache
+        .list_values(CHANGES_PREFIX)
+        .await
+        .unwrap_or_default();
+    let change = changes
+        .iter()
+        .find(|c| c.get("id").and_then(|i| i.as_str()) == Some(id.as_str()))
+        .ok_or_else(|| change_error(StatusCode::NOT_FOUND, "Change not found"))?;
+
+    let index = RollbackIndex::new(&changes, rolled_back_ids(&state).await);
+    if let Err(block) = index.check(change) {
+        let status = match block {
+            RollbackBlock::UnsupportedKind => StatusCode::UNPROCESSABLE_ENTITY,
+            _ => StatusCode::CONFLICT,
+        };
+        return Err(change_error(status, block.message()));
+    }
+
+    let field = |k: &str| change.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let (namespace, name) = (field("namespace"), field("resource"));
+    let target = format!("deployment/{}", name);
+
+    match state.k8s.rollout_undo(&namespace, &name, q.dry_run).await {
+        Ok(output) if q.dry_run => Ok(Json(serde_json::json!({
+            "id": id,
+            "status": "dry_run",
+            "resource": target,
+            "namespace": namespace,
+            "output": output,
+        }))),
+        Ok(output) => {
+            let record = serde_json::json!({
+                "id": id,
+                "resource": target,
+                "namespace": namespace,
+                "rolled_back_by": actor,
+                "rolled_back_at": chrono::Utc::now().to_rfc3339(),
+            });
+            if let Err(e) = state
+                .cache
+                .set_persistent(&format!("{}{}", ROLLBACKS_PREFIX, id), &record)
+                .await
+            {
+                tracing::warn!("Failed to record rollback {}: {}", id, e);
+            }
+            audit_log(
+                &state,
+                "change.rollback",
+                &id,
+                &namespace,
+                &format!("Rolled back {} to its previous revision", target),
+                &actor,
+                "success",
+            )
+            .await;
+            Ok(Json(serde_json::json!({
+                "id": id,
+                "status": "rolled_back",
+                "resource": target,
+                "namespace": namespace,
+                "output": output,
+                "rolled_back_at": record["rolled_back_at"],
+            })))
+        }
+        Err(e) => {
+            tracing::warn!("Rollback of {} failed: {}", id, e);
+            audit_log(
+                &state,
+                "change.rollback",
+                &id,
+                &namespace,
+                &format!("Rollback failed: {}", e),
+                &actor,
+                "failure",
+            )
+            .await;
+            Err(change_error(
+                StatusCode::BAD_GATEWAY,
+                &format!("Rollback failed: {}", e),
+            ))
+        }
+    }
 }
 
 // ── Node Drain ────────────────────────────────────────────

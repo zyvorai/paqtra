@@ -644,17 +644,44 @@ fn paths_policies() -> serde_json::Value {
         "/policies/simulate": {
             "post": {
                 "tags": ["Policies"],
-                "summary": "Simulate policy impact",
-                "description": "Simulate the impact of a network policy before applying it. Returns predicted flow changes.",
+                "summary": "Evidence-backed policy preview",
+                "description": "Preview proposed CiliumNetworkPolicy impact against indexed flows and resolved selectors. Unsupported constructs (FQDN, L7, deny precedence) return unknown — never a confident pass. Each claim includes confidence: observed|inferred|unavailable.",
                 "requestBody": {
                     "required": true,
                     "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreatePolicyRequest" } } }
                 },
                 "responses": {
-                    "200": { "description": "Simulation results with predicted impact" },
+                    "200": { "description": "Preview with pairs, uncertainty, and CRD rollback plan" },
                     "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
                     "401": { "$ref": "#/components/responses/Unauthorized" },
                     "500": { "$ref": "#/components/responses/InternalError" }
+                }
+            }
+        },
+        "/investigate/path": {
+            "post": {
+                "tags": ["Investigate"],
+                "summary": "Why can’t A reach B?",
+                "description": "Join flows, Kubernetes Services/endpoints, CNP presence, DNS signals, node-path hints, and change events. Every step is labeled observed|inferred|unavailable.",
+                "responses": {
+                    "200": { "description": "Investigation result with steps, owner, and next actions" },
+                    "400": { "description": "Invalid request" },
+                    "401": { "$ref": "#/components/responses/Unauthorized" }
+                }
+            }
+        },
+        "/investigate/bundles/{id}": {
+            "get": {
+                "tags": ["Investigate"],
+                "summary": "Fetch redacted investigation evidence bundle",
+                "description": "Returns flows, policy names, steps, and timestamps. No payloads or Secret contents.",
+                "parameters": [
+                    { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+                ],
+                "responses": {
+                    "200": { "description": "Evidence bundle" },
+                    "404": { "description": "Bundle not found" },
+                    "401": { "$ref": "#/components/responses/Unauthorized" }
                 }
             }
         },

@@ -1,5 +1,14 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
+/** Readable message for a failed request: prefers the API's `error` field, then `message`. */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data as { error?: string; message?: string } | undefined;
+    return data?.error ?? data?.message ?? err.message;
+  }
+  return fallback;
+}
+
 /** Settings stored in localStorage by the Settings page */
 interface AppSettings {
   apiBaseUrl: string;
@@ -455,10 +464,43 @@ export interface AlertRule {
   severity: string;
   condition: string;
   enabled: boolean;
-  channels: string[];
-  trigger_count: number;
-  last_triggered: string;
+  /** Not sent by the API: delivery is by severity across all enabled channels. */
+  channels?: string[];
+  /** Absent until the rule first fires. */
+  trigger_count?: number;
+  last_triggered?: string;
   [key: string]: unknown;
+}
+
+export type ChannelKind = 'webhook' | 'slack' | 'pagerduty';
+
+export interface NotificationChannel {
+  id: string;
+  name: string;
+  kind: ChannelKind;
+  /** Masked by the API: scheme and host for URLs, first characters of a routing key. */
+  target: string;
+  min_severity: string | null;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface AlertSilence {
+  id: string;
+  /** Null silences every rule. */
+  rule_id: string | null;
+  comment: string;
+  created_by: string;
+  created_at: string;
+  until: string;
+}
+
+export interface DeliveryResult {
+  channel_id: string;
+  channel_name: string;
+  delivered: boolean;
+  attempts: number;
+  error: string | null;
 }
 
 export interface AlertEvent {
@@ -472,6 +514,8 @@ export interface AlertEvent {
   pod: string;
 
   rule_name?: string;
+  /** True when a silence suppressed the notification for this alert. */
+  silenced?: boolean;
   fired_at?: string;
   resolved_at?: string;
   [key: string]: unknown;
@@ -812,15 +856,20 @@ export interface ExportConfig {
 }
 
 export interface SLOTarget {
+  id?: string;
   name: string;
   service: string;
   metric: string;
   target: number;
-  current: number;
-  budget_remaining: number;
+  /** Null when the latest flow sample has nothing in scope (status `no_data`). */
+  current: number | null;
+  /** Minutes, projected from the sample at the current error rate; null when `current` is. */
+  budget_remaining: number | null;
   budget_total: number;
   window: string;
   status: string;
+  sample_size?: number;
+  measurement?: string;
   [key: string]: unknown;
 }
 
@@ -845,9 +894,11 @@ export interface ChangeEntry {
   type: string;
   resource: string;
   namespace: string;
-  diff_summary: string;
-  author: string;
+  /** Not sent by the cluster-event change tracker. */
+  diff_summary?: string;
+  author?: string;
   rollback_available: boolean;
+  rolled_back?: boolean;
   [key: string]: unknown;
 }
 
@@ -977,6 +1028,13 @@ export const fetchAuditLog = () => api.get<{ entries: AuditEntry[] }>('/audit/lo
 export const fetchAlertRules = () => api.get<{ rules: AlertRule[] }>('/alerts/rules');
 export const fetchAlertHistory = () => api.get<{ alerts: AlertEvent[]; events?: AlertEvent[] }>('/alerts/history');
 export const toggleAlertRule = (id: string) => api.put(`/alerts/rules/${id}`);
+export const fetchChannels = () => api.get<{ channels: NotificationChannel[] }>('/alerts/channels');
+export const createChannel = (body: { name: string; kind: ChannelKind; target: string; min_severity?: string }) => api.post('/alerts/channels', body);
+export const deleteChannel = (id: string) => api.delete(`/alerts/channels/${id}`);
+export const testChannel = (id: string) => api.post<DeliveryResult>(`/alerts/channels/${id}/test`);
+export const fetchSilences = () => api.get<{ silences: AlertSilence[] }>('/alerts/silences');
+export const createSilence = (body: { rule_id?: string; duration_minutes: number; comment?: string }) => api.post('/alerts/silences', body);
+export const deleteSilence = (id: string) => api.delete(`/alerts/silences/${id}`);
 
 // Service Map
 export const fetchServiceMap = () => api.get<{ nodes: ServiceNode[]; edges: ServiceEdge[] }>('/servicemap');
@@ -1060,6 +1118,8 @@ export const deleteExportConfig = (id: string) => api.delete(`/flows/exports/${i
 
 // SLOs
 export const fetchSLOs = () => api.get<{ slos: SLOTarget[] }>('/slo/targets');
+export const createSLO = (body: { name: string; target: number; window?: string; namespace?: string }) => api.post('/slo/targets', body);
+export const deleteSLO = (id: string) => api.delete(`/slo/targets/${id}`);
 
 // Incidents
 export const fetchIncidents = () => api.get<{ incidents: Incident[] }>('/incidents');

@@ -10,8 +10,7 @@ import {
   Bug,
   AlertTriangle,
 } from 'lucide-react';
-import { fetchChaosExperiments, runChaosExperiment } from '../../services/api';
-import { isAxiosError } from 'axios';
+import { fetchChaosExperiments, runChaosExperiment, apiErrorMessage } from '../../services/api';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 import { useAuthStore } from '../../stores/authStore';
@@ -42,6 +41,10 @@ const STATUS_BADGE: Record<string, string> = {
   scheduled: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
 };
 
+/** Flip to true once the backend action is implemented. */
+const RUN_AVAILABLE = false;
+const NOT_AVAILABLE_MSG = 'Fault injection is not implemented yet: experiments cannot be run, so no network faults are injected.';
+
 const Chaos: React.FC = () => {
   usePageTitle('Chaos Engineering');
   const userRole = useAuthStore((s) => s.role);
@@ -56,7 +59,7 @@ const Chaos: React.FC = () => {
   const fetchData = useCallback(async () => {
     setLoading(true); setError(null);
     try { setExperiments((await fetchChaosExperiments()).data.experiments ?? []); }
-    catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed to load experiments'); }
+    catch (err) { setError(apiErrorMessage(err, 'Failed to load experiments')); }
     finally { setLoading(false); }
   }, []);
 
@@ -71,7 +74,7 @@ const Chaos: React.FC = () => {
       await runChaosExperiment({ type, target_namespace: 'default', duration: '30s' });
       setSuccess(`${name} experiment started`);
       fetchData();
-    } catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Experiment failed'); }
+    } catch (err) { setError(apiErrorMessage(err, 'Experiment failed')); }
     finally { setRunning(null); }
   };
 
@@ -87,6 +90,7 @@ const Chaos: React.FC = () => {
         </button>
       </div>
 
+      {!RUN_AVAILABLE && <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">{NOT_AVAILABLE_MSG}</div>}
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
@@ -108,9 +112,9 @@ const Chaos: React.FC = () => {
             <p className="text-sm text-slate-400 mb-4 flex-1">{p.desc}</p>
             <button
               onClick={() => confirmAndRun(p.type, p.name)}
-              disabled={running === p.type || !isAdmin}
+              disabled={running === p.type || !isAdmin || !RUN_AVAILABLE}
               className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg border border-slate-700/50 text-sm hover:bg-slate-700/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title={isAdmin ? '' : 'Admin role required'}
+              title={!RUN_AVAILABLE ? NOT_AVAILABLE_MSG : isAdmin ? '' : 'Admin role required'}
             >
               {running === p.type ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
               {running === p.type ? 'Starting...' : 'Run Experiment'}

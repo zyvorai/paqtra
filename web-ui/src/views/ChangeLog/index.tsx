@@ -10,6 +10,9 @@ import ExportButton from '../../components/ExportButton';
 
 const TYPE_BADGE: Record<string, string> = { create: 'bg-green-500/15 text-green-400 border-green-500/30', update: 'bg-blue-500/15 text-blue-400 border-blue-500/30', delete: 'bg-red-500/15 text-red-400 border-red-500/30' };
 
+const errorMessage = (err: unknown, fallback: string): string =>
+  isAxiosError(err) ? err.response?.data?.error ?? err.response?.data?.message ?? err.message : fallback;
+
 const ChangeLog: React.FC = () => {
   usePageTitle('Change Log');
   const [changes, setChanges] = useState<ChangeEntry[]>([]);
@@ -22,19 +25,21 @@ const ChangeLog: React.FC = () => {
   const fetchData = useCallback(async () => {
     setError(null);
     try { setChanges((await fetchChangeLog()).data.changes ?? []); }
-    catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
+    catch (err) { setError(errorMessage(err, 'Failed')); }
   }, []);
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
-  const handleRollback = async (id: string) => {
-    setRolling(id); setError(null);
-    try { await rollbackChange(id); setSuccess('Rollback applied'); manualRefresh(); }
-    catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
+  const handleRollback = async (c: ChangeEntry) => {
+    if (!window.confirm(`Roll back deployment ${c.namespace ? c.namespace + '/' : ''}${c.resource} to its previous revision?`)) return;
+    setRolling(c.id); setError(null);
+    try { const res = await rollbackChange(c.id); setSuccess(res.data?.output || 'Rollback applied'); manualRefresh(); }
+    catch (err) { setError(errorMessage(err, 'Rollback failed')); }
     finally { setRolling(null); }
   };
 
-  const filtered = search ? changes.filter((c) => c.resource.toLowerCase().includes(search.toLowerCase()) || c.author.toLowerCase().includes(search.toLowerCase()) || c.diff_summary.toLowerCase().includes(search.toLowerCase())) : changes;
+  const q = search.toLowerCase();
+  const filtered = search ? changes.filter((c) => [c.resource, c.author, c.diff_summary, c.message].some((f) => typeof f === 'string' && f.toLowerCase().includes(q))) : changes;
 
   return (
     <div className="netra-page">
@@ -71,11 +76,12 @@ const ChangeLog: React.FC = () => {
                 {c.namespace && <span className="px-1.5 py-0.5 rounded bg-slate-900/50 text-xs text-slate-400">{c.namespace}</span>}
                 <span className="ml-auto text-xs text-slate-400">{new Date(c.timestamp).toLocaleString()}</span>
               </div>
-              <div className="text-sm text-slate-400 mb-2">{c.diff_summary}</div>
+              <div className="text-sm text-slate-400 mb-2">{c.diff_summary ?? (typeof c.message === 'string' ? c.message : '')}</div>
               <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>By: <span className="text-white">{c.author}</span></span>
+                <span>By: <span className="text-white">{c.author ?? 'cluster event'}</span></span>
+                {c.rolled_back && <span className="text-green-400">Rolled back</span>}
                 {c.rollback_available && (
-                  <button onClick={() => handleRollback(c.id)} disabled={rolling === c.id} className="flex items-center gap-1 px-2 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 transition-colors text-white">
+                  <button onClick={() => handleRollback(c)} disabled={rolling === c.id} className="flex items-center gap-1 px-2 py-1 rounded border border-slate-700/50 hover:bg-slate-700/30 disabled:opacity-50 transition-colors text-white">
                     {rolling === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />} Rollback
                   </button>
                 )}

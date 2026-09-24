@@ -365,47 +365,16 @@ pub async fn list_chaos_experiments(
 pub async fn run_chaos_experiment(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
-    Json(req): Json<RunChaosRequest>,
+    Json(_req): Json<RunChaosRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-
-    let id = format!("chaos-{}", uuid::Uuid::new_v4());
-    let now = chrono::Utc::now().to_rfc3339();
-
-    let experiment = ChaosExperiment {
-        id: id.clone(),
-        name: req.name.clone(),
-        experiment_type: req.experiment_type.clone(),
-        status: "started".to_string(),
-        target_namespace: req.target_namespace.clone(),
-        created_at: now,
-        duration_secs: req.duration_secs,
-        results: None,
-    };
-
-    // Store in cache so list_chaos_experiments can retrieve it
-    let key = format!("{}{}", CHAOS_PREFIX, id);
-    if let Err(e) = state.cache.set_persistent(&key, &experiment).await {
-        tracing::warn!("Failed to store chaos experiment in cache: {}", e);
-        return Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": "Failed to persist experiment" })),
-        ));
-    }
-
-    audit_log(
-        &state,
-        "chaos.run",
-        &id,
-        &req.target_namespace,
-        "Chaos experiment started",
-        &actor_from_claims(&claims),
-        "success",
-    )
-    .await;
-
-    Ok(Json(to_json(&experiment)))
+    // Nothing injects faults yet. Storing a "started" record would make the
+    // experiments list claim an experiment ran when the network was untouched.
+    Err(super::not_implemented(
+        "Chaos fault injection",
+        "no fault was injected and no experiment was recorded",
+    ))
 }
 
 pub async fn canary_status(

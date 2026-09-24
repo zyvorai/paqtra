@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 const CHANGES_PREFIX: &str = "cv:changes:";
 const CHANGES_TTL: u64 = 604800; // 7 days
+pub const ROLLBACKS_PREFIX: &str = "cv:change_rollbacks:";
 
 /// Spawn the background change tracker as a detached tokio task.
 pub fn spawn_change_tracker(state: Arc<AppState>) {
@@ -115,10 +116,13 @@ async fn track_changes(state: &AppState) -> anyhow::Result<()> {
             "reason": reason,
             "message": message,
             "gitops_managed": gitops_managed,
-            "rollback_available": false,
         });
 
-        if let Err(e) = state.cache.set_durable(&cache_key, &change, CHANGES_TTL).await {
+        if let Err(e) = state
+            .cache
+            .set_durable(&cache_key, &change, CHANGES_TTL)
+            .await
+        {
             tracing::debug!("Failed to store change {}: {}", uid_short, e);
             continue;
         }
@@ -131,6 +135,22 @@ async fn track_changes(state: &AppState) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Recent change events for investigation correlation (newest first).
+pub async fn recent_changes(state: &AppState, limit: usize) -> Vec<serde_json::Value> {
+    let mut vals = state
+        .cache
+        .list_values(CHANGES_PREFIX)
+        .await
+        .unwrap_or_default();
+    vals.sort_by(|a, b| {
+        let ta = a.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
+        let tb = b.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
+        tb.cmp(ta)
+    });
+    vals.truncate(limit);
+    vals
 }
 
 /// Check whether the event kind is relevant. For ConfigMaps, we only care
@@ -198,4 +218,168 @@ async fn check_gitops_annotations(
     }
 
     false
+}
+
+/// Why a change cannot be rolled back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RollbackBlock {
+    /// Only Deployments can be reverted: Kubernetes keeps their previous
+    /// revision. For other kinds, events carry no earlier manifest to restore.
+    UnsupportedKind,
+    /// A GitOps controller owns the resource and would undo the rollback.
+    GitopsManaged,
+    /// Already rolled back.
+    AlreadyRolledBack,
+    /// `rollout undo` reverts the latest revision, so a newer change to the
+    /// same resource has to be rolled back first.
+    NewerChange,
+}
+
+impl RollbackBlock {
+    pub fn message(self) -> &'static str {
+        match self {
+            RollbackBlock::UnsupportedKind => {
+                "Only Deployment changes can be rolled back: other resource kinds have no previous version stored"
+            }
+            RollbackBlock::GitopsManaged => {
+                "This resource is managed by GitOps: revert the change in Git, or the controller will undo the rollback"
+            }
+            RollbackBlock::AlreadyRolledBack => "This change was already rolled back",
+            RollbackBlock::NewerChange => {
+                "A newer change exists for this resource: roll that one back first"
+            }
+        }
+    }
+}
+
+fn str_field<'a>(change: &'a serde_json::Value, key: &str) -> &'a str {
+    change.get(key).and_then(|v| v.as_str()).unwrap_or("")
+}
+
+/// Instant of a change, for ordering. Falls back to zero for unparseable text.
+fn change_time(change: &serde_json::Value) -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::parse_from_rfc3339(str_field(change, "timestamp"))
+        .map(|t| t.with_timezone(&chrono::Utc))
+        .unwrap_or(chrono::DateTime::<chrono::Utc>::MIN_UTC)
+}
+
+fn resource_key(change: &serde_json::Value) -> (String, String, String) {
+    (
+        str_field(change, "type").to_string(),
+        str_field(change, "namespace").to_string(),
+        str_field(change, "resource").to_string(),
+    )
+}
+
+/// Decides rollback eligibility for changes, given the full change list and
+/// the ids already rolled back.
+pub struct RollbackIndex {
+    newest: std::collections::HashMap<(String, String, String), chrono::DateTime<chrono::Utc>>,
+    rolled_back: std::collections::HashSet<String>,
+}
+
+impl RollbackIndex {
+    pub fn new(
+        changes: &[serde_json::Value],
+        rolled_back: impl IntoIterator<Item = String>,
+    ) -> Self {
+        let mut newest = std::collections::HashMap::new();
+        for c in changes {
+            let t = change_time(c);
+            let e = newest.entry(resource_key(c)).or_insert(t);
+            if t > *e {
+                *e = t;
+            }
+        }
+        Self {
+            newest,
+            rolled_back: rolled_back.into_iter().collect(),
+        }
+    }
+
+    pub fn check(&self, change: &serde_json::Value) -> Result<(), RollbackBlock> {
+        if str_field(change, "type") != "Deployment" {
+            return Err(RollbackBlock::UnsupportedKind);
+        }
+        if change
+            .get("gitops_managed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            return Err(RollbackBlock::GitopsManaged);
+        }
+        if self.rolled_back.contains(str_field(change, "id")) {
+            return Err(RollbackBlock::AlreadyRolledBack);
+        }
+        match self.newest.get(&resource_key(change)) {
+            Some(newest) if change_time(change) < *newest => Err(RollbackBlock::NewerChange),
+            _ => Ok(()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod rollback_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn change(id: &str, kind: &str, name: &str, ts: &str, gitops: bool) -> serde_json::Value {
+        json!({"id": id, "type": kind, "resource": name, "namespace": "ns", "timestamp": ts, "gitops_managed": gitops})
+    }
+
+    #[test]
+    fn newest_deployment_change_is_eligible() {
+        let c = change("a", "Deployment", "web", "2026-01-01T00:00:00Z", false);
+        let idx = RollbackIndex::new(std::slice::from_ref(&c), []);
+        assert_eq!(idx.check(&c), Ok(()));
+    }
+
+    #[test]
+    fn only_deployments_can_be_rolled_back() {
+        for kind in ["CiliumNetworkPolicy", "ConfigMap", "Service"] {
+            let c = change("a", kind, "x", "2026-01-01T00:00:00Z", false);
+            let idx = RollbackIndex::new(std::slice::from_ref(&c), []);
+            assert_eq!(idx.check(&c), Err(RollbackBlock::UnsupportedKind), "{kind}");
+        }
+    }
+
+    #[test]
+    fn gitops_managed_is_blocked() {
+        let c = change("a", "Deployment", "web", "2026-01-01T00:00:00Z", true);
+        let idx = RollbackIndex::new(std::slice::from_ref(&c), []);
+        assert_eq!(idx.check(&c), Err(RollbackBlock::GitopsManaged));
+    }
+
+    #[test]
+    fn older_change_is_blocked_by_newer_one_on_same_resource_only() {
+        let old = change("old", "Deployment", "web", "2026-01-01T00:00:00Z", false);
+        let new = change("new", "Deployment", "web", "2026-01-02T00:00:00Z", false);
+        let other = change("other", "Deployment", "api", "2026-01-01T00:00:00Z", false);
+        let all = vec![old.clone(), new.clone(), other.clone()];
+        let idx = RollbackIndex::new(&all, []);
+        assert_eq!(idx.check(&old), Err(RollbackBlock::NewerChange));
+        assert_eq!(idx.check(&new), Ok(()));
+        assert_eq!(
+            idx.check(&other),
+            Ok(()),
+            "different resource is unaffected"
+        );
+    }
+
+    #[test]
+    fn already_rolled_back_is_blocked() {
+        let c = change("a", "Deployment", "web", "2026-01-01T00:00:00Z", false);
+        let idx = RollbackIndex::new(std::slice::from_ref(&c), ["a".to_string()]);
+        assert_eq!(idx.check(&c), Err(RollbackBlock::AlreadyRolledBack));
+    }
+
+    #[test]
+    fn timestamps_compare_as_instants_not_text() {
+        // Same instant written with different offsets must not block each other.
+        let a = change("a", "Deployment", "web", "2026-01-01T01:00:00+01:00", false);
+        let b = change("b", "Deployment", "web", "2026-01-01T00:00:00Z", false);
+        let idx = RollbackIndex::new(&[a.clone(), b.clone()], []);
+        assert_eq!(idx.check(&a), Ok(()));
+        assert_eq!(idx.check(&b), Ok(()));
+    }
 }

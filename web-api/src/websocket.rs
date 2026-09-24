@@ -26,7 +26,10 @@ pub struct WsAuthQuery {
 
 /// Validate a JWT token from the WebSocket query string.
 /// Returns Ok(()) if auth is disabled or the token is valid.
-fn validate_ws_token(state: &AppState, query: &WsAuthQuery) -> Result<(), (StatusCode, String)> {
+async fn validate_ws_token(
+    state: &AppState,
+    query: &WsAuthQuery,
+) -> Result<(), (StatusCode, String)> {
     if state.config.auth_disabled {
         return Ok(());
     }
@@ -36,13 +39,19 @@ fn validate_ws_token(state: &AppState, query: &WsAuthQuery) -> Result<(), (Statu
     ))?;
     let decoding_key = DecodingKey::from_secret(state.config.jwt_secret.as_bytes());
     let validation = Validation::new(Algorithm::HS256);
-    decode::<Claims>(token, &decoding_key, &validation).map_err(|e| {
-        tracing::debug!("WebSocket token validation failed: {}", e);
-        (
-            StatusCode::UNAUTHORIZED,
-            "Invalid or expired token".to_string(),
-        )
-    })?;
+    let claims = decode::<Claims>(token, &decoding_key, &validation)
+        .map_err(|e| {
+            tracing::debug!("WebSocket token validation failed: {}", e);
+            (
+                StatusCode::UNAUTHORIZED,
+                "Invalid or expired token".to_string(),
+            )
+        })?
+        .claims;
+    // Same account checks as HTTP: a disabled or changed account is refused.
+    crate::middleware::auth::resolve_claims(state, claims)
+        .await
+        .map_err(|msg| (StatusCode::UNAUTHORIZED, msg.to_string()))?;
     Ok(())
 }
 
@@ -114,7 +123,7 @@ pub async fn flows_websocket(
     State(state): State<Arc<AppState>>,
     Query(auth_query): Query<WsAuthQuery>,
 ) -> Response {
-    if let Err((status, msg)) = validate_ws_token(&state, &auth_query) {
+    if let Err((status, msg)) = validate_ws_token(&state, &auth_query).await {
         return (status, msg).into_response();
     }
     let guard = match WsConnectionGuard::try_acquire() {
@@ -183,7 +192,7 @@ pub async fn metrics_websocket(
     State(state): State<Arc<AppState>>,
     Query(auth_query): Query<WsAuthQuery>,
 ) -> Response {
-    if let Err((status, msg)) = validate_ws_token(&state, &auth_query) {
+    if let Err((status, msg)) = validate_ws_token(&state, &auth_query).await {
         return (status, msg).into_response();
     }
     let guard = match WsConnectionGuard::try_acquire() {
@@ -245,7 +254,7 @@ pub async fn ws_live_flows(
     Query(query): Query<WsAuthQuery>,
     ws: WebSocketUpgrade,
 ) -> Result<Response, (StatusCode, String)> {
-    validate_ws_token(&state, &query)?;
+    validate_ws_token(&state, &query).await?;
 
     let guard = match WsConnectionGuard::try_acquire() {
         Some(g) => g,

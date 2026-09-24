@@ -20,6 +20,11 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Investigate',
     children: [
       {
+        path: '/investigate',
+        label: 'Path',
+        blurb: 'Why can’t A reach B — evidence-backed path diagnosis with confidence labels.',
+      },
+      {
         path: '/flows',
         label: 'Flows',
         blurb: 'Hubble flows with verdict coloring — see where traffic goes and why it is allowed or dropped.',
@@ -176,6 +181,12 @@ export const NAV_GROUPS: NavGroup[] = [
 
 /** Heroes match Netra pageHero copy, adapted for Cilium-native Paqtra. */
 export const PAGE_HEROES: Record<string, PageHeroCopy> = {
+  '/investigate': {
+    eyebrow: 'Investigate',
+    title: 'Why can’t A reach B?',
+    lede: 'Evidence-backed path diagnosis — DNS, Service, identity, policy, node path, and changes — with observed / inferred / unavailable labels.',
+    tint: 'green',
+  },
   '/flows': {
     eyebrow: 'Investigate',
     title: 'Follow every flow.',

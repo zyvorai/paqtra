@@ -11,11 +11,14 @@ pub mod extended3;
 pub mod extended4;
 pub mod flows;
 pub mod health;
+pub mod investigate;
 pub mod metrics;
 pub mod modules;
 pub mod notifications;
 pub mod nodes;
 pub mod policies;
+pub mod slo_incidents;
+pub mod users;
 
 use crate::{AppMetrics, AppState};
 use axum::{http::StatusCode, Json};
@@ -49,6 +52,19 @@ pub fn check_admin(
 pub async fn track_request(state: &AppState, f: impl FnOnce(&AppMetrics)) {
     state.metrics.total_requests.fetch_add(1, Ordering::Relaxed);
     f(&state.metrics);
+}
+
+/// Response for endpoints whose feature is not built yet. Used instead of
+/// reporting success for an action that does nothing: the caller learns the
+/// truth and no record of a phantom action is created.
+pub fn not_implemented(feature: &str, detail: &str) -> (StatusCode, Json<Value>) {
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(serde_json::json!({
+            "error": format!("{feature} is not implemented yet: {detail}"),
+            "code": "not_implemented",
+        })),
+    )
 }
 
 /// Increment total_errors.

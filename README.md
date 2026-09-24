@@ -229,6 +229,7 @@ Full rules: [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md). Agent inst
 | [docs/web-architecture.md](docs/web-architecture.md) | API + UI architecture |
 | [docs/web-deployment.md](docs/web-deployment.md) | Deploy options |
 | [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md) | Cilium / Netra boundaries |
+| [docs/investigate.md](docs/investigate.md) | Path investigation + policy preview |
 | [docs/autopolicy.md](docs/autopolicy.md) | AutoPolicy guide |
 | [docs/simulator.md](docs/simulator.md) | Policy simulator |
 | [docs/replay.md](docs/replay.md) | Flow replay |
@@ -301,7 +302,9 @@ AUTH_DISABLED=true         # Dev mode only (requires ENVIRONMENT=development|tes
 - [ ] **Live flow WebSocket in Flows page** - Stream flows in real-time instead of polling
 - [ ] **Policy diff viewer** - Side-by-side YAML comparison before/after updates
 - [ ] **Anomaly detection ML pipeline** - Real anomaly scoring from Hubble metrics (currently uses baseline stats)
-- [ ] **eBPF program hot-reload from web UI** - Upload and attach eBPF programs via the dashboard
+- [ ] **Read-only BPF attachment inventory, verifier/map pressure, and drift diagnostics** - Observe Cilium/Netra/other programs; never attach or hot-reload from the UI
+- [ ] **Path investigation (“Why can’t A reach B?”)** - Evidence-backed explain API + UI with observed/inferred/unavailable labels
+- [ ] **Evidence-backed policy preview** - Match proposed CNP against indexed flows; unsupported constructs → unknown
 - [ ] **Topology graph with D3 force layout** - Interactive node-link diagram with traffic volume edges
 
 ### v1.2 - Multi-Cluster & Scale

@@ -224,100 +224,29 @@ pub async fn simulate_policy(
     // Validate spec size and depth
     req.validate_spec().map_err(ApiError::BadRequest)?;
 
-    tracing::info!("Simulating policy: {}", req.name);
+    tracing::info!("Previewing policy impact: {}", req.name);
 
     track_request(&state, |m| {
         m.k8s_queries.fetch_add(1, Ordering::Relaxed);
     })
     .await;
 
-    // Analyze the policy spec to produce a meaningful impact assessment
-    let spec = &req.spec;
-
-    // Count ingress and egress rules from the spec
-    let ingress_rules = spec
-        .get("ingress")
-        .and_then(|v| v.as_array())
-        .map(|a| a.len())
-        .unwrap_or(0);
-    let egress_rules = spec
-        .get("egress")
-        .and_then(|v| v.as_array())
-        .map(|a| a.len())
-        .unwrap_or(0);
-    let total_rules = ingress_rules + egress_rules;
-
-    // Determine whether an endpoint selector is restrictive or cluster-wide
-    let has_endpoint_selector = spec
-        .get("endpointSelector")
-        .and_then(|v| v.as_object())
-        .map(|obj| !obj.is_empty())
-        .unwrap_or(false);
-
-    // Check for port restrictions
-    let has_port_rules = spec
-        .get("ingress")
-        .and_then(|v| v.as_array())
-        .map(|rules| rules.iter().any(|r| r.get("toPorts").is_some()))
-        .unwrap_or(false)
-        || spec
-            .get("egress")
-            .and_then(|v| v.as_array())
-            .map(|rules| rules.iter().any(|r| r.get("toPorts").is_some()))
-            .unwrap_or(false);
-
-    // Estimate affected flows based on namespace scope and rule count
-    let recent_flows = state.metrics.flows_fetched.load(Ordering::Relaxed);
-
-    // Rough heuristic: broader selectors affect more flows
-    let estimated_affected = if has_endpoint_selector {
-        // Targeted policy -- estimate a fraction of recent flows
-        std::cmp::max(total_rules as u64 * 5, recent_flows / 10)
-    } else {
-        // Namespace-wide policy -- larger blast radius
-        std::cmp::max(total_rules as u64 * 20, recent_flows / 3)
-    };
-
-    let risk_level = match (total_rules, has_endpoint_selector, has_port_rules) {
-        (0, _, _) => "low",           // No rules -- no-op policy
-        (_, true, true) => "low",     // Targeted selector with port restrictions
-        (_, true, false) => "medium", // Targeted selector, no port restriction
-        (_, false, true) => "medium", // Broad selector but ports are restricted
-        (_, false, false) => "high",  // Broad selector, no port restriction
-    };
-
-    let services_impacted = if has_endpoint_selector {
-        std::cmp::max(1, total_rules)
-    } else {
-        // Namespace-wide -- assume multiple services
-        std::cmp::max(total_rules, 3)
-    };
+    let preview =
+        crate::services::investigate::preview_policy(&state, &req.name, &req.namespace, &req.spec)
+            .await;
 
     audit_log(
         &state,
         "policy.simulate",
         &req.name,
         &req.namespace,
-        "Policy simulated",
+        "Policy impact previewed (evidence-backed)",
         &actor_from_claims(&claims),
         "success",
     )
     .await;
 
-    Ok(Json(json!({
-        "policy": req.name,
-        "namespace": req.namespace,
-        "analysis": {
-            "ingress_rules": ingress_rules,
-            "egress_rules": egress_rules,
-            "total_rules": total_rules,
-            "has_endpoint_selector": has_endpoint_selector,
-            "has_port_restrictions": has_port_rules,
-        },
-        "impact": {
-            "estimated_flows_affected": estimated_affected,
-            "services_impacted": services_impacted,
-            "risk_level": risk_level,
-        }
+    Ok(Json(serde_json::to_value(preview).unwrap_or_else(|_| {
+        serde_json::json!({"error": "serialize failed"})
     })))
 }

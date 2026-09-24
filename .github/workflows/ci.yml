@@ -95,6 +95,14 @@ jobs:
       - name: Helm lint + template
         run: bash scripts/ci-chart-smoke.sh
 
+  investigate-golden:
+    name: Investigate golden (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline investigate contracts
+        run: bash scripts/ci-investigate-golden.sh
+
   agent-image:
     name: Agent Dockerfile
     runs-on: ubuntu-latest

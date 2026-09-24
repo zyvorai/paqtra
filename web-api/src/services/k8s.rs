@@ -227,6 +227,33 @@ impl K8sService {
         })
     }
 
+    /// Revert a Deployment to its previous revision (`kubectl rollout undo`).
+    /// With `dry_run` the API server validates the request without changing
+    /// anything. Returns kubectl's output.
+    pub async fn rollout_undo(&self, namespace: &str, name: &str, dry_run: bool) -> Result<String> {
+        validate_k8s_name(name, "deployment name")?;
+        validate_k8s_name(namespace, "namespace")?;
+
+        let target = format!("deployment/{}", name);
+        let mut args = vec!["rollout", "undo", target.as_str(), "-n", namespace];
+        if dry_run {
+            args.push("--dry-run=server");
+        }
+        let mut cmd = self.kubectl(&args);
+
+        let output = timeout(Duration::from_secs(30), cmd.output())
+            .await
+            .context("kubectl rollout undo timed out after 30 seconds")?
+            .context("kubectl not available")?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "kubectl rollout undo failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
     /// Delete a CiliumNetworkPolicy by name (id is treated as "namespace/name")
     pub async fn delete_policy(&self, id: &str) -> Result<()> {
         // id format: "namespace/name" or just "name" (default namespace)

@@ -605,45 +605,14 @@ pub async fn mirror_rules(State(state): State<Arc<AppState>>) -> Json<serde_json
 pub async fn create_mirror_rule(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
-    Json(body): Json<CreateMirrorRequest>,
+    Json(_body): Json<CreateMirrorRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_admin(&state, &claims)?;
     track_request(&state, |_| {}).await;
-
-    let id = format!(
-        "mirror-{}",
-        uuid::Uuid::new_v4()
-            .to_string()
-            .split('-')
-            .next()
-            .unwrap_or("000")
-    );
-    let rule = serde_json::json!({
-        "id": id,
-        "name": body.name,
-        "enabled": true,
-        "created_at": chrono::Utc::now().to_rfc3339(),
-    });
-    let _ = state
-        .cache
-        .set_persistent(&format!("{}{}", MIRROR_RULES_PREFIX, id), &rule)
-        .await;
-    audit_log(
-        &state,
-        "mirror.create",
-        &id,
-        "",
-        "Mirror rule created",
-        &actor_from_claims(&claims),
-        "success",
-    )
-    .await;
-
-    Ok(Json(serde_json::json!({
-        "id": id,
-        "status": "created",
-        "message": "Mirror rule created",
-    })))
+    Err(super::not_implemented(
+        "Traffic mirroring",
+        "no mirroring was configured, so no rule was saved",
+    ))
 }
 
 pub async fn delete_mirror_rule(
