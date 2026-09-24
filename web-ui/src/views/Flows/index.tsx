@@ -6,8 +6,12 @@ import TerminalFrame from '../../components/TerminalFrame';
 function endpointLabel(ep: FlowEndpoint | string | undefined): string {
   if (!ep) return '—';
   if (typeof ep === 'string') return ep;
-  const parts = [ep.namespace, ep.pod || ep.ip].filter(Boolean);
-  return parts.join('/') || ep.ip || '—';
+  const ns = ep.namespace?.trim();
+  const name = (ep.pod || ep.ip || '').trim();
+  if (ns && name) return `${ns}/${name}`;
+  if (name) return name;
+  if (ns) return ns;
+  return '—';
 }
 
 function flowLine(f: Flow): string {

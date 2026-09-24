@@ -150,6 +150,21 @@ jobs:
       - name: NPM audit
         run: npm audit --audit-level=high
 
+  # ─── Docs Site ──────────────────────────────────────────────────────────
+  website:
+    name: Build (Docs site)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm --prefix website ci
+      - run: npm --prefix website run build
+
   # ─── Security Scanning ──────────────────────────────────────────────────
   security-scan:
     name: Security Scan
