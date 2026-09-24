@@ -58,7 +58,10 @@ async fn pod_summary(ns: &str, label: &str) -> (String, String) {
             let ready = phases.iter().filter(|p| **p == "Running").count();
             let total = phases.len();
             if ready == total {
-                (format!("{ready}/{total} Ready"), format!("{ready} pods running"))
+                (
+                    format!("{ready}/{total} Ready"),
+                    format!("{ready} pods running"),
+                )
             } else if ready > 0 {
                 ("Degraded".into(), format!("{ready}/{total} running"))
             } else {
@@ -108,7 +111,10 @@ async fn ds_summary(ns: &str, name: &str) -> (String, String) {
     }
 }
 
-fn local_bpf_rows() -> (Vec<ComponentStatus>, Vec<crate::ebpf::attachments::DriftFinding>) {
+fn local_bpf_rows() -> (
+    Vec<ComponentStatus>,
+    Vec<crate::ebpf::attachments::DriftFinding>,
+) {
     let inv = collect_inventory();
     let findings = drift_findings(&inv);
     let mut rows = vec![ComponentStatus {

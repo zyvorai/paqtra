@@ -142,7 +142,10 @@ mod tests {
 
         let att = get(addr, "/attachments").await;
         assert!(att.contains("200"), "{att}");
-        assert!(att.contains("attachments") || att.contains("source"), "{att}");
+        assert!(
+            att.contains("attachments") || att.contains("source"),
+            "{att}"
+        );
 
         let drift = get(addr, "/drift").await;
         assert!(drift.contains("200"), "{drift}");
@@ -160,9 +163,6 @@ mod tests {
             parse_path("GET /attachments HTTP/1.1\r\nHost: x\r\n\r\n"),
             "/attachments"
         );
-        assert_eq!(
-            parse_path("GET /drift?x=1 HTTP/1.1\r\n\r\n"),
-            "/drift"
-        );
+        assert_eq!(parse_path("GET /drift?x=1 HTTP/1.1\r\n\r\n"), "/drift");
     }
 }

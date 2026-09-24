@@ -24,20 +24,17 @@ impl TuiApp {
             .split(f.area());
 
         // Title
-        let title = Paragraph::new(format!(
-            "🚀 Paqtra — trace every flow - {}",
-            self.context
-        ))
-        .style(
-            Style::default()
-                .fg(TITLE_COLOR)
-                .add_modifier(Modifier::BOLD),
-        )
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(BORDER_COLOR)),
-        );
+        let title = Paragraph::new(format!("🚀 Paqtra — trace every flow - {}", self.context))
+            .style(
+                Style::default()
+                    .fg(TITLE_COLOR)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(BORDER_COLOR)),
+            );
         f.render_widget(title, chunks[0]);
 
         // Tabs

@@ -73,7 +73,10 @@ pub fn cmd_ebpf_attachments(output: &str) -> Result<()> {
         );
     }
     if inv.attachments.is_empty() {
-        println!("  {}", "(none — bpftool unavailable or no programs)".dimmed());
+        println!(
+            "  {}",
+            "(none — bpftool unavailable or no programs)".dimmed()
+        );
     }
     Ok(())
 }
