@@ -4,7 +4,7 @@
 // when conditions are met. Alert history is persisted back to the cache, and
 // firing/resolved events are delivered through the notifier (see notifier.rs).
 
-use crate::services::notifier;
+use crate::services::{incidents, notifier};
 use crate::AppState;
 use std::sync::Arc;
 
@@ -296,6 +296,8 @@ async fn handle_fired(
     update_rule_trigger(state, rule_id).await;
 
     if !silenced {
+        // Silenced alerts are deliberately ignored: no incident, no notification.
+        incidents::open_for_alert(state, rule_id, rule_name, severity, message).await;
         notifier::notify(
             state,
             notifier::AlertEvent {
@@ -323,6 +325,7 @@ async fn handle_ok(state: &AppState, rule_id: &str, rule_name: &str, severity: &
         return;
     }
     save_state(state, rule_id, &RuleState::default()).await;
+    incidents::resolve_for_alert(state, rule_id).await;
 
     if !notifier::is_silenced(state, rule_id).await {
         notifier::notify(

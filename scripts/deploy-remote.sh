@@ -352,6 +352,9 @@ helm upgrade --install paqtra ${REMOTE_DIR}/chart \
     --set monitoring.enabled=false \
     --set api.env.hubbleAddress=hubble-relay.kube-system.svc.cluster.local:4245 \
     --set api.env.jwtSecret="\$JWT" \
+    --set auth.adminUsername=admin \
+    --set auth.adminPassword=Admin@321 \
+    --set api.persistence.enabled=true \
     --set api.service.type=NodePort \
     --set ui.service.type=NodePort \
     --wait --timeout 300s

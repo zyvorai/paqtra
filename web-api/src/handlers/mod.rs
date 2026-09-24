@@ -11,11 +11,13 @@ pub mod extended3;
 pub mod extended4;
 pub mod flows;
 pub mod health;
+pub mod investigate;
 pub mod metrics;
 pub mod modules;
 pub mod notifications;
 pub mod nodes;
 pub mod policies;
+pub mod slo_incidents;
 
 use crate::{AppMetrics, AppState};
 use axum::{http::StatusCode, Json};

@@ -26,6 +26,7 @@ describe('App', () => {
       expect(document.body.querySelector('.login-shell')).toBeTruthy();
     });
     expect(screen.getByRole('button', { name: /Sign in/i })).toBeTruthy();
-    expect(screen.getByText(/ADMIN_PASSWORD/)).toBeTruthy();
+    expect(screen.getByText(/Lab default/)).toBeTruthy();
+    expect(screen.getByText(/Admin@321/)).toBeTruthy();
   });
 });

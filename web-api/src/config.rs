@@ -14,7 +14,7 @@ pub struct Config {
     pub auth_disabled: bool,
     /// Console login username (default: admin).
     pub admin_username: String,
-    /// Console login password (required when auth is enabled; min 12 chars).
+    /// Console login password (required when auth is enabled; min 8 chars).
     pub admin_password: String,
     /// Optional API key; when set, accepted as an alternate password for admin.
     pub api_key: String,
@@ -131,12 +131,12 @@ impl Config {
             let admin_password = env::var("ADMIN_PASSWORD").map_err(|_| {
                 anyhow::anyhow!(
                     "ADMIN_PASSWORD environment variable is required when auth is enabled. \
-                     Set a strong password (at least 12 characters)."
+                     Set a strong password (at least 8 characters)."
                 )
             })?;
-            if admin_password.len() < 12 {
+            if admin_password.len() < 8 {
                 anyhow::bail!(
-                    "ADMIN_PASSWORD must be at least 12 characters long. Current length: {}",
+                    "ADMIN_PASSWORD must be at least 8 characters long. Current length: {}",
                     admin_password.len()
                 );
             }

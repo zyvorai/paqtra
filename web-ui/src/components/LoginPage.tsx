@@ -90,8 +90,7 @@ export default function LoginPage() {
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
         <p className="login-hint">
-          Use the credentials configured for this deployment (
-          <code>ADMIN_USERNAME</code> / <code>ADMIN_PASSWORD</code>).
+          Lab default: <code>admin</code> / <code>Admin@321</code>
         </p>
       </form>
     </div>

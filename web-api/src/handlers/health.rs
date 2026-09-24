@@ -34,6 +34,8 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> (StatusCode, Js
         "degraded"
     };
 
+    let flow_stats = state.flow_store.stats();
+
     (
         StatusCode::OK,
         Json(json!({
@@ -45,6 +47,12 @@ pub async fn health_check(State(state): State<Arc<AppState>>) -> (StatusCode, Js
                 "cache": "ok",
                 "hubble_relay": if hubble_ok { "ok" } else { "unavailable" },
                 "kubernetes": if k8s_ok { "ok" } else { "unavailable" },
+                "flow_ingest": {
+                    "status": if flow_stats.last_ingest_ok { "ok" } else { "unavailable" },
+                    "source": flow_stats.ingest_source,
+                    "indexed": flow_stats.total,
+                    "last_at": flow_stats.last_ingest_at,
+                },
             }
         })),
     )

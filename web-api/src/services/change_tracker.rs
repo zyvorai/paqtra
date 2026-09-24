@@ -137,6 +137,22 @@ async fn track_changes(state: &AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Recent change events for investigation correlation (newest first).
+pub async fn recent_changes(state: &AppState, limit: usize) -> Vec<serde_json::Value> {
+    let mut vals = state
+        .cache
+        .list_values(CHANGES_PREFIX)
+        .await
+        .unwrap_or_default();
+    vals.sort_by(|a, b| {
+        let ta = a.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
+        let tb = b.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
+        tb.cmp(ta)
+    });
+    vals.truncate(limit);
+    vals
+}
+
 /// Check whether the event kind is relevant. For ConfigMaps, we only care
 /// about the `cilium-config` ConfigMap.
 fn is_relevant_resource(kind: &str, involved: &serde_json::Value) -> bool {

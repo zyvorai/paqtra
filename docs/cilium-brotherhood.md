@@ -50,3 +50,13 @@ Program names (full or truncated to 15 characters) map to owners:
 | `bpf-inventory-truncated` | info | Cap hit (200 programs) |
 
 None of these findings mutate the datapath.
+
+## Network change assurance
+
+Paqtra explains failures and previews Cilium policy changes; it does not become a second datapath:
+
+- `POST /api/v1/investigate/path` — why can’t A reach B (evidence + confidence)
+- `POST /api/v1/policies/simulate` — flow-matched preview; unsupported constructs → unknown
+- Apply / rollback only via Cilium CRDs (`CiliumNetworkPolicy`)
+
+See [investigate.md](investigate.md).

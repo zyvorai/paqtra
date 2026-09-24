@@ -79,6 +79,21 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let flow_store = match &config.data_dir {
+        Some(dir) => {
+            let store = services::flow_store::FlowStore::open(
+                std::path::Path::new(dir),
+                services::flow_store::DEFAULT_RETENTION_DAYS,
+            )?;
+            tracing::info!("FlowStore initialized under {}", dir);
+            Arc::new(store)
+        }
+        None => {
+            tracing::warn!("FlowStore running in-memory (set PAQTRA_DATA_DIR for durable flow index)");
+            Arc::new(services::flow_store::FlowStore::memory_only())
+        }
+    };
+
     let prometheus = PrometheusService::new(config.prometheus_url.clone());
     if prometheus.is_configured() {
         tracing::info!(
@@ -95,6 +110,7 @@ async fn main() -> anyhow::Result<()> {
         hubble,
         k8s,
         cache,
+        flow_store,
         prometheus,
         metrics: AppMetrics::default(),
     });
@@ -110,6 +126,10 @@ async fn main() -> anyhow::Result<()> {
     // Start background GitOps change tracker
     services::change_tracker::spawn_change_tracker(app_state.clone());
     tracing::info!("Background change tracker started");
+
+    // Start Hubble → flow store ingest
+    services::flow_ingest::spawn_flow_ingest(app_state.clone());
+    tracing::info!("Background flow ingest started");
 
     // Start OpenTelemetry span exporter
     let span_exporter = Arc::new(services::tracing_svc::start_exporter(
@@ -157,6 +177,15 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/policies/simulate",
             post(handlers::policies::simulate_policy),
+        )
+        // Path investigation (why can't A reach B?)
+        .route(
+            "/api/v1/investigate/path",
+            post(handlers::investigate::investigate_path),
+        )
+        .route(
+            "/api/v1/investigate/bundles/{id}",
+            get(handlers::investigate::get_bundle),
         )
         // Anomaly detection
         .route(
@@ -486,11 +515,31 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::delete(handlers::extended4::delete_export_config),
         )
         // SLOs
-        .route("/api/v1/slo/targets", get(handlers::extended4::list_slos))
+        .route(
+            "/api/v1/slo/targets",
+            get(handlers::slo_incidents::list_slos).post(handlers::slo_incidents::create_slo),
+        )
+        .route(
+            "/api/v1/slo/targets/{id}",
+            axum::routing::delete(handlers::slo_incidents::delete_slo),
+        )
         // Incidents
         .route(
             "/api/v1/incidents",
-            get(handlers::extended4::list_incidents),
+            get(handlers::slo_incidents::list_incidents)
+                .post(handlers::slo_incidents::create_incident),
+        )
+        .route(
+            "/api/v1/incidents/{id}/ack",
+            post(handlers::slo_incidents::ack_incident),
+        )
+        .route(
+            "/api/v1/incidents/{id}/resolve",
+            post(handlers::slo_incidents::resolve_incident),
+        )
+        .route(
+            "/api/v1/incidents/{id}/notes",
+            post(handlers::slo_incidents::add_incident_note),
         )
         // Changes
         .route("/api/v1/changes", get(handlers::extended4::list_changes))
@@ -724,6 +773,7 @@ pub struct AppState {
     pub hubble: HubbleService,
     pub k8s: K8sService,
     pub cache: CacheService,
+    pub flow_store: Arc<services::flow_store::FlowStore>,
     pub prometheus: PrometheusService,
     pub metrics: AppMetrics,
 }

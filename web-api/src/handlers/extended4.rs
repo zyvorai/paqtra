@@ -326,39 +326,6 @@ pub async fn delete_export_config(
     })))
 }
 
-// ── SLO Targets ───────────────────────────────────────────
-
-const SLOS_PREFIX: &str = "cv:slos:";
-const INCIDENTS_PREFIX: &str = "cv:incidents:";
-
-pub async fn list_slos(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<PaginationQuery>,
-) -> Json<serde_json::Value> {
-    track_request(&state, |_| {}).await;
-    let stored = state
-        .cache
-        .list_values(SLOS_PREFIX)
-        .await
-        .unwrap_or_default();
-    Json(paginate_json(stored, &params, "slos"))
-}
-
-// ── Incidents ─────────────────────────────────────────────
-
-pub async fn list_incidents(
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<PaginationQuery>,
-) -> Json<serde_json::Value> {
-    track_request(&state, |_| {}).await;
-    let stored = state
-        .cache
-        .list_values(INCIDENTS_PREFIX)
-        .await
-        .unwrap_or_default();
-    Json(paginate_json(stored, &params, "incidents"))
-}
-
 // ── Change Log ────────────────────────────────────────────
 
 const CHANGES_PREFIX: &str = "cv:changes:";

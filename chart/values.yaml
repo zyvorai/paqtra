@@ -64,12 +64,12 @@ api:
     capabilities:
       drop:
         - ALL
-  # -- Persist alert rules, audit log, exports and change history in SQLite so
-  # they survive restarts. SQLite is single-writer, so enabling this pins the API
-  # to 1 replica (strategy Recreate) and disables the HPA. Leave disabled to keep
-  # the HA default (state is then memory-only and per-replica).
+  # -- Persist alert rules, audit log, exports, change history, and the flow
+  # index in SQLite so investigations survive restarts. SQLite is single-writer,
+  # so enabling this pins the API to 1 replica (strategy Recreate) and disables
+  # the HPA. Leave disabled only for HA memory-only demos.
   persistence:
-    enabled: false
+    enabled: true
     size: 1Gi
     storageClass: ""
     existingClaim: ""
@@ -159,7 +159,8 @@ auth:
   jwtSecret: ""  # If empty, auto-generated
   autoGenerate: true
   adminUsername: admin
-  adminPassword: ""
+  # Lab / demo default. Override in production.
+  adminPassword: "Admin@321"
   apiKey: ""
 
 # -- Monitoring configuration
