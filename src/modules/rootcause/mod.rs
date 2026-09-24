@@ -493,7 +493,7 @@ spec:
             .iter()
             .map(|(p, c)| (p.clone(), *c))
             .collect();
-        top_patterns.sort_by(|a, b| b.1.cmp(&a.1));
+        top_patterns.sort_by_key(|a| std::cmp::Reverse(a.1));
         top_patterns.truncate(10);
 
         DropStats {

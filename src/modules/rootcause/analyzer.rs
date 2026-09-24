@@ -153,7 +153,7 @@ impl DropAnalyzer {
             .map(|(ns, events)| (ns.clone(), events.len()))
             .collect();
 
-        counts.sort_by(|a, b| b.1.cmp(&a.1));
+        counts.sort_by_key(|a| std::cmp::Reverse(a.1));
         counts.into_iter().take(limit).collect()
     }
 
@@ -177,7 +177,7 @@ impl DropAnalyzer {
             })
             .collect();
 
-        distribution.sort_by(|a, b| b.1.cmp(&a.1));
+        distribution.sort_by_key(|a| std::cmp::Reverse(a.1));
         distribution
     }
 

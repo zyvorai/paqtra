@@ -210,7 +210,7 @@ impl RecordingStorage {
         }
 
         // Sort by start time (newest first)
-        recordings.sort_by(|a, b| b.start_time.cmp(&a.start_time));
+        recordings.sort_by_key(|a| std::cmp::Reverse(a.start_time));
 
         Ok(recordings)
     }

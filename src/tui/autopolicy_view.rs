@@ -85,7 +85,7 @@ impl AutoPolicyView {
         let items: Vec<ListItem> = if let Some(engine) = autopolicy {
             let observations = engine.observations();
             let mut obs_vec: Vec<_> = observations.iter().collect();
-            obs_vec.sort_by(|a, b| b.1.count.cmp(&a.1.count)); // Sort by count descending
+            obs_vec.sort_by_key(|a| std::cmp::Reverse(a.1.count)); // Sort by count descending
 
             obs_vec
                 .iter()
