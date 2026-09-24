@@ -1,7 +1,7 @@
 // SLO targets and incidents.
 
 use super::{
-    actor_from_claims, audit_log as emit_audit, check_admin, paginate_json, track_request,
+    actor_from_claims, audit_log as emit_audit, paginate_json, track_request,
     PaginationQuery,
 };
 use crate::services::incidents;
@@ -90,7 +90,7 @@ pub async fn create_slo(
     claims: Claims,
     Json(req): Json<CreateSloRequest>,
 ) -> ApiResult {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     let name = req.name.trim();
@@ -163,7 +163,7 @@ pub async fn delete_slo(
     claims: Claims,
     Path(id): Path<String>,
 ) -> ApiResult {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let key = format!("{SLOS_PREFIX}{id}");
     if state
@@ -223,7 +223,7 @@ pub async fn create_incident(
     claims: Claims,
     Json(req): Json<CreateIncidentRequest>,
 ) -> ApiResult {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     let title = req.title.trim();
@@ -308,7 +308,7 @@ pub async fn ack_incident(
     claims: Claims,
     Path(id): Path<String>,
 ) -> ApiResult {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let actor = actor_from_claims(&claims);
     let incident = incidents::update(&state, &id, |i| {
@@ -341,7 +341,7 @@ pub async fn resolve_incident(
     Path(id): Path<String>,
     body: axum::body::Bytes,
 ) -> ApiResult {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let actor = actor_from_claims(&claims);
     // The body is optional: an empty one (with or without a JSON content type)
@@ -402,7 +402,7 @@ pub async fn add_incident_note(
     Path(id): Path<String>,
     Json(req): Json<NoteRequest>,
 ) -> ApiResult {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let text = req.text.trim();
     if text.is_empty() || text.len() > 2000 {

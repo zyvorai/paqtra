@@ -48,6 +48,25 @@ pub fn check_admin(
     }
 }
 
+/// Allows admin and editor. Use only for actions listed in
+/// `middleware::auth::EDITOR_WRITES` (the middleware enforces that list for
+/// editors; this check keeps viewers and unknown roles out of reads as well).
+pub fn check_editor(
+    state: &AppState,
+    claims: &Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if state.config.auth_disabled {
+        return Ok(());
+    }
+    match claims.as_ref().map(|c| c.role.as_str()) {
+        Some("admin") | Some("editor") => Ok(()),
+        _ => Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "Editor or admin role required"})),
+        )),
+    }
+}
+
 /// Increment total_requests and run an extra closure on the metrics.
 pub async fn track_request(state: &AppState, f: impl FnOnce(&AppMetrics)) {
     state.metrics.total_requests.fetch_add(1, Ordering::Relaxed);

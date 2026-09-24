@@ -130,7 +130,7 @@ pub async fn run_audit(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(req): Json<RunAuditRequest>,
 ) -> Result<Json<Value>, StatusCode> {
-    if super::check_admin(&state, &claims).is_err() {
+    if super::check_editor(&state, &claims).is_err() {
         return Err(StatusCode::FORBIDDEN);
     }
     track_request(&state, |_| {}).await;

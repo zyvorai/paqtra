@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use super::{
-    actor_from_claims, audit_log, check_admin, has_namespace_access, to_json, track_error,
+    actor_from_claims, audit_log, has_namespace_access, to_json, track_error,
     track_request,
 };
 use crate::error::ApiError;
@@ -58,7 +58,7 @@ pub async fn create_policy(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+    super::check_editor(&state, &claims).map_err(|_| ApiError::Forbidden)?;
 
     // Validate spec size and depth
     req.validate_spec().map_err(ApiError::BadRequest)?;
@@ -127,7 +127,7 @@ pub async fn update_policy(
     Path(id): Path<String>,
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+    super::check_editor(&state, &claims).map_err(|_| ApiError::Forbidden)?;
 
     // Validate spec size and depth
     req.validate_spec().map_err(ApiError::BadRequest)?;
@@ -180,7 +180,7 @@ pub async fn delete_policy(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+    super::check_editor(&state, &claims).map_err(|_| ApiError::Forbidden)?;
     tracing::info!("Deleting policy: {}", id);
 
     track_request(&state, |m| {
@@ -219,7 +219,7 @@ pub async fn simulate_policy(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+    super::check_editor(&state, &claims).map_err(|_| ApiError::Forbidden)?;
 
     // Validate spec size and depth
     req.validate_spec().map_err(ApiError::BadRequest)?;

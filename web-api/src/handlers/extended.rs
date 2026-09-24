@@ -58,7 +58,7 @@ pub async fn start_recording(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(body): Json<StartRecordingRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     let id = format!("rec-{}", uuid::Uuid::new_v4());
@@ -101,7 +101,7 @@ pub async fn stop_recording(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     let key = format!("{}{}", RECORDINGS_PREFIX, id);
@@ -185,7 +185,7 @@ pub async fn apply_healer_fix(
     Path(id): Path<String>,
     Query(q): Query<ApplyFixQuery>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let actor = actor_from_claims(&claims);
 
@@ -327,7 +327,7 @@ pub async fn analyze_drops(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     let flows = state.hubble.get_flows(1000, None).await.unwrap_or_default();

@@ -23,12 +23,15 @@ pub const USERS_PREFIX: &str = "cv:users:";
 pub const MIN_PASSWORD_LEN: usize = 12;
 pub const MAX_PASSWORD_LEN: usize = 128;
 
-/// `viewer` is read-only. Anything that is not `admin` is treated as read-only
-/// by the auth middleware, so unknown roles fail closed.
+/// `admin` can do everything. `editor` can do the writes listed in
+/// `middleware::auth::EDITOR_WRITES` and nothing else. `viewer` is read-only.
+/// Any other role name is treated as read-only by the auth middleware, so
+/// unknown roles fail closed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Admin,
+    Editor,
     Viewer,
 }
 
@@ -36,6 +39,7 @@ impl Role {
     pub fn as_str(self) -> &'static str {
         match self {
             Role::Admin => "admin",
+            Role::Editor => "editor",
             Role::Viewer => "viewer",
         }
     }
@@ -325,9 +329,11 @@ mod tests {
             Role::Admin
         );
         assert!(serde_json::from_str::<Role>("\"root\"").is_err());
-        assert!(
-            serde_json::from_str::<Role>("\"editor\"").is_err(),
-            "editor is not built yet"
+        assert_eq!(
+            serde_json::from_str::<Role>("\"editor\"").unwrap(),
+            Role::Editor
         );
+        assert_eq!(Role::Editor.as_str(), "editor");
+        assert!(serde_json::from_str::<Role>("\"Editor\"").is_err());
     }
 }
