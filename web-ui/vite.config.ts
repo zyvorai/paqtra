@@ -32,11 +32,15 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'query-vendor': ['@tanstack/react-query'],
-          'chart-vendor': ['recharts'],
-          'icon-vendor': ['lucide-react'],
+        // Vite 8 / Rolldown requires a function (object form is rejected).
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return;
+          if (id.includes('react-dom') || id.includes('react-router') || /[/\\]react[/\\]/.test(id)) {
+            return 'react-vendor';
+          }
+          if (id.includes('@tanstack/react-query')) return 'query-vendor';
+          if (id.includes('recharts')) return 'chart-vendor';
+          if (id.includes('lucide-react')) return 'icon-vendor';
         },
       },
     },
