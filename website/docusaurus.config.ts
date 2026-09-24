@@ -35,10 +35,9 @@ const config: Config = {
     locales: ['en'],
   },
 
-  // Serve the repo's screenshot and social assets in place instead of
-  // duplicating them into website/static, so the README and this site
-  // reference the same physical files.
-  staticDirectories: ['static', '../docs/ux', '../docs/social'],
+  // Serve the repo's social cards in place instead of duplicating them into
+  // website/static, so the README and this site reference the same files.
+  staticDirectories: ['static', '../docs/social'],
 
   presets: [
     [
@@ -73,11 +72,6 @@ const config: Config = {
           sidebarId: 'docsSidebar',
           position: 'left',
           label: 'Docs',
-        },
-        {
-          to: '/gallery',
-          label: 'Gallery',
-          position: 'left',
         },
         {
           to: '/docs/paqtra-vs-packetwolf',

@@ -5,13 +5,12 @@ import useBaseUrl from '@docusaurus/useBaseUrl';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
 import FeatureHighlights from '@site/src/components/FeatureHighlights';
-import ScreenshotStrip from '@site/src/components/ScreenshotStrip';
 import Reveal from '@site/src/components/Reveal';
 
 import styles from './index.module.css';
 
 function HomepageHeader() {
-  const hero = useBaseUrl('/00-overview.png');
+  const hero = useBaseUrl('/paqtra-share-card.png');
   return (
     <header className={clsx('hero hero--primary', styles.heroBanner)}>
       <div className="container">
@@ -33,21 +32,16 @@ function HomepageHeader() {
               </Link>
               <Link
                 className="button button--outline button--lg button--secondary"
-                to="/gallery">
-                Product tour
-              </Link>
-              <Link
-                className="button button--outline button--lg button--secondary"
                 to="https://github.com/zyvorai/paqtra">
                 View on GitHub
               </Link>
             </div>
           </div>
           <div className={styles.heroMedia}>
-            <img src={hero} alt="Paqtra Overview dashboard" />
-            <p className={styles.heroMediaCaption}>
-              Captured against a live lab cluster, not a mockup.
-            </p>
+            <img
+              src={hero}
+              alt="Paqtra: a flow from a pod through Cilium's verdict, forwarded or dropped"
+            />
           </div>
         </div>
       </div>
@@ -185,9 +179,6 @@ export default function Home(): ReactNode {
         <ProblemStatement />
         <Reveal>
           <FeatureHighlights />
-        </Reveal>
-        <Reveal>
-          <ScreenshotStrip />
         </Reveal>
         <TrustBand />
         <PacketWolfBand />
