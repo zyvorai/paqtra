@@ -317,6 +317,21 @@ echo "Building UI image..."
 echo "Building agent/CLI image..."
 \$RUNTIME build -t "\$AGENT_IMAGE" -f Dockerfile .
 
+# Install host management CLI (like cilium-cli) from the image we just built.
+echo "Installing paqtra CLI to /usr/local/bin..."
+EXTRACT_CTR="paqtra-cli-extract-\$\$"
+\$RUNTIME rm -f "\$EXTRACT_CTR" >/dev/null 2>&1 || true
+\$RUNTIME create --name "\$EXTRACT_CTR" "\$AGENT_IMAGE" >/dev/null
+\$RUNTIME cp "\$EXTRACT_CTR:/usr/local/bin/paqtra" /tmp/paqtra-cli
+\$RUNTIME rm -f "\$EXTRACT_CTR" >/dev/null 2>&1 || true
+sudo install -m 755 /tmp/paqtra-cli /usr/local/bin/paqtra
+rm -f /tmp/paqtra-cli
+# Chart for \`paqtra install\` / upgrade (PAQTRA_CHART_DIR or default share path)
+sudo mkdir -p /usr/share/paqtra
+sudo rm -rf /usr/share/paqtra/chart
+sudo cp -a "${REMOTE_DIR}/chart" /usr/share/paqtra/chart
+echo "  ✅ paqtra CLI \$(/usr/local/bin/paqtra version 2>/dev/null || echo installed)"
+
 echo "Importing images into k3s..."
 \$RUNTIME save "\$API_IMAGE" | sudo k3s ctr images import -
 \$RUNTIME save "\$UI_IMAGE" | sudo k3s ctr images import -
