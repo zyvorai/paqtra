@@ -8,6 +8,6 @@
     "capture": "node capture.mjs"
   },
   "dependencies": {
-    "puppeteer-core": "^24.22.0"
+    "puppeteer-core": "^25.12.0"
   }
 }
