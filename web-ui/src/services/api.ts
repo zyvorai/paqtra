@@ -845,9 +845,11 @@ export interface ChangeEntry {
   type: string;
   resource: string;
   namespace: string;
-  diff_summary: string;
-  author: string;
+  /** Not sent by the cluster-event change tracker. */
+  diff_summary?: string;
+  author?: string;
   rollback_available: boolean;
+  rolled_back?: boolean;
   [key: string]: unknown;
 }
 
