@@ -51,6 +51,11 @@ rand = "0.10"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 argon2 = "0.6.0"
 subtle = "2.6.1"
+tonic = "0.14"
+tonic-prost = "0.14"
+prost = "0.14"
+prost-types = "0.14"
+tokio-stream = "0.1.19"
 
 [profile.release]
 opt-level = 3
@@ -62,3 +67,7 @@ codegen-units = 1
 opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
+
+[build-dependencies]
+protox = "0.9.1"
+tonic-prost-build = "0.14"

@@ -1,6 +1,6 @@
 // WebSocket handlers for real-time updates
 use crate::middleware::auth::Claims;
-use crate::services::hubble::flow_from_hubble_line;
+use crate::services::hubble::LiveEvent;
 use crate::AppState;
 use axum::{
     extract::{
@@ -14,7 +14,6 @@ use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, BufReader};
 
 /// Query parameter for WebSocket token-based authentication.
 #[derive(Debug, Deserialize)]
@@ -307,48 +306,15 @@ async fn handle_live_flows(
         return;
     }
 
-    // Validate namespace to prevent flag injection
-    if let Some(ref ns) = namespace {
-        if ns.starts_with('-') || ns.contains(char::is_whitespace) {
-            let _ = socket
-                .send(Message::Text(
-                    serde_json::json!({
-                        "type": "error",
-                        "message": "Invalid namespace parameter",
-                    })
-                    .to_string()
-                    .into(),
-                ))
-                .await;
-            return;
-        }
-    }
-
-    // Spawn hubble observe --follow
-    let mut cmd = tokio::process::Command::new("hubble");
-    cmd.arg("observe")
-        .arg("--follow")
-        .arg("--output")
-        .arg("json")
-        .arg("--server")
-        .arg(state.hubble.address());
-
-    if let Some(ref ns) = namespace {
-        cmd.arg("--namespace").arg(ns);
-    }
-
-    cmd.stdout(std::process::Stdio::piped());
-    cmd.stderr(std::process::Stdio::piped());
-
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
+    let mut events = match state.hubble.stream_flows(namespace.as_deref()).await {
+        Ok(rx) => rx,
         Err(e) => {
-            tracing::error!("Failed to spawn hubble observe: {}", e);
+            tracing::error!("Failed to start live flow stream: {e:#}");
             let _ = socket
                 .send(Message::Text(
                     serde_json::json!({
                         "type": "error",
-                        "message": format!("Failed to start hubble observe: {}", e),
+                        "message": format!("Failed to start flow stream: {e}"),
                     })
                     .to_string()
                     .into(),
@@ -357,49 +323,16 @@ async fn handle_live_flows(
             return;
         }
     };
-
-    let stdout = match child.stdout.take() {
-        Some(s) => s,
-        None => {
-            tracing::error!("Failed to capture stdout from hubble observe process");
-            let _ = socket
-                .send(Message::Text(
-                    serde_json::json!({
-                        "type": "error",
-                        "message": "Internal error: failed to capture hubble output",
-                    })
-                    .to_string()
-                    .into(),
-                ))
-                .await;
-            let _ = child.kill().await;
-            return;
-        }
-    };
-    let mut lines = BufReader::new(stdout).lines();
 
     let mut ping_interval =
         tokio::time::interval(tokio::time::Duration::from_secs(PING_INTERVAL_SECS));
-    let mut flow_index: usize = 0;
 
+    // Dropping `events` on any exit stops the gRPC stream or kills the CLI child.
     loop {
         tokio::select! {
-            line_result = lines.next_line() => {
-                match line_result {
-                    Ok(Some(line)) => {
-                        if line.trim().is_empty() {
-                            continue;
-                        }
-                        let parsed = match serde_json::from_str::<serde_json::Value>(&line) {
-                            Ok(v) => v,
-                            Err(_) => continue,
-                        };
-                        // Skip lines that are not flows (lost-event and node-status messages).
-                        let Some(flow) = flow_from_hubble_line(flow_index, &parsed) else {
-                            continue;
-                        };
-                        flow_index = flow_index.wrapping_add(1);
-
+            event = events.recv() => {
+                match event {
+                    Some(LiveEvent::Flow(flow)) => {
                         let msg = serde_json::json!({
                             "type": "flow",
                             "data": flow,
@@ -413,25 +346,18 @@ async fn handle_live_flows(
                             break;
                         }
                     }
-                    Ok(None) => {
-                        // hubble process exited
-                        tracing::debug!("hubble observe process exited");
+                    Some(LiveEvent::Ended(reason)) => {
+                        tracing::debug!("Live flow stream ended: {reason}");
                         let _ = socket
                             .send(Message::Text(
-                                serde_json::json!({
-                                    "type": "error",
-                                    "message": "hubble observe process exited",
-                                })
-                                .to_string()
-                                .into(),
+                                serde_json::json!({ "type": "error", "message": reason })
+                                    .to_string()
+                                    .into(),
                             ))
                             .await;
                         break;
                     }
-                    Err(e) => {
-                        tracing::error!("Error reading hubble output: {}", e);
-                        break;
-                    }
+                    None => break,
                 }
             }
             _ = ping_interval.tick() => {
@@ -445,10 +371,5 @@ async fn handle_live_flows(
                 }
             }
         }
-    }
-
-    // Kill the child process on disconnect
-    if let Err(e) = child.kill().await {
-        tracing::debug!("Failed to kill hubble observe process: {}", e);
     }
 }
