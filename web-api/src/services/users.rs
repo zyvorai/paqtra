@@ -56,6 +56,10 @@ pub struct User {
     pub updated_at: String,
     /// Unix seconds. Tokens issued before this are no longer accepted.
     pub password_changed_at: i64,
+    /// Namespaces this user may see and change. Empty means all namespaces.
+    /// Never set for admins, who are not scoped.
+    #[serde(default)]
+    pub namespaces: Vec<String>,
 }
 
 impl User {
@@ -65,6 +69,7 @@ impl User {
             "username": self.username,
             "role": self.role,
             "enabled": self.enabled,
+            "namespaces": self.namespaces,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         })
@@ -93,6 +98,45 @@ pub fn normalize_username(raw: &str) -> Result<String, &'static str> {
     } else {
         Err("username must be 3-32 characters: letters, digits, '.', '_' or '-', starting with a letter or digit")
     }
+}
+
+/// Most namespaces one user can be limited to.
+pub const MAX_NAMESPACES: usize = 50;
+
+/// A Kubernetes DNS label: lowercase letters, digits and '-', up to 63
+/// characters, not starting or ending with '-'.
+pub fn valid_namespace_name(ns: &str) -> bool {
+    !ns.is_empty()
+        && ns.len() <= 63
+        && !ns.starts_with('-')
+        && !ns.ends_with('-')
+        && ns
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Validate a namespace list: lowercased, de-duplicated and sorted. Empty means
+/// "all namespaces"; `*` is refused so there is only one way to say that.
+pub fn normalize_namespaces(raw: Vec<String>) -> Result<Vec<String>, &'static str> {
+    let mut out: Vec<String> = Vec::new();
+    for ns in raw {
+        let ns = ns.trim().to_ascii_lowercase();
+        if ns == "*" {
+            return Err("use an empty namespace list for all namespaces, not \"*\"");
+        }
+        if !valid_namespace_name(&ns) {
+            return Err(
+                "each namespace must be a valid Kubernetes name (lowercase letters, digits, '-')",
+            );
+        }
+        out.push(ns);
+    }
+    out.sort();
+    out.dedup();
+    if out.len() > MAX_NAMESPACES {
+        return Err("at most 50 namespaces per user");
+    }
+    Ok(out)
 }
 
 /// Length only, deliberately: long passphrases beat composition rules.
@@ -217,6 +261,7 @@ mod tests {
             created_at: String::new(),
             updated_at: String::new(),
             password_changed_at: changed,
+            namespaces: Vec::new(),
         }
     }
 
@@ -310,6 +355,56 @@ mod tests {
         assert!(!u.accepts_token_issued_at(now - 60));
         // A token stamped max(now, cutoff) at the next login is accepted at once.
         assert!(u.accepts_token_issued_at(now.max(u.password_changed_at)));
+    }
+
+    #[test]
+    fn namespace_lists_are_normalized() {
+        let got = normalize_namespaces(vec![" Team-B ".into(), "team-a".into(), "TEAM-A".into()])
+            .unwrap();
+        assert_eq!(got, vec!["team-a", "team-b"]);
+        assert_eq!(normalize_namespaces(vec![]).unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn namespace_lists_reject_bad_input() {
+        for bad in [
+            "*",
+            "",
+            " ",
+            "-a",
+            "a-",
+            "a_b",
+            "a b",
+            "a/b",
+            "ns.x",
+            &"x".repeat(64),
+        ] {
+            assert!(
+                normalize_namespaces(vec![bad.to_string()]).is_err(),
+                "{bad:?}"
+            );
+        }
+        assert!(
+            normalize_namespaces(vec!["ok".into(), "*".into()]).is_err(),
+            "one bad entry fails the list"
+        );
+        let many: Vec<String> = (0..=MAX_NAMESPACES).map(|i| format!("ns-{i}")).collect();
+        assert!(normalize_namespaces(many).is_err());
+        assert!(
+            normalize_namespaces((0..MAX_NAMESPACES).map(|i| format!("ns-{i}")).collect()).is_ok()
+        );
+        assert!(normalize_namespaces(vec!["x".repeat(63)]).is_ok());
+    }
+
+    #[test]
+    fn public_view_lists_namespaces_and_old_records_default_to_all() {
+        let mut u = user(Role::Viewer, true, 0);
+        u.namespaces = vec!["team-a".into()];
+        assert_eq!(u.public()["namespaces"], serde_json::json!(["team-a"]));
+        // A record stored before this field existed must load as unscoped.
+        let old = r#"{"username":"x","password_hash":"h","role":"viewer","enabled":true,"created_at":"","updated_at":"","password_changed_at":0}"#;
+        let loaded: User = serde_json::from_str(old).unwrap();
+        assert!(loaded.namespaces.is_empty());
     }
 
     #[test]

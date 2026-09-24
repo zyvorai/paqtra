@@ -49,9 +49,17 @@ async fn validate_ws_token(
         })?
         .claims;
     // Same account checks as HTTP: a disabled or changed account is refused.
-    crate::middleware::auth::resolve_claims(state, claims)
+    let claims = crate::middleware::auth::resolve_claims(state, claims)
         .await
         .map_err(|msg| (StatusCode::UNAUTHORIZED, msg.to_string()))?;
+    // The live streams carry cluster-wide flows and metrics and are not filtered
+    // per namespace, so a namespace-limited account cannot open them.
+    if claims.role != "admin" && !claims.namespaces.is_empty() {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Live streams are not available to namespace-limited accounts".to_string(),
+        ));
+    }
     Ok(())
 }
 

@@ -201,6 +201,25 @@ pub fn has_namespace_access(
     }
 }
 
+/// Whether the caller may see a flow: it is visible if its source *or* its
+/// destination is in a namespace the caller can access. Source-only would hide
+/// traffic sent to the caller's namespace while exposing the peers of traffic
+/// sent from it.
+pub fn flow_visible(
+    state: &AppState,
+    claims: &Option<axum::Extension<crate::middleware::auth::Claims>>,
+    flow: &crate::models::flow::Flow,
+) -> bool {
+    has_namespace_access(state, claims, &flow.source.namespace)
+        || has_namespace_access(state, claims, &flow.destination.namespace)
+}
+
+/// The namespace named by a policy id: `namespace/name`, or `default` when the
+/// id is a bare name. Mirrors `K8sService::delete_policy`, which acts on it.
+pub fn policy_id_namespace(id: &str) -> &str {
+    id.split_once('/').map(|(ns, _)| ns).unwrap_or("default")
+}
+
 /// Filter a list of JSON values by namespace access. Checks "namespace" field on each item.
 pub fn filter_by_namespace_access(
     state: &AppState,

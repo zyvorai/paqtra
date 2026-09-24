@@ -203,10 +203,13 @@ pub async fn me(
         Some(Extension(c)) => Json(json!({
             "username": c.sub,
             "role": c.role,
+            "namespaces": c.namespaces,
             "source": if c.sub == state.config.admin_username { "config" } else { "local" },
         })),
         // Authentication is disabled (development only).
-        None => Json(json!({"username": "anonymous", "role": "admin", "source": "auth_disabled"})),
+        None => Json(
+            json!({"username": "anonymous", "role": "admin", "namespaces": [], "source": "auth_disabled"}),
+        ),
     }
 }
 

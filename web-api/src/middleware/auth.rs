@@ -39,6 +39,9 @@ pub async fn resolve_claims(state: &AppState, mut claims: Claims) -> Result<Clai
     match crate::services::users::get(state, &claims.sub).await {
         Some(user) if user.accepts_token_issued_at(claims.iat as i64) => {
             claims.role = user.role.as_str().to_string();
+            // The namespace limit, like the role, is read from the store, so an
+            // admin narrowing or widening it applies to existing tokens at once.
+            claims.namespaces = user.namespaces.clone();
             Ok(claims)
         }
         _ => Err("Account is disabled, changed or no longer exists"),
@@ -86,6 +89,42 @@ pub const EDITOR_WRITES: &[(&str, &str)] = &[
     ("POST", "/api/v1/modules/replay/start"),
     ("POST", "/api/v1/modules/replay/{id}/stop"),
 ];
+
+/// A user limited to namespaces (a non-admin with a non-empty list) may call only
+/// these endpoints, each of which filters or checks by namespace. Everything else
+/// (nodes, eBPF, heatmap, DNS, anomalies, audit, incidents, ...) returns
+/// cluster-wide data and is refused. Deny-by-default, like `EDITOR_WRITES`.
+///
+/// Only exact paths and method-unique `{id}` routes are listed. `GET
+/// /flows/{id}` and `GET /policies/{id}` are deliberately absent: the pattern
+/// would also match static routes such as `/flows/stats` and `/flows/exports`.
+/// Scoped users find single items in the list endpoints instead.
+pub const SCOPED_ACCESS: &[(&str, &str)] = &[
+    ("GET", "/api/v1/flows"),
+    ("GET", "/api/v1/policies"),
+    ("GET", "/api/v1/events"),
+    ("GET", "/api/v1/endpoints"),
+    // Changes to policies still need the editor role (EDITOR_WRITES) and a
+    // namespace check in the handler.
+    ("POST", "/api/v1/policies"),
+    ("POST", "/api/v1/policies/simulate"),
+    ("PUT", "/api/v1/policies/{id}"),
+    ("DELETE", "/api/v1/policies/{id}"),
+];
+
+/// Paths every signed-in user may call, whatever their namespace limit.
+const ALWAYS_ALLOWED: &[&str] = &["/api/v1/auth/me", SELF_SERVICE_PATH];
+
+fn is_scoped(claims: &Claims) -> bool {
+    claims.role != "admin" && !claims.namespaces.is_empty()
+}
+
+fn scoped_may_call(method: &Method, path: &str) -> bool {
+    ALWAYS_ALLOWED.contains(&path)
+        || SCOPED_ACCESS
+            .iter()
+            .any(|(m, pattern)| *m == method.as_str() && path_matches(pattern, path))
+}
 
 /// Whether `path` matches a route pattern where `{name}` matches one segment.
 fn path_matches(pattern: &str, path: &str) -> bool {
@@ -181,9 +220,22 @@ pub async fn auth_middleware(
             let claims = match resolve_claims(&state, token_data.claims).await {
                 Ok(c) => c,
                 Err(msg) => {
-                    return (StatusCode::UNAUTHORIZED, Json(json!({ "error": msg }))).into_response();
+                    return (StatusCode::UNAUTHORIZED, Json(json!({ "error": msg })))
+                        .into_response();
                 }
             };
+            if is_scoped(&claims) && !scoped_may_call(request.method(), request.uri().path()) {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(json!({
+                        "error": format!(
+                            "Your account is limited to the namespaces {}: this endpoint is not available to it",
+                            claims.namespaces.join(", ")
+                        )
+                    })),
+                )
+                    .into_response();
+            }
             match access(&claims.role, request.method(), request.uri().path()) {
                 Access::Allowed => {}
                 denied => {
@@ -240,7 +292,11 @@ mod tests {
     fn admin_may_do_anything() {
         for (m, p) in ADMIN_ONLY_WRITES.iter().chain(EDITOR_WRITES) {
             let method: Method = m.parse().unwrap();
-            assert_eq!(access("admin", &method, &p.replace("{id}", "x")), Access::Allowed, "{m} {p}");
+            assert_eq!(
+                access("admin", &method, &p.replace("{id}", "x")),
+                Access::Allowed,
+                "{m} {p}"
+            );
         }
     }
 
@@ -248,27 +304,52 @@ mod tests {
     fn editor_may_do_exactly_the_listed_writes() {
         for (m, p) in EDITOR_WRITES {
             let method: Method = m.parse().unwrap();
-            assert_eq!(access("editor", &method, &p.replace("{id}", "abc")), Access::Allowed, "{m} {p}");
+            assert_eq!(
+                access("editor", &method, &p.replace("{id}", "abc")),
+                Access::Allowed,
+                "{m} {p}"
+            );
         }
         for (m, p) in ADMIN_ONLY_WRITES {
             let method: Method = m.parse().unwrap();
-            assert_eq!(access("editor", &method, p), Access::NotPermitted, "{m} {p}");
+            assert_eq!(
+                access("editor", &method, p),
+                Access::NotPermitted,
+                "{m} {p}"
+            );
         }
     }
 
     #[test]
     fn editor_writes_are_method_specific() {
         // POST /policies is allowed; PATCH and an unlisted verb are not.
-        assert_eq!(access("editor", &Method::POST, "/api/v1/policies"), Access::Allowed);
-        assert_eq!(access("editor", &Method::PATCH, "/api/v1/policies"), Access::NotPermitted);
-        assert_eq!(access("editor", &Method::DELETE, "/api/v1/incidents/x/ack"), Access::NotPermitted);
+        assert_eq!(
+            access("editor", &Method::POST, "/api/v1/policies"),
+            Access::Allowed
+        );
+        assert_eq!(
+            access("editor", &Method::PATCH, "/api/v1/policies"),
+            Access::NotPermitted
+        );
+        assert_eq!(
+            access("editor", &Method::DELETE, "/api/v1/incidents/x/ack"),
+            Access::NotPermitted
+        );
     }
 
     #[test]
     fn viewers_and_unknown_roles_are_read_only() {
         for role in ["viewer", "", "root", "Admin", "EDITOR"] {
-            assert_eq!(access(role, &Method::POST, "/api/v1/incidents"), Access::ReadOnly, "{role:?}");
-            assert_eq!(access(role, &Method::DELETE, "/api/v1/policies/x"), Access::ReadOnly, "{role:?}");
+            assert_eq!(
+                access(role, &Method::POST, "/api/v1/incidents"),
+                Access::ReadOnly,
+                "{role:?}"
+            );
+            assert_eq!(
+                access(role, &Method::DELETE, "/api/v1/policies/x"),
+                Access::ReadOnly,
+                "{role:?}"
+            );
         }
     }
 
@@ -276,18 +357,39 @@ mod tests {
     fn everyone_can_read_and_change_their_own_password() {
         for role in ["admin", "editor", "viewer", "weird"] {
             assert_eq!(access(role, &Method::GET, "/api/v1/users"), Access::Allowed);
-            assert_eq!(access(role, &Method::POST, SELF_SERVICE_PATH), Access::Allowed);
+            assert_eq!(
+                access(role, &Method::POST, SELF_SERVICE_PATH),
+                Access::Allowed
+            );
         }
     }
 
     #[test]
     fn path_matching() {
-        assert!(path_matches("/api/v1/incidents/{id}/ack", "/api/v1/incidents/inc-1/ack"));
-        assert!(path_matches("/api/v1/incidents/{id}/ack", "/api/v1/incidents/inc-1/ack/"));
-        assert!(!path_matches("/api/v1/incidents/{id}/ack", "/api/v1/incidents//ack"));
-        assert!(!path_matches("/api/v1/incidents/{id}/ack", "/api/v1/incidents/inc-1/resolve"));
-        assert!(!path_matches("/api/v1/incidents/{id}", "/api/v1/incidents/a/b"));
-        assert!(!path_matches("/api/v1/incidents", "/api/v1/incidents/extra"));
+        assert!(path_matches(
+            "/api/v1/incidents/{id}/ack",
+            "/api/v1/incidents/inc-1/ack"
+        ));
+        assert!(path_matches(
+            "/api/v1/incidents/{id}/ack",
+            "/api/v1/incidents/inc-1/ack/"
+        ));
+        assert!(!path_matches(
+            "/api/v1/incidents/{id}/ack",
+            "/api/v1/incidents//ack"
+        ));
+        assert!(!path_matches(
+            "/api/v1/incidents/{id}/ack",
+            "/api/v1/incidents/inc-1/resolve"
+        ));
+        assert!(!path_matches(
+            "/api/v1/incidents/{id}",
+            "/api/v1/incidents/a/b"
+        ));
+        assert!(!path_matches(
+            "/api/v1/incidents",
+            "/api/v1/incidents/extra"
+        ));
     }
 
     #[test]
@@ -296,7 +398,90 @@ mod tests {
         // grant nothing (or be renamed away from the handler that enforces it).
         let main = include_str!("../main.rs");
         for (_, pattern) in EDITOR_WRITES {
-            assert!(main.contains(&format!("\"{pattern}\"")), "{pattern} is not routed in main.rs");
+            assert!(
+                main.contains(&format!("\"{pattern}\"")),
+                "{pattern} is not routed in main.rs"
+            );
+        }
+    }
+
+    fn scoped(role: &str) -> Claims {
+        Claims {
+            sub: "u".into(),
+            exp: 0,
+            iat: 0,
+            role: role.into(),
+            namespaces: vec!["team-a".into()],
+        }
+    }
+
+    #[test]
+    fn only_non_admins_with_a_list_are_scoped() {
+        assert!(is_scoped(&scoped("viewer")));
+        assert!(is_scoped(&scoped("editor")));
+        assert!(!is_scoped(&scoped("admin")), "admins are never scoped");
+        let mut unlimited = scoped("viewer");
+        unlimited.namespaces.clear();
+        assert!(!is_scoped(&unlimited), "an empty list means all namespaces");
+    }
+
+    #[test]
+    fn scoped_users_reach_only_the_namespace_aware_endpoints() {
+        for (m, p) in SCOPED_ACCESS {
+            let method: Method = m.parse().unwrap();
+            assert!(
+                scoped_may_call(&method, &p.replace("{id}", "team-a")),
+                "{m} {p}"
+            );
+        }
+        assert!(scoped_may_call(&Method::GET, "/api/v1/auth/me"));
+        assert!(scoped_may_call(&Method::POST, SELF_SERVICE_PATH));
+        // Cluster-wide data and the routes that `{id}` patterns would shadow.
+        for (m, p) in [
+            ("GET", "/api/v1/flows/stats"),
+            ("GET", "/api/v1/flows/exports"),
+            ("GET", "/api/v1/flows/abc"),
+            ("GET", "/api/v1/policies/abc"),
+            ("GET", "/api/v1/policies/templates"),
+            ("GET", "/api/v1/nodes"),
+            ("GET", "/api/v1/ebpf/summary"),
+            ("GET", "/api/v1/heatmap"),
+            ("GET", "/api/v1/dns/queries"),
+            ("GET", "/api/v1/audit/log"),
+            ("GET", "/api/v1/incidents"),
+            ("GET", "/api/v1/users"),
+            ("POST", "/api/v1/incidents"),
+            ("POST", "/api/v1/policies/validate"),
+            ("POST", "/api/v1/modules/capture/start"),
+            ("PATCH", "/api/v1/policies/abc"),
+        ] {
+            let method: Method = m.parse().unwrap();
+            assert!(
+                !scoped_may_call(&method, p),
+                "{m} {p} must be refused to scoped users"
+            );
+        }
+    }
+
+    #[test]
+    fn every_scoped_entry_is_a_real_route() {
+        let main = include_str!("../main.rs");
+        for (_, pattern) in SCOPED_ACCESS {
+            assert!(
+                main.contains(&format!("\"{pattern}\"")),
+                "{pattern} is not routed in main.rs"
+            );
+        }
+    }
+
+    #[test]
+    fn scoped_writes_are_a_subset_of_editor_writes() {
+        // A scoped user can never write something an unscoped editor cannot.
+        for (m, p) in SCOPED_ACCESS.iter().filter(|(m, _)| *m != "GET") {
+            assert!(
+                EDITOR_WRITES.contains(&(*m, *p)),
+                "{m} {p} is scoped-allowed but not an editor write"
+            );
         }
     }
 }
