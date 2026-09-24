@@ -45,6 +45,8 @@ export default [
         HTMLElement: 'readonly',
         HTMLDivElement: 'readonly',
         HTMLInputElement: 'readonly',
+        HTMLButtonElement: 'readonly',
+        Storage: 'readonly',
         SVGSVGElement: 'readonly',
         SVGGElement: 'readonly',
         KeyboardEvent: 'readonly',
@@ -81,6 +83,10 @@ export default [
     rules: {
       ...tsPlugin.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
+      // react-hooks 7's compiler-oriented rule flags every fetch-in-effect data
+      // load (the pattern this UI uses throughout). Off until those views move
+      // to a data-fetching layer; the classic rules-of-hooks/exhaustive-deps stay on.
+      'react-hooks/set-state-in-effect': 'off',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],

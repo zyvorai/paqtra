@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCountUp } from '../../hooks/useCountUp';
 import Reveal from '../../components/Reveal';
-import { buildDigest, digestLabel, type Digest } from '../../components/DigestChip';
+import { buildDigest, digestLabel, type Digest } from '../../components/digest';
 import {
   fetchNodes,
   fetchEndpoints,

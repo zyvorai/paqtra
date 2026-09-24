@@ -151,6 +151,7 @@ jobs:
           cache: npm
           cache-dependency-path: web-ui/package-lock.json
       - run: npm ci
+      - run: npm run lint
       - run: npm run build
       - run: npx vitest run
       - name: NPM audit
