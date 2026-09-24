@@ -188,7 +188,7 @@ HubbleClient
   │   └─→ Background: cilium hubble port-forward
   │
   └─→ get_flows()
-      └─→ Fetch flows via CLI (future: gRPC)
+      └─→ Fetch flows via Hubble Observer gRPC (CLI fallback when HUBBLE_MODE=cli|auto)
 ```
 
 ### 7. TUI Application

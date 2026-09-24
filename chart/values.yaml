@@ -161,8 +161,8 @@ auth:
   jwtSecret: ""  # If empty, auto-generated
   autoGenerate: true
   adminUsername: admin
-  # Lab / demo default. Override in production.
-  adminPassword: "Admin@321"
+  # Empty → Helm auto-generates. Lab pin is set only by scripts/deploy-remote.sh.
+  adminPassword: ""
   apiKey: ""
 
 # -- Monitoring configuration
