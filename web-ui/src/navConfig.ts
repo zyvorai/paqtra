@@ -170,6 +170,11 @@ export const NAV_GROUPS: NavGroup[] = [
         blurb: 'Zero-trust and security posture scoring.',
       },
       {
+        path: '/users',
+        label: 'Users',
+        blurb: 'Accounts and roles: who can sign in and what they can change.',
+      },
+      {
         path: '/settings',
         label: 'Settings',
         blurb: 'Console preferences and connection settings.',
@@ -331,6 +336,11 @@ export const PAGE_HEROES: Record<string, PageHeroCopy> = {
     title: 'Security posture.',
     lede: 'Zero-trust and security posture scoring.',
     tint: 'purple',
+  },
+  '/users': {
+    eyebrow: 'Reports',
+    title: 'Who can do what.',
+    lede: 'Accounts and roles: admins change things, viewers look.',
   },
   '/settings': {
     eyebrow: 'Reports',

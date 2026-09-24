@@ -79,12 +79,19 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 });
 
 // --- Response interceptor ---------------------------------------------------
+/** Fired when the API rejects the session (expired, revoked, or the account was disabled). */
+export const UNAUTHORIZED_EVENT = 'paqtra:unauthorized';
+
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
       // Token expired or invalid – clear the in-memory Authorization header
       delete api.defaults.headers.common['Authorization'];
+      // A wrong password on the login form is not a lost session.
+      if (!error.config?.url?.includes('/auth/login')) {
+        window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+      }
       // In production, send to observability service (e.g., Sentry, Datadog)
       console.warn('[api] Unauthorized – token cleared');
     }
@@ -1028,6 +1035,29 @@ export const fetchAuditLog = () => api.get<{ entries: AuditEntry[] }>('/audit/lo
 export const fetchAlertRules = () => api.get<{ rules: AlertRule[] }>('/alerts/rules');
 export const fetchAlertHistory = () => api.get<{ alerts: AlertEvent[]; events?: AlertEvent[] }>('/alerts/history');
 export const toggleAlertRule = (id: string) => api.put(`/alerts/rules/${id}`);
+export type UserRole = 'admin' | 'viewer';
+
+export interface AppUser {
+  username: string;
+  role: UserRole;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Me {
+  username: string;
+  role: string;
+  /** `config` for the ADMIN_USERNAME account, `local` for stored users. */
+  source: string;
+}
+
+export const fetchUsers = () => api.get<{ users: AppUser[]; total: number; config_admin: string }>('/users');
+export const createUser = (body: { username: string; password: string; role: UserRole }) => api.post('/users', body);
+export const updateUser = (username: string, body: { role?: UserRole; enabled?: boolean; password?: string }) => api.put(`/users/${encodeURIComponent(username)}`, body);
+export const deleteUser = (username: string) => api.delete(`/users/${encodeURIComponent(username)}`);
+export const fetchMe = () => api.get<Me>('/auth/me');
+export const changePassword = (body: { current_password: string; new_password: string }) => api.post<{ changed: boolean; reauthenticate: boolean }>('/auth/password', body);
 export const fetchChannels = () => api.get<{ channels: NotificationChannel[] }>('/alerts/channels');
 export const createChannel = (body: { name: string; kind: ChannelKind; target: string; min_severity?: string }) => api.post('/alerts/channels', body);
 export const deleteChannel = (id: string) => api.delete(`/alerts/channels/${id}`);

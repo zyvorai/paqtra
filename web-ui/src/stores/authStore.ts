@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import api from '../services/api';
+import api, { UNAUTHORIZED_EVENT } from '../services/api';
 
 const TOKEN_KEY = 'paqtra-token';
 const USER_KEY = 'paqtra-username';
@@ -75,8 +75,10 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     try {
-      // Probe a protected JSON endpoint (not /health — that is auth-exempt).
-      const resp = await fetch('/api/v1/nodes', {
+      // /auth/me validates the token against the account as it is now (a disabled
+      // or deleted user is refused) and tells us the current role. /health is
+      // auth-exempt, so it cannot be used to probe.
+      const resp = await fetch('/api/v1/auth/me', {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/json',
@@ -93,9 +95,14 @@ export const useAuthStore = create<AuthState>((set) => ({
         });
         return;
       }
+      let me: { username?: string; role?: string } = {};
+      if (resp.ok) {
+        try { me = await resp.json(); } catch { /* keep the stored username */ }
+      }
       set({
         token,
-        username: localStorage.getItem(USER_KEY),
+        username: me.username ?? localStorage.getItem(USER_KEY),
+        role: me.role ?? null,
         isAuthenticated: true,
         authRequired: false,
         sessionReady: true,
@@ -110,3 +117,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 }));
+
+// The API refused the session (revoked, expired, account disabled): sign out.
+if (typeof window !== 'undefined') {
+  window.addEventListener(UNAUTHORIZED_EVENT, () => {
+    if (useAuthStore.getState().isAuthenticated) useAuthStore.getState().logout();
+  });
+}
