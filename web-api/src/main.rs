@@ -221,6 +221,18 @@ async fn main() -> anyhow::Result<()> {
             post(handlers::compliance::run_audit),
         )
         .route(
+            "/api/v1/compliance/audits",
+            get(handlers::compliance::list_audits),
+        )
+        .route(
+            "/api/v1/compliance/audits/{id}",
+            get(handlers::compliance::get_audit),
+        )
+        .route(
+            "/api/v1/compliance/audits/{id}/report",
+            get(handlers::compliance::audit_report),
+        )
+        .route(
             "/api/v1/security/posture",
             get(handlers::compliance::security_posture),
         )
