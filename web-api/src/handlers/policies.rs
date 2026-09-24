@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use super::{
-    actor_from_claims, audit_log, check_admin, has_namespace_access, to_json, track_error,
+    actor_from_claims, audit_log, has_namespace_access, policy_id_namespace, to_json, track_error,
     track_request,
 };
 use crate::error::ApiError;
@@ -58,7 +58,10 @@ pub async fn create_policy(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+    super::check_editor(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+    if !has_namespace_access(&state, &claims, &req.namespace) {
+        return Err(ApiError::Forbidden);
+    }
 
     // Validate spec size and depth
     req.validate_spec().map_err(ApiError::BadRequest)?;
@@ -98,6 +101,7 @@ pub async fn create_policy(
 
 pub async fn get_policy(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     tracing::info!("Getting policy: {}", id);
@@ -109,7 +113,13 @@ pub async fn get_policy(
 
     // Fetch all and find by id
     match state.k8s.list_policies().await {
-        Ok(policies) => match policies.into_iter().find(|p| p.id == id || p.name == id) {
+        // Only policies the caller may see are candidates, so a policy in
+        // someone else's namespace is indistinguishable from a missing one.
+        Ok(policies) => match policies
+            .into_iter()
+            .filter(|p| has_namespace_access(&state, &claims, &p.namespace))
+            .find(|p| p.id == id || p.name == id)
+        {
             Some(policy) => Ok(Json(to_json(&policy))),
             None => Err(ApiError::NotFound),
         },
@@ -127,7 +137,11 @@ pub async fn update_policy(
     Path(id): Path<String>,
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+    super::check_editor(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+    // The body's namespace is what gets applied.
+    if !has_namespace_access(&state, &claims, &req.namespace) {
+        return Err(ApiError::Forbidden);
+    }
 
     // Validate spec size and depth
     req.validate_spec().map_err(ApiError::BadRequest)?;
@@ -143,6 +157,13 @@ pub async fn update_policy(
     // Also validate that the request body name matches the path ID
     match state.k8s.list_policies().await {
         Ok(policies) => {
+            // Look only among policies the caller may see: matching by name across
+            // all namespaces would let a scoped user probe for other namespaces'
+            // policies (not found vs bad request).
+            let policies: Vec<_> = policies
+                .into_iter()
+                .filter(|p| has_namespace_access(&state, &claims, &p.namespace))
+                .collect();
             if !policies.iter().any(|p| p.id == id || p.name == id) {
                 return Err(ApiError::NotFound);
             }
@@ -180,7 +201,11 @@ pub async fn delete_policy(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+    super::check_editor(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+    // The id names the namespace it acts on (`namespace/name`, else `default`).
+    if !has_namespace_access(&state, &claims, policy_id_namespace(&id)) {
+        return Err(ApiError::Forbidden);
+    }
     tracing::info!("Deleting policy: {}", id);
 
     track_request(&state, |m| {
@@ -219,7 +244,10 @@ pub async fn simulate_policy(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(req): Json<CreatePolicyRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    check_admin(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+    super::check_editor(&state, &claims).map_err(|_| ApiError::Forbidden)?;
+    if !has_namespace_access(&state, &claims, &req.namespace) {
+        return Err(ApiError::Forbidden);
+    }
 
     // Validate spec size and depth
     req.validate_spec().map_err(ApiError::BadRequest)?;
@@ -246,7 +274,7 @@ pub async fn simulate_policy(
     )
     .await;
 
-    Ok(Json(serde_json::to_value(preview).unwrap_or_else(|_| {
-        serde_json::json!({"error": "serialize failed"})
-    })))
+    Ok(Json(serde_json::to_value(preview).unwrap_or_else(
+        |_| serde_json::json!({"error": "serialize failed"}),
+    )))
 }

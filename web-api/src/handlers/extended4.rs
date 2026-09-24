@@ -175,7 +175,7 @@ pub async fn validate_policy(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(body): Json<ValidatePolicyRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let yaml = &body.yaml;
     if yaml.is_empty() {

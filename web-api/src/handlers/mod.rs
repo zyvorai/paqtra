@@ -9,6 +9,7 @@ pub mod extended;
 pub mod extended2;
 pub mod extended3;
 pub mod extended4;
+pub mod flow_history;
 pub mod flows;
 pub mod health;
 pub mod investigate;
@@ -44,6 +45,25 @@ pub fn check_admin(
         _ => Err((
             StatusCode::FORBIDDEN,
             Json(serde_json::json!({"error": "Admin role required"})),
+        )),
+    }
+}
+
+/// Allows admin and editor. Use only for actions listed in
+/// `middleware::auth::EDITOR_WRITES` (the middleware enforces that list for
+/// editors; this check keeps viewers and unknown roles out of reads as well).
+pub fn check_editor(
+    state: &AppState,
+    claims: &Option<axum::Extension<crate::middleware::auth::Claims>>,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if state.config.auth_disabled {
+        return Ok(());
+    }
+    match claims.as_ref().map(|c| c.role.as_str()) {
+        Some("admin") | Some("editor") => Ok(()),
+        _ => Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "Editor or admin role required"})),
         )),
     }
 }
@@ -180,6 +200,25 @@ pub fn has_namespace_access(
         Some(c) => c.namespaces.iter().any(|ns| ns == namespace || ns == "*"),
         None => false,
     }
+}
+
+/// Whether the caller may see a flow: it is visible if its source *or* its
+/// destination is in a namespace the caller can access. Source-only would hide
+/// traffic sent to the caller's namespace while exposing the peers of traffic
+/// sent from it.
+pub fn flow_visible(
+    state: &AppState,
+    claims: &Option<axum::Extension<crate::middleware::auth::Claims>>,
+    flow: &crate::models::flow::Flow,
+) -> bool {
+    has_namespace_access(state, claims, &flow.source.namespace)
+        || has_namespace_access(state, claims, &flow.destination.namespace)
+}
+
+/// The namespace named by a policy id: `namespace/name`, or `default` when the
+/// id is a bare name. Mirrors `K8sService::delete_policy`, which acts on it.
+pub fn policy_id_namespace(id: &str) -> &str {
+    id.split_once('/').map(|(ns, _)| ns).unwrap_or("default")
 }
 
 /// Filter a list of JSON values by namespace access. Checks "namespace" field on each item.

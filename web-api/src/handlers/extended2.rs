@@ -149,7 +149,7 @@ pub async fn apply_template(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
     emit_audit(
         &state,
@@ -172,7 +172,7 @@ pub async fn run_diagnostics(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     use crate::services::k8s::K8sService;
@@ -259,7 +259,7 @@ pub async fn connectivity_test(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     // Test connectivity by checking K8s API and Hubble
@@ -380,7 +380,7 @@ pub async fn toggle_alert_rule(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     let key = format!("{}{}", ALERT_RULES_PREFIX, id);
@@ -511,7 +511,7 @@ pub async fn start_capture(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     let id = format!(
@@ -552,7 +552,7 @@ pub async fn stop_capture(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     let key = format!("{}{}", CAPTURES_PREFIX, id);

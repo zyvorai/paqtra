@@ -36,6 +36,24 @@ pub struct CreateUserRequest {
     pub username: String,
     pub password: String,
     pub role: Role,
+    /// Limit the user to these namespaces; omit or leave empty for all.
+    #[serde(default)]
+    pub namespaces: Vec<String>,
+}
+
+/// Admins are never limited to namespaces, so a scope on one would only give a
+/// false sense of restriction.
+fn check_scope_fits_role(
+    role: Role,
+    namespaces: &[String],
+) -> Result<(), (StatusCode, Json<Value>)> {
+    if role == Role::Admin && !namespaces.is_empty() {
+        return Err(err(
+            StatusCode::BAD_REQUEST,
+            "Admins are not limited to namespaces: leave the namespace list empty or choose another role",
+        ));
+    }
+    Ok(())
 }
 
 pub async fn create_user(
@@ -49,6 +67,9 @@ pub async fn create_user(
     let username =
         users::normalize_username(&req.username).map_err(|m| err(StatusCode::BAD_REQUEST, m))?;
     users::validate_password(&req.password).map_err(|m| err(StatusCode::BAD_REQUEST, m))?;
+    let namespaces =
+        users::normalize_namespaces(req.namespaces).map_err(|m| err(StatusCode::BAD_REQUEST, m))?;
+    check_scope_fits_role(req.role, &namespaces)?;
     if username == state.config.admin_username.to_ascii_lowercase() {
         return Err(err(
             StatusCode::CONFLICT,
@@ -73,6 +94,7 @@ pub async fn create_user(
         created_at: now.clone(),
         updated_at: now,
         password_changed_at: users::now_epoch(),
+        namespaces,
     };
     users::save(&state, &user)
         .await
@@ -83,7 +105,11 @@ pub async fn create_user(
         "user.create",
         &username,
         "",
-        &format!("Created {} user", user.role.as_str()),
+        &format!(
+            "Created {} user{}",
+            user.role.as_str(),
+            scope_note(&user.namespaces)
+        ),
         &actor_from_claims(&claims),
         "success",
     )
@@ -97,6 +123,16 @@ pub struct UpdateUserRequest {
     pub enabled: Option<bool>,
     /// Resetting the password also signs the user out everywhere.
     pub password: Option<String>,
+    /// Replace the namespace limit; an empty list removes it.
+    pub namespaces: Option<Vec<String>>,
+}
+
+fn scope_note(namespaces: &[String]) -> String {
+    if namespaces.is_empty() {
+        String::new()
+    } else {
+        format!(" limited to {}", namespaces.join(", "))
+    }
 }
 
 pub async fn update_user(
@@ -109,10 +145,14 @@ pub async fn update_user(
     track_request(&state, |_| {}).await;
     let actor = actor_from_claims(&claims);
 
-    if req.role.is_none() && req.enabled.is_none() && req.password.is_none() {
+    if req.role.is_none()
+        && req.enabled.is_none()
+        && req.password.is_none()
+        && req.namespaces.is_none()
+    {
         return Err(err(
             StatusCode::BAD_REQUEST,
-            "Provide at least one of role, enabled or password",
+            "Provide at least one of role, enabled, password or namespaces",
         ));
     }
     let mut user = users::get(&state, &username)
@@ -132,6 +172,25 @@ pub async fn update_user(
     if let Some(role) = req.role.filter(|r| *r != user.role) {
         changes.push(format!("role {} -> {}", user.role.as_str(), role.as_str()));
         user.role = role;
+    }
+    // Validate the namespace change against the role the user will end up with.
+    if let Some(raw) = req.namespaces {
+        let namespaces =
+            users::normalize_namespaces(raw).map_err(|m| err(StatusCode::BAD_REQUEST, m))?;
+        check_scope_fits_role(user.role, &namespaces)?;
+        if namespaces != user.namespaces {
+            changes.push(if namespaces.is_empty() {
+                "namespace limit removed".to_string()
+            } else {
+                format!("namespaces -> {}", namespaces.join(", "))
+            });
+            user.namespaces = namespaces;
+        }
+    } else if user.role == Role::Admin && !user.namespaces.is_empty() {
+        // Promoted to admin without saying anything about namespaces: admins are
+        // not scoped, so drop the old limit rather than keep a meaningless one.
+        user.namespaces.clear();
+        changes.push("namespace limit removed (admins are not scoped)".to_string());
     }
     if let Some(enabled) = req.enabled.filter(|e| *e != user.enabled) {
         changes.push(if enabled {

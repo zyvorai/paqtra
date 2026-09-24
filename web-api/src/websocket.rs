@@ -1,6 +1,6 @@
 // WebSocket handlers for real-time updates
 use crate::middleware::auth::Claims;
-use crate::services::hubble::hubble_json_to_flow;
+use crate::services::hubble::flow_from_hubble_line;
 use crate::AppState;
 use axum::{
     extract::{
@@ -49,9 +49,17 @@ async fn validate_ws_token(
         })?
         .claims;
     // Same account checks as HTTP: a disabled or changed account is refused.
-    crate::middleware::auth::resolve_claims(state, claims)
+    let claims = crate::middleware::auth::resolve_claims(state, claims)
         .await
         .map_err(|msg| (StatusCode::UNAUTHORIZED, msg.to_string()))?;
+    // The live streams carry cluster-wide flows and metrics and are not filtered
+    // per namespace, so a namespace-limited account cannot open them.
+    if claims.role != "admin" && !claims.namespaces.is_empty() {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Live streams are not available to namespace-limited accounts".to_string(),
+        ));
+    }
     Ok(())
 }
 
@@ -386,7 +394,10 @@ async fn handle_live_flows(
                             Ok(v) => v,
                             Err(_) => continue,
                         };
-                        let flow = hubble_json_to_flow(flow_index, &parsed);
+                        // Skip lines that are not flows (lost-event and node-status messages).
+                        let Some(flow) = flow_from_hubble_line(flow_index, &parsed) else {
+                            continue;
+                        };
                         flow_index = flow_index.wrapping_add(1);
 
                         let msg = serde_json::json!({

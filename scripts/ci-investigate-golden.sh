@@ -28,8 +28,8 @@ grep -q 'investigate/path' web-api/src/main.rs || fail "investigate route missin
 grep -q 'flow_ingest' web-api/src/handlers/health.rs || fail "flow_ingest health missing"
 pass "offline source contracts"
 
-# Offline: docs
-grep -q 'Attachment inventory is \*\*read-only\*\*' README.md || fail "README must state the BPF attachment inventory is read-only"
+# Offline: docs + roadmap
+grep -q 'Read-only BPF attachment inventory' README.md || fail "README hot-reload still present"
 test -f docs/investigate.md || fail "docs/investigate.md missing"
 pass "docs contracts"
 

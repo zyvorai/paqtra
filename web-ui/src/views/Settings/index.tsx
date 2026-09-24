@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { checkHealth } from '../../services/api';
 import { Board, Card, Eyebrow, Warning, Toolbar } from '../../components/Board';
 import { applyTheme, readStoredTheme, toggleTheme, type Theme } from '../../theme';
+import ChangePassword from './ChangePassword';
 
 interface AppSettings {
   apiUrl: string;
@@ -133,6 +134,8 @@ export default function Settings() {
           </button>
         </Toolbar>
       </Card>
+
+      <ChangePassword />
 
       <Card span={3}>
         <Eyebrow>MORE</Eyebrow>

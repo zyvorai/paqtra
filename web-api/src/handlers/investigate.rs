@@ -8,7 +8,6 @@ use axum::{
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-use super::check_admin;
 use crate::services::investigate::{self, InvestigatePathRequest};
 use crate::AppState;
 
@@ -18,7 +17,7 @@ pub async fn investigate_path(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(req): Json<InvestigatePathRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
 
     if req.source.namespace.is_empty() || req.destination.namespace.is_empty() {
         return Err((
@@ -43,7 +42,7 @@ pub async fn get_bundle(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
 
     if id.is_empty() || id.contains('/') || id.contains("..") {
         return Err((

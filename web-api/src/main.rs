@@ -83,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
         Some(dir) => {
             let store = services::flow_store::FlowStore::open(
                 std::path::Path::new(dir),
-                services::flow_store::DEFAULT_RETENTION_DAYS,
+                config.flow_retention_days,
             )?;
             tracing::info!("FlowStore initialized under {}", dir);
             Arc::new(store)
@@ -171,6 +171,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/swagger-ui", get(openapi::swagger_ui))
         // Flow monitoring
         .route("/api/v1/flows", get(handlers::flows::list_flows))
+        .route(
+            "/api/v1/flows/history",
+            get(handlers::flow_history::flow_history),
+        )
+        .route(
+            "/api/v1/flows/history/timeline",
+            get(handlers::flow_history::flow_timeline),
+        )
         .route("/api/v1/flows/{id}", get(handlers::flows::get_flow))
         .route("/api/v1/flows/stats", get(handlers::flows::flow_stats))
         // Policy management
@@ -219,6 +227,18 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/compliance/audit",
             post(handlers::compliance::run_audit),
+        )
+        .route(
+            "/api/v1/compliance/audits",
+            get(handlers::compliance::list_audits),
+        )
+        .route(
+            "/api/v1/compliance/audits/{id}",
+            get(handlers::compliance::get_audit),
+        )
+        .route(
+            "/api/v1/compliance/audits/{id}/report",
+            get(handlers::compliance::audit_report),
         )
         .route(
             "/api/v1/security/posture",

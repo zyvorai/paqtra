@@ -48,6 +48,12 @@ pub struct Config {
     /// Seconds between alert rule evaluations. Read from ALERT_EVAL_INTERVAL_SECS
     /// (default 60, minimum 1).
     pub alert_eval_interval_secs: u64,
+    /// Days of flow history to keep. Read from PAQTRA_FLOW_RETENTION_DAYS
+    /// (default 7, between 1 and 90).
+    pub flow_retention_days: i64,
+    /// Seconds between Hubble flow captures. Read from FLOW_INGEST_INTERVAL_SECS
+    /// (default 30, minimum 1).
+    pub flow_ingest_interval_secs: u64,
 }
 
 impl Config {
@@ -179,6 +185,16 @@ impl Config {
                 .and_then(|v| v.parse::<u64>().ok())
                 .map(|v| v.max(1))
                 .unwrap_or(60),
+            flow_retention_days: env::var("PAQTRA_FLOW_RETENTION_DAYS")
+                .ok()
+                .and_then(|v| v.parse::<i64>().ok())
+                .map(|v| v.clamp(1, 90))
+                .unwrap_or(7),
+            flow_ingest_interval_secs: env::var("FLOW_INGEST_INTERVAL_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .map(|v| v.max(1))
+                .unwrap_or(30),
         })
     }
 }

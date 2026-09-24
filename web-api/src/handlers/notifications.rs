@@ -211,7 +211,7 @@ pub async fn test_channel(
 const MAX_SILENCE_MINUTES: u64 = 7 * 24 * 60;
 
 pub async fn list_silences(State(state): State<Arc<AppState>>, claims: Claims) -> ApiResult {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let silences = state
         .cache
@@ -236,7 +236,7 @@ pub async fn create_silence(
     claims: Claims,
     Json(req): Json<CreateSilenceRequest>,
 ) -> ApiResult {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     if req.duration_minutes == 0 || req.duration_minutes > MAX_SILENCE_MINUTES {
@@ -282,7 +282,7 @@ pub async fn delete_silence(
     claims: Claims,
     Path(id): Path<String>,
 ) -> ApiResult {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     let key = format!("{}{}", SILENCES_PREFIX, id);

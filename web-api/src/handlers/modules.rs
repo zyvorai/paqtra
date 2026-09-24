@@ -130,7 +130,7 @@ pub async fn generate_autopolicy(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(req): Json<GenerateAutopolicyRequest>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
 
     let namespace = &req.namespace;

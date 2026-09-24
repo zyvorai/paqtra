@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use super::{has_namespace_access, to_json, track_error, track_request};
+use super::{flow_visible, to_json, track_error, track_request};
 use crate::error::ApiError;
 use crate::models::flow::{Flow, FlowQueryParams};
 use crate::AppState;
@@ -55,7 +55,7 @@ pub async fn list_flows(
             }
 
             // Apply namespace RBAC filter
-            cached_flows.retain(|f| has_namespace_access(&state, &claims, &f.source.namespace));
+            cached_flows.retain(|f| flow_visible(&state, &claims, f));
 
             state
                 .metrics
@@ -108,13 +108,17 @@ pub async fn list_flows(
         flows.retain(|f| f.verdict.eq_ignore_ascii_case(verdict));
     }
 
-    // Apply namespace RBAC filter
-    flows.retain(|f| has_namespace_access(&state, &claims, &f.source.namespace));
-
-    // Store in cache (best-effort)
+    // Store in cache (best-effort). The cache is shared by every caller and its
+    // key does not include who is asking, so it must hold the unfiltered flows:
+    // caching one user's namespace-filtered view would hand a truncated list to
+    // the next caller. The namespace filter is applied per caller, below and on
+    // cache hits.
     if let Err(e) = state.cache.set(&cache_key, &flows, FLOWS_CACHE_TTL).await {
         tracing::warn!("Cache write error: {}", e);
     }
+
+    // Apply namespace RBAC filter
+    flows.retain(|f| flow_visible(&state, &claims, f));
 
     state
         .metrics
@@ -135,6 +139,7 @@ pub async fn list_flows(
 
 pub async fn get_flow(
     State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     tracing::info!("Fetching flow: {}", id);
@@ -148,7 +153,13 @@ pub async fn get_flow(
     let cache_key = format!("flow:{}", id);
     if let Ok(Some(flow)) = state.cache.get::<Flow>(&cache_key).await {
         state.metrics.cache_hits.fetch_add(1, Ordering::Relaxed);
-        return Ok(Json(to_json(&flow)));
+        // A flow the caller may not see is reported as absent, so its existence
+        // cannot be probed by id.
+        return if flow_visible(&state, &claims, &flow) {
+            Ok(Json(to_json(&flow)))
+        } else {
+            Err(ApiError::NotFound)
+        };
     }
 
     // Fetch a batch and find by id
@@ -162,9 +173,13 @@ pub async fn get_flow(
 
     match flows.into_iter().find(|f| f.id == id) {
         Some(flow) => {
-            // Cache the individual flow
+            // Cache the individual flow (unfiltered: the check is per caller)
             let _ = state.cache.set(&cache_key, &flow, 30).await;
-            Ok(Json(to_json(&flow)))
+            if flow_visible(&state, &claims, &flow) {
+                Ok(Json(to_json(&flow)))
+            } else {
+                Err(ApiError::NotFound)
+            }
         }
         None => Err(ApiError::NotFound),
     }

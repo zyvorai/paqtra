@@ -79,12 +79,19 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 });
 
 // --- Response interceptor ---------------------------------------------------
+/** Fired when the API rejects the session (expired, revoked, or the account was disabled). */
+export const UNAUTHORIZED_EVENT = 'paqtra:unauthorized';
+
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
       // Token expired or invalid – clear the in-memory Authorization header
       delete api.defaults.headers.common['Authorization'];
+      // A wrong password on the login form is not a lost session.
+      if (!error.config?.url?.includes('/auth/login')) {
+        window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+      }
       // In production, send to observability service (e.g., Sentry, Datadog)
       console.warn('[api] Unauthorized – token cleared');
     }
@@ -192,12 +199,137 @@ export const fetchAnomalies = () =>
 export const remediateAnomaly = (id: string) =>
   api.post(`/anomalies/${id}/remediate`);
 
+// Flow history
+export interface HistoryFlow {
+  id: string;
+  timestamp: string;
+  cluster: string;
+  verdict: string;
+  drop_reason: string;
+  protocol: string;
+  port: number;
+  source: { namespace: string; pod: string; ip: string };
+  destination: { namespace: string; pod: string; ip: string };
+}
+
+export interface FlowCoverage {
+  /** Oldest and newest stored flow the caller may see. */
+  oldest: string | null;
+  newest: string | null;
+  stored_flows: number;
+  retention_days: number;
+  /** False when history is held in memory: lost on restart and capped. */
+  durable: boolean;
+  /** True when the range starts before the oldest stored flow; null when nothing is stored. */
+  range_starts_before_oldest: boolean | null;
+}
+
+export interface FlowCapture {
+  interval_secs: number;
+  batch: number;
+  last_capture_ok: boolean;
+  last_capture_at: string | null;
+  /** What the capture can miss; shown to readers verbatim. */
+  note: string;
+}
+
+interface HistoryContext {
+  range: { from: string; to: string };
+  coverage: FlowCoverage;
+  capture: FlowCapture;
+}
+
+export interface FlowHistoryResponse extends HistoryContext {
+  flows: HistoryFlow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface TimelineBucketData {
+  start: string;
+  forwarded: number;
+  dropped: number;
+  other: number;
+}
+
+export interface FlowTimelineResponse extends HistoryContext {
+  bucket_secs: number;
+  total: number;
+  buckets: TimelineBucketData[];
+}
+
+export interface FlowHistoryParams {
+  from?: string;
+  to?: string;
+  namespace?: string;
+  pod?: string;
+  port?: number;
+  verdict?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const fetchFlowHistory = (params: FlowHistoryParams) =>
+  api.get<FlowHistoryResponse>('/flows/history', { params });
+
+export const fetchFlowTimeline = (params: Omit<FlowHistoryParams, 'limit' | 'offset'>) =>
+  api.get<FlowTimelineResponse>('/flows/history/timeline', { params });
+
 // Compliance
+export interface ComplianceFramework {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  /** Controls the framework defines. Paqtra's checks are not mapped to them. */
+  control_count: number;
+}
+
+export interface AuditFinding {
+  /** Paqtra's check identifier (e.g. `PCI-NET-1`), not a control id of the framework. */
+  control_id: string;
+  title: string;
+  status: 'passed' | 'failed' | 'skipped' | string;
+  severity: string;
+  description: string;
+}
+
+export interface AuditSummary {
+  audit_id: string;
+  framework: string;
+  completed_at: string | null;
+  requested_by: string;
+  total_controls: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  /** Share of the checks that could be evaluated which passed, in percent. */
+  score: number;
+}
+
+export interface AuditResult extends AuditSummary {
+  status: string;
+  started_at: string;
+  findings: AuditFinding[];
+  cluster: string | null;
+  flows_sampled: number;
+}
+
+export type ReportFormat = 'html' | 'csv' | 'json';
+
 export const fetchFrameworks = () =>
-  api.get<{ frameworks: string[] }>('/compliance/frameworks');
+  api.get<{ frameworks: ComplianceFramework[]; total: number }>('/compliance/frameworks');
 
 export const runAudit = (framework: string) =>
-  api.post('/compliance/audit', { framework });
+  api.post<AuditResult>('/compliance/audit', { framework });
+
+export const fetchAudits = () =>
+  api.get<{ audits: AuditSummary[]; total: number }>('/compliance/audits');
+
+/** Fetched as a blob because a plain link cannot carry the Authorization header. */
+export const fetchAuditReport = (id: string, format: ReportFormat) =>
+  api.get<Blob>(`/compliance/audits/${encodeURIComponent(id)}/report`, { params: { format }, responseType: 'blob' });
 
 export const fetchSecurityPosture = () =>
   api.get<{ score: number; trend: string }>('/security/posture');
@@ -1028,6 +1160,32 @@ export const fetchAuditLog = () => api.get<{ entries: AuditEntry[] }>('/audit/lo
 export const fetchAlertRules = () => api.get<{ rules: AlertRule[] }>('/alerts/rules');
 export const fetchAlertHistory = () => api.get<{ alerts: AlertEvent[]; events?: AlertEvent[] }>('/alerts/history');
 export const toggleAlertRule = (id: string) => api.put(`/alerts/rules/${id}`);
+export type UserRole = 'admin' | 'editor' | 'viewer';
+
+export interface AppUser {
+  username: string;
+  role: UserRole;
+  enabled: boolean;
+  /** Namespaces the user is limited to; empty means all. Never set for admins. */
+  namespaces: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Me {
+  username: string;
+  role: string;
+  /** `config` for the ADMIN_USERNAME account, `local` for stored users. */
+  source: string;
+  namespaces?: string[];
+}
+
+export const fetchUsers = () => api.get<{ users: AppUser[]; total: number; config_admin: string }>('/users');
+export const createUser = (body: { username: string; password: string; role: UserRole; namespaces?: string[] }) => api.post('/users', body);
+export const updateUser = (username: string, body: { role?: UserRole; enabled?: boolean; password?: string; namespaces?: string[] }) => api.put(`/users/${encodeURIComponent(username)}`, body);
+export const deleteUser = (username: string) => api.delete(`/users/${encodeURIComponent(username)}`);
+export const fetchMe = () => api.get<Me>('/auth/me');
+export const changePassword = (body: { current_password: string; new_password: string }) => api.post<{ changed: boolean; reauthenticate: boolean }>('/auth/password', body);
 export const fetchChannels = () => api.get<{ channels: NotificationChannel[] }>('/alerts/channels');
 export const createChannel = (body: { name: string; kind: ChannelKind; target: string; min_severity?: string }) => api.post('/alerts/channels', body);
 export const deleteChannel = (id: string) => api.delete(`/alerts/channels/${id}`);

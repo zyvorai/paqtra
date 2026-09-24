@@ -56,6 +56,10 @@ vi.mock('../../services/api', () => {
     fetchWireGuardPeers: vi.fn().mockResolvedValue({ data: { peers: [] } }),
     fetchBandwidthData: vi.fn().mockResolvedValue({ data: { entries: [] } }),
     checkHealth: emptyGet,
+    UNAUTHORIZED_EVENT: 'paqtra:unauthorized',
+    fetchMe: vi.fn().mockResolvedValue({ data: { username: 'admin', role: 'admin', source: 'config' } }),
+    changePassword: emptyPost,
+    apiErrorMessage: (_e: unknown, fallback: string) => fallback,
   };
 });
 

@@ -908,7 +908,7 @@ pub async fn run_troubleshoot(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
     Json(body): Json<TroubleshootRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    check_admin(&state, &claims)?;
+    super::check_editor(&state, &claims)?;
     track_request(&state, |_| {}).await;
     let target = &body.target;
 
