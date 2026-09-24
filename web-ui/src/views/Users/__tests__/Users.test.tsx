@@ -16,8 +16,8 @@ const ok = <T,>(data: T) => Promise.resolve({ data } as never);
 const httpError = (status: number, error: string) =>
   Promise.reject(new AxiosError('x', String(status), undefined, undefined, { status, data: { error } } as AxiosResponse));
 
-const user = (username: string, role: 'admin' | 'editor' | 'viewer' = 'viewer', enabled = true) =>
-  ({ username, role, enabled, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' });
+const user = (username: string, role: 'admin' | 'editor' | 'viewer' = 'viewer', enabled = true, namespaces: string[] = []) =>
+  ({ username, role, enabled, namespaces, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' });
 
 const renderPage = () => render(<MemoryRouter><Users /></MemoryRouter>);
 
@@ -56,7 +56,7 @@ describe('Users', () => {
     fireEvent.change(pw, { target: { value: 'a-long-password-1' } });
     fireEvent.change(screen.getByLabelText('Role'), { target: { value: 'admin' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add user' }));
-    await waitFor(() => expect(m.createUser).toHaveBeenCalledWith({ username: 'Dave', password: 'a-long-password-1', role: 'admin' }));
+    await waitFor(() => expect(m.createUser).toHaveBeenCalledWith({ username: 'Dave', password: 'a-long-password-1', role: 'admin', namespaces: [] }));
     expect(await screen.findByText('Created dave')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('alice')).toHaveValue('');
   });
@@ -94,7 +94,82 @@ describe('Users', () => {
     fireEvent.change(pw, { target: { value: 'a-long-password-1' } });
     fireEvent.change(screen.getByLabelText('Role'), { target: { value: 'editor' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add user' }));
-    await waitFor(() => expect(m.createUser).toHaveBeenCalledWith({ username: 'erin', password: 'a-long-password-1', role: 'editor' }));
+    await waitFor(() => expect(m.createUser).toHaveBeenCalledWith({ username: 'erin', password: 'a-long-password-1', role: 'editor', namespaces: [] }));
+  });
+
+  it('creates a namespace-limited user from a comma-separated list', async () => {
+    m.createUser.mockImplementation(() => ok({}));
+    renderPage();
+    await screen.findByText('bob');
+    fireEvent.change(screen.getByPlaceholderText('alice'), { target: { value: 'nina' } });
+    const [pw] = document.querySelectorAll('input[type="password"]');
+    fireEvent.change(pw, { target: { value: 'a-long-password-1' } });
+    fireEvent.change(screen.getByPlaceholderText('all namespaces'), { target: { value: ' team-a, Team-B ,, ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add user' }));
+    await waitFor(() => expect(m.createUser).toHaveBeenCalledWith({ username: 'nina', password: 'a-long-password-1', role: 'viewer', namespaces: ['team-a', 'Team-B'] }));
+  });
+
+  it('does not let an admin be given a namespace limit', async () => {
+    m.createUser.mockImplementation(() => ok({}));
+    renderPage();
+    await screen.findByText('bob');
+    const field = screen.getByPlaceholderText('all namespaces');
+    fireEvent.change(field, { target: { value: 'team-a' } });
+    fireEvent.change(screen.getByLabelText('Role'), { target: { value: 'admin' } });
+    const locked = screen.getByPlaceholderText('admins are not limited');
+    expect(locked).toBeDisabled();
+    expect(locked).toHaveValue('');
+    fireEvent.change(screen.getByPlaceholderText('alice'), { target: { value: 'root2' } });
+    const [pw] = document.querySelectorAll('input[type="password"]');
+    fireEvent.change(pw, { target: { value: 'a-long-password-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add user' }));
+    await waitFor(() => expect(m.createUser).toHaveBeenCalledWith({ username: 'root2', password: 'a-long-password-1', role: 'admin', namespaces: [] }));
+  });
+
+  it('says what each account can see', async () => {
+    m.fetchUsers.mockImplementation(() => ok({ users: [user('bob', 'viewer', true, ['team-a', 'team-b']), user('carol', 'admin'), user('dan', 'editor')], total: 3, config_admin: 'admin' }));
+    renderPage();
+    expect(await screen.findByText(/limited to team-a, team-b/)).toBeInTheDocument();
+    expect(screen.getByText(/not limited \(admin\)/)).toBeInTheDocument();
+    expect(screen.getByText(/all namespaces/, { selector: 'small' })).toBeInTheDocument();
+  });
+
+  it('edits a user\'s namespaces and can clear them', async () => {
+    m.updateUser.mockImplementation(() => ok({}));
+    m.fetchUsers.mockImplementation(() => ok({ users: [user('bob', 'viewer', true, ['team-a']), user('carol', 'admin')], total: 2, config_admin: 'admin' }));
+    renderPage();
+    await screen.findByText('bob');
+    const bobRow = screen.getByText('bob').closest('.agent') as HTMLElement;
+    fireEvent.click(within(bobRow).getByRole('button', { name: 'Namespaces' }));
+    const input = await screen.findByLabelText(/Namespaces for bob/);
+    expect(input).toHaveValue('team-a');
+    fireEvent.change(input, { target: { value: 'team-a, team-b' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save namespaces' }));
+    await waitFor(() => expect(m.updateUser).toHaveBeenCalledWith('bob', { namespaces: ['team-a', 'team-b'] }));
+    expect(await screen.findByText('Namespaces updated for bob')).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByText('bob').closest('.agent') as HTMLElement).getByRole('button', { name: 'Namespaces' }));
+    fireEvent.change(await screen.findByLabelText(/Namespaces for bob/), { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save namespaces' }));
+    await waitFor(() => expect(m.updateUser).toHaveBeenLastCalledWith('bob', { namespaces: [] }));
+  });
+
+  it('offers no namespace editor for admins', async () => {
+    m.fetchUsers.mockImplementation(() => ok({ users: [user('carol', 'admin')], total: 1, config_admin: 'admin' }));
+    renderPage();
+    const row = (await screen.findByText('carol (you)')).closest('.agent') as HTMLElement;
+    expect(within(row).queryByRole('button', { name: 'Namespaces' })).not.toBeInTheDocument();
+  });
+
+  it('shows the server reason when a namespace change is refused', async () => {
+    m.updateUser.mockImplementation(() => httpError(400, 'each namespace must be a valid Kubernetes name (lowercase letters, digits, \'-\')'));
+    renderPage();
+    await screen.findByText('bob');
+    const bobRow = screen.getByText('bob').closest('.agent') as HTMLElement;
+    fireEvent.click(within(bobRow).getByRole('button', { name: 'Namespaces' }));
+    fireEvent.change(await screen.findByLabelText(/Namespaces for bob/), { target: { value: 'Bad_Name' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save namespaces' }));
+    expect(await screen.findByText(/each namespace must be a valid Kubernetes name/)).toBeInTheDocument();
   });
 
   it('changes a role and reloads', async () => {
@@ -121,7 +196,7 @@ describe('Users', () => {
     renderPage();
     await screen.findByText('bob');
     const bobRow = screen.getByText('bob').closest('.agent') as HTMLElement;
-    fireEvent.click(bobRow.querySelector('button.btn-refresh:nth-of-type(2)') as HTMLElement);
+    fireEvent.click(within(bobRow).getByRole('button', { name: 'Reset password' }));
     const input = await screen.findByLabelText(/New password for bob/);
     fireEvent.change(input, { target: { value: 'brand-new-password' } });
     fireEvent.click(screen.getByRole('button', { name: 'Set password' }));

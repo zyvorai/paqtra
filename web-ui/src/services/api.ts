@@ -1041,6 +1041,8 @@ export interface AppUser {
   username: string;
   role: UserRole;
   enabled: boolean;
+  /** Namespaces the user is limited to; empty means all. Never set for admins. */
+  namespaces: string[];
   created_at: string;
   updated_at: string;
 }
@@ -1050,11 +1052,12 @@ export interface Me {
   role: string;
   /** `config` for the ADMIN_USERNAME account, `local` for stored users. */
   source: string;
+  namespaces?: string[];
 }
 
 export const fetchUsers = () => api.get<{ users: AppUser[]; total: number; config_admin: string }>('/users');
-export const createUser = (body: { username: string; password: string; role: UserRole }) => api.post('/users', body);
-export const updateUser = (username: string, body: { role?: UserRole; enabled?: boolean; password?: string }) => api.put(`/users/${encodeURIComponent(username)}`, body);
+export const createUser = (body: { username: string; password: string; role: UserRole; namespaces?: string[] }) => api.post('/users', body);
+export const updateUser = (username: string, body: { role?: UserRole; enabled?: boolean; password?: string; namespaces?: string[] }) => api.put(`/users/${encodeURIComponent(username)}`, body);
 export const deleteUser = (username: string) => api.delete(`/users/${encodeURIComponent(username)}`);
 export const fetchMe = () => api.get<Me>('/auth/me');
 export const changePassword = (body: { current_password: string; new_password: string }) => api.post<{ changed: boolean; reauthenticate: boolean }>('/auth/password', body);

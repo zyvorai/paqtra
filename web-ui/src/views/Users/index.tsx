@@ -8,6 +8,12 @@ import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
 
 const ROLES: UserRole[] = ['viewer', 'editor', 'admin'];
+
+/** "a, B ,,c" -> ["a", "B", "c"]; the API lowercases and validates. */
+const parseNamespaces = (text: string): string[] => text.split(',').map((n) => n.trim()).filter(Boolean);
+
+const scopeText = (u: AppUser): string =>
+  u.role === 'admin' ? 'not limited (admin)' : u.namespaces.length === 0 ? 'all namespaces' : `limited to ${u.namespaces.join(', ')}`;
 const ROLE_HELP: Record<UserRole, string> = {
   admin: 'Full access, including users, notification channels, exports, node drain, rollback and chaos.',
   editor: 'Can work incidents, alerts, SLOs and network policies, run analysis and diagnostics, and capture packets. Cannot manage users or channels, or drain, roll back or export.',
@@ -26,6 +32,9 @@ export default function Users() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>('viewer');
+  const [nsText, setNsText] = useState('');
+  const [nsFor, setNsFor] = useState<string | null>(null);
+  const [nsEdit, setNsEdit] = useState('');
 
   const [resetFor, setResetFor] = useState<string | null>(null);
   const [resetPw, setResetPw] = useState('');
@@ -63,13 +72,18 @@ export default function Users() {
   };
 
   const handleCreate = async () => {
-    const created = await run('create', () => createUser({ username: username.trim(), password, role }), `Created ${username.trim().toLowerCase()}`);
-    if (created) { setUsername(''); setPassword(''); setRole('viewer'); }
+    const created = await run('create', () => createUser({ username: username.trim(), password, role, namespaces: role === 'admin' ? [] : parseNamespaces(nsText) }), `Created ${username.trim().toLowerCase()}`);
+    if (created) { setUsername(''); setPassword(''); setRole('viewer'); setNsText(''); }
   };
 
   const handleReset = async (u: AppUser) => {
     const done = await run(`reset:${u.username}`, () => updateUser(u.username, { password: resetPw }), `Password reset for ${u.username}; they are signed out everywhere`);
     if (done) { setResetFor(null); setResetPw(''); }
+  };
+
+  const handleSaveNamespaces = async (u: AppUser) => {
+    const done = await run(`ns:${u.username}`, () => updateUser(u.username, { namespaces: parseNamespaces(nsEdit) }), `Namespaces updated for ${u.username}`);
+    if (done) setNsFor(null);
   };
 
   const handleDelete = async (u: AppUser) => {
@@ -105,6 +119,10 @@ export default function Users() {
           Changes apply immediately: disabling a user or changing their role takes effect on their next request, and a
           password reset signs them out everywhere. {configAdmin ? <>The account <code>{configAdmin}</code> comes from the server configuration and always works as admin.</> : null}
         </p>
+        <p>
+          A namespace limit confines a viewer or editor to flows, policies, events and endpoints in those namespaces (traffic to or from them counts).
+          Everything else returns cluster-wide data, so it is unavailable to a limited account, as are live streams. Editors with a limit can change policies only in their namespaces.
+        </p>
       </Card>
 
       <Card span={3}>
@@ -123,6 +141,16 @@ export default function Users() {
             <select value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
               {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
+          </label>
+          <label>
+            Namespaces (optional, comma-separated)
+            <input
+              value={role === 'admin' ? '' : nsText}
+              onChange={(e) => setNsText(e.target.value)}
+              placeholder={role === 'admin' ? 'admins are not limited' : 'all namespaces'}
+              disabled={role === 'admin'}
+              autoComplete="off"
+            />
           </label>
           <button type="button" className="primary" disabled={busy === 'create' || !username.trim() || !password} onClick={handleCreate}>
             Add user
@@ -149,7 +177,7 @@ export default function Users() {
                 >
                   {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
-                <small>{u.enabled ? 'enabled' : 'disabled'} · created {new Date(u.created_at).toLocaleDateString()}</small>
+                <small>{u.enabled ? 'enabled' : 'disabled'} · {scopeText(u)} · created {new Date(u.created_at).toLocaleDateString()}</small>
                 <button
                   type="button"
                   className="btn-refresh"
@@ -159,12 +187,28 @@ export default function Users() {
                 >
                   {u.enabled ? 'Disable' : 'Enable'}
                 </button>
+                {u.role !== 'admin' ? (
+                  <button type="button" className="btn-refresh" disabled={busy !== null} onClick={() => { setNsFor(nsFor === u.username ? null : u.username); setNsEdit(u.namespaces.join(', ')); }}>
+                    Namespaces
+                  </button>
+                ) : null}
                 <button type="button" className="btn-refresh" disabled={busy !== null} onClick={() => { setResetFor(resetFor === u.username ? null : u.username); setResetPw(''); }}>
                   Reset password
                 </button>
                 <button type="button" className="danger" disabled={self || busy !== null} title={self ? 'You cannot delete your own account' : undefined} onClick={() => void handleDelete(u)}>
                   Delete
                 </button>
+                {nsFor === u.username ? (
+                  <Toolbar>
+                    <label>
+                      Namespaces for {u.username} (empty = all)
+                      <input value={nsEdit} onChange={(e) => setNsEdit(e.target.value)} placeholder="team-a, team-b" autoComplete="off" />
+                    </label>
+                    <button type="button" className="primary" disabled={busy !== null} onClick={() => void handleSaveNamespaces(u)}>
+                      Save namespaces
+                    </button>
+                  </Toolbar>
+                ) : null}
                 {resetFor === u.username ? (
                   <Toolbar>
                     <label>
