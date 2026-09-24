@@ -3,7 +3,8 @@
 ## Core Observability (Tabs 0-4)
 
 ### Flows
-Live packet stream from Hubble with verdict coloring (FORWARDED/DROPPED), source/destination pods, namespaces, and IPs. Navigate with arrow keys, press `e` to explain any packet. Auto-refresh every 30s with DataFreshness indicator. Export CSV/JSON.
+Live packet stream from Hubble Relay over the Observer **gRPC** API (chart default `HUBBLE_MODE=grpc`), with verdict coloring (FORWARDED/DROPPED), source/destination pods, namespaces, and IPs. Continuous **follow** ingest fills a local flow store with gap/disconnect visibility on `/health`. Navigate with arrow keys, press `e` to explain any packet — or use **Why denied?** in the Flows UI. Auto-refresh every 30s with DataFreshness indicator. Export CSV/JSON.
+
 
 ### Connections
 Enriched connection tracking combining eBPF conntrack data with Kubernetes pod metadata. Shows active TCP/UDP connections with identity resolution. Auto-refresh every 30s with DataFreshness indicator. Export CSV/JSON.

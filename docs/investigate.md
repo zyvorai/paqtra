@@ -17,9 +17,9 @@ Every step and impact claim carries one of:
 ## Flow store
 
 - SQLite table under `PAQTRA_DATA_DIR/flows.db` (or in-memory if unset)
-- Background ingest from Hubble Observer gRPC (`hubble_grpc` source; CLI only if `HUBBLE_MODE=cli|auto` falls back)
+- Background **follow** ingest from Hubble Observer gRPC (`hubble_grpc` source; CLI only if `HUBBLE_MODE=cli|auto` falls back). Chart default is `grpc`.
 - Default retention: 7 days
-- Health: `GET /health` → `subsystems.flow_ingest`
+- Health: `GET /health` → `subsystems.flow_ingest` (`source`, `connected`, `disconnects`, `gaps`, `events_per_sec`, `lag_secs`, `hubble_mode`)
 
 Enable persistence in Helm: `api.persistence.enabled=true` (sets `PAQTRA_DATA_DIR`).
 
@@ -65,6 +65,10 @@ Bundles omit payloads, argv, and Secret contents ([AGENTS.md](../AGENTS.md)).
 ## UI
 
 Investigate → **Path** (`/investigate`): form for A→B:port, step timeline, owner, evidence bundle.
+
+Flows → **Why denied?** on a DROPPED row: opens the flow explain result (identities, CNP/CCNP candidates, drop reason, draft allow).
+
+DNS → shows L7 query/rcode/answers when Hubble DNS visibility is present; L4-only rows are marked incomplete (never invents SERVFAIL from a policy drop).
 
 ## Boundaries
 

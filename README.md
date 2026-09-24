@@ -39,8 +39,10 @@ Paqtra is observe-first and **read-only toward the datapath**. It never writes C
 
 | Area | Capabilities |
 |------|-------------|
-| **Flow monitoring** | Real-time Hubble flows, per-packet explanations, verdict coloring, WebSocket streaming |
-| **Policy management** | Visual rule builder, YAML editor, ML-powered AutoPolicy, simulate before applying |
+| **Flow monitoring** | Live Hubble Observer gRPC follow-stream into a local flow store, verdict coloring, WebSocket streaming, ingest gap visibility on `/health` |
+| **Investigation** | Path explain (`POST /investigate/path`), **Why denied?** from a selected flow (`POST /investigate/flow`), confidence-tagged evidence |
+| **DNS** | Real L7 DNS query/rcode/answers/latency when Cilium DNS visibility is on; L4-only never invents SERVFAIL |
+| **Policy management** | Visual rule builder, YAML editor, ML-powered AutoPolicy, evidence-backed simulate before applying |
 | **Security** | Zero-trust policy generation, compliance audits (CIS/NIST/SOC2), anomaly detection |
 | **Root cause** | Packet drop analysis, policy correlation, one-click fixes, network healer |
 | **Chaos engineering** | Fault injection (loss/latency/DNS), circuit breaker, preset experiments |
@@ -48,7 +50,7 @@ Paqtra is observe-first and **read-only toward the datapath**. It never writes C
 | **Multi-cluster** | Cluster registration, health checks, policy sync, topology view |
 | **Networking** | Load balancer, ingress/egress, IPAM, encryption, BGP, ClusterMesh, WireGuard |
 | **Observability** | Service map, heatmap, DNS monitor, latency analysis, bandwidth, cost analytics |
-| **Operations** | Diagnostics, troubleshooter, packet capture, SLOs, alerts, audit log, incidents |
+| **Operations** | Diagnostics, troubleshooter, packet capture sessions, SLOs, alerts, audit log, incidents |
 
 The dashboard includes real kernel eBPF data views powered by `bpftool`: conntrack tables, policy maps, IP cache, LB maps and drop analytics. These are read-only; see [docs/ebpf-integration.md](docs/ebpf-integration.md).
 
@@ -121,7 +123,7 @@ Full rules: [docs/cilium-brotherhood.md](docs/cilium-brotherhood.md). Agent inst
 |                    Terminal TUI (Rust + Ratatui)                   |
 |  13 tabs | Live monitoring | Packet explainer                      |
 +------------------------------------------------------------------+
-|  eBPF maps (read-only) | Hubble Relay | Kubernetes API | Redis |
+|  eBPF maps (read-only) | Hubble gRPC (Relay) | Kubernetes API | Redis |
 +------------------------------------------------------------------+
 |  bpftool (read-only kernel data: conntrack, policy, IP cache, LB)  |
 +------------------------------------------------------------------+
@@ -135,8 +137,8 @@ See [docs/architecture.md](docs/architecture.md) and [docs/web-architecture.md](
 
 60+ pages, grouped in the navigation as Overview · Investigate · Diagnostics · Security · Reports · Fleet. The routes and their descriptions live in [`web-ui/src/navConfig.ts`](web-ui/src/navConfig.ts).
 
-- **Investigate**: Path ("why can't A reach B?"), Flows, Endpoints, Identities, DNS, Capture, Topology, Service Map
-- **Diagnostics**: Health, latency, Drops, eBPF profiler and map explorer, Root Cause, Healer
+- **Investigate**: Path ("why can't A reach B?"), Flows (**Why denied?** on DROPPED rows), Endpoints, Identities, DNS (L7 when available), Capture, Topology, Service Map
+- **Diagnostics**: Health (Hubble mode, ingest gaps/lag), latency, Drops, eBPF profiler and map explorer, Root Cause, Healer
 - **Security**: Policies, Policy Editor, Visual Rule Builder, Templates, Anomalies, Compliance, RBAC
 - **Intelligence**: AutoPolicy, Chaos Engineering, Canary Deployments
 - **Operations**: Alerts, Audit Log, SLOs, Incident Timeline, Settings
