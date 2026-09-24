@@ -51,7 +51,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const browser = CDP
   ? await puppeteer.connect({ browserURL: CDP, defaultViewport: { width: 1440, height: 900 } })
   : await puppeteer.launch({
-      headless: "new",
+      headless: true,
       executablePath: CHROME,
       args: ["--ignore-certificate-errors", "--window-size=1440,900"],
       defaultViewport: { width: 1440, height: 900 },
