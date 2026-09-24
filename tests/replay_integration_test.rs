@@ -5,9 +5,7 @@
 /// K8sClient::mock() for Kubernetes interactions.
 use paqtra::ebpf::{MockMapReader, PolicyVerdict};
 use paqtra::kubernetes::K8sClient;
-use paqtra::modules::replay::{
-    Recording, ReplayConfig, ReplayEngine, ReplayFilter, ReplayStats,
-};
+use paqtra::modules::replay::{Recording, ReplayConfig, ReplayEngine, ReplayFilter, ReplayStats};
 use std::path::PathBuf;
 
 // ---------------------------------------------------------------------------

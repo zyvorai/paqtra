@@ -2,9 +2,7 @@ use anyhow::Result;
 use owo_colors::OwoColorize;
 use std::path::PathBuf;
 
-use super::helm::{
-    default_namespace, default_release, ensure_ok, helm, resolve_chart_dir,
-};
+use super::helm::{default_namespace, default_release, ensure_ok, helm, resolve_chart_dir};
 
 pub struct InstallOpts {
     pub namespace: String,
@@ -31,7 +29,11 @@ pub async fn cmd_install(opts: InstallOpts) -> Result<()> {
     let release = default_release();
     let ns = &opts.namespace;
 
-    println!("{} Installing Paqtra into namespace {}...", "→".cyan(), ns.bold());
+    println!(
+        "{} Installing Paqtra into namespace {}...",
+        "→".cyan(),
+        ns.bold()
+    );
     println!("  Chart: {}", chart.display());
 
     let mut args: Vec<String> = vec![
@@ -64,7 +66,11 @@ pub async fn cmd_install(opts: InstallOpts) -> Result<()> {
     let out = helm(&arg_refs).await?;
     ensure_ok(&out, "helm install")?;
     print!("{}", String::from_utf8_lossy(&out.stdout));
-    println!("{} Paqtra installed. Run `{}` to check.", "✔".green(), "paqtra status".cyan());
+    println!(
+        "{} Paqtra installed. Run `{}` to check.",
+        "✔".green(),
+        "paqtra status".cyan()
+    );
     Ok(())
 }
 
@@ -103,7 +109,11 @@ pub async fn cmd_upgrade(opts: InstallOpts) -> Result<()> {
 
 pub async fn cmd_uninstall(namespace: &str) -> Result<()> {
     let release = default_release();
-    println!("{} Uninstalling Paqtra from {}...", "→".cyan(), namespace.bold());
+    println!(
+        "{} Uninstalling Paqtra from {}...",
+        "→".cyan(),
+        namespace.bold()
+    );
     let out = helm(&["uninstall", &release, "--namespace", namespace]).await?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);

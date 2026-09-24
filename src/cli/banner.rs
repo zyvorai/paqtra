@@ -3,30 +3,10 @@ use owo_colors::OwoColorize;
 /// Print the interlocking Paqtra banner (Cilium-inspired).
 pub fn print_banner() {
     println!("{}", "    /¯¯\\".yellow());
-    println!(
-        "{}{}{}",
-        " /¯¯".cyan(),
-        "\\__/".yellow(),
-        "¯¯\\".green()
-    );
-    println!(
-        "{}{}{}",
-        " \\__".cyan(),
-        "/¯¯\\".red(),
-        "__/".green()
-    );
-    println!(
-        "{}{}{}",
-        " /¯¯".green(),
-        "\\__/".red(),
-        "¯¯\\".magenta()
-    );
-    println!(
-        "{}{}{}",
-        " \\__".green(),
-        "/¯¯\\".blue(),
-        "__/".magenta()
-    );
+    println!("{}{}{}", " /¯¯".cyan(), "\\__/".yellow(), "¯¯\\".green());
+    println!("{}{}{}", " \\__".cyan(), "/¯¯\\".red(), "__/".green());
+    println!("{}{}{}", " /¯¯".green(), "\\__/".red(), "¯¯\\".magenta());
+    println!("{}{}{}", " \\__".green(), "/¯¯\\".blue(), "__/".magenta());
     println!("{}", "    \\__/".blue());
     println!();
 }

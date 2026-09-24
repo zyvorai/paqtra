@@ -13,7 +13,11 @@ pub async fn cmd_info(namespace: &str) -> Result<()> {
 
     println!("{}", "Paqtra Info".bold());
     println!();
-    println!("  {:20} {}", "CLI Version:".dimmed(), env!("CARGO_PKG_VERSION"));
+    println!(
+        "  {:20} {}",
+        "CLI Version:".dimmed(),
+        env!("CARGO_PKG_VERSION")
+    );
     println!("  {:20} {}", "Release:".dimmed(), release);
     println!("  {:20} {}", "Namespace:".dimmed(), ns);
 
