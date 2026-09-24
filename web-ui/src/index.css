@@ -1,8 +1,7 @@
 /* Residual utilities for views still on Tailwind during the Netra reskin.
    Shell chrome lives in styles.css (ported from Netra). */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.js";
 
 /* Soften Tailwind preflight conflict with Netra body */
 body {
