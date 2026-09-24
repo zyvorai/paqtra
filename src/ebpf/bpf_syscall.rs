@@ -2,7 +2,7 @@
 ///
 /// Provides BPF map reading through multiple methods:
 /// 1. Direct bpftool command execution
-/// 2. Reading from pinned maps (future: via libbpf)
+/// 2. Reading from pinned maps (read-only, via bpftool)
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::HashMap;

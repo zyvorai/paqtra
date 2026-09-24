@@ -221,6 +221,7 @@ mod tests {
     use crate::ebpf::MockMapReader;
     use std::net::Ipv4Addr;
 
+    #[ignore = "needs a Kubernetes cluster"]
     #[tokio::test]
     async fn test_replay_player_creation() {
         let reader = MockMapReader;
@@ -230,6 +231,7 @@ mod tests {
         assert_eq!(player.replay_rate, 1.0);
     }
 
+    #[ignore = "needs a Kubernetes cluster"]
     #[tokio::test]
     async fn test_replay_empty() {
         let reader = MockMapReader;
@@ -241,6 +243,7 @@ mod tests {
         assert_eq!(outcomes.len(), 0);
     }
 
+    #[ignore = "needs a Kubernetes cluster"]
     #[tokio::test]
     async fn test_replay_single_flow() {
         let reader = MockMapReader;

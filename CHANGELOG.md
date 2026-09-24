@@ -18,5 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- The gated `aya-ebpf` feature and everything behind it: the Aya map writer, event stream and
+  reader, and the `ebpf_advanced` module (program hot-loading, XDP packet filter, probe-based
+  profiler, CO-RE compile). They wrote BPF maps and attached programs, which Paqtra must not do
+  (see `AGENTS.md`). Map reads go through `bpftool`. The unused `libbpf-rs` and `bytes`
+  dependencies were dropped with them.
 - Session/status milestone docs under `docs/status/`.
 - Obsolete Cilium-Vision branding and confidential client markings.

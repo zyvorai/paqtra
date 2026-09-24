@@ -138,7 +138,7 @@ Cross-cluster orchestration for multi-cloud and hybrid deployments:
 |  Healer | AutoPolicy | RootCause | Simulator | Replay       |
 |  Chaos  | Canary     | MultiCluster                         |
 +-------------------------------------------------------------+
-|  eBPF Maps (Aya/bpftool)  |  Hubble CLI  |  K8s API (kube)  |
+|  eBPF Maps (bpftool)    |  Hubble CLI  |  K8s API (kube)  |
 +-------------------------------------------------------------+
 |              Cilium Agent  |  Kernel eBPF datapath            |
 +-------------------------------------------------------------+
