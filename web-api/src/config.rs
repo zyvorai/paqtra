@@ -8,6 +8,8 @@ pub struct Config {
     pub port: u16,
     pub jwt_secret: String,
     pub hubble_address: String,
+    /// How flows are fetched: `auto` (gRPC, CLI fallback), `grpc`, or `cli`.
+    pub hubble_mode: HubbleMode,
     pub k8s_context: Option<String>,
     /// When true, authentication is completely disabled (dev/demo mode only).
     /// Read once at startup from AUTH_DISABLED env var.
@@ -56,6 +58,30 @@ pub struct Config {
     pub flow_ingest_interval_secs: u64,
 }
 
+/// How flows are fetched (`HUBBLE_MODE`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HubbleMode {
+    /// gRPC first; the `hubble` CLI only if gRPC fails and the binary exists.
+    #[default]
+    Auto,
+    /// gRPC only; errors are reported instead of retried through the CLI.
+    Grpc,
+    /// The `hubble` CLI only (the behaviour before the gRPC client existed).
+    Cli,
+}
+
+impl HubbleMode {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "auto" | "" => Some(Self::Auto),
+            "grpc" => Some(Self::Grpc),
+            "cli" => Some(Self::Cli),
+            _ => None,
+        }
+    }
+}
+
 impl Config {
     pub fn load() -> anyhow::Result<Self> {
         // Only load .env file in non-production environments
@@ -101,6 +127,14 @@ impl Config {
 
         let hubble_address =
             env::var("HUBBLE_ADDRESS").unwrap_or_else(|_| "localhost:4245".to_string());
+
+        let hubble_mode = match env::var("HUBBLE_MODE") {
+            Ok(raw) => HubbleMode::parse(&raw).unwrap_or_else(|| {
+                tracing::warn!("Ignoring invalid HUBBLE_MODE '{raw}': use auto, grpc or cli");
+                Default::default()
+            }),
+            Err(_) => Default::default(),
+        };
 
         let hubble_addresses = if let Ok(raw) = env::var("HUBBLE_ADDRESSES") {
             // Parse comma-separated name=host:port pairs
@@ -159,6 +193,7 @@ impl Config {
                 .parse()?,
             jwt_secret,
             hubble_address,
+            hubble_mode,
             k8s_context: env::var("K8S_CONTEXT").ok(),
             auth_disabled,
             admin_username,

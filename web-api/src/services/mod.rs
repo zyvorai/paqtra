@@ -7,6 +7,7 @@ pub mod flow_ingest;
 pub mod flow_store;
 pub mod healer;
 pub mod hubble;
+pub mod hubble_grpc;
 pub mod incidents;
 pub mod investigate;
 pub mod k8s;

@@ -1,15 +1,35 @@
 // Hubble service client
 //
-// This service wraps Hubble gRPC/CLI interactions for the web API.
-// It attempts a gRPC connection first, then falls back to CLI invocation.
+// Flows are read from the Hubble Observer gRPC API (see `hubble_grpc`). The
+// `hubble` CLI is only a fallback, used when the gRPC call fails and the binary
+// is on PATH, so the API works in an image that does not ship the CLI.
 
+pub use crate::config::HubbleMode;
 use crate::models::flow::{Flow, FlowEndpoint, FlowStats};
+use crate::services::hubble_grpc;
 use anyhow::Result;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
+
+/// What a live flow stream yields.
+#[derive(Debug)]
+pub enum LiveEvent {
+    Flow(Box<Flow>),
+    /// The stream ended or failed; no more events follow.
+    Ended(String),
+}
+
+/// True when an executable called `name` is in a directory on PATH.
+fn on_path(name: &str) -> bool {
+    std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).any(|d| d.join(name).is_file()))
+        .unwrap_or(false)
+}
 
 pub struct HubbleService {
     address: String,
     clusters: Vec<(String, String)>, // (cluster_name, address)
+    mode: HubbleMode,
 }
 
 impl HubbleService {
@@ -32,7 +52,17 @@ impl HubbleService {
         Ok(Self {
             address: address.to_string(),
             clusters,
+            mode: HubbleMode::default(),
         })
+    }
+
+    pub fn with_mode(mut self, mode: HubbleMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    pub fn mode(&self) -> HubbleMode {
+        self.mode
     }
 
     fn validate_address(address: &str) -> Result<()> {
@@ -61,14 +91,23 @@ impl HubbleService {
         &self.clusters
     }
 
-    /// Check if Hubble relay is reachable via TCP
+    /// Whether Hubble at the primary address is usable.
     pub async fn is_healthy(&self) -> bool {
-        tokio::net::TcpStream::connect(&self.address).await.is_ok()
+        self.is_address_healthy(&self.address).await
     }
 
-    /// Check if a specific Hubble address is reachable via TCP
-    pub async fn is_address_healthy(address: &str) -> bool {
-        tokio::net::TcpStream::connect(address).await.is_ok()
+    /// Whether Hubble at `address` is usable. Over gRPC this means the Observer
+    /// answers `ServerStatus`; a listening port alone does not count. Only the
+    /// CLI mode falls back to a plain TCP connect, since that is all the CLI needs.
+    pub async fn is_address_healthy(&self, address: &str) -> bool {
+        let tcp = || async { tokio::net::TcpStream::connect(address).await.is_ok() };
+        match self.mode {
+            HubbleMode::Cli => tcp().await,
+            HubbleMode::Grpc => hubble_grpc::is_healthy(address).await,
+            HubbleMode::Auto => {
+                hubble_grpc::is_healthy(address).await || (on_path("hubble") && tcp().await)
+            }
+        }
     }
 
     /// Get flows from all configured clusters, tagged with cluster_name.
@@ -84,12 +123,12 @@ impl HubbleService {
             let name = name.clone();
             let addr = addr.clone();
             let namespace = namespace.map(|s| s.to_string());
+            let mode = self.mode;
 
             handles.push(tokio::spawn(async move {
-                let flows =
-                    Self::get_flows_from_address(&addr, limit, namespace.as_deref(), Some(&name))
-                        .await
-                        .unwrap_or_default();
+                let flows = fetch_flows(mode, &addr, limit, namespace.as_deref(), Some(&name))
+                    .await
+                    .unwrap_or_default();
                 (name, flows)
             }));
         }
@@ -103,100 +142,31 @@ impl HubbleService {
         results
     }
 
-    /// Retrieve flows from a specific Hubble address, optionally tagging each
-    /// flow with a cluster name.
-    async fn get_flows_from_address(
-        address: &str,
-        limit: usize,
-        namespace: Option<&str>,
-        cluster_name: Option<&str>,
-    ) -> Result<Vec<Flow>> {
-        let limit = limit.min(10_000);
-
-        if let Some(ns) = namespace {
-            if ns.starts_with('-') || ns.contains(char::is_whitespace) {
-                anyhow::bail!("Invalid namespace: '{}'", ns);
-            }
-        }
-
-        let mut cmd = Command::new("hubble");
-        cmd.arg("observe")
-            .arg("--output")
-            .arg("json")
-            .arg("--last")
-            .arg(limit.to_string())
-            .arg("--server")
-            .arg(address);
-
-        if let Some(ns) = namespace {
-            cmd.arg("--namespace").arg(ns);
-        }
-
-        let output = match cmd.output().await {
-            Ok(out) => out,
-            Err(e) => {
-                tracing::debug!("hubble CLI not available for {}: {}", address, e);
-                return Ok(Vec::new());
-            }
-        };
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::debug!(
-                "hubble observe ({}) returned non-zero: {}",
-                address,
-                stderr.trim()
-            );
-            return Ok(Vec::new());
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_hubble_output(&stdout, cluster_name))
+    /// Retrieve the most recent flows from the primary Hubble address.
+    pub async fn get_flows(&self, limit: usize, namespace: Option<&str>) -> Result<Vec<Flow>> {
+        fetch_flows(self.mode, &self.address, limit, namespace, None).await
     }
 
-    /// Retrieve flows from Hubble via the `hubble` CLI with `--server`.
-    /// Checks relay connectivity first, then falls back gracefully.
-    pub async fn get_flows(&self, limit: usize, namespace: Option<&str>) -> Result<Vec<Flow>> {
-        // Cap the limit to prevent excessive resource consumption
-        let limit = limit.min(10_000);
-
-        // Validate namespace to prevent flag injection
-        if let Some(ns) = namespace {
-            if ns.starts_with('-') || ns.contains(char::is_whitespace) {
-                anyhow::bail!("Invalid namespace: '{}'", ns);
-            }
+    /// Follow new flows as they happen. Connection errors are returned here;
+    /// later failures arrive as a final [`LiveEvent::Ended`]. Dropping the
+    /// receiver stops the stream (and kills the CLI process, if one is used).
+    pub async fn stream_flows(
+        &self,
+        namespace: Option<&str>,
+    ) -> Result<tokio::sync::mpsc::Receiver<LiveEvent>> {
+        validate_namespace(namespace)?;
+        match self.mode {
+            HubbleMode::Cli => stream_cli(&self.address, namespace),
+            HubbleMode::Grpc => stream_grpc(&self.address, namespace).await,
+            HubbleMode::Auto => match stream_grpc(&self.address, namespace).await {
+                Ok(rx) => Ok(rx),
+                Err(e) if on_path("hubble") => {
+                    tracing::warn!("Hubble gRPC stream failed ({e:#}); using the hubble CLI");
+                    stream_cli(&self.address, namespace)
+                }
+                Err(e) => Err(e),
+            },
         }
-
-        // Build the hubble observe command
-        let mut cmd = Command::new("hubble");
-        cmd.arg("observe")
-            .arg("--output")
-            .arg("json")
-            .arg("--last")
-            .arg(limit.to_string())
-            .arg("--server")
-            .arg(&self.address);
-
-        if let Some(ns) = namespace {
-            cmd.arg("--namespace").arg(ns);
-        }
-
-        let output = match cmd.output().await {
-            Ok(out) => out,
-            Err(e) => {
-                tracing::debug!("hubble CLI not available: {}", e);
-                return Ok(Vec::new());
-            }
-        };
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::debug!("hubble observe returned non-zero: {}", stderr.trim());
-            return Ok(Vec::new());
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_hubble_output(&stdout, None))
     }
 
     /// Compute aggregate flow statistics
@@ -215,6 +185,168 @@ impl HubbleService {
             avg_latency_ms: 0.0,      // Would need L7 data
         })
     }
+}
+
+/// Reject namespaces that could be read as CLI flags. Also applied on the gRPC
+/// path so both backends accept exactly the same input.
+fn validate_namespace(namespace: Option<&str>) -> Result<()> {
+    if let Some(ns) = namespace {
+        if ns.starts_with('-') || ns.contains(char::is_whitespace) {
+            anyhow::bail!("Invalid namespace: '{}'", ns);
+        }
+    }
+    Ok(())
+}
+
+/// The most recent `limit` flows from `address`, using the backend `mode` selects.
+async fn fetch_flows(
+    mode: HubbleMode,
+    address: &str,
+    limit: usize,
+    namespace: Option<&str>,
+    cluster: Option<&str>,
+) -> Result<Vec<Flow>> {
+    // Cap the limit to prevent excessive resource consumption
+    let limit = limit.min(10_000);
+    validate_namespace(namespace)?;
+
+    match mode {
+        HubbleMode::Cli => Ok(cli_flows(address, limit, namespace, cluster).await),
+        HubbleMode::Grpc => hubble_grpc::last_flows(address, limit, namespace, cluster).await,
+        HubbleMode::Auto => match hubble_grpc::last_flows(address, limit, namespace, cluster).await
+        {
+            Ok(flows) => Ok(flows),
+            Err(e) if on_path("hubble") => {
+                tracing::debug!("Hubble gRPC failed for {address} ({e:#}); trying the CLI");
+                Ok(cli_flows(address, limit, namespace, cluster).await)
+            }
+            Err(e) => {
+                tracing::debug!("Hubble gRPC failed for {address} and no hubble CLI: {e:#}");
+                Ok(Vec::new())
+            }
+        },
+    }
+}
+
+/// `hubble observe --last N`; empty when the binary is missing or fails.
+async fn cli_flows(
+    address: &str,
+    limit: usize,
+    namespace: Option<&str>,
+    cluster: Option<&str>,
+) -> Vec<Flow> {
+    let mut cmd = Command::new("hubble");
+    cmd.arg("observe")
+        .arg("--output")
+        .arg("json")
+        .arg("--last")
+        .arg(limit.to_string())
+        .arg("--server")
+        .arg(address);
+    if let Some(ns) = namespace {
+        cmd.arg("--namespace").arg(ns);
+    }
+
+    let output = match cmd.output().await {
+        Ok(out) => out,
+        Err(e) => {
+            tracing::debug!("hubble CLI not available for {}: {}", address, e);
+            return Vec::new();
+        }
+    };
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        tracing::debug!(
+            "hubble observe ({}) returned non-zero: {}",
+            address,
+            stderr.trim()
+        );
+        return Vec::new();
+    }
+    parse_hubble_output(&String::from_utf8_lossy(&output.stdout), cluster)
+}
+
+async fn stream_grpc(
+    address: &str,
+    namespace: Option<&str>,
+) -> Result<tokio::sync::mpsc::Receiver<LiveEvent>> {
+    let mut stream = hubble_grpc::follow_flows(address, namespace).await?;
+    let (tx, rx) = tokio::sync::mpsc::channel(256);
+    tokio::spawn(async move {
+        loop {
+            let ended = match stream.message().await {
+                Ok(Some(msg)) => {
+                    if let Some(flow) = hubble_grpc::flow_from_response(&msg) {
+                        // The receiver is gone when the client disconnected.
+                        if tx.send(LiveEvent::Flow(Box::new(flow))).await.is_err() {
+                            return;
+                        }
+                    }
+                    continue;
+                }
+                Ok(None) => "Hubble closed the stream".to_string(),
+                Err(status) => format!("Hubble stream error: {}", status.message()),
+            };
+            let _ = tx.send(LiveEvent::Ended(ended)).await;
+            return;
+        }
+    });
+    Ok(rx)
+}
+
+fn stream_cli(
+    address: &str,
+    namespace: Option<&str>,
+) -> Result<tokio::sync::mpsc::Receiver<LiveEvent>> {
+    let mut cmd = Command::new("hubble");
+    cmd.arg("observe")
+        .arg("--follow")
+        .arg("--output")
+        .arg("json")
+        .arg("--server")
+        .arg(address);
+    if let Some(ns) = namespace {
+        cmd.arg("--namespace").arg(ns);
+    }
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("Failed to start hubble observe: {e}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("failed to capture hubble output"))?;
+
+    let (tx, rx) = tokio::sync::mpsc::channel(256);
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(stdout).lines();
+        let ended = loop {
+            match lines.next_line().await {
+                Ok(Some(line)) => {
+                    let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+                        continue;
+                    };
+                    // Lost-event and node-status lines are not flows.
+                    let Some(flow) = flow_from_hubble_line(0, &v) else {
+                        continue;
+                    };
+                    if tx.send(LiveEvent::Flow(Box::new(flow))).await.is_err() {
+                        break None; // client gone; `child` is killed on drop
+                    }
+                }
+                Ok(None) => break Some("hubble observe process exited".to_string()),
+                Err(e) => break Some(format!("Error reading hubble output: {e}")),
+            }
+        };
+        if let Some(msg) = ended {
+            let _ = tx.send(LiveEvent::Ended(msg)).await;
+        }
+        let _ = child.kill().await;
+    });
+    Ok(rx)
 }
 
 /// Parse the stdout of `hubble observe --output json`.
@@ -371,21 +503,7 @@ pub fn hubble_json_to_flow(_index: usize, v: &serde_json::Value) -> Flow {
         .and_then(|x| x.as_str())
         .map(|s| s.to_string())
         .unwrap_or_else(|| {
-            format!(
-                "h-{:016x}",
-                fnv1a(&[
-                    &timestamp,
-                    &source.namespace,
-                    &source.pod,
-                    &source.ip,
-                    &destination.namespace,
-                    &destination.pod,
-                    &destination.ip,
-                    &verdict,
-                    &protocol,
-                    &port.to_string(),
-                ])
-            )
+            content_id(&timestamp, &source, &destination, &verdict, &protocol, port)
         });
 
     Flow {
@@ -404,6 +522,33 @@ pub fn hubble_json_to_flow(_index: usize, v: &serde_json::Value) -> Flow {
             .and_then(|x| x.as_str())
             .map(|s| s.to_string()),
     }
+}
+
+/// An id derived from a flow's content, for flows Hubble sent without a `uuid`.
+/// Shared by the CLI and gRPC paths so the same flow gets the same id from both.
+pub(crate) fn content_id(
+    timestamp: &str,
+    source: &FlowEndpoint,
+    destination: &FlowEndpoint,
+    verdict: &str,
+    protocol: &str,
+    port: u16,
+) -> String {
+    format!(
+        "h-{:016x}",
+        fnv1a(&[
+            timestamp,
+            &source.namespace,
+            &source.pod,
+            &source.ip,
+            &destination.namespace,
+            &destination.pod,
+            &destination.ip,
+            verdict,
+            protocol,
+            &port.to_string(),
+        ])
+    )
 }
 
 /// Helper: extract a string field from a JSON value, returning empty string if absent
@@ -647,5 +792,146 @@ mod hubble_format_tests {
             (f.http_method.as_deref(), f.http_url.as_deref(), f.http_code),
             (Some("GET"), Some("http://gw/pay"), Some(503))
         );
+    }
+}
+
+#[cfg(test)]
+mod backend_tests {
+    use super::*;
+    use crate::services::hubble_grpc::pb::flow::Verdict;
+    use crate::services::hubble_grpc::testing::{serve, tcp_flow};
+
+    fn svc(addr: &str, mode: HubbleMode) -> HubbleService {
+        HubbleService::new(addr, vec![("east".into(), addr.into())])
+            .unwrap()
+            .with_mode(mode)
+    }
+
+    #[test]
+    fn mode_parsing() {
+        assert_eq!(HubbleMode::parse("GRPC"), Some(HubbleMode::Grpc));
+        assert_eq!(HubbleMode::parse(" cli "), Some(HubbleMode::Cli));
+        assert_eq!(HubbleMode::parse("auto"), Some(HubbleMode::Auto));
+        assert_eq!(HubbleMode::parse(""), Some(HubbleMode::Auto));
+        assert_eq!(HubbleMode::parse("grcp"), None);
+        assert_eq!(HubbleMode::default(), HubbleMode::Auto);
+    }
+
+    #[tokio::test]
+    async fn grpc_mode_reads_flows_health_and_clusters_without_the_cli() {
+        let (addr, _) = serve(vec![
+            tcp_flow("a", Verdict::Forwarded, 80),
+            tcp_flow("b", Verdict::Dropped, 81),
+        ])
+        .await;
+        let s = svc(&addr, HubbleMode::Grpc);
+        assert!(s.is_healthy().await);
+        let flows = s.get_flows(10, None).await.unwrap();
+        assert_eq!(flows.len(), 2);
+        assert_eq!(flows[1].verdict, "DROPPED");
+
+        let multi = s.get_flows_multi_cluster(10, None).await;
+        assert_eq!(multi.len(), 1);
+        assert_eq!(multi[0].0, "east");
+        assert!(multi[0]
+            .1
+            .iter()
+            .all(|f| f.cluster.as_deref() == Some("east")));
+
+        let stats = s.get_flow_stats().await.unwrap();
+        assert_eq!((stats.total_flows, stats.dropped), (2, 1));
+    }
+
+    #[tokio::test]
+    async fn grpc_mode_reports_errors_instead_of_pretending_there_are_no_flows() {
+        let closed = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap().to_string()
+        };
+        let s = svc(&closed, HubbleMode::Grpc);
+        assert!(!s.is_healthy().await);
+        assert!(s.get_flows(5, None).await.is_err());
+        assert!(s.stream_flows(None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn both_backends_reject_flag_like_namespaces() {
+        let (addr, seen) = serve(vec![]).await;
+        for mode in [HubbleMode::Grpc, HubbleMode::Cli] {
+            let s = svc(&addr, mode);
+            assert!(s.get_flows(5, Some("--all")).await.is_err());
+            assert!(s.get_flows(5, Some("a b")).await.is_err());
+            assert!(s.stream_flows(Some("-x")).await.is_err());
+        }
+        assert!(seen.lock().unwrap().is_empty(), "nothing may reach Hubble");
+    }
+
+    #[tokio::test]
+    async fn live_stream_yields_flows_then_ends() {
+        let (addr, seen) = serve(vec![
+            tcp_flow("a", Verdict::Forwarded, 80),
+            tcp_flow("b", Verdict::Forwarded, 81),
+        ])
+        .await;
+        let s = svc(&addr, HubbleMode::Grpc);
+        let mut rx = s.stream_flows(Some("shop")).await.unwrap();
+        let mut ids = Vec::new();
+        let ended = loop {
+            match rx.recv().await {
+                Some(LiveEvent::Flow(f)) => ids.push(f.id),
+                Some(LiveEvent::Ended(why)) => break why,
+                None => panic!("channel closed without an Ended event"),
+            }
+        };
+        assert_eq!(ids, ["a", "b"]);
+        assert!(ended.contains("closed"), "{ended}");
+        let req = seen.lock().unwrap()[0].clone();
+        assert!(req.follow);
+        assert_eq!(req.whitelist.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn cli_mode_never_touches_grpc() {
+        let (addr, seen) = serve(vec![tcp_flow("a", Verdict::Forwarded, 80)]).await;
+        let s = svc(&addr, HubbleMode::Cli);
+        // Whether or not a hubble binary exists here, the fake must see no request.
+        let _ = s.get_flows(5, None).await;
+        assert!(seen.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn grpc_mode_health_needs_a_real_observer_not_just_an_open_port() {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            loop {
+                let _ = l.accept().await; // accept and hold: a port that speaks no gRPC
+            }
+        });
+        assert!(!svc(&addr, HubbleMode::Grpc).is_healthy().await);
+        assert!(
+            svc(&addr, HubbleMode::Cli).is_healthy().await,
+            "CLI mode only needs TCP"
+        );
+    }
+
+    /// Ids of flows without a uuid are stored in history; changing how they are
+    /// derived would re-insert every stored flow under a new id.
+    #[test]
+    fn content_id_format_is_pinned() {
+        let ep = |ns: &str, pod: &str, ip: &str| FlowEndpoint {
+            namespace: ns.into(),
+            pod: pod.into(),
+            ip: ip.into(),
+        };
+        let id = content_id(
+            "2023-11-14T22:13:20.123456Z",
+            &ep("shop", "web-1", "10.0.0.1"),
+            &ep("db", "pg-0", "10.0.0.2"),
+            "DROPPED",
+            "TCP",
+            5432,
+        );
+        assert_eq!(id, "h-a51f07c2d2cba2de");
     }
 }

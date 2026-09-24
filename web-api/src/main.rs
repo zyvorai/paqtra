@@ -49,7 +49,8 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Configuration loaded");
 
     // Initialize services
-    let hubble = HubbleService::new(&config.hubble_address, config.hubble_addresses.clone())?;
+    let hubble = HubbleService::new(&config.hubble_address, config.hubble_addresses.clone())?
+        .with_mode(config.hubble_mode);
     tracing::info!(
         "HubbleService initialized (relay: {}, clusters: {})",
         config.hubble_address,

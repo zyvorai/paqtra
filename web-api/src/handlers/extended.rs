@@ -382,7 +382,6 @@ pub async fn list_clusters(
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    use crate::services::hubble::HubbleService;
     use crate::services::k8s::K8sService;
 
     let configured_clusters = state.hubble.clusters();
@@ -392,7 +391,7 @@ pub async fn list_clusters(
         let mut items = Vec::new();
 
         for (name, addr) in configured_clusters {
-            let healthy = HubbleService::is_address_healthy(addr).await;
+            let healthy = state.hubble.is_address_healthy(addr).await;
 
             // Query K8s node/pod counts (best-effort)
             let node_count = {

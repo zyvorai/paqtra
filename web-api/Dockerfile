@@ -14,7 +14,10 @@ RUN apt-get update && apt-get install -y \
 COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release && rm -rf src
 
-# Copy real source and build
+# Copy real source and build. build.rs compiles the vendored Hubble protos
+# (pure Rust, no protoc needed).
+COPY build.rs ./
+COPY proto/ proto/
 COPY src/ src/
 RUN cargo build --release
 
