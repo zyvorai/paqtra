@@ -53,7 +53,7 @@ const EXEMPT_PREFIXES: &[&str] = &["/swagger-ui"];
 
 fn classify(method: &Method, path: &str) -> RateTier {
     // Exempt check – exact matches and prefix matches.
-    if EXEMPT_EXACT.iter().any(|p| path == *p) {
+    if EXEMPT_EXACT.contains(&path) {
         return RateTier::Exempt;
     }
     if EXEMPT_PREFIXES.iter().any(|pfx| path.starts_with(pfx)) {

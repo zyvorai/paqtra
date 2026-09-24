@@ -163,7 +163,7 @@ async fn flush_batch(
     service_name: &str,
     batch: &mut Vec<FinishedSpan>,
 ) {
-    let spans: Vec<FinishedSpan> = batch.drain(..).collect();
+    let spans: Vec<FinishedSpan> = std::mem::take(batch);
 
     let (Some(client), Some(endpoint)) = (client, endpoint) else {
         // No endpoint configured — spans have been drained, nothing to send.

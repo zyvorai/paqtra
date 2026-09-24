@@ -773,7 +773,8 @@ pub async fn get_drop_stats(
         Ok(v) => v,
         Err(_) => {
             let mut r = paginate_json(vec![], &params, "drops");
-            r.as_object_mut().map(|o| o.insert("total_drops".to_string(), json!(0)));
+            r.as_object_mut()
+                .map(|o| o.insert("total_drops".to_string(), json!(0)));
             return Ok(Json(r));
         }
     };
@@ -783,7 +784,8 @@ pub async fn get_drop_stats(
         Some(m) => m,
         None => {
             let mut r = paginate_json(vec![], &params, "drops");
-            r.as_object_mut().map(|o| o.insert("total_drops".to_string(), json!(0)));
+            r.as_object_mut()
+                .map(|o| o.insert("total_drops".to_string(), json!(0)));
             return Ok(Json(r));
         }
     };
