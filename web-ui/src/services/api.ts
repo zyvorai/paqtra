@@ -200,11 +200,59 @@ export const remediateAnomaly = (id: string) =>
   api.post(`/anomalies/${id}/remediate`);
 
 // Compliance
+export interface ComplianceFramework {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  /** Controls the framework defines. Paqtra's checks are not mapped to them. */
+  control_count: number;
+}
+
+export interface AuditFinding {
+  /** Paqtra's check identifier (e.g. `PCI-NET-1`), not a control id of the framework. */
+  control_id: string;
+  title: string;
+  status: 'passed' | 'failed' | 'skipped' | string;
+  severity: string;
+  description: string;
+}
+
+export interface AuditSummary {
+  audit_id: string;
+  framework: string;
+  completed_at: string | null;
+  requested_by: string;
+  total_controls: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  /** Share of the checks that could be evaluated which passed, in percent. */
+  score: number;
+}
+
+export interface AuditResult extends AuditSummary {
+  status: string;
+  started_at: string;
+  findings: AuditFinding[];
+  cluster: string | null;
+  flows_sampled: number;
+}
+
+export type ReportFormat = 'html' | 'csv' | 'json';
+
 export const fetchFrameworks = () =>
-  api.get<{ frameworks: string[] }>('/compliance/frameworks');
+  api.get<{ frameworks: ComplianceFramework[]; total: number }>('/compliance/frameworks');
 
 export const runAudit = (framework: string) =>
-  api.post('/compliance/audit', { framework });
+  api.post<AuditResult>('/compliance/audit', { framework });
+
+export const fetchAudits = () =>
+  api.get<{ audits: AuditSummary[]; total: number }>('/compliance/audits');
+
+/** Fetched as a blob because a plain link cannot carry the Authorization header. */
+export const fetchAuditReport = (id: string, format: ReportFormat) =>
+  api.get<Blob>(`/compliance/audits/${encodeURIComponent(id)}/report`, { params: { format }, responseType: 'blob' });
 
 export const fetchSecurityPosture = () =>
   api.get<{ score: number; trend: string }>('/security/posture');
