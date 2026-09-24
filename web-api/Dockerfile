@@ -24,7 +24,7 @@ RUN cargo build --release
 # Stage 2: Runtime (same Debian release as builder)
 FROM docker.io/library/debian:bookworm-slim
 
-# Runtime deps + kubectl + hubble CLI (API shells out for K8s + flow observe)
+# Runtime deps + kubectl + hubble CLI (CLI is fallback when HUBBLE_MODE=cli|auto)
 ARG TARGETARCH=amd64
 RUN apt-get update && apt-get install -y \
     ca-certificates \

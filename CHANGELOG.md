@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Continuous Hubble **follow** ingest with disconnect/gap counters, events/sec, and
+  lag on `/health` → `subsystems.flow_ingest`.
+- Real DNS L7 fields on flows (query, rcode, answers, latency); DNS UI no longer
+  invents SERVFAIL from policy drops.
+- `POST /api/v1/investigate/flow` — why-denied workflow from a selected flow
+  (identities, CNP/CCNP candidates, drop reason, draft allow).
+
+### Changed
+
+- Chart default `HUBBLE_MODE=grpc`; ingest labels `hubble_grpc` when Observer gRPC
+  produced the data.
+- Combined image defaults Hubble Relay Service port **80**.
+
 ## [2.0.0] - 2026-09-24
 
 ### Added

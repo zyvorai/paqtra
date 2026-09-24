@@ -17,7 +17,7 @@ Every step and impact claim carries one of:
 ## Flow store
 
 - SQLite table under `PAQTRA_DATA_DIR/flows.db` (or in-memory if unset)
-- Background ingest from Hubble CLI (`hubble_cli` source)
+- Background ingest from Hubble Observer gRPC (`hubble_grpc` source; CLI only if `HUBBLE_MODE=cli|auto` falls back)
 - Default retention: 7 days
 - Health: `GET /health` → `subsystems.flow_ingest`
 
@@ -40,6 +40,12 @@ POST /api/v1/investigate/path
 ```
 
 Response includes `steps[]`, `likely_owner` (`policy` | `dns` | `no_backend` | `datapath` | `unknown`), `next_actions`, and stores a redacted bundle.
+
+```http
+POST /api/v1/investigate/flow
+```
+
+Explain a single flow (from Flows “Why denied?”): identities, CNP/CCNP candidates, drop reason, and a draft minimal allow — all confidence-tagged.
 
 ```http
 GET /api/v1/investigate/bundles/{id}

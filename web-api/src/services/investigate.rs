@@ -476,6 +476,238 @@ pub async fn investigate_path(state: &AppState, req: &InvestigatePathRequest) ->
     result
 }
 
+
+/// Explain a single stored (or snapshot) flow — especially DROPPED connections.
+#[derive(Debug, Clone, Deserialize)]
+pub struct InvestigateFlowRequest {
+    #[serde(default)]
+    pub flow_id: String,
+    #[serde(default)]
+    pub flow: Option<Value>,
+    #[serde(default = "default_window")]
+    pub time_window_minutes: i64,
+}
+
+pub async fn investigate_flow(state: &AppState, req: &InvestigateFlowRequest) -> InvestigateResult {
+    let id = format!("inv-flow-{}", Uuid::new_v4());
+    let stats = state.flow_store.stats();
+    let mut steps = Vec::new();
+
+    let stored = if !req.flow_id.is_empty() {
+        state
+            .flow_store
+            .query(&FlowQuery {
+                limit: 200,
+                ..Default::default()
+            })
+            .ok()
+            .and_then(|rows| rows.into_iter().find(|f| f.id == req.flow_id))
+    } else {
+        None
+    };
+
+    let (src_ns, src_pod, dst_ns, dst_pod, port, protocol, verdict, drop_reason, flow_ts) =
+        if let Some(f) = &stored {
+            (
+                f.src_namespace.clone(),
+                f.src_pod.clone(),
+                f.dst_namespace.clone(),
+                f.dst_pod.clone(),
+                f.port,
+                f.protocol.clone(),
+                f.verdict.clone(),
+                f.drop_reason.clone(),
+                f.ts.clone(),
+            )
+        } else if let Some(v) = &req.flow {
+            let src = v.get("source").cloned().unwrap_or(json!({}));
+            let dst = v.get("destination").cloned().unwrap_or(json!({}));
+            (
+                src.get("namespace").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                src.get("pod").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                dst.get("namespace").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                dst.get("pod").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                v.get("port").and_then(|x| x.as_u64()).unwrap_or(0) as u16,
+                v.get("protocol").and_then(|x| x.as_str()).unwrap_or("TCP").to_string(),
+                v.get("verdict").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                v.get("drop_reason").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                v.get("timestamp").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+            )
+        } else {
+            return InvestigateResult {
+                id: id.clone(),
+                request: json!({"flow_id": req.flow_id}),
+                steps: vec![InvestigateStep {
+                    id: "resolve".into(),
+                    title: "Resolve flow".into(),
+                    detail: "No flow_id match in the store and no flow snapshot provided.".into(),
+                    confidence: Confidence::Unavailable,
+                    evidence: vec![],
+                }],
+                likely_owner: "unknown".into(),
+                next_actions: vec!["Select a DROPPED flow from Flows or pass a flow snapshot.".into()],
+                flow_ingest: json!({
+                    "total": stats.total,
+                    "last_ok": stats.last_ingest_ok,
+                    "source": stats.ingest_source,
+                    "gaps": stats.gap_count,
+                    "confidence": if stats.last_ingest_ok { "observed" } else { "unavailable" },
+                }),
+                created_at: Utc::now().to_rfc3339(),
+            };
+        };
+
+    steps.push(InvestigateStep {
+        id: "flow".into(),
+        title: "Selected flow".into(),
+        detail: format!(
+            "{src_ns}/{src_pod} → {dst_ns}/{dst_pod} {protocol}/{port} verdict={verdict} drop_reason={}",
+            if drop_reason.is_empty() { "(none)" } else { drop_reason.as_str() }
+        ),
+        confidence: Confidence::Observed,
+        evidence: vec![EvidenceRef {
+            kind: "flow".into(),
+            id: if req.flow_id.is_empty() {
+                format!("{src_pod}-{dst_pod}-{port}")
+            } else {
+                req.flow_id.clone()
+            },
+        }],
+    });
+
+    let k8s_ok = state.k8s.is_healthy().await;
+    let identity_detail = if k8s_ok {
+        let ids = state.k8s.kubectl_json(&["get", "ciliumendpoints", "-A", "-o", "json"]).await;
+        let count = ids.get("items").and_then(|i| i.as_array()).map(|a| a.len()).unwrap_or(0);
+        format!("Cluster has {count} CiliumEndpoint(s). Source {src_ns}/{src_pod}, dest {dst_ns}/{dst_pod}.")
+    } else {
+        "Kubernetes unavailable — cannot resolve CiliumEndpoint identities.".into()
+    };
+    steps.push(InvestigateStep {
+        id: "identity".into(),
+        title: "Endpoint identities".into(),
+        detail: identity_detail,
+        confidence: if k8s_ok { Confidence::Inferred } else { Confidence::Unavailable },
+        evidence: vec![],
+    });
+
+    let mut matching_policies: Vec<String> = Vec::new();
+    let mut denying_guess: Option<String> = None;
+    if k8s_ok {
+        for ns in [&src_ns, &dst_ns] {
+            if ns.is_empty() { continue; }
+            let data = state.k8s.kubectl_json(&["get", "cnp", "-n", ns, "-o", "json"]).await;
+            if let Some(items) = data.get("items").and_then(|i| i.as_array()) {
+                for it in items {
+                    let name = it.pointer("/metadata/name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                    if name.is_empty() { continue; }
+                    matching_policies.push(format!("cnp/{ns}/{name}"));
+                    if denying_guess.is_none() && port > 0 && it.to_string().contains(&port.to_string()) {
+                        denying_guess = Some(name);
+                    }
+                }
+            }
+        }
+        let ccnp = state.k8s.kubectl_json(&["get", "ccnp", "-o", "json"]).await;
+        if let Some(items) = ccnp.get("items").and_then(|i| i.as_array()) {
+            for it in items.iter().take(8) {
+                if let Some(name) = it.pointer("/metadata/name").and_then(|n| n.as_str()) {
+                    matching_policies.push(format!("ccnp/{name}"));
+                }
+            }
+        }
+        matching_policies.truncate(12);
+    }
+    steps.push(InvestigateStep {
+        id: "policy".into(),
+        title: "CNP / CCNP candidates".into(),
+        detail: if matching_policies.is_empty() {
+            if k8s_ok { "No CNP/CCNP listed — default-deny or remote identity may apply (inferred).".into() }
+            else { "Cannot list policies without Kubernetes.".into() }
+        } else {
+            format!("Candidates: {}", matching_policies.join(", "))
+        },
+        confidence: if k8s_ok { Confidence::Inferred } else { Confidence::Unavailable },
+        evidence: matching_policies.iter().take(5).map(|p| EvidenceRef { kind: "policy".into(), id: p.clone() }).collect(),
+    });
+
+    let is_drop = verdict.eq_ignore_ascii_case("DROPPED") || drop_reason.to_uppercase().contains("POLICY");
+    steps.push(InvestigateStep {
+        id: "drop".into(),
+        title: "Drop reason".into(),
+        detail: if drop_reason.is_empty() {
+            if is_drop { "Verdict is DROPPED but Hubble did not include drop_reason_desc.".into() }
+            else { format!("Verdict is {verdict} — not a deny.") }
+        } else {
+            format!("Hubble drop_reason_desc: {drop_reason}")
+        },
+        confidence: if drop_reason.is_empty() { Confidence::Inferred } else { Confidence::Observed },
+        evidence: vec![],
+    });
+
+    let mut next_actions = Vec::new();
+    let likely_owner = if port == 53 && is_drop { "dns" } else if is_drop { "policy" } else { "unknown" };
+
+    if is_drop && !src_ns.is_empty() && !dst_ns.is_empty() && port > 0 {
+        let fix = format!(
+            "apiVersion: cilium.io/v2\nkind: CiliumNetworkPolicy\nmetadata:\n  name: allow-{}-to-{}-{}\n  namespace: {}\nspec:\n  endpointSelector:\n    matchLabels: {{}}\n  egress:\n  - toEndpoints:\n    - matchLabels:\n        k8s:io.kubernetes.pod.namespace: {}\n    toPorts:\n    - ports:\n      - port: \"{}\"\n        protocol: {}\n",
+            src_pod.replace('.', "-"), dst_pod.replace('.', "-"), port, src_ns, dst_ns, port, protocol.to_uppercase()
+        );
+        steps.push(InvestigateStep {
+            id: "fix".into(),
+            title: "Proposed minimal allow (review only)".into(),
+            detail: format!("Draft CNP — simulate before apply. Confidence: inferred.\n\n{fix}"),
+            confidence: Confidence::Inferred,
+            evidence: vec![],
+        });
+        next_actions.push("Simulate the draft CNP (POST /api/v1/policies/simulate), then apply via GitOps/CRD.".into());
+    }
+    if let Some(n) = denying_guess {
+        next_actions.push(format!("Review policy '{n}' selectors against this flow's identities."));
+    }
+    if stats.gap_count > 0 {
+        next_actions.push(format!("Ingest reported {} gap(s) — evidence may be incomplete.", stats.gap_count));
+    }
+    next_actions.push("Enforcement stays in Cilium CRDs — Paqtra will not attach or rewrite BPF programs.".into());
+
+    let result = InvestigateResult {
+        id: id.clone(),
+        request: json!({
+            "flow_id": req.flow_id,
+            "flow_ts": flow_ts,
+            "path": {
+                "source": { "namespace": src_ns, "name": src_pod },
+                "destination": { "namespace": dst_ns, "name": dst_pod },
+                "port": port,
+                "protocol": protocol,
+                "verdict": verdict,
+                "drop_reason": drop_reason,
+            }
+        }),
+        steps: steps.clone(),
+        likely_owner: likely_owner.into(),
+        next_actions: next_actions.clone(),
+        flow_ingest: json!({
+            "total": stats.total,
+            "last_ok": stats.last_ingest_ok,
+            "last_at": stats.last_ingest_at,
+            "source": stats.ingest_source,
+            "gaps": stats.gap_count,
+            "connected": stats.stream_connected,
+            "confidence": if stats.last_ingest_ok { "observed" } else { "unavailable" },
+        }),
+        created_at: Utc::now().to_rfc3339(),
+    };
+
+    let _ = state.cache.set_persistent(
+        &format!("cv:investigate_bundle:{}", id),
+        &json!({ "id": id, "kind": "flow_deny", "result": serde_json::to_value(&result).unwrap_or(json!({})) }),
+    ).await;
+
+    result
+}
+
+
 fn count_name_matches(list: &Value, hint: &str) -> usize {
     let hint = hint.to_lowercase();
     list.get("items")

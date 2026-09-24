@@ -70,6 +70,7 @@ fn make_flow(id: &str) -> Flow {
         http_url: None,
         http_code: None,
         cluster: None,
+        ..Default::default()
     }
 }
 
@@ -345,6 +346,7 @@ fn test_flow_serialization() {
         http_url: Some("/healthz".to_string()),
         http_code: Some(200),
         cluster: Some("us-east-1".to_string()),
+        ..Default::default()
     };
 
     let value = serde_json::to_value(&flow).expect("serialize flow");
@@ -445,6 +447,7 @@ fn test_flow_with_l7_roundtrip() {
         http_url: Some("/api/v1/data".to_string()),
         http_code: Some(201),
         cluster: Some("cluster-a".to_string()),
+        ..Default::default()
     };
 
     let json_str = serde_json::to_string(&flow).expect("serialize");
