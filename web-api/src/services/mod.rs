@@ -2,6 +2,7 @@ pub mod alerting;
 pub mod cache;
 pub mod change_tracker;
 pub mod exporter;
+pub mod healer;
 pub mod hubble;
 pub mod k8s;
 pub mod notifier;

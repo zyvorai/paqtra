@@ -211,7 +211,13 @@ fn http_client() -> &'static reqwest::Client {
 
 /// Deliver one event to one channel, retrying transient failures.
 pub async fn deliver(channel: &Channel, event: &AlertEvent) -> DeliveryResult {
-    deliver_to(channel, event, PAGERDUTY_EVENTS_URL, Duration::from_millis(500)).await
+    deliver_to(
+        channel,
+        event,
+        PAGERDUTY_EVENTS_URL,
+        Duration::from_millis(500),
+    )
+    .await
 }
 
 async fn deliver_to(
@@ -343,9 +349,7 @@ mod tests {
 
     /// Serve `responses` (status codes) to successive connections and return
     /// the request bodies received.
-    async fn mock_server(
-        responses: Vec<u16>,
-    ) -> (String, tokio::task::JoinHandle<Vec<String>>) {
+    async fn mock_server(responses: Vec<u16>) -> (String, tokio::task::JoinHandle<Vec<String>>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/hook", listener.local_addr().unwrap());
         let handle = tokio::spawn(async move {
@@ -376,7 +380,9 @@ mod tests {
                         break;
                     }
                 }
-                let resp = format!("HTTP/1.1 {status} X\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
+                let resp = format!(
+                    "HTTP/1.1 {status} X\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                );
                 sock.write_all(resp.as_bytes()).await.unwrap();
             }
             bodies
@@ -398,10 +404,16 @@ mod tests {
 
     #[test]
     fn masking_hides_credentials() {
-        let slack = mask_target(ChannelKind::Slack, "https://hooks.slack.com/services/T0/B0/SECRET");
+        let slack = mask_target(
+            ChannelKind::Slack,
+            "https://hooks.slack.com/services/T0/B0/SECRET",
+        );
         assert_eq!(slack, "https://hooks.slack.com/…");
         assert!(!slack.contains("SECRET"));
-        assert_eq!(mask_target(ChannelKind::Pagerduty, "abcd1234secret"), "abcd…");
+        assert_eq!(
+            mask_target(ChannelKind::Pagerduty, "abcd1234secret"),
+            "abcd…"
+        );
         let masked = channel(ChannelKind::Webhook, "https://h.example/path?token=SECRET").masked();
         assert!(!masked.to_string().contains("SECRET"));
     }
@@ -421,10 +433,19 @@ mod tests {
     #[test]
     fn slack_and_webhook_payloads() {
         let s = build_payload(&channel(ChannelKind::Slack, "u"), &event(EventKind::Firing));
-        assert!(s["text"].as_str().unwrap().starts_with("[CRITICAL] High Drop Rate"));
-        let r = build_payload(&channel(ChannelKind::Slack, "u"), &event(EventKind::Resolved));
+        assert!(s["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("[CRITICAL] High Drop Rate"));
+        let r = build_payload(
+            &channel(ChannelKind::Slack, "u"),
+            &event(EventKind::Resolved),
+        );
         assert!(r["text"].as_str().unwrap().starts_with("[RESOLVED]"));
-        let w = build_payload(&channel(ChannelKind::Webhook, "u"), &event(EventKind::Firing));
+        let w = build_payload(
+            &channel(ChannelKind::Webhook, "u"),
+            &event(EventKind::Firing),
+        );
         assert_eq!(w["event"], "firing");
         assert_eq!(w["alert"]["rule_id"], "rule-001");
     }
@@ -432,7 +453,13 @@ mod tests {
     #[tokio::test]
     async fn delivers_webhook_payload() {
         let (url, server) = mock_server(vec![200]).await;
-        let r = deliver_to(&channel(ChannelKind::Webhook, &url), &event(EventKind::Firing), "", Duration::ZERO).await;
+        let r = deliver_to(
+            &channel(ChannelKind::Webhook, &url),
+            &event(EventKind::Firing),
+            "",
+            Duration::ZERO,
+        )
+        .await;
         assert!(r.delivered, "{:?}", r.error);
         assert_eq!(r.attempts, 1);
         let bodies = server.await.unwrap();
@@ -443,7 +470,13 @@ mod tests {
     #[tokio::test]
     async fn retries_server_errors_then_succeeds() {
         let (url, server) = mock_server(vec![503, 502, 200]).await;
-        let r = deliver_to(&channel(ChannelKind::Webhook, &url), &event(EventKind::Firing), "", Duration::ZERO).await;
+        let r = deliver_to(
+            &channel(ChannelKind::Webhook, &url),
+            &event(EventKind::Firing),
+            "",
+            Duration::ZERO,
+        )
+        .await;
         assert!(r.delivered);
         assert_eq!(r.attempts, 3);
         server.await.unwrap();
@@ -452,7 +485,13 @@ mod tests {
     #[tokio::test]
     async fn does_not_retry_client_errors() {
         let (url, server) = mock_server(vec![404]).await;
-        let r = deliver_to(&channel(ChannelKind::Webhook, &url), &event(EventKind::Firing), "", Duration::ZERO).await;
+        let r = deliver_to(
+            &channel(ChannelKind::Webhook, &url),
+            &event(EventKind::Firing),
+            "",
+            Duration::ZERO,
+        )
+        .await;
         assert!(!r.delivered);
         assert_eq!(r.attempts, 1);
         assert_eq!(r.error.as_deref(), Some("HTTP 404 Not Found"));
@@ -462,7 +501,13 @@ mod tests {
     #[tokio::test]
     async fn gives_up_after_max_attempts() {
         let (url, server) = mock_server(vec![500, 500, 500]).await;
-        let r = deliver_to(&channel(ChannelKind::Webhook, &url), &event(EventKind::Firing), "", Duration::ZERO).await;
+        let r = deliver_to(
+            &channel(ChannelKind::Webhook, &url),
+            &event(EventKind::Firing),
+            "",
+            Duration::ZERO,
+        )
+        .await;
         assert!(!r.delivered);
         assert_eq!(r.attempts, MAX_ATTEMPTS);
         server.await.unwrap();
@@ -471,7 +516,13 @@ mod tests {
     #[tokio::test]
     async fn pagerduty_posts_to_events_url_not_target() {
         let (url, server) = mock_server(vec![202]).await;
-        let r = deliver_to(&channel(ChannelKind::Pagerduty, "key"), &event(EventKind::Firing), &url, Duration::ZERO).await;
+        let r = deliver_to(
+            &channel(ChannelKind::Pagerduty, "key"),
+            &event(EventKind::Firing),
+            &url,
+            Duration::ZERO,
+        )
+        .await;
         assert!(r.delivered, "{:?}", r.error);
         let bodies = server.await.unwrap();
         let v: serde_json::Value = serde_json::from_str(&bodies[0]).unwrap();
@@ -481,7 +532,10 @@ mod tests {
     #[tokio::test]
     async fn connection_errors_do_not_leak_the_url() {
         // Nothing listens on port 1.
-        let c = channel(ChannelKind::Slack, "http://127.0.0.1:1/services/SECRET-TOKEN");
+        let c = channel(
+            ChannelKind::Slack,
+            "http://127.0.0.1:1/services/SECRET-TOKEN",
+        );
         let r = deliver_to(&c, &event(EventKind::Firing), "", Duration::ZERO).await;
         assert!(!r.delivered);
         assert!(!r.error.unwrap().contains("SECRET-TOKEN"));

@@ -196,7 +196,11 @@ pub async fn test_channel(
             "Test notification failed"
         },
         &actor_from_claims(&claims),
-        if result.delivered { "success" } else { "failure" },
+        if result.delivered {
+            "success"
+        } else {
+            "failure"
+        },
     )
     .await;
     Ok(Json(serde_json::to_value(result).unwrap_or_default()))
