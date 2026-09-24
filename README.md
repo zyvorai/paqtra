@@ -19,6 +19,7 @@ Paqtra is observe-first and **read-only toward the datapath**. It never writes C
 
 ## Contents
 
+- [Dashboard gallery](#dashboard-gallery)
 - [What it does](#what-it-does)
 - [What Paqtra never does](#what-paqtra-never-does)
 - [Paqtra vs PacketWolf](#paqtra-vs-packetwolf)
@@ -34,6 +35,28 @@ Paqtra is observe-first and **read-only toward the datapath**. It never writes C
 - [Security](#security)
 - [Requirements](#requirements)
 - [License](#license)
+
+![Paqtra dashboard — Overview](docs/ux/00-overview.png)
+
+## Dashboard gallery
+
+Captured against a live lab cluster with Cilium and Hubble. Full tour on the [docs site gallery](https://zyvorai.github.io/paqtra/gallery/).
+
+![Hubble flows with verdict coloring](docs/ux/01-flows.png)
+
+![Path investigation — why can't A reach B?](docs/ux/02-investigate.png)
+
+![Drop analytics by Cilium reason](docs/ux/03-drops.png)
+
+![Service map from observed flows](docs/ux/04-service-map.png)
+
+![Observed-traffic topology](docs/ux/05-topology.png)
+
+![Policies](docs/ux/06-policies.png)
+
+![eBPF map and program inventory (read-only)](docs/ux/07-ebpf.png)
+
+![Diagnostics](docs/ux/08-diagnostics.png)
 
 ## What it does
 

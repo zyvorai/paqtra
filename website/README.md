@@ -18,7 +18,11 @@ npm run serve   # preview the production build locally
 
 ## Images
 
-Social cards are **not** duplicated into `website/static/`. `docusaurus.config.ts` serves `../docs/social` in place, so the README and this site reference the same files. Rebuild the cards with `docs/social/build-social-card.sh`.
+UX screenshots live in `../docs/ux/` and social cards in `../docs/social/`.
+`docusaurus.config.ts` serves both as static directories, so the README and
+this site reference the same files. Rebuild social cards with
+`docs/social/build-social-card.sh`. Capture fresh dashboard shots with
+`scripts/capture-ux` against a running cluster.
 
 ## Docs content
 

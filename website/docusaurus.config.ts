@@ -35,9 +35,10 @@ const config: Config = {
     locales: ['en'],
   },
 
-  // Serve the repo's social cards in place instead of duplicating them into
-  // website/static, so the README and this site reference the same files.
-  staticDirectories: ['static', '../docs/social'],
+  // Serve the repo's UX screenshots and social cards in place instead of
+  // duplicating them into website/static, so the README and this site
+  // reference the same physical files.
+  staticDirectories: ['static', '../docs/ux', '../docs/social'],
 
   presets: [
     [
@@ -74,6 +75,11 @@ const config: Config = {
           label: 'Docs',
         },
         {
+          to: '/gallery',
+          label: 'Gallery',
+          position: 'left',
+        },
+        {
           to: '/docs/paqtra-vs-packetwolf',
           label: 'PacketWolf',
           position: 'left',
@@ -93,6 +99,7 @@ const config: Config = {
           items: [
             {label: 'Quickstart', to: '/docs/getting-started/quickstart'},
             {label: 'Architecture', to: '/docs/core-concepts/architecture'},
+            {label: 'Gallery', to: '/gallery'},
             {label: 'Cilium boundary', to: '/docs/core-concepts/cilium-brotherhood'},
             {label: 'Security', to: '/docs/security'},
             {label: 'Paqtra vs PacketWolf', to: '/docs/paqtra-vs-packetwolf'},

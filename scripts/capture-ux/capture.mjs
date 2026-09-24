@@ -53,6 +53,7 @@ const browser = CDP
   : await puppeteer.launch({
       headless: true,
       executablePath: CHROME,
+      ignoreHTTPSErrors: true,
       args: ["--ignore-certificate-errors", "--window-size=1440,900"],
       defaultViewport: { width: 1440, height: 900 },
     });
@@ -61,8 +62,15 @@ const page = await browser.newPage();
 page.setDefaultTimeout(45000);
 await page.setViewport({ width: 1440, height: 900 });
 
+// `load` (not networkidle2): the dashboard keeps WebSockets open, so
+// networkidle never settles against a live cluster.
+async function gotoSettle(url, settleMs = 1500) {
+  await page.goto(url, { waitUntil: "load", timeout: 60000 });
+  await sleep(settleMs);
+}
+
 try {
-  await page.goto(URL_BASE + "/", { waitUntil: "networkidle2", timeout: 60000 });
+  await gotoSettle(URL_BASE + "/", 2000);
 
   if (!CDP) {
     await page.screenshot({ path: path.join(OUT, "login.png") });
@@ -80,8 +88,7 @@ try {
   }
 
   for (const [name, route, settle] of SHOTS) {
-    await page.goto(URL_BASE + route, { waitUntil: "networkidle2", timeout: 60000 });
-    await sleep(settle);
+    await gotoSettle(URL_BASE + route, settle);
     // Empty-state tiles render "—"; warn so a run against an idle cluster is not committed unnoticed.
     const empty = await page.evaluate(
       () => document.body.innerText.split("\n").filter((l) => l.trim() === "—").length
