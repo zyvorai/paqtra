@@ -350,7 +350,7 @@ helm upgrade --install paqtra ${REMOTE_DIR}/chart \
     --set ui.replicas=1 \
     --set api.hpa.enabled=false \
     --set monitoring.enabled=false \
-    --set api.env.hubbleAddress=hubble-relay.kube-system.svc.cluster.local:4245 \
+    --set api.env.hubbleAddress=hubble-relay.kube-system.svc.cluster.local:80 \
     --set api.env.jwtSecret="\$JWT" \
     --set auth.adminUsername=admin \
     --set auth.adminPassword=Admin@321 \

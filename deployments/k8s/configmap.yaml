@@ -14,7 +14,7 @@ data:
         - "https://paqtra.example.com"
 
     hubble:
-      address: "hubble-relay.kube-system.svc.cluster.local:4245"
+      address: "hubble-relay.kube-system.svc.cluster.local:80"
 
     features:
       anomaly_detection: true

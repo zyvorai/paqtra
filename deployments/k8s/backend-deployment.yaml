@@ -49,7 +49,7 @@ spec:
         - name: PAQTRA_PORT
           value: "9191"
         - name: HUBBLE_ADDRESS
-          value: "hubble-relay.kube-system.svc.cluster.local:4245"
+          value: "hubble-relay.kube-system.svc.cluster.local:80"
         - name: JWT_SECRET
           valueFrom:
             secretKeyRef:

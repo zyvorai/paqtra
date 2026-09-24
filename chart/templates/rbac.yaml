@@ -6,19 +6,43 @@ metadata:
   labels:
     {{- include "paqtra.labels" . | nindent 4 }}
 rules:
+  # Core inventory for investigate / change tracker / health
   - apiGroups: [""]
     resources:
       - pods
       - services
       - namespaces
       - endpoints
+      - events
+      - configmaps
+      - nodes
     verbs:
       - get
       - list
       - watch
+  - apiGroups: ["discovery.k8s.io"]
+    resources:
+      - endpointslices
+    verbs:
+      - get
+      - list
+      - watch
+  # Rollbacks via kubectl rollout undo
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - deployments/scale
+    verbs:
+      - get
+      - list
+      - watch
+      - patch
+      - update
+  # Cilium CRDs — enforcement stays here (brotherhood: no BPF map writes)
   - apiGroups: ["cilium.io"]
     resources:
       - ciliumnetworkpolicies
+      - ciliumclusterwidenetworkpolicies
     verbs:
       - get
       - list
