@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AxiosError, AxiosResponse } from 'axios';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -16,7 +16,7 @@ const ok = <T,>(data: T) => Promise.resolve({ data } as never);
 const httpError = (status: number, error: string) =>
   Promise.reject(new AxiosError('x', String(status), undefined, undefined, { status, data: { error } } as AxiosResponse));
 
-const user = (username: string, role: 'admin' | 'viewer' = 'viewer', enabled = true) =>
+const user = (username: string, role: 'admin' | 'editor' | 'viewer' = 'viewer', enabled = true) =>
   ({ username, role, enabled, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' });
 
 const renderPage = () => render(<MemoryRouter><Users /></MemoryRouter>);
@@ -71,6 +71,30 @@ describe('Users', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add user' }));
     expect(await screen.findByText('A user with this name already exists')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('alice')).toHaveValue('bob');
+  });
+
+  it('offers the editor role and explains what each role can do', async () => {
+    renderPage();
+    await screen.findByText('bob');
+    const form = screen.getByLabelText('Role');
+    expect(within(form).getAllByRole('option').map((o) => o.getAttribute('value'))).toEqual(['viewer', 'editor', 'admin']);
+    expect(screen.getByText(/Read-only/)).toBeInTheDocument();
+    fireEvent.change(form, { target: { value: 'editor' } });
+    expect(screen.getByText(/Can work incidents, alerts, SLOs and network policies/)).toBeInTheDocument();
+    fireEvent.change(form, { target: { value: 'admin' } });
+    expect(screen.getByText(/including users, notification channels/)).toBeInTheDocument();
+  });
+
+  it('creates an editor', async () => {
+    m.createUser.mockImplementation(() => ok({}));
+    renderPage();
+    await screen.findByText('bob');
+    fireEvent.change(screen.getByPlaceholderText('alice'), { target: { value: 'erin' } });
+    const [pw] = document.querySelectorAll('input[type="password"]');
+    fireEvent.change(pw, { target: { value: 'a-long-password-1' } });
+    fireEvent.change(screen.getByLabelText('Role'), { target: { value: 'editor' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add user' }));
+    await waitFor(() => expect(m.createUser).toHaveBeenCalledWith({ username: 'erin', password: 'a-long-password-1', role: 'editor' }));
   });
 
   it('changes a role and reloads', async () => {

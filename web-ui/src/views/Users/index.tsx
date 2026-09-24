@@ -7,10 +7,11 @@ import { useAuthStore } from '../../stores/authStore';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
 
-const ROLES: UserRole[] = ['viewer', 'admin'];
+const ROLES: UserRole[] = ['viewer', 'editor', 'admin'];
 const ROLE_HELP: Record<UserRole, string> = {
-  admin: 'Full access, including managing users.',
-  viewer: 'Read-only: can look at everything, change nothing.',
+  admin: 'Full access, including users, notification channels, exports, node drain, rollback and chaos.',
+  editor: 'Can work incidents, alerts, SLOs and network policies, run analysis and diagnostics, and capture packets. Cannot manage users or channels, or drain, roll back or export.',
+  viewer: 'Read-only: can look at most things, change nothing.',
 };
 
 export default function Users() {

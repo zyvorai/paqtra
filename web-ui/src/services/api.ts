@@ -1035,7 +1035,7 @@ export const fetchAuditLog = () => api.get<{ entries: AuditEntry[] }>('/audit/lo
 export const fetchAlertRules = () => api.get<{ rules: AlertRule[] }>('/alerts/rules');
 export const fetchAlertHistory = () => api.get<{ alerts: AlertEvent[]; events?: AlertEvent[] }>('/alerts/history');
 export const toggleAlertRule = (id: string) => api.put(`/alerts/rules/${id}`);
-export type UserRole = 'admin' | 'viewer';
+export type UserRole = 'admin' | 'editor' | 'viewer';
 
 export interface AppUser {
   username: string;
