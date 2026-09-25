@@ -18,6 +18,10 @@ Auto-discovered Cilium endpoints with labels, identity numbers, and policy statu
 ### Policies
 Active CiliumNetworkPolicy and NetworkPolicy resources visualized with rule counts and target selectors. Full CRUD: create (YAML editor, Visual Rule Builder, templates, ML-generated), edit/update, delete, and bulk delete. Auto-refresh every 30s. Export CSV/JSON.
 
+**Rule-level editing** (`/policy-rules`, or "Edit rules" on a policy row): load a CiliumNetworkPolicy, then add, edit or delete individual `ingress` / `egress` / `ingressDeny` / `egressDeny` rules, with templates for entities, CIDR sets with exceptions, ICMP, FQDN, DNS and L7 HTTP rules. Every change can be previewed first (server-side dry run plus the policy simulator), is sent with the `resource_version` it was read at (a concurrent change returns 409 and reloads), and is applied through the Cilium CRD and audit-logged. A policy's last rule cannot be deleted (Cilium rejects rule-less policies); delete the policy instead. Alert rules can be created, edited and deleted from the Alerts page.
+
+**Cilium Insights** (`/cilium-insights`): which Cilium features the cluster has switched on (from `cilium-config`; `unknown` means the key is absent, not off), Hubble node health including ring-buffer fill, Hubble and Cilium-agent metrics read from your Prometheus (`PROMETHEUS_URL` / chart value `api.env.prometheusUrl`), read-only lists of Cilium CRDs (BGP v2, LB-IPAM pools, L2 announcements, pod IP pools, CIDR groups, Gateway API) and agent inventory queries. Everything is read-only.
+
 ### Metrics
 Aggregate eBPF datapath metrics: forwarded/dropped counts, policy verdict breakdown, endpoint health. Auto-refresh every 30s with DataFreshness indicator. Export CSV/JSON.
 

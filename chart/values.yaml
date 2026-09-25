@@ -31,6 +31,10 @@ api:
     hubbleAddress: "hubble-relay.kube-system.svc.cluster.local:80"
     # grpc = Observer API only; auto = gRPC then CLI fallback; cli = hubble binary only.
     hubbleMode: "grpc"
+    # Prometheus that scrapes Cilium and Hubble, e.g. http://prometheus-server.monitoring:80.
+    # Feeds /api/v1/hubble/metrics and /api/v1/cilium/metrics; empty leaves them "unavailable".
+    # Hubble metrics need `hubble.metrics.enabled` in Cilium's own values.
+    prometheusUrl: ""
     jwtSecret: ""  # auto-generated if empty
     rustLog: "info"
   probes:

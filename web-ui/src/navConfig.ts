@@ -100,6 +100,11 @@ export const NAV_GROUPS: NavGroup[] = [
         blurb: 'Cilium agent and datapath status per node.',
       },
       {
+        path: '/cilium-insights',
+        label: 'Cilium Insights',
+        blurb: 'Enabled Cilium features, Hubble node health, metrics and read-only agent views.',
+      },
+      {
         path: '/conntrack',
         label: 'Conntrack',
         blurb: 'eBPF connection tracking table (read-only).',
@@ -133,6 +138,11 @@ export const NAV_GROUPS: NavGroup[] = [
         path: '/policies',
         label: 'Policies',
         blurb: 'Plan and apply CiliumNetworkPolicy when CRDs are present.',
+      },
+      {
+        path: '/policy-rules',
+        label: 'Policy Rules',
+        blurb: 'Add, edit or delete single rules of a CiliumNetworkPolicy — preview, then apply.',
       },
       {
         path: '/autopolicy',

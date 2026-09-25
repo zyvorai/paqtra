@@ -221,6 +221,29 @@ paqtra_flows_total{verdict="FORWARDED"} 1489203</pre></div>
 </div>
 
 <div class="endpoint">
+  <div class="endpoint-header"><span class="method post">POST</span><span class="path">/api/v1/policies/{id}/rules</span><span class="desc">Add one rule to a CiliumNetworkPolicy</span><span class="badge-admin">EDITOR</span></div>
+  <div class="endpoint-body"><h5>Example Request</h5><pre>{
+  "direction": "egress",
+  "rule": { "toFQDNs": [{ "matchName": "api.example.com" }], "toPorts": [{ "ports": [{ "port": "443", "protocol": "TCP" }] }] },
+  "resource_version": "3728000"
+}</pre><h5>Example Response</h5><pre>{
+  "policy": "default/allow-dns", "action": "add", "direction": "egress", "dry_run": false,
+  "rule_counts": { "ingress": 1, "egress": 1, "ingressDeny": 0, "egressDeny": 0 },
+  "result": { "index": 0 }
+}</pre><p>Add <code>?dry_run=true</code> to validate against the cluster without persisting. A stale <code>resource_version</code> returns 409; a rule the cluster rejects returns 400 with its reason. <code>{id}</code> is the policy UID, or <code>namespace%2Fname</code>.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method put">PUT</span><span class="path">/api/v1/policies/{id}/rules</span><span class="desc">Replace one rule</span><span class="badge-admin">EDITOR</span></div>
+  <div class="endpoint-body"><h5>Example Request</h5><pre>{ "direction": "egress", "index": 0, "rule": { "toEntities": ["kube-apiserver"] } }</pre></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method delete">DELETE</span><span class="path">/api/v1/policies/{id}/rules</span><span class="desc">Delete one rule (<code>?direction=egress&amp;index=0</code>)</span><span class="badge-admin">EDITOR</span></div>
+  <div class="endpoint-body"><p>A policy's last rule cannot be deleted (400): Cilium rejects a policy with no rules, so delete the policy instead. The response's <code>result.removed</code> holds the deleted rule.</p></div>
+</div>
+
+<div class="endpoint">
   <div class="endpoint-header"><span class="method post">POST</span><span class="path">/api/v1/policies/simulate</span><span class="desc">Simulate policy impact before apply</span></div>
   <div class="endpoint-body"><h5>Example Response</h5><pre>{
   "affected_endpoints": 12, "flows_blocked": 340, "flows_allowed": 9812,
@@ -680,6 +703,45 @@ paqtra_flows_total{verdict="FORWARDED"} 1489203</pre></div>
 </div>
 
 <div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/cilium/features</span><span class="desc">Which Cilium features are enabled</span></div>
+  <div class="endpoint-body"><h5>Example Response</h5><pre>{
+  "available": true,
+  "features": [
+    { "key": "hubble", "title": "Hubble observability", "category": "Observability", "state": "enabled", "view": "/flows" },
+    { "key": "bgp", "title": "BGP control plane", "category": "Networking", "state": "unknown", "view": "/bgp" }
+  ]
+}</pre><p><code>unknown</code> means the <code>cilium-config</code> key is absent, not that the feature is off.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/cilium/resources/{kind}</span><span class="desc">List a Cilium CRD (read-only)</span></div>
+  <div class="endpoint-body"><p><code>kind</code>: nodes, egress-gateway-policies, bgp-peering-policies, bgp-cluster-configs, bgp-peer-configs, bgp-advertisements, bgp-node-configs, lb-ip-pools, l2-announcement-policies, pod-ip-pools, cidr-groups, gateway-classes, gateways, http-routes. <code>installed: false</code> when the CRD is absent.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/cilium/metrics</span><span class="desc">Cilium agent metrics from Prometheus</span></div>
+  <div class="endpoint-body"><p>Needs <code>PROMETHEUS_URL</code> (chart value <code>api.env.prometheusUrl</code>); otherwise <code>available: false</code>.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/hubble/metrics</span><span class="desc">Hubble flow metrics from Prometheus</span></div>
+  <div class="endpoint-body"><p>Each group without data names the <code>hubble.metrics.enabled</code> entry that exports it.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/hubble/nodes</span><span class="desc">Hubble nodes with flow-buffer fill</span></div>
+  <div class="endpoint-body"><h5>Example Response</h5><pre>{
+  "available": true, "total": 1,
+  "nodes": [{ "name": "node-1", "state": "NODE_CONNECTED", "num_flows": 4095, "max_flows": 4095, "seen_flows": 14846705 }]
+}</pre><p>Takes 2&ndash;8 s through Hubble Relay.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/cilium/agent/{what}</span><span class="desc">Read-only agent query</span><span class="badge-admin">EDITOR</span></div>
+  <div class="endpoint-body"><p><code>what</code>: endpoints, identities, services, fqdn-cache, status, policy-selectors. Samples one agent pod. A failing agent returns 502 with the reason.</p></div>
+</div>
+
+<div class="endpoint">
   <div class="endpoint-header"><span class="method get">GET</span><span class="path">/api/v1/cilium/status</span><span class="desc">Cilium agent status</span></div>
   <div class="endpoint-body"><h5>Example Response</h5><pre>{
   "version": "1.16.1", "state": "Ok", "controllers_failing": 0,
@@ -711,6 +773,21 @@ paqtra_flows_total{verdict="FORWARDED"} 1489203</pre></div>
     { "id": "alr-01", "name": "high-drop-rate", "condition": "drop_rate > 5%", "severity": "critical", "enabled": true }
   ]
 }</pre></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method post">POST</span><span class="path">/api/v1/alerts/rules</span><span class="desc">Create an alert rule</span><span class="badge-admin">EDITOR</span></div>
+  <div class="endpoint-body"><h5>Example Request</h5><pre>{ "name": "dns failures", "condition": "dns_servfail > 25/min", "severity": "high" }</pre><p>Conditions the engine can evaluate: <code>drop_rate &gt; N%</code>, <code>dns_servfail &gt; N/min</code>, <code>policy_denied &gt; N/min</code>, <code>endpoint_status != ready</code>. Anything else is a 400.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method put">PUT</span><span class="path">/api/v1/alerts/rules/{id}/definition</span><span class="desc">Edit a rule's name, condition and severity</span><span class="badge-admin">EDITOR</span></div>
+  <div class="endpoint-body"><p>Keeps the id and trigger history. <code>PUT /api/v1/alerts/rules/{id}</code> without a body still toggles enabled.</p></div>
+</div>
+
+<div class="endpoint">
+  <div class="endpoint-header"><span class="method delete">DELETE</span><span class="path">/api/v1/alerts/rules/{id}</span><span class="desc">Delete an alert rule</span><span class="badge-admin">EDITOR</span></div>
+  <div class="endpoint-body"><p>The five built-in rules (<code>rule-001</code>..<code>rule-005</code>) need <code>?force=true</code>.</p></div>
 </div>
 
 <div class="endpoint">

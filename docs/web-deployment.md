@@ -164,6 +164,7 @@ helm uninstall paqtra -n cilium-system
 - `JWT_SECRET`: JWT signing secret (change in production!)
 - `HUBBLE_ADDRESS`: Hubble Relay address (`host:port`, plaintext gRPC; in-cluster this is the `hubble-relay` service)
 - `HUBBLE_MODE`: Helm chart defaults to `grpc` (Observer API only). `auto` reads flows over gRPC and uses the `hubble` CLI only if gRPC fails and the binary is installed; `cli` only uses the binary. No `hubble` binary is needed for `grpc`.
+- `PROMETHEUS_URL`: Prometheus base URL (optional; chart value `api.env.prometheusUrl`). Enables `/api/v1/hubble/metrics` and `/api/v1/cilium/metrics`; without it they answer `available: false`. Hubble series exist only for the metrics listed in Cilium's `hubble.metrics.enabled`.
 - `K8S_CONTEXT`: Kubernetes context (optional)
 - `RUST_LOG`: Log level (info, debug, trace)
 
