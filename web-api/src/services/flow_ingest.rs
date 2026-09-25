@@ -16,6 +16,7 @@ pub const INGEST_BATCH: usize = 500;
 const RECONNECT_BASE: Duration = Duration::from_secs(2);
 const RECONNECT_MAX: Duration = Duration::from_secs(60);
 const STREAM_BATCH_FLUSH: usize = 64;
+const STREAM_TIME_FLUSH: Duration = Duration::from_secs(2);
 
 /// The rows to store for a batch of flows, and how many flows were left out.
 ///
@@ -96,28 +97,42 @@ async fn run_follow_session(state: &AppState) -> anyhow::Result<()> {
     };
 
     let mut buf: Vec<Flow> = Vec::with_capacity(STREAM_BATCH_FLUSH);
+    // A quiet stream may never reach the batch limit. Persist its flows on a
+    // bounded interval so history and investigations see recent evidence.
+    let mut flush_tick = tokio::time::interval_at(
+        tokio::time::Instant::now() + STREAM_TIME_FLUSH,
+        STREAM_TIME_FLUSH,
+    );
+    flush_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
-        match rx.recv().await {
-            Some(LiveEvent::Flow(f)) => {
-                state.flow_store.note_stream_event();
-                buf.push(*f);
-                if buf.len() >= STREAM_BATCH_FLUSH {
-                    flush_batch(state, &mut buf, stream_source)?;
+        tokio::select! {
+            event = rx.recv() => match event {
+                Some(LiveEvent::Flow(f)) => {
+                    state.flow_store.note_stream_event();
+                    buf.push(*f);
+                    if buf.len() >= STREAM_BATCH_FLUSH {
+                        flush_batch(state, &mut buf, stream_source)?;
+                    }
                 }
-            }
-            Some(LiveEvent::Ended(why)) => {
+                Some(LiveEvent::Ended(why)) => {
+                    if !buf.is_empty() {
+                        flush_batch(state, &mut buf, stream_source)?;
+                    }
+                    state.flow_store.set_stream_connected(false);
+                    anyhow::bail!("stream ended: {why}");
+                }
+                None => {
+                    if !buf.is_empty() {
+                        flush_batch(state, &mut buf, stream_source)?;
+                    }
+                    state.flow_store.set_stream_connected(false);
+                    anyhow::bail!("stream channel closed");
+                }
+            },
+            _ = flush_tick.tick() => {
                 if !buf.is_empty() {
                     flush_batch(state, &mut buf, stream_source)?;
                 }
-                state.flow_store.set_stream_connected(false);
-                anyhow::bail!("stream ended: {why}");
-            }
-            None => {
-                if !buf.is_empty() {
-                    flush_batch(state, &mut buf, stream_source)?;
-                }
-                state.flow_store.set_stream_connected(false);
-                anyhow::bail!("stream channel closed");
             }
         }
     }

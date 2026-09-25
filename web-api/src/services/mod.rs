@@ -1,7 +1,9 @@
 pub mod alerting;
 pub mod cache;
+pub mod change_impact;
 pub mod change_tracker;
 pub mod compliance;
+pub mod connectivity;
 pub mod exporter;
 pub mod flow_ingest;
 pub mod flow_store;

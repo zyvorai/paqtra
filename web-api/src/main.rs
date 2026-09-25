@@ -133,6 +133,10 @@ async fn main() -> anyhow::Result<()> {
     services::change_tracker::spawn_change_tracker(app_state.clone());
     tracing::info!("Background change tracker started");
 
+    // Declared connectivity path monitor (observe-only)
+    services::connectivity::spawn_connectivity_monitor(app_state.clone());
+    tracing::info!("Background connectivity monitor started");
+
     // Start Hubble → flow store ingest
     services::flow_ingest::spawn_flow_ingest(app_state.clone());
     tracing::info!("Background flow ingest started");
@@ -217,6 +221,23 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/investigate/bundles/{id}",
             get(handlers::investigate::get_bundle),
+        )
+        .route(
+            "/api/v1/investigate/bundles/{id}/export",
+            get(handlers::investigate::export_bundle),
+        )
+        // Declared connectivity paths (observe-only)
+        .route(
+            "/api/v1/connectivity/paths",
+            get(handlers::connectivity::list_paths).post(handlers::connectivity::create_path),
+        )
+        .route(
+            "/api/v1/connectivity/paths/{id}",
+            axum::routing::delete(handlers::connectivity::delete_path),
+        )
+        .route(
+            "/api/v1/connectivity/alerts",
+            get(handlers::connectivity::list_alerts),
         )
         // Anomaly detection
         .route(
@@ -586,6 +607,10 @@ async fn main() -> anyhow::Result<()> {
         )
         // Changes
         .route("/api/v1/changes", get(handlers::extended4::list_changes))
+        .route(
+            "/api/v1/changes/{id}/impact",
+            get(handlers::extended4::change_impact),
+        )
         .route(
             "/api/v1/changes/{id}/rollback",
             post(handlers::extended4::rollback_change),

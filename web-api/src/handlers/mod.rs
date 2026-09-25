@@ -2,6 +2,7 @@
 pub mod anomalies;
 pub mod auth;
 pub mod compliance;
+pub mod connectivity;
 pub mod ebpf;
 pub mod endpoints;
 pub mod events;

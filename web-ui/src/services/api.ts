@@ -1287,6 +1287,27 @@ export const fetchIncidents = () => api.get<{ incidents: Incident[] }>('/inciden
 // Change Log
 export const fetchChangeLog = () => api.get<{ changes: ChangeEntry[]; entries?: ChangeEntry[] }>('/changes');
 export const rollbackChange = (id: string) => api.post(`/changes/${id}/rollback`);
+export const fetchChangeImpact = (id: string, before = '30m', after = '30m') =>
+  api.get(`/changes/${id}/impact`, { params: { before, after } });
+
+export const exportInvestigateBundle = (id: string, format: 'json' | 'markdown' = 'json') =>
+  api.get(`/investigate/bundles/${id}/export`, { params: { format } });
+
+export interface ConnectivityPathInput {
+  name: string;
+  src_namespace: string;
+  src_workload: string;
+  dst_namespace: string;
+  dst_service: string;
+  port: number;
+  protocol?: string;
+}
+
+export const fetchConnectivityPaths = () => api.get('/connectivity/paths');
+export const createConnectivityPath = (body: ConnectivityPathInput) =>
+  api.post('/connectivity/paths', body);
+export const deleteConnectivityPath = (id: string) => api.delete(`/connectivity/paths/${id}`);
+export const fetchConnectivityAlerts = () => api.get('/connectivity/alerts');
 
 // Node Drain
 export const fetchNodeDrainStatus = () => api.get<{ nodes: NodeDrainStatus[] }>('/nodes/drain');

@@ -153,6 +153,16 @@ pub async fn recent_changes(state: &AppState, limit: usize) -> Vec<serde_json::V
     vals
 }
 
+/// Look up a single stored change by its `chg-…` id.
+pub async fn get_change(state: &AppState, id: &str) -> Option<serde_json::Value> {
+    let vals = state
+        .cache
+        .list_values(CHANGES_PREFIX)
+        .await
+        .unwrap_or_default();
+    vals.into_iter().find(|c| c.get("id").and_then(|v| v.as_str()) == Some(id))
+}
+
 /// Check whether the event kind is relevant. For ConfigMaps, we only care
 /// about the `cilium-config` ConfigMap.
 fn is_relevant_resource(kind: &str, involved: &serde_json::Value) -> bool {

@@ -64,6 +64,7 @@ const FlowExporter = React.lazy(() => import('./views/FlowExporter'));
 const SLODashboard = React.lazy(() => import('./views/SLODashboard'));
 const IncidentTimeline = React.lazy(() => import('./views/IncidentTimeline'));
 const ChangeLogView = React.lazy(() => import('./views/ChangeLog'));
+const ConnectivityChecks = React.lazy(() => import('./views/ConnectivityChecks'));
 const NodeDrainView = React.lazy(() => import('./views/NodeDrain'));
 const PodSecurityView = React.lazy(() => import('./views/PodSecurity'));
 const EgressGatewayView = React.lazy(() => import('./views/EgressGateway'));
@@ -176,6 +177,7 @@ const App: React.FC = () => {
                   <Route path="/slo" element={<V><SLODashboard /></V>} />
                   <Route path="/incidents" element={<V><IncidentTimeline /></V>} />
                   <Route path="/changelog" element={<V><ChangeLogView /></V>} />
+                  <Route path="/connectivity" element={<V><ConnectivityChecks /></V>} />
                   <Route path="/node-drain" element={<V><NodeDrainView /></V>} />
                   <Route path="/pod-security" element={<V><PodSecurityView /></V>} />
                   <Route path="/egress" element={<V><EgressGatewayView /></V>} />

@@ -75,6 +75,27 @@ export default function InvestigatePath() {
     }
   }
 
+  async function exportBundle(format: 'json' | 'markdown') {
+    if (!result?.id) return;
+    try {
+      const { data } = await api.get(`/investigate/bundles/${result.id}/export`, { params: { format } });
+      const text =
+        format === 'markdown'
+          ? String((data as { content?: string }).content ?? '')
+          : JSON.stringify((data as { bundle?: unknown }).bundle ?? data, null, 2);
+      setBundleJson(text);
+      const blob = new Blob([text], { type: format === 'markdown' ? 'text/markdown' : 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${result.id}.${format === 'markdown' ? 'md' : 'json'}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   return (
     <Board>
       <Card span={3}>
@@ -149,6 +170,14 @@ export default function InvestigatePath() {
             <button type="button" className="primary" style={{ marginTop: 12 }} onClick={() => void loadBundle()}>
               Load evidence bundle
             </button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button type="button" onClick={() => void exportBundle('json')}>
+                Export JSON
+              </button>
+              <button type="button" onClick={() => void exportBundle('markdown')}>
+                Export Markdown
+              </button>
+            </div>
           </Card>
           <Card span={3}>
             <Eyebrow>STEPS</Eyebrow>

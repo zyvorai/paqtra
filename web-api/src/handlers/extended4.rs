@@ -426,6 +426,54 @@ pub async fn list_changes(
     Json(paginate_json(items, &params, "changes"))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ImpactQueryParams {
+    #[serde(default = "default_before")]
+    pub before: String,
+    #[serde(default = "default_after")]
+    pub after: String,
+    #[serde(default = "default_impact_limit")]
+    pub limit: usize,
+}
+
+fn default_before() -> String {
+    "30m".into()
+}
+fn default_after() -> String {
+    "30m".into()
+}
+fn default_impact_limit() -> usize {
+    40
+}
+
+/// GET /api/v1/changes/{id}/impact — evidence-backed before/after flow comparison.
+pub async fn change_impact(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Query(params): Query<ImpactQueryParams>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    super::check_editor(&state, &claims)?;
+    track_request(&state, |_| {}).await;
+
+    let q = crate::services::change_impact::ImpactQuery {
+        before: crate::services::change_impact::parse_window(
+            &params.before,
+            chrono::Duration::minutes(30),
+        ),
+        after: crate::services::change_impact::parse_window(
+            &params.after,
+            chrono::Duration::minutes(30),
+        ),
+        limit: params.limit.clamp(1, 200),
+    };
+
+    match crate::services::change_impact::analyze_change_impact(&state, &claims, &id, q).await {
+        Ok(body) => Ok(Json(body)),
+        Err((st, msg)) => Err((st, Json(serde_json::json!({ "error": msg })))),
+    }
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub struct RollbackQuery {
     /// Ask the API server to validate the rollback without applying it.

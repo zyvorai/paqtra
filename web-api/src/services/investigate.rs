@@ -467,7 +467,15 @@ pub async fn investigate_path(state: &AppState, req: &InvestigatePathRequest) ->
         created_at: Utc::now().to_rfc3339(),
     };
 
-    let bundle = build_bundle(&result, &path_flows, &dropped, &ns_policies);
+    let bundle = build_bundle(
+        &result,
+        &path_flows,
+        &dropped,
+        &ns_policies,
+        &changes,
+        &stats,
+        req.time_window_minutes,
+    );
     let _ = state
         .cache
         .set_persistent(&format!("cv:investigate_bundle:{}", id), &bundle)
@@ -766,14 +774,58 @@ fn build_bundle(
     path_flows: &[StoredFlow],
     dropped: &[StoredFlow],
     policies: &[&crate::models::policy::Policy],
+    changes: &[Value],
+    stats: &crate::services::flow_store::FlowStoreStats,
+    time_window_minutes: i64,
 ) -> Value {
+    let cited_flow_ids: Vec<String> = path_flows
+        .iter()
+        .chain(dropped.iter())
+        .map(|f| f.id.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .take(100)
+        .collect();
+    let change_ids: Vec<String> = changes
+        .iter()
+        .filter_map(|c| c.get("id").and_then(|v| v.as_str()).map(str::to_string))
+        .take(20)
+        .collect();
+
     json!({
         "id": result.id,
         "created_at": result.created_at,
         "likely_owner": result.likely_owner,
         "request": result.request,
+        "time_range": {
+            "window_minutes": time_window_minutes,
+            "captured_at": result.created_at,
+        },
         "steps": result.steps,
         "next_actions": result.next_actions,
+        "source_health": {
+            "ingest_source": stats.ingest_source,
+            "stream_connected": stats.stream_connected,
+            "last_ingest_ok": stats.last_ingest_ok,
+            "last_ingest_at": stats.last_ingest_at,
+            "gap_count": stats.gap_count,
+            "last_gap_at": stats.last_gap_at,
+            "disconnect_count": stats.disconnect_count,
+            "lag_secs": stats.lag_secs,
+        },
+        "ingest_gaps": {
+            "count": stats.gap_count,
+            "last_at": stats.last_gap_at,
+        },
+        "cited_flow_ids": cited_flow_ids,
+        "related_change_ids": change_ids,
+        "kubernetes_resources": {
+            "policies": policies.iter().take(20).map(|p| json!({
+                "name": p.name,
+                "namespace": p.namespace,
+                "kind": "CiliumNetworkPolicy",
+            })).collect::<Vec<_>>(),
+        },
         "flows": path_flows.iter().take(50).map(|f| json!({
             "id": f.id,
             "ts": f.ts,
@@ -789,8 +841,97 @@ fn build_bundle(
             "namespace": p.namespace,
         })).collect::<Vec<_>>(),
         "redaction": "No payloads, argv, or Secret contents included.",
+        "confidence_rule": "Each step carries observed|inferred|unavailable; inaccessible evidence is omitted.",
     })
 }
+
+/// Render a concise Markdown incident summary from a stored (redacted) bundle.
+pub fn bundle_to_markdown(bundle: &Value) -> String {
+    let id = bundle.get("id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let owner = bundle
+        .get("likely_owner")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let created = bundle
+        .get("created_at")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let mut md = format!("# Investigation {id}\n\n");
+    md.push_str(&format!("- Created: {created}\n"));
+    md.push_str(&format!("- Likely owner: **{owner}**\n"));
+    if let Some(req) = bundle.get("request") {
+        md.push_str(&format!(
+            "- Request: `{}`\n",
+            serde_json::to_string(req).unwrap_or_default()
+        ));
+    }
+    md.push_str("\n## Source health\n\n");
+    if let Some(h) = bundle.get("source_health") {
+        md.push_str(&format!(
+            "- Ingest: {} (connected={}, gaps={})\n",
+            h.get("ingest_source")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?"),
+            h.get("stream_connected")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            h.get("gap_count").and_then(|v| v.as_u64()).unwrap_or(0)
+        ));
+    }
+    md.push_str("\n## Steps\n\n");
+    if let Some(steps) = bundle.get("steps").and_then(|v| v.as_array()) {
+        for s in steps {
+            let title = s.get("title").and_then(|v| v.as_str()).unwrap_or("step");
+            let conf = s
+                .get("confidence")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unavailable");
+            let detail = s.get("detail").and_then(|v| v.as_str()).unwrap_or("");
+            md.push_str(&format!("### {title} ({conf})\n\n{detail}\n\n"));
+        }
+    }
+    md.push_str("## Evidence\n\n");
+    if let Some(ids) = bundle.get("cited_flow_ids").and_then(|v| v.as_array()) {
+        md.push_str(&format!(
+            "- Flow IDs: {}\n",
+            ids.iter()
+                .filter_map(|v| v.as_str())
+                .take(30)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if let Some(ids) = bundle.get("related_change_ids").and_then(|v| v.as_array()) {
+        md.push_str(&format!(
+            "- Change IDs: {}\n",
+            ids.iter()
+                .filter_map(|v| v.as_str())
+                .take(20)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    md.push_str("\n---\n*Redacted: no payloads, argv, or Secret contents.*\n");
+    md
+}
+
+/// Namespace labels referenced by a bundle (for RBAC on retrieval).
+pub fn bundle_namespaces(bundle: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(req) = bundle.get("request") {
+        for path in ["/source/namespace", "/destination/namespace", "/path/source/namespace", "/path/destination/namespace"] {
+            if let Some(ns) = req.pointer(path).and_then(|v| v.as_str()) {
+                if !ns.is_empty() {
+                    out.push(ns.to_string());
+                }
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 
 // ---------------------------------------------------------------------------
 // Policy preview (replaces heuristic simulate)

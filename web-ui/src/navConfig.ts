@@ -25,6 +25,11 @@ export const NAV_GROUPS: NavGroup[] = [
         blurb: 'Why can’t A reach B — evidence-backed path diagnosis with confidence labels.',
       },
       {
+        path: '/connectivity',
+        label: 'Connectivity',
+        blurb: 'Declare critical service paths and detect sustained flow regressions (observe-only).',
+      },
+      {
         path: '/flows',
         label: 'Flows',
         blurb: 'Hubble flows with verdict coloring — see where traffic goes and why it is allowed or dropped.',
@@ -195,6 +200,12 @@ export const PAGE_HEROES: Record<string, PageHeroCopy> = {
     eyebrow: 'Investigate',
     title: 'Why can’t A reach B?',
     lede: 'Evidence-backed path diagnosis — DNS, Service, identity, policy, node path, and changes — with observed / inferred / unavailable labels.',
+    tint: 'green',
+  },
+  '/connectivity': {
+    eyebrow: 'Investigate',
+    title: 'Declared connectivity',
+    lede: 'Monitor critical service paths. Quiet traffic stays unknown; sustained regressions alert with evidence — observe only.',
     tint: 'green',
   },
   '/flows/history': {
