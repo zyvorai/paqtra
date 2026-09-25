@@ -77,6 +77,7 @@ afterEach(() => vi.clearAllMocks());
 const cases: { name: string; path: string; needle: RegExp }[] = [
   { name: 'Dashboard', path: '../Dashboard', needle: /Brothers with Cilium|ON-CALL DIGEST/i },
   { name: 'Flows', path: '../Flows', needle: /LIVE STREAM|hubble\.GetFlows/i },
+  { name: 'InvestigatePath', path: '../InvestigatePath', needle: /INVESTIGATE|Why can.?t A reach B/i },
   { name: 'Topology', path: '../Topology', needle: /TOPOLOGY/i },
   { name: 'ServiceMap', path: '../ServiceMap', needle: /SERVICE MAP/i },
   { name: 'DnsMonitor', path: '../DnsMonitor', needle: /DNS PULSE/i },

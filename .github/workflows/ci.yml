@@ -109,6 +109,14 @@ jobs:
       - name: Offline investigate contracts
         run: bash scripts/ci-investigate-golden.sh
 
+  packet-visibility:
+    name: Packet visibility (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline packet-visibility contracts
+        run: bash scripts/ci-packet-visibility.sh
+
   agent-image:
     name: Agent Dockerfile
     runs-on: ubuntu-latest
