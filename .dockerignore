@@ -6,7 +6,6 @@ dist/
 docs/
 monitoring/
 terraform/
-chart/
 deployments/
 examples/
 e2e/

@@ -1,4 +1,8 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // The Helm chart is compiled into the binary (src/cli/chart.rs); rebuild
+    // when it changes.
+    println!("cargo:rerun-if-changed=chart");
+
     #[cfg(feature = "grpc")]
     {
         tonic_prost_build::compile_protos("proto/flow.proto")?;

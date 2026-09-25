@@ -97,32 +97,28 @@ docker-api: ## Build API Docker image only
 docker-ui: ## Build UI Docker image only
 	docker build -t paqtra-ui:latest -f web-ui/Dockerfile web-ui/
 
-docker-combined: ## Build combined API+UI image
-	docker build -t paqtra:latest -f Dockerfile.combined .
+docker-agent: ## Build the node agent/CLI image (what the chart's agent.image points at)
+	docker build -t paqtra:latest -f Dockerfile .
 
-docker-push: ## Push images to registry
+docker-combined: ## Build combined API+UI image
+	docker build -t paqtra-combined:latest -f Dockerfile.combined .
+
+docker-push: ## Push images to registry (release.yml publishes tagged, multi-arch ones)
+	docker tag paqtra-api:latest ghcr.io/zyvorai/paqtra-api:latest
+	docker tag paqtra-ui:latest ghcr.io/zyvorai/paqtra-ui:latest
+	docker tag paqtra:latest ghcr.io/zyvorai/paqtra:latest
 	docker push ghcr.io/zyvorai/paqtra-api:latest
 	docker push ghcr.io/zyvorai/paqtra-ui:latest
 	docker push ghcr.io/zyvorai/paqtra:latest
 
 # ─── Installation ─────────────────────────────────────────────────────
-install-full: ## Full system installation (build + install + systemd)
-	bash install.sh install
+# End users install a release with install.sh (curl | sh) or `brew install`.
+# These build the CLI from this checkout (developers).
+install-full: ## Build the CLI from source and install it (no systemd)
+	bash scripts/dev-install.sh install
 
-install-services: ## Configure systemd services only
-	bash install.sh setup-services
-
-install-start: ## Start all services
-	bash install.sh start
-
-install-stop: ## Stop all services
-	bash install.sh stop
-
-install-status: ## Show service status
-	bash install.sh status
-
-install-uninstall: ## Full uninstall
-	bash install.sh uninstall
+install-uninstall: ## Remove the CLI and legacy systemd units from this host
+	bash scripts/dev-install.sh uninstall
 
 # ─── Kubernetes Deployment ────────────────────────────────────────────
 k8s-deploy: ## Deploy to Kubernetes cluster
