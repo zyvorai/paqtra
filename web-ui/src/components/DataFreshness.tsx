@@ -54,12 +54,14 @@ const DataFreshness: React.FC<DataFreshnessProps> = ({
       )}
 
       <button
+        type="button"
         onClick={onRefresh}
         disabled={refreshing}
-        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="btn-refresh inline-flex items-center gap-1.5 !min-h-0 !py-1.5 !px-3 !text-sm"
         aria-label="Refresh data"
       >
-        <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+        <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+        Refresh
       </button>
 
       {onAutoRefreshToggle !== undefined && (
@@ -70,7 +72,7 @@ const DataFreshness: React.FC<DataFreshnessProps> = ({
             aria-checked={autoRefresh}
             onClick={onAutoRefreshToggle}
             className={`relative w-9 h-5 rounded-full transition-colors ${
-              autoRefresh ? 'bg-blue-600' : 'bg-slate-600'
+              autoRefresh ? 'bg-[var(--apple-blue)]' : 'bg-slate-600'
             }`}
           >
             <span

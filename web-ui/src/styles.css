@@ -244,16 +244,21 @@ button.danger:hover {
   filter: brightness(1.08);
 }
 
-/* Semantic filled pills — Apple system colors by job. */
+/* Refresh / reload — same apple.com blue as primary CTAs. */
 .btn-refresh,
 button.btn-refresh {
-  background: var(--accent-cyan) !important;
+  background: var(--apple-blue) !important;
   color: #fff !important;
   border-color: transparent !important;
 }
 .btn-refresh:hover,
 button.btn-refresh:hover {
-  background: var(--accent-cyan-hover) !important;
+  background: var(--apple-blue-hover) !important;
+  filter: brightness(1.06);
+}
+[data-theme="dark"] .btn-refresh:hover,
+[data-theme="dark"] button.btn-refresh:hover {
+  box-shadow: 0 8px 24px rgba(0, 113, 227, 0.35);
 }
 
 .btn-next,
