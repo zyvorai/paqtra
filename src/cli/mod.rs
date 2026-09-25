@@ -21,7 +21,9 @@ mod version;
 pub use agent::run_agent;
 pub use banner::print_root_help;
 pub use cilium::DEFAULT_VERSION as CILIUM_DEFAULT_VERSION;
-pub use config::{cmd_get as cmd_config_get, cmd_set as cmd_config_set, cmd_view as cmd_config_view};
+pub use config::{
+    cmd_get as cmd_config_get, cmd_set as cmd_config_set, cmd_view as cmd_config_view,
+};
 pub use features::{cmd_ebpf_attachments, cmd_ebpf_drift, cmd_features};
 pub use global::Global;
 pub use hubble::{
