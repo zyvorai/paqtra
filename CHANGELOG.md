@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`paqtra` installs itself like `cilium-cli`.** The Helm chart is compiled into the
+  binary (CLI vX installs chart vX and image tags vX); other versions are pulled from
+  `oci://ghcr.io/zyvorai/charts`. `helm` is used from PATH or downloaded once
+  (pinned version, sha256-verified) into `~/.paqtra/bin`.
+  - `install`/`upgrade`: `--version`, `-f/--values`, `--set`, `--set-string`,
+    `--set-file`, `--registry` (image mirror), `--dry-run` (server-side), `--atomic`,
+    `--no-wait`, `--wait-duration`, `--list-versions`, `--with-cilium`
+    (installs Cilium + Hubble Relay + metrics when none is running), and prerequisite
+    checks (Kubernetes >= 1.25, Cilium >= 1.14, Hubble + Relay, RBAC, StorageClass).
+  - Global `--context`, `--kubeconfig`, `-n/--namespace`, `--release`, `--helm-path`.
+  - `status` reads the Kubernetes API (no `kubectl`), really waits with `--wait`,
+    and exits non-zero when unhealthy. `version` compares client, release and server.
+  - `hubble enable|disable|port-forward`, `ui`, `config view|get|set`,
+    `completion bash|zsh|fish|powershell`, `uninstall --purge`.
+- **Release pipeline**: static musl Linux and macOS binaries with `sha256sums.txt`, a
+  cosign keyless signature, SBOM and the chart attached to the release; the chart, a
+  multi-arch agent image (previously never published) and a `paqtra-cli` image are
+  pushed; a Homebrew formula is rendered. `install.sh` is now a verifying release
+  installer (`curl | sh`); the build-from-source flow is `scripts/dev-install.sh`.
 - **Rule-level policy editing**: `POST|PUT|DELETE /api/v1/policies/{id}/rules` add,
   replace or delete one rule of a CiliumNetworkPolicy through the CRD, with
   `resource_version` concurrency (409), `?dry_run=true`, audit entries
