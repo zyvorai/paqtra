@@ -14,13 +14,14 @@ mod policies;
 mod tui;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::Shell;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing::Level;
 
 use bootstrap::BootstrapManager;
-use cli::InstallOpts;
+use cli::{Global, InstallOpts, StatusOpts, UninstallOpts};
 use tui::TuiApp;
 
 #[derive(Parser, Debug)]
@@ -36,59 +37,68 @@ struct Args {
     /// Enable verbose logging
     #[arg(short, long, global = true)]
     verbose: bool,
+
+    #[command(flatten)]
+    global: Global,
 }
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Install Paqtra in a Kubernetes cluster using Helm
-    Install {
-        /// Target namespace
-        #[arg(long, default_value = "paqtra")]
-        namespace: String,
-        /// Path to Helm chart directory
-        #[arg(long)]
-        chart_directory: Option<PathBuf>,
-        /// Helm chart version
-        #[arg(long)]
-        version: Option<String>,
-        /// Wait for resources to become ready
-        #[arg(long, default_value_t = true)]
-        wait: bool,
-        /// Helm --set key=value (repeatable)
-        #[arg(long = "set")]
-        set: Vec<String>,
-    },
+    /// Install Paqtra into a Kubernetes cluster (Helm; the chart is built in)
+    // `--version` here selects the chart version, so clap's own flag is off.
+    #[command(disable_version_flag = true)]
+    Install(InstallArgs),
     /// Upgrade a Paqtra installation
-    Upgrade {
-        #[arg(long, default_value = "paqtra")]
-        namespace: String,
-        #[arg(long)]
-        chart_directory: Option<PathBuf>,
-        #[arg(long, default_value_t = true)]
-        wait: bool,
-        #[arg(long = "set")]
-        set: Vec<String>,
-    },
-    /// Uninstall Paqtra using Helm
+    #[command(disable_version_flag = true)]
+    Upgrade(UpgradeArgs),
+    /// Uninstall Paqtra
     Uninstall {
-        #[arg(long, default_value = "paqtra")]
-        namespace: String,
-    },
-    /// Display status (Cilium-style banner)
-    Status {
-        #[arg(long, default_value = "paqtra")]
-        namespace: String,
-        /// Wait until components are ready
+        /// Wait for the resources to be deleted
         #[arg(long)]
         wait: bool,
+        /// Also delete the release's PersistentVolumeClaims (flow history) and,
+        /// if nothing else runs there, the namespace
+        #[arg(long)]
+        purge: bool,
+        /// Do not ask for confirmation
+        #[arg(short, long)]
+        yes: bool,
+    },
+    /// Display status; exits non-zero when Paqtra, Cilium or Hubble Relay is unhealthy
+    Status {
+        /// Wait until components are ready (or the timeout passes)
+        #[arg(long)]
+        wait: bool,
+        /// How long --wait waits (e.g. 90s, 5m)
+        #[arg(long, default_value = "5m", value_name = "DURATION")]
+        wait_duration: String,
         /// Output format: summary | json
         #[arg(short, long, default_value = "summary")]
         output: String,
+        /// Also report this machine's BPF inventory and drift
+        #[arg(long)]
+        local: bool,
     },
     /// Show cluster / install info
-    Info {
-        #[arg(long, default_value = "paqtra")]
-        namespace: String,
+    Info,
+    /// Enable, disable or reach Hubble
+    Hubble {
+        #[command(subcommand)]
+        command: HubbleCommands,
+    },
+    /// Open the Paqtra UI through a port-forward
+    Ui {
+        /// Local port
+        #[arg(long, default_value_t = 8443)]
+        port: u16,
+        /// Do not open a browser
+        #[arg(long)]
+        no_open: bool,
+    },
+    /// View and change the release's Helm values
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommands,
     },
     /// Display feature discovery catalog (observe tiers)
     Features {
@@ -101,8 +111,17 @@ enum Commands {
         #[command(subcommand)]
         command: EbpfCommands,
     },
-    /// Display version information
-    Version,
+    /// Display client, release and server versions
+    Version {
+        /// Only print the client version (no cluster or helm access)
+        #[arg(long)]
+        client: bool,
+        /// Output format: summary | json
+        #[arg(short, long, default_value = "summary")]
+        output: String,
+    },
+    /// Print a shell completion script (bash, zsh, fish, powershell, elvish)
+    Completion { shell: Shell },
     /// Launch the interactive TUI
     Tui {
         #[arg(long)]
@@ -119,6 +138,139 @@ enum Commands {
         /// Listen address for health endpoint
         #[arg(long, default_value = "0.0.0.0:9192")]
         listen: SocketAddr,
+    },
+}
+
+/// Flags shared by `install` and `upgrade`.
+#[derive(clap::Args, Debug)]
+struct ReleaseArgs {
+    /// Helm chart directory (default: the chart built into this binary)
+    #[arg(long, value_name = "DIR")]
+    chart_directory: Option<PathBuf>,
+    /// Version to install (default: this CLI's version). Other versions are
+    /// pulled from oci://ghcr.io/zyvorai/charts
+    #[arg(long = "version", id = "chart_version", value_name = "X.Y.Z")]
+    version: Option<String>,
+    /// Helm values file (repeatable)
+    #[arg(short = 'f', long = "values", value_name = "FILE")]
+    values: Vec<PathBuf>,
+    /// Helm --set key=value (repeatable)
+    #[arg(long = "set", value_name = "KEY=VALUE")]
+    set: Vec<String>,
+    /// Helm --set-string key=value (repeatable)
+    #[arg(long = "set-string", value_name = "KEY=VALUE")]
+    set_string: Vec<String>,
+    /// Helm --set-file key=path (repeatable)
+    #[arg(long = "set-file", value_name = "KEY=PATH")]
+    set_file: Vec<String>,
+    /// Pull the images from a mirror: <prefix>/paqtra-api, <prefix>/paqtra-ui, <prefix>/paqtra
+    #[arg(long, value_name = "PREFIX")]
+    registry: Option<String>,
+    /// Do not wait for the resources to become ready
+    #[arg(long)]
+    no_wait: bool,
+    /// Kept for compatibility: waiting is the default
+    #[arg(long, hide = true)]
+    wait: bool,
+    /// How long to wait (e.g. 90s, 5m)
+    #[arg(long, default_value = "5m", value_name = "DURATION")]
+    wait_duration: String,
+    /// Render and validate against the cluster without changing anything
+    #[arg(long)]
+    dry_run: bool,
+    /// Roll back automatically if the release does not become ready
+    #[arg(long)]
+    atomic: bool,
+}
+
+#[derive(clap::Args, Debug)]
+struct InstallArgs {
+    #[command(flatten)]
+    release: ReleaseArgs,
+    /// Install even if the prerequisite checks fail
+    #[arg(long)]
+    skip_preflight: bool,
+    /// List released versions and exit
+    #[arg(long)]
+    list_versions: bool,
+    /// Install Cilium (with Hubble + Relay + metrics) first if none is running
+    #[arg(long)]
+    with_cilium: bool,
+    /// Cilium version for --with-cilium
+    #[arg(long, default_value = cli::CILIUM_DEFAULT_VERSION, value_name = "X.Y.Z")]
+    cilium_version: String,
+    /// Extra Helm --set for the Cilium install (repeatable)
+    #[arg(long = "cilium-set", value_name = "KEY=VALUE")]
+    cilium_set: Vec<String>,
+}
+
+#[derive(clap::Args, Debug)]
+struct UpgradeArgs {
+    #[command(flatten)]
+    release: ReleaseArgs,
+    /// Discard the release's previous values instead of reusing them
+    #[arg(long)]
+    reset_values: bool,
+}
+
+impl ReleaseArgs {
+    fn into_opts(self) -> InstallOpts {
+        InstallOpts {
+            chart_directory: self.chart_directory,
+            version: self.version,
+            values: self.values,
+            set: self.set,
+            set_string: self.set_string,
+            set_file: self.set_file,
+            registry: self.registry,
+            wait: !self.no_wait,
+            wait_duration: self.wait_duration,
+            dry_run: self.dry_run,
+            atomic: self.atomic,
+            ..InstallOpts::default()
+        }
+    }
+}
+
+#[derive(Subcommand, Debug)]
+enum HubbleCommands {
+    /// Enable Hubble (and Relay, which Paqtra reads flows through) on the Cilium Helm release
+    Enable {
+        /// Do not enable Hubble Relay
+        #[arg(long)]
+        no_relay: bool,
+        /// Hubble metrics, comma-separated (default: dns,drop,tcp,flow,icmp,http,policy)
+        #[arg(long, value_name = "LIST")]
+        metrics: Option<String>,
+    },
+    /// Disable Hubble on the Cilium Helm release
+    Disable,
+    /// Forward a local port to Hubble Relay
+    PortForward {
+        #[arg(long, default_value_t = cli::DEFAULT_RELAY_PORT)]
+        port: u16,
+        #[arg(long, default_value = "127.0.0.1")]
+        address: std::net::IpAddr,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ConfigCommands {
+    /// Print the release's Helm values
+    View {
+        /// Include chart defaults, not only what was set
+        #[arg(long)]
+        all: bool,
+    },
+    /// Print one value, e.g. `api.env.hubbleMode`
+    Get { key: String },
+    /// Change values (an upgrade that keeps everything else), e.g. `api.env.hubbleMode=auto`
+    Set {
+        #[arg(value_name = "KEY=VALUE")]
+        assignments: Vec<String>,
+        /// Do not wait for the rollout
+        #[arg(long)]
+        no_wait: bool,
     },
 }
 
@@ -150,8 +302,9 @@ async fn main() -> Result<()> {
     let quiet_cmds = matches!(
         args.command,
         None | Some(Commands::Status { .. })
-            | Some(Commands::Info { .. })
-            | Some(Commands::Version)
+            | Some(Commands::Info)
+            | Some(Commands::Version { .. })
+            | Some(Commands::Completion { .. })
             | Some(Commands::Features { .. })
             | Some(Commands::Ebpf { .. })
     );
@@ -167,51 +320,79 @@ async fn main() -> Result<()> {
             cli::print_root_help();
             Ok(())
         }
-        Some(Commands::Install {
-            namespace,
-            chart_directory,
-            version,
-            wait,
-            set,
-        }) => {
-            cli::cmd_install(InstallOpts {
-                namespace,
-                chart_directory,
-                version,
-                wait,
-                set,
-            })
-            .await
+        Some(Commands::Install(a)) => {
+            let mut opts = a.release.into_opts();
+            opts.skip_preflight = a.skip_preflight;
+            opts.list_versions = a.list_versions;
+            opts.with_cilium = a.with_cilium;
+            opts.cilium_version = a.cilium_version;
+            opts.cilium_set = a.cilium_set;
+            cli::cmd_install(&args.global, opts).await
         }
-        Some(Commands::Upgrade {
-            namespace,
-            chart_directory,
-            wait,
-            set,
-        }) => {
-            cli::cmd_upgrade(InstallOpts {
-                namespace,
-                chart_directory,
-                version: None,
-                wait,
-                set,
-            })
-            .await
+        Some(Commands::Upgrade(a)) => {
+            let mut opts = a.release.into_opts();
+            opts.reset_values = a.reset_values;
+            cli::cmd_upgrade(&args.global, opts).await
         }
-        Some(Commands::Uninstall { namespace }) => cli::cmd_uninstall(&namespace).await,
+        Some(Commands::Uninstall { wait, purge, yes }) => {
+            cli::cmd_uninstall(&args.global, UninstallOpts { wait, purge, yes }).await
+        }
         Some(Commands::Status {
-            namespace,
             wait,
+            wait_duration,
             output,
-        }) => cli::cmd_status(&namespace, wait, &output).await,
-        Some(Commands::Info { namespace }) => cli::cmd_info(&namespace).await,
+            local,
+        }) => {
+            let wait_duration = cli::parse_duration(&wait_duration)?;
+            let ok = cli::cmd_status(
+                &args.global,
+                StatusOpts {
+                    wait,
+                    wait_duration,
+                    output,
+                    local,
+                },
+            )
+            .await?;
+            if !ok {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
+        Some(Commands::Info) => cli::cmd_info(&args.global).await,
+        Some(Commands::Hubble { command }) => match command {
+            HubbleCommands::Enable { no_relay, metrics } => {
+                cli::cmd_hubble_enable(&args.global, no_relay, metrics).await
+            }
+            HubbleCommands::Disable => cli::cmd_hubble_disable(&args.global).await,
+            HubbleCommands::PortForward { port, address } => {
+                cli::cmd_hubble_port_forward(&args.global, port, address).await
+            }
+        },
+        Some(Commands::Ui { port, no_open }) => cli::cmd_ui(&args.global, port, !no_open).await,
+        Some(Commands::Config { command }) => match command {
+            ConfigCommands::View { all } => cli::cmd_config_view(&args.global, all).await,
+            ConfigCommands::Get { key } => cli::cmd_config_get(&args.global, &key).await,
+            ConfigCommands::Set {
+                assignments,
+                no_wait,
+            } => cli::cmd_config_set(&args.global, assignments, no_wait).await,
+        },
         Some(Commands::Features { output }) => cli::cmd_features(&output),
         Some(Commands::Ebpf { command }) => match command {
             EbpfCommands::Attachments { output } => cli::cmd_ebpf_attachments(&output),
             EbpfCommands::Drift { output } => cli::cmd_ebpf_drift(&output),
         },
-        Some(Commands::Version) => {
-            println!("paqtra v{}", env!("CARGO_PKG_VERSION"));
+        Some(Commands::Version { client, output }) => {
+            cli::cmd_version(&args.global, client, &output).await
+        }
+        Some(Commands::Completion { shell }) => {
+            clap_complete::generate(
+                shell,
+                &mut Args::command(),
+                "paqtra",
+                &mut std::io::stdout(),
+            );
             Ok(())
         }
         Some(Commands::Tui {
@@ -245,4 +426,139 @@ async fn run_tui(
     let mut app = TuiApp::new(context, hubble_port, k8s_client).await?;
     app.run().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_cli_definition_is_valid() {
+        // clap only checks duplicate flags/ids at runtime; this catches them in CI.
+        Args::command().debug_assert();
+    }
+
+    fn parse(line: &[&str]) -> Args {
+        Args::try_parse_from(std::iter::once("paqtra").chain(line.iter().copied()))
+            .unwrap_or_else(|e| panic!("{line:?} did not parse: {e}"))
+    }
+
+    #[test]
+    fn global_flags_work_before_or_after_the_subcommand() {
+        for line in [
+            &[
+                "--context",
+                "prod",
+                "-n",
+                "obs",
+                "--release",
+                "px",
+                "status",
+            ][..],
+            &[
+                "status",
+                "--context",
+                "prod",
+                "-n",
+                "obs",
+                "--release",
+                "px",
+            ][..],
+        ] {
+            let a = parse(line);
+            assert_eq!(a.global.context.as_deref(), Some("prod"));
+            assert_eq!(a.global.namespace, "obs");
+            assert_eq!(a.global.release, "px");
+        }
+        let d = parse(&["status"]);
+        assert_eq!(
+            (d.global.namespace.as_str(), d.global.release.as_str()),
+            ("paqtra", "paqtra")
+        );
+    }
+
+    #[test]
+    fn install_takes_a_chart_version_and_the_documented_flags() {
+        let a = parse(&[
+            "install",
+            "--version",
+            "2.0.0",
+            "-f",
+            "a.yaml",
+            "-f",
+            "b.yaml",
+            "--set",
+            "x=1",
+            "--set-string",
+            "y=2",
+            "--registry",
+            "r.io/z",
+            "--no-wait",
+            "--dry-run",
+            "--atomic",
+            "--skip-preflight",
+            "--with-cilium",
+            "--cilium-version",
+            "1.20.2",
+            "--cilium-set",
+            "operator.replicas=1",
+        ]);
+        let Some(Commands::Install(i)) = a.command else {
+            panic!("not install")
+        };
+        assert_eq!(i.release.version.as_deref(), Some("2.0.0"));
+        assert_eq!(i.release.values.len(), 2);
+        assert!(
+            i.release.no_wait
+                && i.release.dry_run
+                && i.release.atomic
+                && i.skip_preflight
+                && i.with_cilium
+        );
+        assert_eq!(i.cilium_set, ["operator.replicas=1"]);
+        let opts = i.release.into_opts();
+        assert!(!opts.wait, "--no-wait turns waiting off");
+    }
+
+    #[test]
+    fn the_old_wait_flag_is_still_accepted() {
+        let Some(Commands::Install(i)) = parse(&["install", "--wait"]).command else {
+            panic!()
+        };
+        assert!(i.release.into_opts().wait);
+    }
+
+    #[test]
+    fn the_top_level_version_flag_still_prints_the_version() {
+        let err = Args::try_parse_from(["paqtra", "--version"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion);
+    }
+
+    #[test]
+    fn subcommands_parse() {
+        for line in [
+            &["upgrade", "--reset-values", "--version", "2.1.0"][..],
+            &["uninstall", "--purge", "--yes"][..],
+            &[
+                "status",
+                "--wait",
+                "--wait-duration",
+                "90s",
+                "-o",
+                "json",
+                "--local",
+            ][..],
+            &["version", "--client"][..],
+            &["completion", "zsh"][..],
+            &["hubble", "enable", "--no-relay", "--metrics", "dns,drop"][..],
+            &["hubble", "disable"][..],
+            &["hubble", "port-forward", "--port", "4246"][..],
+            &["ui", "--no-open", "--port", "9443"][..],
+            &["config", "view", "--all"][..],
+            &["config", "get", "api.env.hubbleMode"][..],
+            &["config", "set", "a=1", "b=2", "--no-wait"][..],
+        ] {
+            parse(line);
+        }
+    }
 }

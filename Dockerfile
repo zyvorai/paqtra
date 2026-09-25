@@ -5,6 +5,8 @@ RUN apt-get update && apt-get install -y pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY src ./src
+# The Helm chart is compiled into the binary (src/cli/chart.rs).
+COPY chart ./chart
 RUN cargo build --release
 
 FROM docker.io/library/debian:bookworm-slim
