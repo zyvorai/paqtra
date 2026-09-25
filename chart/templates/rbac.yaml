@@ -20,6 +20,12 @@ rules:
       - get
       - list
       - watch
+  # Read-only bpftool inventory via kubectl exec into cilium-agent
+  - apiGroups: [""]
+    resources:
+      - pods/exec
+    verbs:
+      - create
   - apiGroups: ["discovery.k8s.io"]
     resources:
       - endpointslices

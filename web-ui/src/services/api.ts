@@ -62,7 +62,9 @@ function loadSettings(): AppSettings {
  */
 const api = axios.create({
   baseURL: loadSettings().apiBaseUrl,
-  timeout: 15_000,
+  // Cluster/Hubble calls can exceed 15s under load; store-backed paths are fast,
+  // but keep headroom so Overview/Flows do not flash "timeout of 15000ms exceeded".
+  timeout: 45_000,
   headers: { 'Content-Type': 'application/json' },
 });
 

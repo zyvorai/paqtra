@@ -88,31 +88,8 @@ pub async fn wireguard_peers(
 pub async fn cilium_status(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    // Query real cilium status via kubectl exec on cilium pods
-    use crate::services::k8s::K8sService;
-    let status_json = K8sService::run_cmd(
-        "kubectl",
-        &[
-            "exec",
-            "-n",
-            "kube-system",
-            "-l",
-            "k8s-app=cilium",
-            "--",
-            "cilium",
-            "status",
-            "-o",
-            "json",
-            "--brief",
-        ],
-    )
-    .await;
-
-    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&status_json) {
-        return Json(serde_json::json!({ "status": parsed }));
-    }
-
-    // Fallback: get cilium pods and their status
+    // Always inventory from Cilium agent pods. Do not use `kubectl exec -l …`
+    // (invalid) or return a bare `status` object — the UI expects `agents[]`.
     let pods = state
         .k8s
         .kubectl_json(&[
@@ -127,7 +104,7 @@ pub async fn cilium_status(State(state): State<Arc<AppState>>) -> Json<serde_jso
         ])
         .await;
 
-    let agents: Vec<serde_json::Value> = pods
+    let mut agents: Vec<serde_json::Value> = pods
         .get("items")
         .and_then(|v| v.as_array())
         .map(|items| {
@@ -136,36 +113,115 @@ pub async fn cilium_status(State(state): State<Arc<AppState>>) -> Json<serde_jso
                 .map(|item| {
                     let meta = item.get("metadata").unwrap_or(item);
                     let status = item.get("status").unwrap_or(item);
+                    let spec = item.get("spec").unwrap_or(item);
                     let phase = status
                         .get("phase")
                         .and_then(|v| v.as_str())
                         .unwrap_or("Unknown");
-                    let node = meta
-                        .get("labels")
-                        .and_then(|l| l.get("kubernetes.io/hostname"))
+                    let name = meta.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let node = spec
+                        .get("nodeName")
                         .and_then(|v| v.as_str())
-                        .or_else(|| status.get("hostIP").and_then(|v| v.as_str()))
+                        .or_else(|| {
+                            meta.get("labels")
+                                .and_then(|l| l.get("kubernetes.io/hostname"))
+                                .and_then(|v| v.as_str())
+                        })
                         .unwrap_or("unknown");
                     let ready = status
                         .get("containerStatuses")
                         .and_then(|v| v.as_array())
-                        .and_then(|arr| arr.first())
-                        .and_then(|c| c.get("ready"))
-                        .and_then(|v| v.as_bool())
+                        .map(|arr| {
+                            !arr.is_empty()
+                                && arr.iter().all(|c| {
+                                    c.get("ready").and_then(|v| v.as_bool()).unwrap_or(false)
+                                })
+                        })
                         .unwrap_or(false);
+                    let image = status
+                        .get("containerStatuses")
+                        .and_then(|v| v.as_array())
+                        .and_then(|arr| {
+                            arr.iter().find(|c| {
+                                c.get("name").and_then(|n| n.as_str()) == Some("cilium-agent")
+                            })
+                        })
+                        .and_then(|c| c.get("image").and_then(|v| v.as_str()))
+                        .unwrap_or("");
+                    let version = image
+                        .rsplit(':')
+                        .next()
+                        .filter(|t| !t.is_empty() && *t != image)
+                        .unwrap_or("");
                     serde_json::json!({
+                        "name": name,
+                        "pod": name,
                         "node": node,
-                        "pod": meta.get("name").and_then(|v| v.as_str()).unwrap_or(""),
                         "status": if ready { "OK" } else { phase },
                         "ready": ready,
+                        "version": version,
                         "host_ip": status.get("hostIP").and_then(|v| v.as_str()).unwrap_or(""),
+                        "message": if ready { "cilium-agent ready" } else { phase },
                     })
                 })
                 .collect()
         })
         .unwrap_or_default();
 
-    Json(serde_json::json!({ "agents": agents }))
+    // Best-effort: enrich first agent with `cilium status --brief` (needs pods/exec).
+    if let Some(first) = agents.first().cloned() {
+        let pod = first.get("pod").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if !pod.is_empty() {
+            use crate::services::k8s::K8sService;
+            let brief = K8sService::run_cmd(
+                "kubectl",
+                &[
+                    "exec",
+                    "-n",
+                    "kube-system",
+                    &pod,
+                    "-c",
+                    "cilium-agent",
+                    "--",
+                    "cilium",
+                    "status",
+                    "--brief",
+                ],
+            )
+            .await;
+            if !brief.is_empty() {
+                let ok_line = brief.lines().next().unwrap_or("").trim().to_string();
+                for a in &mut agents {
+                    if let Some(obj) = a.as_object_mut() {
+                        obj.insert(
+                            "message".into(),
+                            serde_json::Value::String(ok_line.clone()),
+                        );
+                        if ok_line.to_ascii_lowercase().contains("ok") {
+                            obj.insert("status".into(), serde_json::Value::String("OK".into()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let healthy = agents
+        .iter()
+        .filter(|a| {
+            a.get("ready").and_then(|v| v.as_bool()).unwrap_or(false)
+                || a.get("status")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.eq_ignore_ascii_case("OK") || s.eq_ignore_ascii_case("Running"))
+                    .unwrap_or(false)
+        })
+        .count();
+
+    Json(serde_json::json!({
+        "agents": agents,
+        "total": agents.len(),
+        "healthy": healthy,
+    }))
 }
 
 // ── Policy Validation ─────────────────────────────────────

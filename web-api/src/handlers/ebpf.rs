@@ -7,8 +7,9 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::sync::Arc;
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use super::{check_admin, paginate_json, PaginationQuery};
 use crate::AppState;
@@ -16,7 +17,13 @@ use crate::AppState;
 /// Classify BPF program name into brotherhood owner (cilium | netra | other).
 fn classify_owner(name: &str) -> &'static str {
     let n = name.trim();
-    if n.starts_with("cil_") || n.starts_with("cilium") {
+    if n.starts_with("cil_")
+        || n.starts_with("cilium")
+        || n.contains("cilium")
+        || n.starts_with("from-")
+        || n.starts_with("to-")
+        || n.starts_with("tail_")
+    {
         "cilium"
     } else if n.starts_with("netra_") || n.starts_with("netra") {
         "netra"
@@ -25,14 +32,50 @@ fn classify_owner(name: &str) -> &'static str {
     }
 }
 
+struct BpfCacheEntry {
+    at: Instant,
+    value: Value,
+}
+
+fn bpf_cache() -> &'static Mutex<HashMap<String, BpfCacheEntry>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, BpfCacheEntry>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+const BPF_CACHE_TTL: Duration = Duration::from_secs(30);
+const BPFTOOL_TIMEOUT: Duration = Duration::from_secs(8);
+
 // ---------------------------------------------------------------------------
-// Helper: run bpftool with a 5-second timeout, return parsed JSON
+// Helper: run bpftool with a short timeout + 30s result cache
 // ---------------------------------------------------------------------------
 
 async fn run_bpftool(args: &[&str]) -> Result<Value, String> {
+    let key = args.join(" ");
+    if let Ok(cache) = bpf_cache().lock() {
+        if let Some(hit) = cache.get(&key) {
+            if hit.at.elapsed() < BPF_CACHE_TTL {
+                return Ok(hit.value.clone());
+            }
+        }
+    }
+
+    let value = run_bpftool_uncached(args).await?;
+    if let Ok(mut cache) = bpf_cache().lock() {
+        cache.insert(
+            key,
+            BpfCacheEntry {
+                at: Instant::now(),
+                value: value.clone(),
+            },
+        );
+    }
+    Ok(value)
+}
+
+async fn run_bpftool_uncached(args: &[&str]) -> Result<Value, String> {
     // Try local bpftool first
     let fut = tokio::process::Command::new("bpftool").args(args).output();
-    match tokio::time::timeout(Duration::from_secs(5), fut).await {
+    match tokio::time::timeout(BPFTOOL_TIMEOUT, fut).await {
         Ok(Ok(output)) if output.status.success() => {
             return serde_json::from_slice(&output.stdout)
                 .map_err(|e| format!("Parse error: {}", e));
@@ -40,33 +83,55 @@ async fn run_bpftool(args: &[&str]) -> Result<Value, String> {
         _ => {}
     }
 
-    // Fallback: run bpftool via kubectl exec into a Cilium agent pod
-    let mut kubectl_args = vec![
-        "exec",
-        "-n",
-        "kube-system",
-        "-l",
-        "k8s-app=cilium",
-        "-c",
-        "cilium-agent",
-        "--",
-        "bpftool",
+    // Resolve a Cilium agent pod once, then exec (daemonset/ target can hang on some clusters).
+    let pod = {
+        let fut = tokio::process::Command::new("kubectl")
+            .args([
+                "get",
+                "pod",
+                "-n",
+                "kube-system",
+                "-l",
+                "k8s-app=cilium",
+                "-o",
+                "jsonpath={.items[0].metadata.name}",
+            ])
+            .output();
+        match tokio::time::timeout(Duration::from_secs(5), fut).await {
+            Ok(Ok(o)) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+            _ => String::new(),
+        }
+    };
+    if pod.is_empty() {
+        return Err("no cilium agent pod found for bpftool".into());
+    }
+
+    let mut kubectl_args: Vec<String> = vec![
+        "exec".into(),
+        "-n".into(),
+        "kube-system".into(),
+        pod,
+        "-c".into(),
+        "cilium-agent".into(),
+        "--".into(),
+        "bpftool".into(),
     ];
-    kubectl_args.extend_from_slice(args);
+    kubectl_args.extend(args.iter().map(|a| (*a).to_string()));
 
     let fut = tokio::process::Command::new("kubectl")
         .args(&kubectl_args)
+        .kill_on_drop(true)
         .output();
 
-    let output = tokio::time::timeout(Duration::from_secs(10), fut)
+    let output = tokio::time::timeout(BPFTOOL_TIMEOUT, fut)
         .await
-        .map_err(|_| "bpftool timed out (tried local and kubectl exec)".to_string())?
-        .map_err(|e| format!("bpftool not available locally or via kubectl: {}", e))?;
+        .map_err(|_| "bpftool timed out via cilium agent".to_string())?
+        .map_err(|e| format!("bpftool kubectl exec failed: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
-            "bpftool unavailable (tried local and kubectl exec into cilium-agent): {}",
+            "bpftool unavailable via cilium agent: {}",
             stderr.trim()
         ));
     }
@@ -283,8 +348,15 @@ pub async fn list_real_programs(
 
     let progs = match run_bpftool(&["prog", "list", "-j"]).await {
         Ok(v) => v,
-        Err(_) => {
-            return Ok(Json(paginate_json(vec![], &params, "programs")));
+        Err(e) => {
+            tracing::warn!("ebpf programs inventory unavailable: {}", e);
+            return Ok(Json(json!({
+                "programs": [],
+                "total": 0,
+                "limit": params.limit.unwrap_or(50),
+                "offset": params.offset.unwrap_or(0),
+                "warning": e,
+            })));
         }
     };
 
@@ -297,26 +369,35 @@ pub async fn list_real_programs(
 
     let items: Vec<Value> = arr
         .iter()
-        .filter(|p| {
+        .filter_map(|p| {
             let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("");
             let ptype = p.get("type").and_then(|t| t.as_str()).unwrap_or("");
-            if name.is_empty() {
-                return false;
+            if name.is_empty() && ptype.is_empty() {
+                return None;
             }
-            name.contains("cil") || ptype == "sched_cls" || ptype == "xdp"
-        })
-        .map(|p| {
-            json!({
+            let owner = classify_owner(name);
+            // Keep Cilium/Netra and common datapath types; drop opaque noise.
+            let keep = owner != "other"
+                || matches!(
+                    ptype,
+                    "sched_cls" | "xdp" | "cgroup_skb" | "cgroup_sock" | "cgroup_device"
+                        | "cgroup_sysctl" | "lwt_in" | "lwt_out" | "lwt_xmit" | "sched_act"
+                );
+            if !keep {
+                return None;
+            }
+            Some(json!({
                 "id": p.get("id"),
-                "name": p.get("name"),
-                "type": p.get("type"),
+                "name": name,
+                "type": ptype,
+                "owner": owner,
                 "tag": p.get("tag"),
                 "run_cnt": p.get("run_cnt").or_else(|| p.get("run_count")),
                 "run_time_ns": p.get("run_time_ns"),
                 "bytes_xlated": p.get("bytes_xlated"),
                 "bytes_jited": p.get("bytes_jited"),
                 "loaded_at": p.get("loaded_at"),
-            })
+            }))
         })
         .collect();
 
@@ -336,8 +417,15 @@ pub async fn list_real_maps(
 
     let maps = match run_bpftool(&["map", "list", "-j"]).await {
         Ok(v) => v,
-        Err(_) => {
-            return Ok(Json(paginate_json(vec![], &params, "maps")));
+        Err(e) => {
+            tracing::warn!("ebpf maps inventory unavailable: {}", e);
+            return Ok(Json(json!({
+                "maps": [],
+                "total": 0,
+                "limit": params.limit.unwrap_or(50),
+                "offset": params.offset.unwrap_or(0),
+                "warning": e,
+            })));
         }
     };
 
@@ -346,21 +434,27 @@ pub async fn list_real_maps(
 
     let items: Vec<Value> = arr
         .iter()
-        .filter(|m| {
-            m.get("name")
-                .and_then(|n| n.as_str())
-                .map(|n| n.contains("cilium"))
-                .unwrap_or(false)
-        })
-        .map(|m| {
-            json!({
+        .filter_map(|m| {
+            let name = m.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            if name.is_empty() {
+                return None;
+            }
+            let keep = name.contains("cilium")
+                || name.contains("cil_")
+                || name.starts_with("cil")
+                || name.contains("netra");
+            if !keep {
+                return None;
+            }
+            Some(json!({
                 "id": m.get("id"),
-                "name": m.get("name"),
+                "name": name,
                 "type": m.get("type"),
+                "owner": classify_owner(name),
                 "bytes_key": m.get("bytes_key"),
                 "bytes_value": m.get("bytes_value"),
                 "max_entries": m.get("max_entries"),
-            })
+            }))
         })
         .collect();
 
@@ -860,36 +954,67 @@ pub async fn get_drop_stats(
 
 // ---------------------------------------------------------------------------
 // (i) GET /api/v1/ebpf/summary — aggregate overview
+//
+// Default is counts-only (fast). Pass ?detail=full for CT dumps + drop metrics
+// (expensive kubectl/bpftool map dumps — not needed on Overview).
 // ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct EbpfSummaryQuery {
+    /// `full` enables CT/map dumps; anything else stays slim.
+    pub detail: Option<String>,
+}
 
 pub async fn get_ebpf_summary(
     State(state): State<Arc<AppState>>,
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+    Query(q): Query<EbpfSummaryQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     check_admin(&state, &claims)?;
 
-    // Programs
-    let total_programs = match run_bpftool(&["prog", "list", "-j"]).await {
-        Ok(v) => v
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter(|p| {
-                        let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                        !name.is_empty() && name.contains("cil")
-                    })
-                    .count()
-            })
-            .unwrap_or(0),
-        Err(_) => 0,
-    };
+    let detail_full = q
+        .detail
+        .as_deref()
+        .map(|d| d.eq_ignore_ascii_case("full"))
+        .unwrap_or(false);
 
-    // Maps
-    let maps_data = run_bpftool(&["map", "list", "-j"]).await.ok();
-    let map_arr = maps_data
-        .as_ref()
-        .and_then(|v| v.as_array())
-        .cloned()
+    // Programs + maps in parallel (cached bpftool).
+    let (progs_res, maps_res) = tokio::join!(
+        run_bpftool(&["prog", "list", "-j"]),
+        run_bpftool(&["map", "list", "-j"]),
+    );
+
+    let total_programs = progs_res
+        .ok()
+        .and_then(|v| v.as_array().cloned())
+        .map(|a| {
+            a.iter()
+                .filter(|p| {
+                    let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                    let ptype = p.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                    let owner = classify_owner(name);
+                    owner != "other"
+                        || matches!(
+                            ptype,
+                            "sched_cls"
+                                | "xdp"
+                                | "cgroup_skb"
+                                | "cgroup_sock"
+                                | "cgroup_device"
+                                | "cgroup_sysctl"
+                                | "lwt_in"
+                                | "lwt_out"
+                                | "lwt_xmit"
+                                | "sched_act"
+                        )
+                })
+                .count()
+        })
+        .unwrap_or(0);
+
+    let map_arr = maps_res
+        .ok()
+        .and_then(|v| v.as_array().cloned())
         .unwrap_or_default();
 
     let total_maps = map_arr
@@ -897,12 +1022,23 @@ pub async fn get_ebpf_summary(
         .filter(|m| {
             m.get("name")
                 .and_then(|n| n.as_str())
-                .map(|n| n.contains("cilium"))
+                .map(|n| n.contains("cilium") || n.contains("cil_") || n.starts_with("cil"))
                 .unwrap_or(false)
         })
         .count();
 
-    // CT entries count
+    if !detail_full {
+        return Ok(Json(json!({
+            "total_programs": total_programs,
+            "total_maps": total_maps,
+            "total_ct_entries": 0,
+            "total_drops": 0,
+            "top_drop_reason": "n/a",
+            "detail": "slim",
+        })));
+    }
+
+    // Full detail: CT dumps + metrics map (slow — Diagnostics only).
     let mut total_ct_entries: usize = 0;
     for m in &map_arr {
         let name = m.get("name").and_then(|n| n.as_str()).unwrap_or("");
@@ -916,7 +1052,6 @@ pub async fn get_ebpf_summary(
         }
     }
 
-    // Drops
     let mut total_drops: u64 = 0;
     let mut top_drop_reason = "None".to_string();
     let mut top_drop_count: u64 = 0;
@@ -967,6 +1102,7 @@ pub async fn get_ebpf_summary(
         "total_ct_entries": total_ct_entries,
         "total_drops": total_drops,
         "top_drop_reason": top_drop_reason,
+        "detail": "full",
     })))
 }
 

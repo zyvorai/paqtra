@@ -103,6 +103,35 @@ impl StoredFlow {
             source,
         }
     }
+
+    /// Convert a stored row back into the API `Flow` shape for list/stats UIs.
+    pub fn into_flow(self) -> Flow {
+        use crate::models::flow::FlowEndpoint;
+        Flow {
+            id: self.id,
+            timestamp: self.ts,
+            source: FlowEndpoint {
+                namespace: self.src_namespace,
+                pod: self.src_pod,
+                ip: self.src_ip,
+            },
+            destination: FlowEndpoint {
+                namespace: self.dst_namespace,
+                pod: self.dst_pod,
+                ip: self.dst_ip,
+            },
+            verdict: self.verdict,
+            protocol: self.protocol,
+            port: self.port,
+            cluster: Some(self.cluster),
+            drop_reason: if self.drop_reason.is_empty() {
+                None
+            } else {
+                Some(self.drop_reason)
+            },
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]

@@ -649,10 +649,24 @@ pub async fn delete_mirror_rule(
 pub async fn cluster_health(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    // Query real component statuses
-    let cilium_pods = state
-        .k8s
-        .kubectl_json(&[
+    const CACHE_KEY: &str = "cluster_health";
+    const CACHE_TTL_SECS: u64 = 15;
+
+    if let Ok(Some(cached)) = state.cache.get::<serde_json::Value>(CACHE_KEY).await {
+        state
+            .metrics
+            .cache_hits
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        return Json(cached);
+    }
+    state
+        .metrics
+        .cache_misses
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+    // Parallel kubectl probes — sequential calls previously stacked up to ~45s.
+    let (cilium_pods, relay, k8s_healthy, nodes) = tokio::join!(
+        state.k8s.kubectl_json(&[
             "get",
             "pods",
             "-n",
@@ -661,87 +675,71 @@ pub async fn cluster_health(State(state): State<Arc<AppState>>) -> Json<serde_js
             "k8s-app=cilium",
             "-o",
             "json",
-        ])
-        .await;
+        ]),
+        state.k8s.kubectl_json(&[
+            "get",
+            "pods",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=hubble-relay",
+            "-o",
+            "json",
+        ]),
+        state.k8s.is_healthy(),
+        state.k8s.kubectl_json(&["get", "nodes", "-o", "json"]),
+    );
 
-    let components: Vec<serde_json::Value> = {
-        let mut comps = Vec::new();
-        // Check cilium agents
-        let agents = cilium_pods.get("items").and_then(|v| v.as_array());
-        let (total, ready) = agents
-            .map(|arr| {
-                let t = arr.len();
-                let r = arr
-                    .iter()
+    let mut components = Vec::new();
+    let agents = cilium_pods.get("items").and_then(|v| v.as_array());
+    let (total, ready) = agents
+        .map(|arr| {
+            let t = arr.len();
+            let r = arr
+                .iter()
+                .filter(|p| {
+                    p.get("status")
+                        .and_then(|s| s.get("containerStatuses"))
+                        .and_then(|v| v.as_array())
+                        .map(|cs| {
+                            cs.iter()
+                                .all(|c| c.get("ready").and_then(|v| v.as_bool()).unwrap_or(false))
+                        })
+                        .unwrap_or(false)
+                })
+                .count();
+            (t, r)
+        })
+        .unwrap_or((0, 0));
+
+    components.push(serde_json::json!({
+        "name": "cilium-agent",
+        "status": if total == ready && total > 0 { "healthy" } else { "degraded" },
+        "instances": total,
+        "ready": ready,
+    }));
+
+    let relay_items = relay.get("items").and_then(|v| v.as_array());
+    let (rt, rr) = relay_items
+        .map(|arr| {
+            (
+                arr.len(),
+                arr.iter()
                     .filter(|p| {
                         p.get("status")
-                            .and_then(|s| s.get("containerStatuses"))
-                            .and_then(|v| v.as_array())
-                            .map(|cs| {
-                                cs.iter().all(|c| {
-                                    c.get("ready").and_then(|v| v.as_bool()).unwrap_or(false)
-                                })
-                            })
-                            .unwrap_or(false)
+                            .and_then(|s| s.get("phase"))
+                            .and_then(|v| v.as_str())
+                            == Some("Running")
                     })
-                    .count();
-                (t, r)
-            })
-            .unwrap_or((0, 0));
+                    .count(),
+            )
+        })
+        .unwrap_or((0, 0));
+    components.push(serde_json::json!({
+        "name": "hubble-relay", "instances": rt, "ready": rr,
+        "status": if rt == rr && rt > 0 { "healthy" } else if rt > 0 { "degraded" } else { "not_found" },
+    }));
 
-        comps.push(serde_json::json!({
-            "name": "cilium-agent",
-            "status": if total == ready && total > 0 { "healthy" } else { "degraded" },
-            "instances": total,
-            "ready": ready,
-        }));
-
-        // Check hubble-relay
-        let relay = state
-            .k8s
-            .kubectl_json(&[
-                "get",
-                "pods",
-                "-n",
-                "kube-system",
-                "-l",
-                "k8s-app=hubble-relay",
-                "-o",
-                "json",
-            ])
-            .await;
-        let relay_items = relay.get("items").and_then(|v| v.as_array());
-        let (rt, rr) = relay_items
-            .map(|arr| {
-                (
-                    arr.len(),
-                    arr.iter()
-                        .filter(|p| {
-                            p.get("status")
-                                .and_then(|s| s.get("phase"))
-                                .and_then(|v| v.as_str())
-                                == Some("Running")
-                        })
-                        .count(),
-                )
-            })
-            .unwrap_or((0, 0));
-        comps.push(serde_json::json!({
-            "name": "hubble-relay", "instances": rt, "ready": rr,
-            "status": if rt == rr && rt > 0 { "healthy" } else if rt > 0 { "degraded" } else { "not_found" },
-        }));
-
-        comps
-    };
-
-    // K8s health
-    let k8s_healthy = state.k8s.is_healthy().await;
-
-    // Node status
-    let nodes = state
-        .k8s
-        .kubectl_json(&["get", "nodes", "-o", "json"])
-        .await;
     let node_items = nodes.get("items").and_then(|v| v.as_array());
     let nodes_total = node_items.map(|a| a.len()).unwrap_or(0);
     let nodes_ready = node_items
@@ -770,8 +768,16 @@ pub async fn cluster_health(State(state): State<Arc<AppState>>) -> Json<serde_js
         "degraded"
     };
 
-    Json(serde_json::json!({
+    // Simple score for Overview digest (100 when healthy, else proportion ready).
+    let score = if nodes_total == 0 {
+        0
+    } else {
+        ((nodes_ready * 100) / nodes_total) as u64
+    };
+
+    let body = serde_json::json!({
         "status": overall,
+        "score": score,
         "components": components,
         "kubernetes": {
             "healthy": k8s_healthy,
@@ -779,7 +785,11 @@ pub async fn cluster_health(State(state): State<Arc<AppState>>) -> Json<serde_js
             "nodes_ready": nodes_ready,
         },
         "last_check": chrono::Utc::now().to_rfc3339(),
-    }))
+        "cached": false,
+    });
+
+    let _ = state.cache.set(CACHE_KEY, &body, CACHE_TTL_SECS).await;
+    Json(body)
 }
 
 // ── RBAC Bindings ──────────────────────────────────────────

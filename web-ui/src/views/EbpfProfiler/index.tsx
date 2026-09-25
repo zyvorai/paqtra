@@ -43,8 +43,8 @@ export default function EbpfProfiler() {
         <Eyebrow>eBPF</Eyebrow>
         <h3>Observe everywhere</h3>
         <Metrics>
-          <Metric value={programs.length || Number(summary?.programs_total ?? 0) || '—'} label="programs" />
-          <Metric value={maps.length || Number(summary?.maps_total ?? 0) || '—'} label="maps" />
+          <Metric value={programs.length || Number(summary?.total_programs ?? summary?.programs_total ?? 0) || '—'} label="programs" />
+          <Metric value={maps.length || Number(summary?.total_maps ?? summary?.maps_total ?? 0) || '—'} label="maps" />
         </Metrics>
         <p>Read-only Cilium program and map inventory — never mutates pins.</p>
         <Toolbar>

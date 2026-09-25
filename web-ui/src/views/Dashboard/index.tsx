@@ -50,63 +50,110 @@ export default function Overview() {
   const [err, setErr] = useState('');
 
   useEffect(() => {
-    Promise.all([
-      settle(fetchNodes()),
-      settle(fetchEndpoints()),
-      settle(fetchCiliumStatus()),
-      settle(fetchEbpfSummary()),
-      settle(fetchEbpfDrops()),
-      settle(fetchClusterHealth()),
-      settle(fetchFlowStats()),
-      settle(fetchMetricsSummary()),
-    ]).then(([n, e, c, s, d, h, f, m]) => {
-      const failed: string[] = [];
-      if (n.ok) setNodes((n.value as { nodes?: unknown[] }).nodes?.length ?? 0);
-      else failed.push(n.error);
-      if (e.ok) setEndpoints((e.value as { endpoints?: unknown[] }).endpoints?.length ?? 0);
-      else failed.push(e.error);
-      if (c.ok) {
-        const agentsList = (c.value as { agents?: unknown[] }).agents ?? [];
-        setAgents(agentsList.length);
-      } else failed.push(c.error);
-      if (s.ok) setEbpf(s.value as Record<string, unknown>);
-      else failed.push(s.error);
-      let dropCount = 0;
-      if (d.ok) {
-        dropCount = (d.value as { total_drops?: number }).total_drops ?? 0;
-        setDrops(dropCount);
-      } else failed.push(d.error);
-      let score = 100;
-      let status = 'healthy';
-      if (h.ok) {
-        const hv = h.value as { status?: string; overall?: string; score?: number; health_score?: number };
-        status = String(hv.status ?? hv.overall ?? 'ok');
-        score = hv.score ?? hv.health_score ?? 100;
-        setClusterStatus(status);
-        setClusterScore(score);
-      } else failed.push(h.error);
-      if (f.ok) {
-        const stats = f.value as {
-          forwarded?: number;
-          dropped?: number;
-          total?: number;
-          verdicts?: { forwarded?: number; dropped?: number };
-        };
-        setFlows({
-          forwarded: stats.forwarded ?? stats.verdicts?.forwarded ?? 0,
-          dropped: stats.dropped ?? stats.verdicts?.dropped ?? 0,
-          total: stats.total,
-        });
-      } else failed.push(f.error);
-      if (m.ok) setMetrics(m.value as Record<string, unknown>);
-      else failed.push(m.error);
+    let cancelled = false;
+    const failed: string[] = [];
+    let dropCount = 0;
+    let score = 100;
+    let status = 'healthy';
+    let gotHealth = false;
+    let gotDrops = false;
+
+    const bumpDigest = () => {
+      if (!gotHealth && !gotDrops) return;
       setDigest(buildDigest({ score, status, drops: dropCount }));
-      setErr(failed.length ? failed[0] : '');
-    });
+    };
+    const noteErr = (msg: string) => {
+      failed.push(msg);
+      if (!cancelled) setErr(failed[0] ?? '');
+    };
+
+    const load = () => {
+      // Paint each tile as its API returns — do not wait on Promise.all.
+      void settle(fetchNodes()).then((n) => {
+        if (cancelled) return;
+        if (n.ok) setNodes((n.value as { nodes?: unknown[] }).nodes?.length ?? 0);
+        else noteErr(n.error);
+      });
+      void settle(fetchEndpoints()).then((e) => {
+        if (cancelled) return;
+        if (e.ok) setEndpoints((e.value as { endpoints?: unknown[] }).endpoints?.length ?? 0);
+        else noteErr(e.error);
+      });
+      void settle(fetchCiliumStatus()).then((c) => {
+        if (cancelled) return;
+        if (c.ok) setAgents(((c.value as { agents?: unknown[] }).agents ?? []).length);
+        else noteErr(c.error);
+      });
+      void settle(fetchEbpfSummary()).then((s) => {
+        if (cancelled) return;
+        if (s.ok) setEbpf(s.value as Record<string, unknown>);
+        else noteErr(s.error);
+      });
+      void settle(fetchEbpfDrops()).then((d) => {
+        if (cancelled) return;
+        if (d.ok) {
+          dropCount = (d.value as { total_drops?: number }).total_drops ?? 0;
+          setDrops(dropCount);
+          gotDrops = true;
+          bumpDigest();
+        } else noteErr(d.error);
+      });
+      void settle(fetchClusterHealth()).then((h) => {
+        if (cancelled) return;
+        if (h.ok) {
+          const hv = h.value as {
+            status?: string;
+            overall?: string;
+            score?: number;
+            health_score?: number;
+          };
+          status = String(hv.status ?? hv.overall ?? 'ok');
+          score = hv.score ?? hv.health_score ?? 100;
+          setClusterStatus(status);
+          setClusterScore(score);
+          gotHealth = true;
+          bumpDigest();
+        } else noteErr(h.error);
+      });
+      void settle(fetchFlowStats()).then((f) => {
+        if (cancelled) return;
+        if (f.ok) {
+          const stats = f.value as {
+            forwarded?: number;
+            dropped?: number;
+            total?: number;
+            total_flows?: number;
+            verdicts?: { forwarded?: number; dropped?: number };
+          };
+          setFlows({
+            forwarded: stats.forwarded ?? stats.verdicts?.forwarded ?? 0,
+            dropped: stats.dropped ?? stats.verdicts?.dropped ?? 0,
+            total: stats.total ?? stats.total_flows,
+          });
+        } else noteErr(f.error);
+      });
+      void settle(fetchMetricsSummary()).then((m) => {
+        if (cancelled) return;
+        if (m.ok) setMetrics(m.value as Record<string, unknown>);
+        else noteErr(m.error);
+      });
+    };
+
+    load();
+    const t = setInterval(load, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
   }, []);
 
-  const programs = Number(ebpf?.programs_total ?? ebpf?.program_count ?? ebpf?.programs ?? 0) || 0;
-  const maps = Number(ebpf?.maps_total ?? ebpf?.map_count ?? ebpf?.maps ?? 0) || 0;
+  // API get_ebpf_summary uses total_programs / total_maps; accept both names.
+  const programs =
+    Number(
+      ebpf?.total_programs ?? ebpf?.programs_total ?? ebpf?.program_count ?? ebpf?.programs ?? 0,
+    ) || 0;
+  const maps =
+    Number(ebpf?.total_maps ?? ebpf?.maps_total ?? ebpf?.map_count ?? ebpf?.maps ?? 0) || 0;
 
   return (
     <div className="grid">
