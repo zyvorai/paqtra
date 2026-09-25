@@ -133,25 +133,24 @@ kubectl get ingress -n cilium-system paqtra
 # https://paqtra.your-domain.com
 ```
 
-### Option 3: Helm Chart (Recommended for Production)
-
-Create a Helm chart for easier management:
+### Option 3: `paqtra install` or the Helm chart (Recommended for Production)
 
 ```bash
-# Install with Helm
-helm install paqtra ./deployments/helm \
-  --namespace cilium-system \
-  --set image.backend.repository=your-registry.com/paqtra-api \
-  --set image.backend.tag=1.0.0 \
-  --set image.frontend.repository=your-registry.com/paqtra-ui \
-  --set image.frontend.tag=1.0.0 \
-  --set ingress.hostname=paqtra.your-domain.com
+# The CLI has the chart built in (see docs/cli.md)
+paqtra install --namespace paqtra \
+  --set api.env.hubbleAddress=hubble-relay.kube-system.svc.cluster.local:80 \
+  --set ingress.enabled=true
 
-# Upgrade
-helm upgrade paqtra ./deployments/helm -n cilium-system
+# Mirrored registry
+paqtra install --registry your-registry.com/zyvorai
 
-# Uninstall
-helm uninstall paqtra -n cilium-system
+# Upgrade / uninstall
+paqtra upgrade
+paqtra uninstall
+
+# Or plain Helm, from the published chart or a checkout
+helm install paqtra oci://ghcr.io/zyvorai/charts/paqtra --version <X.Y.Z> -n paqtra --create-namespace
+helm install paqtra ./chart -n paqtra --create-namespace
 ```
 
 ## Configuration

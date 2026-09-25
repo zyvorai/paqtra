@@ -186,8 +186,8 @@ sudo cp target/release/paqtra /usr/local/bin/
 
 ```bash
 paqtra                    # Full auto-bootstrap
-paqtra --skip-bootstrap   # If Cilium/Hubble already running
-paqtra --auto-install     # Non-interactive Cilium install
+paqtra tui --skip-bootstrap   # If Cilium/Hubble already running
+paqtra tui --auto-install     # Non-interactive Cilium install
 ```
 
 The tool auto-detects the cluster, verifies Cilium, enables Hubble relay, starts port-forwarding, and launches the TUI.

@@ -94,7 +94,7 @@ kubectl apply -f deployments/k8s/
 
 Review and update `deployments/k8s/secrets.yaml` with your own JWT secret before applying.
 
-Helm chart: `helm install paqtra ./chart`.
+Or use the CLI, which has the chart built in: `paqtra install` (see [docs/cli.md](docs/cli.md)); from a checkout, `helm install paqtra ./chart`.
 
 ## Web UI Keyboard Shortcuts
 

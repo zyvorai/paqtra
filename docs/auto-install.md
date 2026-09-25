@@ -1,5 +1,10 @@
 # Automatic Cilium Installation & Upgrade Guide
 
+> This page describes the **TUI's** interactive bootstrap: the flags below belong to
+> `paqtra tui` (e.g. `paqtra tui --auto-install`), not to bare `paqtra`. To install
+> Paqtra itself, or Cilium with Hubble from the CLI, use `paqtra install`
+> (`--with-cilium`); see [cli.md](cli.md).
+
 ## Overview
 
 Paqtra now supports **automatic installation and upgrade** of Cilium, making it truly zero-touch from cluster to observability.
@@ -25,7 +30,7 @@ Keep your Cilium installation up-to-date with automatic upgrade capability.
 
 ```bash
 # Run normally - will prompt if Cilium not found
-paqtra
+paqtra tui
 ```
 
 **Output:**
@@ -43,7 +48,7 @@ Type `y` and press Enter to install.
 
 ```bash
 # Automatically install if missing, no prompts
-paqtra --auto-install
+paqtra tui --auto-install
 ```
 
 **Output:**
@@ -61,7 +66,7 @@ paqtra --auto-install
 
 ```bash
 # Upgrade Cilium to latest version before starting
-paqtra --auto-upgrade
+paqtra tui --auto-upgrade
 ```
 
 **Output:**
@@ -78,7 +83,7 @@ paqtra --auto-upgrade
 
 ```bash
 # Install if missing, upgrade if present
-paqtra --auto-install --auto-upgrade
+paqtra tui --auto-install --auto-upgrade
 ```
 
 ## Prerequisites
@@ -233,7 +238,7 @@ Perfect for setting up Cilium on a brand new cluster:
 minikube start
 
 # Install Cilium + TUI in one command
-paqtra --auto-install
+paqtra tui --auto-install
 ```
 
 ### 2. CI/CD Pipeline
@@ -242,10 +247,10 @@ Use in automated pipelines:
 
 ```bash
 # Non-interactive installation
-paqtra --auto-install --skip-bootstrap
+paqtra tui --auto-install --skip-bootstrap
 
 # Or ensure latest version
-paqtra --auto-install --auto-upgrade
+paqtra tui --auto-install --auto-upgrade
 ```
 
 ### 3. Development Environment
@@ -255,10 +260,10 @@ Quick setup for development:
 ```bash
 # Create test cluster with Cilium
 kind create cluster
-paqtra --auto-install
+paqtra tui --auto-install
 
 # Later, ensure up-to-date
-paqtra --auto-upgrade
+paqtra tui --auto-upgrade
 ```
 
 ### 4. Production Clusters
@@ -267,11 +272,11 @@ Interactive mode for production (safer):
 
 ```bash
 # Prompts before making changes
-paqtra
+paqtra tui
 
 # Or manual control
 cilium install
-paqtra --skip-bootstrap
+paqtra tui --skip-bootstrap
 ```
 
 ## Configuration Options
@@ -285,7 +290,7 @@ The automatic installation uses Cilium defaults. For custom installation:
 cilium install --set key=value
 
 # Then run TUI
-paqtra
+paqtra tui
 ```
 
 ### Upgrade Options
@@ -297,7 +302,7 @@ Upgrades use `cilium upgrade` defaults. For custom upgrades:
 cilium upgrade --set key=value
 
 # Then run TUI
-paqtra
+paqtra tui
 ```
 
 ## Safety Features
@@ -417,7 +422,7 @@ export KUBECONFIG=/path/to/admin/kubeconfig
 minikube start --network-plugin=cni --cni=false
 
 # One command to full observability
-paqtra --auto-install
+paqtra tui --auto-install
 
 # Result:
 # ✔ Cilium installed
@@ -430,10 +435,10 @@ paqtra --auto-install
 
 ```bash
 # Upgrade if needed, then run
-paqtra --auto-upgrade
+paqtra tui --auto-upgrade
 
 # Or combined
-paqtra --auto-install --auto-upgrade
+paqtra tui --auto-install --auto-upgrade
 ```
 
 ### Example 3: CI/CD Integration
@@ -446,7 +451,7 @@ paqtra --auto-install --auto-upgrade
 kind create cluster --name ci-test
 
 # Setup Cilium + monitoring (non-interactive)
-paqtra --auto-install --skip-bootstrap &
+paqtra tui --auto-install --skip-bootstrap &
 
 # Run tests
 ./run-tests.sh
@@ -465,4 +470,4 @@ The automatic installation and upgrade features make Paqtra truly **zero-touch**
 ✅ **CI/CD friendly**
 ✅ **Safe defaults with interactive confirmations**
 
-Just run `paqtra --auto-install` and go!
+Just run `paqtra tui --auto-install` and go!
