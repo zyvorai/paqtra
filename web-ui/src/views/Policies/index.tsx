@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { fetchPolicies, type Policy } from '../../services/api';
 import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
 
@@ -60,6 +61,7 @@ export default function Policies() {
               </b>
               <span>{p.status || '—'}</span>
               <small>{p.created_at ? new Date(p.created_at).toLocaleString() : '—'}</small>
+              <Link to={`/policy-rules?policy=${encodeURIComponent(p.id || `${p.namespace}/${p.name}`)}`}>Edit rules</Link>
             </div>
           ))}
         </div>

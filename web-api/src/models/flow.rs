@@ -33,6 +33,62 @@ pub struct Flow {
     pub dns_latency_ns: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drop_reason: Option<String>,
+    /// Hubble context beyond the 5-tuple: identities, labels, direction, policy match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hubble: Option<FlowMeta>,
+}
+
+/// What Hubble reports about a flow besides who talked to whom. Every field is
+/// optional: the CLI fallback and older Cilium versions omit some of them.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct FlowMeta {
+    /// `INGRESS` or `EGRESS`, from the observing endpoint's point of view.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traffic_direction: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_reply: Option<bool>,
+    /// Which policy layers matched a policy verdict, see [`policy_match_name`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_match_type: Option<String>,
+    /// Where in the datapath the flow was observed (`TO_ENDPOINT`, `FROM_NETWORK`, ...).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace_observation_point: Option<String>,
+    /// The Cilium node that observed the flow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_name: Option<String>,
+    /// Cilium security identity numbers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_identity: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination_identity: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_labels: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub destination_labels: Vec<String>,
+}
+
+impl FlowMeta {
+    /// `None` when nothing is set, so flows without context serialize unchanged.
+    pub fn or_none(self) -> Option<Self> {
+        (self != Self::default()).then_some(self)
+    }
+}
+
+/// Endpoint labels kept per flow. Hubble sends every label of the identity,
+/// which can be dozens; flows are held in memory by the thousand.
+pub const MAX_FLOW_LABELS: usize = 16;
+
+/// Name of Cilium's `PolicyMatchType` (datapath policy verdict events).
+/// 0 means "not applicable / none" and is reported as absent.
+pub fn policy_match_name(code: u32) -> Option<String> {
+    match code {
+        0 => None,
+        1 => Some("l3-only".into()),
+        2 => Some("l3-l4".into()),
+        3 => Some("l4-only".into()),
+        4 => Some("all".into()),
+        n => Some(format!("type-{n}")),
+    }
 }
 
 /// IANA DNS RCODE short name.

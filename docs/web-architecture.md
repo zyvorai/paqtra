@@ -172,6 +172,9 @@ Toggle persisted in localStorage.
 | POST | `/api/v1/policies` | Create policy |
 | PUT | `/api/v1/policies/{id}` | Update policy |
 | DELETE | `/api/v1/policies/{id}` | Delete policy |
+| POST | `/api/v1/policies/{id}/rules` | Add one rule (`direction`, `rule`; `?dry_run=true`) |
+| PUT | `/api/v1/policies/{id}/rules` | Replace one rule (`direction`, `index`, `rule`) |
+| DELETE | `/api/v1/policies/{id}/rules` | Delete one rule (`?direction=&index=`); a policy's last rule cannot be deleted (Cilium rejects rule-less policies), delete the policy instead |
 | POST | `/api/v1/policies/simulate` | Simulate policy impact |
 | POST | `/api/v1/policies/validate` | Validate YAML |
 | GET | `/api/v1/policies/templates` | Policy templates |
@@ -249,9 +252,18 @@ Toggle persisted in localStorage.
 |--------|------|-------------|
 | GET | `/api/v1/host/info` | Host information |
 | GET | `/api/v1/cilium/status` | Cilium agent status |
+| GET | `/api/v1/cilium/features` | Which Cilium features `cilium-config` enables |
+| GET | `/api/v1/cilium/resources/{kind}` | List a Cilium CRD read-only (BGP v2, LB-IPAM, L2, pod IP pools, CIDR groups, Gateway API, ...) |
+| GET | `/api/v1/cilium/metrics` | Cilium agent metrics via Prometheus |
+| GET | `/api/v1/hubble/metrics` | Hubble flow metrics via Prometheus |
+| GET | `/api/v1/hubble/nodes` | Hubble nodes with flow-buffer fill (`GetNodes`) |
+| GET | `/api/v1/cilium/agent/{what}` | Read-only agent query: `endpoints`, `identities`, `services`, `fqdn-cache`, `status`, `policy-selectors` (editor) |
 | GET | `/api/v1/cluster/health` | Cluster health |
 | GET | `/api/v1/rbac/bindings` | RBAC bindings |
 | GET | `/api/v1/alerts/rules` | Alert rules |
+| POST | `/api/v1/alerts/rules` | Create alert rule |
+| PUT | `/api/v1/alerts/rules/{id}/definition` | Edit alert rule name/condition/severity |
+| DELETE | `/api/v1/alerts/rules/{id}` | Delete alert rule (seeded defaults need `?force=true`) |
 | GET | `/api/v1/alerts/history` | Alert history |
 | PUT | `/api/v1/alerts/rules/{id}` | Update alert rule |
 | GET | `/api/v1/audit/log` | Audit log |

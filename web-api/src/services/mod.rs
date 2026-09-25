@@ -2,6 +2,8 @@ pub mod alerting;
 pub mod cache;
 pub mod change_impact;
 pub mod change_tracker;
+pub mod cilium_features;
+pub mod cilium_metrics;
 pub mod compliance;
 pub mod connectivity;
 pub mod exporter;

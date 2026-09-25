@@ -650,7 +650,7 @@ pub enum ChaosExperiment {
 **Safety Mechanisms**:
 1. **Rate Limiting**: Max 50% drop, 5000ms latency
 2. **Circuit Breaker**: Emergency stop all experiments
-3. **Auto-cleanup**: Remove eBPF programs after duration
+3. **Auto-cleanup**: Remove the injected `tc netem` fault after its duration
 4. **Confirmation**: Require user approval for high-severity
 5. **Metrics**: Real-time impact tracking
 
@@ -808,7 +808,7 @@ pub async fn run(&mut self) -> Result<()> {
 ### Write Operations (Explicit)
 - AutoPolicy: Write CiliumNetworkPolicy (with confirmation)
 - RootCause: Apply policy fixes (with confirmation)
-- Chaos: Load eBPF programs (with safety limits)
+- Chaos: Inject `tc netem` faults via `kubectl exec` (with safety limits); Paqtra never attaches eBPF programs
 
 ### Audit Logging
 All policy modifications logged:
@@ -856,7 +856,7 @@ All policy modifications logged:
 1. **Web UI**: React-based dashboard
 2. **AI-powered Anomaly Detection**: Advanced ML models
 3. **Distributed Deployment**: Agent mode across nodes
-4. **Custom eBPF Programs**: User-defined eBPF logic
+4. **Custom eBPF Programs**: Out of scope here (Paqtra never attaches programs; see `docs/cilium-brotherhood.md`)
 
 ---
 

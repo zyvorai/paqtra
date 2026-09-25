@@ -5,6 +5,10 @@
 ### Flows
 Live packet stream from Hubble Relay over the Observer **gRPC** API (chart default `HUBBLE_MODE=grpc`), with verdict coloring (FORWARDED/DROPPED), source/destination pods, namespaces, and IPs. Continuous **follow** ingest fills a local flow store with gap/disconnect visibility on `/health`. Quiet streams flush at least every **2 seconds** so low-volume clusters still persist evidence. Navigate with arrow keys, press `e` to explain any packet — or use **Why denied?** in the Flows UI. Auto-refresh every 30s with DataFreshness indicator. Export CSV/JSON.
 
+**Cilium Insights** (`/cilium-insights`): which Cilium features the cluster has switched on (read from `cilium-config`, with `unknown` for keys an older Cilium does not have), Hubble node health including ring-buffer fill, Hubble and Cilium-agent metrics read from your Prometheus (`PROMETHEUS_URL`; each empty group names the `hubble.metrics.enabled` entry that exports it), read-only lists of Cilium CRDs (BGP v2, LB-IPAM pools, L2 announcements, pod IP pools, CIDR groups, Gateway API), and agent-side inventory queries (endpoints, identities, services, FQDN cache, policy selectors). Everything is read-only; nothing here changes Cilium.
+
+**Rule-level editing** (`/policy-rules`, or "Edit rules" on a policy row): load a CiliumNetworkPolicy, then add, edit or delete individual `ingress` / `egress` / `ingressDeny` / `egressDeny` rules. Every change can be previewed first (server-side dry run plus the policy simulator), is sent with the `resource_version` it was read at (a concurrent change returns 409 and reloads), refuses to remove a policy's last rule (Cilium rejects a policy with no rules, so delete the policy instead), and is applied through the Cilium CRD and audit-logged (`policy.rule.add|edit|delete`).
+
 
 ### Connections
 Enriched connection tracking combining eBPF conntrack data with Kubernetes pod metadata. Shows active TCP/UDP connections with identity resolution. Auto-refresh every 30s with DataFreshness indicator. Export CSV/JSON.

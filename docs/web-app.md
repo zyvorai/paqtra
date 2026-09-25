@@ -87,7 +87,7 @@ web-ui/
 |----------|-------|
 | **Overview** | Dashboard, Events, Nodes, Endpoints, Host Info, Cluster Health, Cilium Status |
 | **Observability** | Flows, Topology, Service Map, Heatmap, Dependencies, Latency, Flow Export, SLOs, DNS Monitor, Bandwidth, Interfaces, Metrics |
-| **Security** | Policies, Templates, Policy Editor, Visual Rule Builder, Pod Security, Anomalies, Security, Encryption, WireGuard, Identities, RBAC, Compliance, Audit Log, Alerts, Incidents, Change Log |
+| **Security** | Policies, Templates, Policy Editor, Visual Rule Builder, Policy Rules, Cilium Insights, Pod Security, Anomalies, Security, Encryption, WireGuard, Identities, RBAC, Compliance, Audit Log, Alerts, Incidents, Change Log |
 | **Intelligence** | AutoPolicy, Healer, Root Cause, Diagnostics, Troubleshoot, Forecasting |
 | **Operations** | Chaos, Canary, Replay, Capture, Mirroring, MultiCluster, Cluster Mesh, BGP, Node Drain, eBPF |
 | **eBPF Data** | Conntrack Table, Policy Map, IP Cache, LB Map, Drop Analytics |

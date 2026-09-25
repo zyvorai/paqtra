@@ -233,6 +233,35 @@ async fn evaluate_condition(
     ConditionResult::Skipped(format!("Unrecognized alert condition: {}", cond))
 }
 
+/// Check that a condition is one the engine can evaluate, so a saved rule
+/// never sits enabled-but-skipped. Mirrors the forms in [`evaluate_condition`].
+pub fn validate_condition(condition: &str) -> Result<(), String> {
+    let cond = condition.trim();
+    if cond.is_empty() {
+        return Err("condition must not be empty".into());
+    }
+    if cond.starts_with("drop_rate >") {
+        return parse_percent_threshold(cond)
+            .map(|_| ())
+            .ok_or_else(|| "drop_rate needs a percentage, e.g. `drop_rate > 5% for 5m`".into());
+    }
+    if cond.starts_with("dns_servfail >") || cond.starts_with("policy_denied >") {
+        return parse_rate_threshold(cond)
+            .map(|_| ())
+            .ok_or_else(|| "expected a rate, e.g. `dns_servfail > 10/min`".into());
+    }
+    if cond.starts_with("endpoint_status") && cond.contains("!= ready") {
+        return Ok(());
+    }
+    if cond.starts_with("ct_entries >") {
+        return Err("ct_entries cannot be evaluated by the web API (needs the eBPF reader)".into());
+    }
+    Err(
+        "unsupported condition; use drop_rate > N%, dns_servfail > N/min, policy_denied > N/min or endpoint_status != ready"
+            .into(),
+    )
+}
+
 /// Parse a threshold percentage from conditions like "drop_rate > 5% for 5m".
 /// Returns the numeric threshold (e.g. 5.0).
 fn parse_percent_threshold(condition: &str) -> Option<f64> {
@@ -384,6 +413,39 @@ async fn update_rule_trigger(state: &AppState, rule_id: &str) {
         rule["trigger_count"] = serde_json::json!(count + 1);
         if let Err(e) = state.cache.set_persistent(&key, &rule).await {
             tracing::warn!("Failed to update rule {}: {}", rule_id, e);
+        }
+    }
+}
+
+#[cfg(test)]
+mod validate_condition_tests {
+    use super::validate_condition;
+
+    #[test]
+    fn accepts_evaluable_forms() {
+        for c in [
+            "drop_rate > 5% for 5m",
+            "drop_rate >2.5%",
+            "dns_servfail > 10/min",
+            "policy_denied > 100/min",
+            "endpoint_status != ready",
+        ] {
+            assert!(validate_condition(c).is_ok(), "{c}");
+        }
+    }
+
+    #[test]
+    fn rejects_unparseable_or_unsupported() {
+        for c in [
+            "",
+            "   ",
+            "drop_rate > lots",
+            "drop_rate > 5",
+            "dns_servfail > x/min",
+            "ct_entries > 90% max",
+            "cpu > 90%",
+        ] {
+            assert!(validate_condition(c).is_err(), "{c}");
         }
     }
 }

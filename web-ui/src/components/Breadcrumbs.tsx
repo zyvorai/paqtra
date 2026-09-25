@@ -31,6 +31,8 @@ const LABEL_MAP: Record<string, string> = {
   templates: 'Templates',
   'policy-editor': 'Policy Editor',
   'rule-builder': 'Rule Builder',
+  'policy-rules': 'Policy Rules',
+  'cilium-insights': 'Cilium Insights',
   'pod-security': 'Pod Security',
   security: 'Security',
   encryption: 'Encryption',

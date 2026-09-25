@@ -210,8 +210,36 @@ async fn main() -> anyhow::Result<()> {
             axum::routing::delete(handlers::policies::delete_policy),
         )
         .route(
+            "/api/v1/policies/{id}/rules",
+            post(handlers::policies::add_policy_rule)
+                .put(handlers::policies::edit_policy_rule)
+                .delete(handlers::policies::delete_policy_rule),
+        )
+        .route(
             "/api/v1/policies/simulate",
             post(handlers::policies::simulate_policy),
+        )
+        // Hubble / Cilium observability
+        .route("/api/v1/hubble/nodes", get(handlers::cilium_obs::hubble_nodes))
+        .route(
+            "/api/v1/hubble/metrics",
+            get(handlers::cilium_obs::hubble_metrics),
+        )
+        .route(
+            "/api/v1/cilium/metrics",
+            get(handlers::cilium_obs::cilium_agent_metrics),
+        )
+        .route(
+            "/api/v1/cilium/features",
+            get(handlers::cilium_obs::cilium_features),
+        )
+        .route(
+            "/api/v1/cilium/resources/{kind}",
+            get(handlers::cilium_obs::cilium_resources),
+        )
+        .route(
+            "/api/v1/cilium/agent/{what}",
+            get(handlers::cilium_obs::agent_query),
         )
         // Path investigation (why can't A reach B?)
         .route(
@@ -441,7 +469,7 @@ async fn main() -> anyhow::Result<()> {
         // Alerts
         .route(
             "/api/v1/alerts/rules",
-            get(handlers::extended2::list_alert_rules),
+            get(handlers::extended2::list_alert_rules).post(handlers::extended2::create_alert_rule),
         )
         .route(
             "/api/v1/alerts/history",
@@ -449,7 +477,12 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             "/api/v1/alerts/rules/{id}",
-            axum::routing::put(handlers::extended2::toggle_alert_rule),
+            axum::routing::put(handlers::extended2::toggle_alert_rule)
+                .delete(handlers::extended2::delete_alert_rule),
+        )
+        .route(
+            "/api/v1/alerts/rules/{id}/definition",
+            axum::routing::put(handlers::extended2::update_alert_rule),
         )
         .route(
             "/api/v1/alerts/channels",

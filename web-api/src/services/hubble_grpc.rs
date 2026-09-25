@@ -3,7 +3,7 @@
 //
 // The protos are vendored in `proto/cilium` and compiled by `build.rs`.
 
-use crate::models::flow::{Flow, FlowEndpoint};
+use crate::models::flow::{Flow, FlowEndpoint, FlowMeta};
 use anyhow::{Context, Result};
 use std::time::Duration;
 use tonic::transport::{Channel, Endpoint};
@@ -26,7 +26,7 @@ pub mod pb {
 use pb::flow::{layer4, layer7, Flow as PbFlow, FlowFilter, Verdict};
 use pb::observer::{
     get_flows_response::ResponseTypes, observer_client::ObserverClient, GetFlowsRequest,
-    GetFlowsResponse, ServerStatusRequest,
+    GetFlowsResponse, GetNodesRequest, ServerStatusRequest,
 };
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -34,6 +34,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// can take a while, but not unboundedly.
 const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(20);
 const STATUS_TIMEOUT: Duration = Duration::from_secs(3);
+/// `GetNodes` through Relay fans out to every node and takes seconds on a busy
+/// cluster (2-8s measured against a 15M-flow node), unlike a `ServerStatus` ping.
+const NODES_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Connect to an Observer at `host:port` (plaintext gRPC, which is how Hubble
 /// Relay serves inside a cluster).
@@ -61,23 +64,96 @@ pub async fn is_healthy(address: &str) -> bool {
     matches!(tokio::time::timeout(STATUS_TIMEOUT, call).await, Ok(Ok(())))
 }
 
-/// The filter the `hubble observe --namespace` flag builds: a flow matches when
-/// either end is in the namespace. `whitelist` entries are OR-ed.
-fn namespace_filters(namespace: Option<&str>) -> Vec<FlowFilter> {
-    let Some(ns) = namespace else {
-        return Vec::new();
+/// One node behind Hubble Relay, from `GetNodes`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct HubbleNode {
+    pub name: String,
+    pub version: String,
+    pub address: String,
+    /// `NODE_CONNECTED`, `NODE_UNAVAILABLE`, ... (Relay); empty against a single agent.
+    pub state: String,
+    pub tls_enabled: bool,
+    pub uptime_seconds: u64,
+    /// Flows currently held in the node's ring buffer, its capacity, and the
+    /// total seen since start. `num_flows == max_flows` means the buffer wraps.
+    pub num_flows: u64,
+    pub max_flows: u64,
+    pub seen_flows: u64,
+}
+
+/// The nodes Hubble knows about, with per-node flow-buffer figures.
+pub async fn nodes(address: &str) -> Result<Vec<HubbleNode>> {
+    let call = async {
+        let mut client = connect(address).await?;
+        let resp = client
+            .get_nodes(GetNodesRequest {})
+            .await
+            .context("GetNodes failed")?
+            .into_inner();
+        Ok::<_, anyhow::Error>(
+            resp.nodes
+                .into_iter()
+                .map(|n| HubbleNode {
+                    state: pb::relay::NodeState::try_from(n.state)
+                        .ok()
+                        .filter(|s| *s != pb::relay::NodeState::UnknownNodeState)
+                        .map(|s| s.as_str_name().to_string())
+                        .unwrap_or_default(),
+                    tls_enabled: n.tls.map(|t| t.enabled).unwrap_or(false),
+                    uptime_seconds: n.uptime_ns / 1_000_000_000,
+                    name: n.name,
+                    version: n.version,
+                    address: n.address,
+                    num_flows: n.num_flows,
+                    max_flows: n.max_flows,
+                    seen_flows: n.seen_flows,
+                })
+                .collect(),
+        )
     };
-    let prefix = format!("{ns}/");
-    vec![
-        FlowFilter {
-            source_pod: vec![prefix.clone()],
+    tokio::time::timeout(NODES_TIMEOUT, call)
+        .await
+        .context("timed out asking Hubble for its nodes")?
+}
+
+/// A verdict name as users write it (`dropped`, `DROPPED`), or `None` if it is
+/// not one Hubble knows. Callers then skip the server-side filter and rely on
+/// their own post-filter, so a typo returns nothing instead of everything.
+pub fn parse_verdict(name: &str) -> Option<Verdict> {
+    Verdict::from_str_name(&name.trim().to_ascii_uppercase())
+}
+
+/// The filter the `hubble observe --namespace` flag builds: a flow matches when
+/// either end is in the namespace. `whitelist` entries are OR-ed; the fields of
+/// one entry are AND-ed, so a verdict is repeated in every entry.
+fn flow_filters(namespace: Option<&str>, verdict: Option<Verdict>) -> Vec<FlowFilter> {
+    let verdicts: Vec<i32> = verdict.into_iter().map(|v| v as i32).collect();
+    match namespace {
+        None if verdicts.is_empty() => Vec::new(),
+        None => vec![FlowFilter {
+            verdict: verdicts,
             ..Default::default()
-        },
-        FlowFilter {
-            destination_pod: vec![prefix],
-            ..Default::default()
-        },
-    ]
+        }],
+        Some(ns) => {
+            let prefix = format!("{ns}/");
+            vec![
+                FlowFilter {
+                    source_pod: vec![prefix.clone()],
+                    verdict: verdicts.clone(),
+                    ..Default::default()
+                },
+                FlowFilter {
+                    destination_pod: vec![prefix],
+                    verdict: verdicts,
+                    ..Default::default()
+                },
+            ]
+        }
+    }
+}
+
+fn namespace_filters(namespace: Option<&str>) -> Vec<FlowFilter> {
+    flow_filters(namespace, None)
 }
 
 /// The most recent `limit` flows, oldest first.
@@ -85,6 +161,7 @@ pub async fn last_flows(
     address: &str,
     limit: usize,
     namespace: Option<&str>,
+    verdict: Option<&str>,
     cluster: Option<&str>,
 ) -> Result<Vec<Flow>> {
     let call = async {
@@ -93,7 +170,7 @@ pub async fn last_flows(
             .get_flows(GetFlowsRequest {
                 number: limit as u64,
                 follow: false,
-                whitelist: namespace_filters(namespace),
+                whitelist: flow_filters(namespace, verdict.and_then(parse_verdict)),
                 ..Default::default()
             })
             .await
@@ -238,6 +315,40 @@ pub fn flow_to_model(f: &PbFlow) -> Flow {
         (None, None, None, None, None)
     };
 
+    let labels = |ep: &Option<pb::flow::Endpoint>| -> Vec<String> {
+        ep.as_ref()
+            .map(|e| {
+                e.labels
+                    .iter()
+                    .take(crate::models::flow::MAX_FLOW_LABELS)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let identity =
+        |ep: &Option<pb::flow::Endpoint>| ep.as_ref().map(|e| e.identity).filter(|&i| i != 0);
+    let hubble = FlowMeta {
+        traffic_direction: pb::flow::TrafficDirection::try_from(f.traffic_direction)
+            .ok()
+            .filter(|d| *d != pb::flow::TrafficDirection::Unknown)
+            .map(|d| d.as_str_name().to_string()),
+        is_reply: f.is_reply,
+        policy_match_type: crate::models::flow::policy_match_name(f.policy_match_type),
+        trace_observation_point: pb::flow::TraceObservationPoint::try_from(
+            f.trace_observation_point,
+        )
+        .ok()
+        .filter(|p| *p != pb::flow::TraceObservationPoint::UnknownPoint)
+        .map(|p| p.as_str_name().to_string()),
+        node_name: Some(f.node_name.clone()).filter(|n| !n.is_empty()),
+        source_identity: identity(&f.source),
+        destination_identity: identity(&f.destination),
+        source_labels: labels(&f.source),
+        destination_labels: labels(&f.destination),
+    }
+    .or_none();
+
     Flow {
         id,
         timestamp,
@@ -246,6 +357,7 @@ pub fn flow_to_model(f: &PbFlow) -> Flow {
         verdict,
         protocol,
         port,
+        hubble,
         http_method: http.map(|h| h.method.clone()),
         http_url: http.map(|h| h.url.clone()),
         http_code: http.map(|h| u16::try_from(h.code).unwrap_or(0)),
@@ -381,7 +493,19 @@ pub(crate) mod testing {
             &self,
             _: tonic::Request<pb::observer::GetNodesRequest>,
         ) -> Result<tonic::Response<pb::observer::GetNodesResponse>, tonic::Status> {
-            Err(tonic::Status::unimplemented(""))
+            Ok(tonic::Response::new(pb::observer::GetNodesResponse {
+                nodes: vec![pb::observer::Node {
+                    name: "kind-worker".into(),
+                    version: "cilium v1.19.0".into(),
+                    address: "10.0.0.9:4244".into(),
+                    state: pb::relay::NodeState::NodeConnected as i32,
+                    uptime_ns: 90 * 1_000_000_000,
+                    num_flows: 4095,
+                    max_flows: 4095,
+                    seen_flows: 123_456,
+                    ..Default::default()
+                }],
+            }))
         }
         async fn get_namespaces(
             &self,
@@ -429,6 +553,114 @@ mod tests {
         assert_eq!(f.destination.pod, "pg-0");
         assert_eq!(f.destination.ip, "10.0.0.2");
         assert_eq!(f.timestamp, "2023-11-14T22:13:20.123456Z");
+    }
+
+    #[test]
+    fn verdict_names_parse_case_insensitively() {
+        assert_eq!(parse_verdict("dropped"), Some(Verdict::Dropped));
+        assert_eq!(parse_verdict(" FORWARDED "), Some(Verdict::Forwarded));
+        assert_eq!(parse_verdict("audit"), Some(Verdict::Audit));
+        assert_eq!(parse_verdict("drop"), None);
+        assert_eq!(parse_verdict(""), None);
+    }
+
+    #[test]
+    fn a_verdict_is_repeated_in_every_namespace_filter() {
+        assert!(flow_filters(None, None).is_empty());
+        let only = flow_filters(None, Some(Verdict::Dropped));
+        assert_eq!(only.len(), 1);
+        assert_eq!(only[0].verdict, vec![Verdict::Dropped as i32]);
+
+        let both = flow_filters(Some("shop"), Some(Verdict::Dropped));
+        assert_eq!(both.len(), 2);
+        // AND within an entry, OR across entries: the verdict must be in each.
+        assert!(both
+            .iter()
+            .all(|f| f.verdict == vec![Verdict::Dropped as i32]));
+        assert_eq!(both[0].source_pod, vec!["shop/".to_string()]);
+        assert_eq!(both[1].destination_pod, vec!["shop/".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn the_verdict_filter_is_sent_to_hubble() {
+        let (addr, seen) = serve(vec![tcp_flow("u", Verdict::Dropped, 80)]).await;
+        last_flows(&addr, 10, None, Some("dropped"), None)
+            .await
+            .unwrap();
+        // An unknown verdict is not sent: no filter at all, the caller post-filters.
+        last_flows(&addr, 10, None, Some("nonsense"), None)
+            .await
+            .unwrap();
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[0].whitelist[0].verdict, vec![Verdict::Dropped as i32]);
+        assert!(seen[1].whitelist.is_empty());
+    }
+
+    #[tokio::test]
+    async fn lists_nodes_with_buffer_figures() {
+        let (addr, _) = serve(vec![]).await;
+        let nodes = nodes(&addr).await.unwrap();
+        assert_eq!(
+            nodes,
+            vec![HubbleNode {
+                name: "kind-worker".into(),
+                version: "cilium v1.19.0".into(),
+                address: "10.0.0.9:4244".into(),
+                state: "NODE_CONNECTED".into(),
+                tls_enabled: false,
+                uptime_seconds: 90,
+                num_flows: 4095,
+                max_flows: 4095,
+                seen_flows: 123_456,
+            }]
+        );
+    }
+
+    #[test]
+    fn carries_hubble_context() {
+        use super::pb::flow::{TraceObservationPoint, TrafficDirection};
+        let mut f = tcp_flow("u", Verdict::Dropped, 443);
+        f.traffic_direction = TrafficDirection::Ingress as i32;
+        f.is_reply = Some(false);
+        f.policy_match_type = 2;
+        f.trace_observation_point = TraceObservationPoint::ToEndpoint as i32;
+        f.node_name = "kind-worker".into();
+        f.source.as_mut().unwrap().identity = 4242;
+        f.source.as_mut().unwrap().labels = vec!["k8s:app=web".into()];
+        f.destination.as_mut().unwrap().identity = 7;
+
+        let meta = flow_to_model(&f).hubble.expect("context present");
+        assert_eq!(meta.traffic_direction.as_deref(), Some("INGRESS"));
+        assert_eq!(meta.is_reply, Some(false));
+        assert_eq!(meta.policy_match_type.as_deref(), Some("l3-l4"));
+        assert_eq!(meta.trace_observation_point.as_deref(), Some("TO_ENDPOINT"));
+        assert_eq!(meta.node_name.as_deref(), Some("kind-worker"));
+        assert_eq!(meta.source_identity, Some(4242));
+        assert_eq!(meta.destination_identity, Some(7));
+        assert_eq!(meta.source_labels, vec!["k8s:app=web".to_string()]);
+        assert!(meta.destination_labels.is_empty());
+    }
+
+    #[test]
+    fn a_flow_without_context_has_no_hubble_object() {
+        let f = flow_to_model(&tcp_flow("u", Verdict::Forwarded, 80));
+        assert!(f.hubble.is_none());
+        let json = serde_json::to_value(&f).unwrap();
+        assert!(
+            json.get("hubble").is_none(),
+            "serialized shape is unchanged"
+        );
+    }
+
+    #[test]
+    fn labels_are_capped() {
+        let mut f = tcp_flow("u", Verdict::Forwarded, 80);
+        f.source.as_mut().unwrap().labels = (0..100).map(|i| format!("k8s:l{i}=v")).collect();
+        let meta = flow_to_model(&f).hubble.unwrap();
+        assert_eq!(
+            meta.source_labels.len(),
+            crate::models::flow::MAX_FLOW_LABELS
+        );
     }
 
     #[test]
@@ -501,10 +733,16 @@ mod tests {
             ..Default::default()
         });
         let m = flow_to_model(&f);
-        assert_eq!(m.dns_query.as_deref(), Some("payments.shop.svc.cluster.local."));
+        assert_eq!(
+            m.dns_query.as_deref(),
+            Some("payments.shop.svc.cluster.local.")
+        );
         assert_eq!(m.dns_rcode, Some(3));
         assert_eq!(m.dns_rcode_name.as_deref(), Some("NXDOMAIN"));
-        assert_eq!(m.dns_ips.as_ref().map(|v| v.as_slice()), Some(&["10.0.0.9".to_string()][..]));
+        assert_eq!(
+            m.dns_ips.as_ref().map(|v| v.as_slice()),
+            Some(&["10.0.0.9".to_string()][..])
+        );
         assert_eq!(m.dns_latency_ns, Some(2_500_000));
         // A drop without L7 DNS must not invent an rcode.
         let bare = flow_to_model(&tcp_flow("d", Verdict::Dropped, 53));
@@ -578,7 +816,9 @@ mod tests {
             tcp_flow("c", Verdict::Forwarded, 82),
         ];
         let (addr, seen) = serve(flows).await;
-        let got = last_flows(&addr, 2, None, Some("east")).await.unwrap();
+        let got = last_flows(&addr, 2, None, None, Some("east"))
+            .await
+            .unwrap();
         assert_eq!(
             got.iter().map(|f| f.id.as_str()).collect::<Vec<_>>(),
             ["b", "c"]
@@ -593,7 +833,9 @@ mod tests {
     #[tokio::test]
     async fn last_flows_sends_the_namespace_filter() {
         let (addr, seen) = serve(vec![tcp_flow("a", Verdict::Forwarded, 80)]).await;
-        last_flows(&addr, 10, Some("shop"), None).await.unwrap();
+        last_flows(&addr, 10, Some("shop"), None, None)
+            .await
+            .unwrap();
         let req = seen.lock().unwrap()[0].clone();
         assert_eq!(req.whitelist.len(), 2);
         assert_eq!(req.whitelist[0].source_pod, vec!["shop/"]);
@@ -627,7 +869,7 @@ mod tests {
             l.local_addr().unwrap().to_string()
         };
         assert!(!is_healthy(&closed).await);
-        assert!(last_flows(&closed, 5, None, None).await.is_err());
+        assert!(last_flows(&closed, 5, None, None, None).await.is_err());
     }
 
     #[tokio::test]

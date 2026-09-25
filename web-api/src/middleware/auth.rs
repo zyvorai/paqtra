@@ -61,7 +61,10 @@ pub const EDITOR_WRITES: &[(&str, &str)] = &[
     ("POST", "/api/v1/incidents/{id}/resolve"),
     ("POST", "/api/v1/incidents/{id}/notes"),
     // Alert rules and silences
+    ("POST", "/api/v1/alerts/rules"),
     ("PUT", "/api/v1/alerts/rules/{id}"),
+    ("PUT", "/api/v1/alerts/rules/{id}/definition"),
+    ("DELETE", "/api/v1/alerts/rules/{id}"),
     ("POST", "/api/v1/alerts/silences"),
     ("DELETE", "/api/v1/alerts/silences/{id}"),
     // SLOs
@@ -82,6 +85,9 @@ pub const EDITOR_WRITES: &[(&str, &str)] = &[
     ("POST", "/api/v1/policies"),
     ("PUT", "/api/v1/policies/{id}"),
     ("DELETE", "/api/v1/policies/{id}"),
+    ("POST", "/api/v1/policies/{id}/rules"),
+    ("PUT", "/api/v1/policies/{id}/rules"),
+    ("DELETE", "/api/v1/policies/{id}/rules"),
     ("POST", "/api/v1/policies/templates/{id}/apply"),
     ("POST", "/api/v1/modules/autopolicy/generate"),
     ("POST", "/api/v1/modules/healer/{id}/fix"),
@@ -118,6 +124,9 @@ pub const SCOPED_ACCESS: &[(&str, &str)] = &[
     ("POST", "/api/v1/policies/simulate"),
     ("PUT", "/api/v1/policies/{id}"),
     ("DELETE", "/api/v1/policies/{id}"),
+    ("POST", "/api/v1/policies/{id}/rules"),
+    ("PUT", "/api/v1/policies/{id}/rules"),
+    ("DELETE", "/api/v1/policies/{id}/rules"),
 ];
 
 /// Paths every signed-in user may call, whatever their namespace limit.
@@ -341,6 +350,20 @@ mod tests {
         );
         assert_eq!(
             access("editor", &Method::DELETE, "/api/v1/incidents/x/ack"),
+            Access::NotPermitted
+        );
+    }
+
+    #[test]
+    fn rule_edits_need_editor_and_stay_namespace_scoped() {
+        for m in [Method::POST, Method::PUT, Method::DELETE] {
+            let path = "/api/v1/policies/team-a%2Fdb/rules";
+            assert_eq!(access("editor", &m, path), Access::Allowed, "{m}");
+            assert_eq!(access("viewer", &m, path), Access::ReadOnly, "{m}");
+            assert!(scoped_may_call(&m, path), "{m} scoped");
+        }
+        assert_eq!(
+            access("editor", &Method::PATCH, "/api/v1/policies/x/rules"),
             Access::NotPermitted
         );
     }

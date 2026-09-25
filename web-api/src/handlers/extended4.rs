@@ -50,24 +50,10 @@ pub async fn wireguard_peers(
     track_request(&state, |_| {}).await;
 
     // Try to get real WireGuard data from cilium
-    use crate::services::k8s::K8sService;
-    let wg_output = K8sService::run_cmd(
-        "kubectl",
-        &[
-            "exec",
-            "-n",
-            "kube-system",
-            "-l",
-            "k8s-app=cilium",
-            "-c",
-            "cilium-agent",
-            "--",
-            "cilium",
-            "encrypt",
-            "status",
-        ],
-    )
-    .await;
+    let wg_output = state
+        .k8s
+        .exec_cilium_agent(&["cilium", "encrypt", "status"])
+        .await;
 
     if !wg_output.is_empty() {
         return Ok(Json(serde_json::json!({
@@ -170,7 +156,11 @@ pub async fn cilium_status(State(state): State<Arc<AppState>>) -> Json<serde_jso
 
     // Best-effort: enrich first agent with `cilium status --brief` (needs pods/exec).
     if let Some(first) = agents.first().cloned() {
-        let pod = first.get("pod").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let pod = first
+            .get("pod")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         if !pod.is_empty() {
             use crate::services::k8s::K8sService;
             let brief = K8sService::run_cmd(
@@ -193,10 +183,7 @@ pub async fn cilium_status(State(state): State<Arc<AppState>>) -> Json<serde_jso
                 let ok_line = brief.lines().next().unwrap_or("").trim().to_string();
                 for a in &mut agents {
                     if let Some(obj) = a.as_object_mut() {
-                        obj.insert(
-                            "message".into(),
-                            serde_json::Value::String(ok_line.clone()),
-                        );
+                        obj.insert("message".into(), serde_json::Value::String(ok_line.clone()));
                         if ok_line.to_ascii_lowercase().contains("ok") {
                             obj.insert("status".into(), serde_json::Value::String("OK".into()));
                         }
@@ -1063,25 +1050,10 @@ pub async fn kpr_status(State(state): State<Arc<AppState>>) -> Json<serde_json::
         .unwrap_or(0);
 
     // Query NAT and CT table entry counts from cilium-agent
-    use crate::services::k8s::K8sService;
-    let nat_output = K8sService::run_cmd(
-        "kubectl",
-        &[
-            "exec",
-            "-n",
-            "kube-system",
-            "-l",
-            "k8s-app=cilium",
-            "-c",
-            "cilium-agent",
-            "--",
-            "cilium",
-            "bpf",
-            "nat",
-            "list",
-        ],
-    )
-    .await;
+    let nat_output = state
+        .k8s
+        .exec_cilium_agent(&["cilium", "bpf", "nat", "list"])
+        .await;
     let nat_entries: usize = if nat_output.is_empty() {
         0
     } else {
@@ -1093,25 +1065,10 @@ pub async fn kpr_status(State(state): State<Arc<AppState>>) -> Json<serde_json::
             .count()
     };
 
-    let ct_output = K8sService::run_cmd(
-        "kubectl",
-        &[
-            "exec",
-            "-n",
-            "kube-system",
-            "-l",
-            "k8s-app=cilium",
-            "-c",
-            "cilium-agent",
-            "--",
-            "cilium",
-            "bpf",
-            "ct",
-            "list",
-            "global",
-        ],
-    )
-    .await;
+    let ct_output = state
+        .k8s
+        .exec_cilium_agent(&["cilium", "bpf", "ct", "list", "global"])
+        .await;
     let ct_entries: usize = if ct_output.is_empty() {
         0
     } else {

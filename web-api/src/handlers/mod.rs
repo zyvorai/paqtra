@@ -1,6 +1,7 @@
 // HTTP request handlers
 pub mod anomalies;
 pub mod auth;
+pub mod cilium_obs;
 pub mod compliance;
 pub mod connectivity;
 pub mod ebpf;

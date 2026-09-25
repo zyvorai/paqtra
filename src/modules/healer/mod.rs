@@ -313,13 +313,16 @@ spec:
                 pod,
                 new_mtu,
             } => {
-                // Annotate the pod with the desired MTU so Cilium picks it up
-                let annotation = format!("cilium.io/mtu={}", new_mtu);
+                // Cilium's MTU is one cluster-wide setting (`mtu` in cilium-config /
+                // the Helm value), not a per-pod one, and Cilium reads no pod
+                // annotation for it. Record the recommendation on the pod so it is
+                // visible, and say plainly that nothing was changed.
+                let annotation = format!("paqtra.io/recommended-mtu={}", new_mtu);
                 self.k8s_client
                     .annotate_pod(namespace, pod, &annotation)
                     .await?;
                 println!(
-                    "✔ Adjusted MTU to {} for pod {}/{}",
+                    "✔ Recorded recommended MTU {} on pod {}/{} (advisory: set `mtu` in cilium-config to change it)",
                     new_mtu, namespace, pod
                 );
             }

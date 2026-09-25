@@ -1,8 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import axios from 'axios';
-import { BellRing, Loader2, Bell, BellOff, Clock, VolumeX } from 'lucide-react';
+import { BellRing, Loader2, Bell, BellOff, Clock, VolumeX, Plus, Pencil, Trash2 } from 'lucide-react';
 import {
-  fetchAlertRules, fetchAlertHistory, toggleAlertRule, fetchChannels, fetchSilences, apiErrorMessage,
+  fetchAlertRules, fetchAlertHistory, toggleAlertRule, deleteAlertRule, fetchChannels, fetchSilences, apiErrorMessage,
   AlertRule, AlertEvent, AlertSilence, NotificationChannel,
 } from '../../services/api';
 import { usePageTitle } from '../../hooks/usePageTitle';
@@ -11,6 +11,7 @@ import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
 import { ChannelsPanel, SilencesPanel } from './NotificationSettings';
+import AlertRuleForm from './AlertRuleForm';
 
 const SEV_BADGE: Record<string, string> = { critical: 'bg-red-500/15 text-red-400 border-red-500/30', high: 'bg-orange-500/15 text-orange-400 border-orange-500/30', warning: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' };
 const STATUS_BADGE: Record<string, string> = { firing: 'bg-red-500/15 text-red-400 border-red-500/30', resolved: 'bg-green-500/15 text-green-400 border-green-500/30' };
@@ -31,6 +32,8 @@ const Alerts: React.FC = () => {
   const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [tab, setTab] = useState<Tab>('rules');
   const [toggling, setToggling] = useState<string | null>(null);
+  // 'new' = create form open; a rule id = that rule is being edited.
+  const [editing, setEditing] = useState<string | 'new' | null>(null);
   const [autoRefreshOn, setAutoRefreshOn] = useState(true);
 
   const fetchData = useCallback(async () => {
@@ -59,6 +62,23 @@ const Alerts: React.FC = () => {
     catch (err) { onMessage('error', apiErrorMessage(err, 'Failed to update rule')); }
     finally { setToggling(null); }
   };
+
+  const handleDelete = async (rule: AlertRule) => {
+    if (!window.confirm(`Delete alert rule "${rule.name}"? It will stop firing.`)) return;
+    try {
+      try { await deleteAlertRule(rule.id); }
+      catch (err) {
+        // Seeded defaults are refused unless forced; confirm again rather than silently forcing.
+        const builtin = axios.isAxiosError(err) && err.response?.status === 400 && /built-in/.test(String(err.response.data?.error ?? ''));
+        if (!builtin || !window.confirm(`"${rule.name}" is a built-in rule. Delete it anyway?`)) throw err;
+        await deleteAlertRule(rule.id, true);
+      }
+      onMessage('success', `${rule.name} deleted`);
+      manualRefresh();
+    } catch (err) { onMessage('error', apiErrorMessage(err, 'Failed to delete rule')); }
+  };
+
+  const handleSaved = (text: string) => { setEditing(null); onMessage('success', text); manualRefresh(); };
 
   // Silence expiry is evaluated against the current time on every render.
   // eslint-disable-next-line react-hooks/purity
@@ -100,9 +120,14 @@ const Alerts: React.FC = () => {
       {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
       {tab === 'rules' && (
         <div className="space-y-3">
+          <div className="flex justify-end">
+            <button onClick={() => setEditing(editing === 'new' ? null : 'new')} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-300 hover:text-white hover:bg-slate-700/30 transition-colors"><Plus className="w-4 h-4" /> New rule</button>
+          </div>
+          {editing === 'new' && <AlertRuleForm onSaved={handleSaved} onCancel={() => setEditing(null)} />}
           {!loading && rules.length === 0 && <div className="text-center py-12 text-slate-400">No alert rules found</div>}
           {rules.map((r) => {
             const until = silencedUntil(r.id);
+            if (editing === r.id) return <AlertRuleForm key={r.id} rule={r} onSaved={handleSaved} onCancel={() => setEditing(null)} />;
             return (
               <div key={r.id} className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-4 flex items-center gap-4">
                 {r.enabled ? <Bell className="w-5 h-5 text-blue-400" /> : <BellOff className="w-5 h-5 text-slate-400" />}
@@ -119,6 +144,8 @@ const Alerts: React.FC = () => {
                     {r.last_triggered && <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {new Date(r.last_triggered).toLocaleDateString()}</span>}
                   </div>
                 </div>
+                <button onClick={() => setEditing(r.id)} aria-label={`Edit ${r.name}`} className="p-2 rounded-lg border border-slate-700/50 text-slate-300 hover:text-white hover:bg-slate-700/30 transition-colors"><Pencil className="w-4 h-4" /></button>
+                <button onClick={() => handleDelete(r)} aria-label={`Delete ${r.name}`} className="p-2 rounded-lg border border-slate-700/50 text-slate-300 hover:text-red-400 hover:bg-slate-700/30 transition-colors"><Trash2 className="w-4 h-4" /></button>
                 <button onClick={() => handleToggle(r)} disabled={toggling === r.id} className="px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-300 hover:text-white hover:bg-slate-700/30 disabled:opacity-50 transition-colors">
                   {toggling === r.id ? <Loader2 className="w-4 h-4 animate-spin" /> : r.enabled ? 'Disable' : 'Enable'}
                 </button>

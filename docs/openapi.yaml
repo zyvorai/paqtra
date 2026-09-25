@@ -170,6 +170,11 @@ paths:
       operationId: listFlows
       tags: [Flows]
       summary: List observed network flows
+      description: >-
+        `verdict` is applied by Hubble itself, so `limit` returns the most recent
+        flows with that verdict (not the few matches among the last N). Flows carry
+        an optional `hubble` object: identities, labels, `traffic_direction`,
+        `is_reply`, `policy_match_type`, `trace_observation_point`, `node_name`.
       parameters:
         - $ref: "#/components/parameters/Namespace"
         - name: verdict
@@ -325,6 +330,10 @@ paths:
       operationId: getPolicy
       tags: [Policies]
       summary: Get a single policy by ID or name
+      description: >-
+        Returns the policy's `spec`, its `resource_version` (send it back on rule
+        edits for optimistic concurrency) and per-direction `rule_counts`.
+        `namespace/name` (URL-encoded) disambiguates a name used in several namespaces.
       parameters:
         - $ref: "#/components/parameters/ResourceId"
       responses:
@@ -333,7 +342,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Policy"
+                $ref: "#/components/schemas/PolicyDetail"
         "404":
           $ref: "#/components/responses/NotFound"
     put:
@@ -368,6 +377,124 @@ paths:
           description: Policy deleted
         "500":
           $ref: "#/components/responses/InternalError"
+
+  /api/v1/policies/{id}/rules:
+    post:
+      operationId: addPolicyRule
+      tags: [Policies]
+      summary: Add a rule to a policy
+      description: >-
+        Appends one rule to the policy's `ingress`, `egress`, `ingressDeny` or
+        `egressDeny` list and applies the result through the CiliumNetworkPolicy
+        CRD. Requires the editor role and access to the policy's namespace.
+        With `dry_run=true` the API server validates the change and nothing is
+        persisted. A stale `resource_version` returns 409.
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [direction, rule]
+              properties:
+                direction:
+                  $ref: "#/components/schemas/RuleDirection"
+                rule:
+                  type: object
+                resource_version:
+                  type: string
+      responses:
+        "200":
+          description: Rule added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuleChangeResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The policy changed since `resource_version` was read
+    put:
+      operationId: updatePolicyRule
+      tags: [Policies]
+      summary: Replace one rule of a policy
+      description: Replaces the rule at `index` within `direction`. Same rules as adding.
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [direction, index, rule]
+              properties:
+                direction:
+                  $ref: "#/components/schemas/RuleDirection"
+                index:
+                  type: integer
+                  minimum: 0
+                rule:
+                  type: object
+                resource_version:
+                  type: string
+      responses:
+        "200":
+          description: Rule replaced
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuleChangeResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The policy changed since `resource_version` was read
+    delete:
+      operationId: deletePolicyRule
+      tags: [Policies]
+      summary: Delete one rule of a policy
+      description: >-
+        Removes the rule at `index` within `direction`. The policy's last rule cannot
+        be removed (400): Cilium rejects a policy with no rules, so delete the policy.
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - $ref: "#/components/parameters/DryRun"
+        - name: direction
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/RuleDirection"
+        - name: index
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+        - name: resource_version
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Rule deleted (`result.removed` holds it)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuleChangeResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The policy changed since `resource_version` was read
 
   /api/v1/policies/simulate:
     post:
@@ -1139,8 +1266,81 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/AlertRule"
+    post:
+      operationId: createAlertRule
+      tags: [Alerts]
+      summary: Create an alert rule
+      description: >-
+        Requires the editor role. The condition must be one the engine can
+        evaluate: `drop_rate > N%`, `dns_servfail > N/min`, `policy_denied > N/min`
+        or `endpoint_status != ready`; anything else is a 400.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertRuleInput"
+      responses:
+        "201":
+          description: Rule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/alerts/rules/{id}/definition:
+    put:
+      operationId: updateAlertRule
+      tags: [Alerts]
+      summary: Edit an alert rule's name, condition and severity
+      description: >-
+        Keeps the id and trigger history. `enabled` is changed only if sent.
+        A stored condition may be left unchanged even if the engine cannot evaluate it.
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertRuleInput"
+      responses:
+        "200":
+          description: Rule updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/v1/alerts/rules/{id}:
+    delete:
+      operationId: deleteAlertRule
+      tags: [Alerts]
+      summary: Delete an alert rule
+      description: >-
+        The five seeded default rules (`rule-001`..`rule-005`) need `force=true`;
+        without it they are refused with 400 (disable them instead). Deleting every
+        rule does not bring the defaults back.
+      parameters:
+        - $ref: "#/components/parameters/ResourceId"
+        - name: force
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "204":
+          description: Rule deleted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
     put:
       operationId: toggleAlertRule
       tags: [Alerts]
@@ -1915,6 +2115,127 @@ paths:
                     items:
                       $ref: "#/components/schemas/WireGuardPeer"
 
+  # ── Cilium / Hubble insights (read-only) ──────────────────
+  /api/v1/cilium/features:
+    get:
+      operationId: ciliumFeatures
+      tags: [CiliumStatus]
+      summary: Which Cilium features the cluster has enabled
+      description: >-
+        Read from the `cilium-config` ConfigMap. `state` is `enabled`, `disabled`,
+        `set` (a setting with a value) or `unknown` when the key is absent, which
+        means an older Cilium or a feature that was never configured, not that it is off.
+      responses:
+        "200":
+          description: "Feature list (`available: false` when the ConfigMap cannot be read)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available:
+                    type: boolean
+                  reason:
+                    type: string
+                  features:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CiliumFeature"
+
+  /api/v1/cilium/resources/{kind}:
+    get:
+      operationId: ciliumResources
+      tags: [CiliumStatus]
+      summary: List a Cilium (or Cilium-served Gateway API) custom resource
+      description: >-
+        `kind` is one of `nodes`, `egress-gateway-policies`, `bgp-peering-policies`,
+        `bgp-cluster-configs`, `bgp-peer-configs`, `bgp-advertisements`,
+        `bgp-node-configs`, `lb-ip-pools`, `l2-announcement-policies`, `pod-ip-pools`,
+        `cidr-groups`, `gateway-classes`, `gateways`, `http-routes`. Anything else is 404.
+        Read-only; cluster-wide, so not available to namespace-scoped users.
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "Items with `spec` and `status` (`installed: false` when the CRD is absent)"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/cilium/metrics:
+    get:
+      operationId: ciliumMetrics
+      tags: [CiliumStatus]
+      summary: Cilium agent metrics from Prometheus
+      description: >-
+        A fixed catalog of queries (drops by reason, forwarded packets, endpoint
+        state, policy enforcement, unreachable nodes, BPF map pressure, ...). Needs
+        `PROMETHEUS_URL`; without it `available` is false and `reason` says so.
+      responses:
+        "200":
+          description: Metric groups
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsReport"
+
+  /api/v1/hubble/metrics:
+    get:
+      operationId: hubbleMetrics
+      tags: [CiliumStatus]
+      summary: Hubble flow metrics from Prometheus
+      description: >-
+        Flows by verdict, drops by reason, policy verdicts, DNS by rcode, HTTP by
+        status, TCP flags, ICMP and lost events. A group with no data carries a `hint`
+        naming the `hubble.metrics.enabled` entry that exports it.
+      responses:
+        "200":
+          description: Metric groups
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsReport"
+
+  /api/v1/hubble/nodes:
+    get:
+      operationId: hubbleNodes
+      tags: [CiliumStatus]
+      summary: Nodes behind Hubble Relay, with flow-buffer fill
+      description: >-
+        From Hubble `GetNodes`. `num_flows == max_flows` means the node's ring
+        buffer is full and older flows are being overwritten.
+      responses:
+        "200":
+          description: Node list, plus per-cluster `errors`
+
+  /api/v1/cilium/agent/{what}:
+    get:
+      operationId: ciliumAgentQuery
+      tags: [CiliumStatus]
+      summary: Read-only query against one Cilium agent
+      description: >-
+        `what` is `endpoints`, `identities`, `services`, `fqdn-cache`, `status` or
+        `policy-selectors` (anything else is 404). Runs the matching `cilium-dbg ... -o json` in the first
+        agent pod found, so it samples one node. Editor role. A failing agent is 502
+        with the reason.
+      parameters:
+        - name: what
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [endpoints, identities, services, fqdn-cache, status, policy-selectors]
+      responses:
+        "200":
+          description: "The agent's JSON output under `data`"
+        "403":
+          description: Editor role required
+        "502":
+          description: The agent could not be reached or the command failed
+
   # ── Cilium Status ───────────────────────────────────────────
   /api/v1/cilium/status:
     get:
@@ -1984,6 +2305,14 @@ components:
         type: string
       description: Unique resource identifier
 
+    DryRun:
+      name: dry_run
+      in: query
+      schema:
+        type: boolean
+        default: false
+      description: Validate against the cluster (server-side dry run) without persisting
+
     Namespace:
       name: namespace
       in: query
@@ -2012,6 +2341,8 @@ components:
 
   # ── Reusable Responses ──────────────────────────────────────
   responses:
+    BadRequest:
+      description: Invalid request (the `error` field says why)
     NotFound:
       description: Resource not found
     InternalError:
@@ -2019,6 +2350,128 @@ components:
 
   # ── Schemas ─────────────────────────────────────────────────
   schemas:
+
+    CiliumFeature:
+      type: object
+      properties:
+        key:
+          type: string
+        title:
+          type: string
+        category:
+          type: string
+        state:
+          type: string
+          enum: [enabled, disabled, set, unknown]
+        value:
+          type: string
+        config_key:
+          type: string
+          description: The cilium-config key that answered (newer name preferred)
+        view:
+          type: string
+          description: Paqtra page that shows this feature
+
+    MetricsReport:
+      type: object
+      properties:
+        available:
+          type: boolean
+        reason:
+          type: string
+        window:
+          type: string
+          example: 5m
+        metrics:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              title:
+                type: string
+              unit:
+                type: string
+              series:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    labels:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    value:
+                      type: number
+              hint:
+                type: string
+                nullable: true
+              error:
+                type: string
+                nullable: true
+
+    RuleDirection:
+      type: string
+      enum: [ingress, egress, ingressDeny, egressDeny]
+
+    PolicyDetail:
+      allOf:
+        - $ref: "#/components/schemas/Policy"
+        - type: object
+          properties:
+            resource_version:
+              type: string
+            rule_counts:
+              type: object
+              additionalProperties:
+                type: integer
+            spec:
+              type: object
+
+    RuleChangeResult:
+      type: object
+      properties:
+        policy:
+          type: string
+          description: namespace/name
+        action:
+          type: string
+          enum: [add, edit, delete]
+        direction:
+          $ref: "#/components/schemas/RuleDirection"
+        dry_run:
+          type: boolean
+        rule_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        spec:
+          type: object
+          description: The resulting policy spec
+        result:
+          type: object
+          properties:
+            index:
+              type: integer
+            removed:
+              type: object
+
+    AlertRuleInput:
+      type: object
+      required: [name, condition, severity]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        condition:
+          type: string
+          maxLength: 200
+        severity:
+          type: string
+          enum: [critical, high, warning, info]
+        enabled:
+          type: boolean
 
     # ── Generic ────────────────────────────────────────────────
     StatusMessage:

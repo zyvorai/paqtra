@@ -12,6 +12,9 @@ vi.mock('../../../services/api', async (importOriginal) => {
     fetchAlertRules: vi.fn(),
     fetchAlertHistory: vi.fn(),
     toggleAlertRule: vi.fn(),
+    createAlertRule: vi.fn(),
+    updateAlertRule: vi.fn(),
+    deleteAlertRule: vi.fn(),
     fetchChannels: vi.fn(),
     createChannel: vi.fn(),
     deleteChannel: vi.fn(),
@@ -89,6 +92,70 @@ describe('Alerts: rules', () => {
     renderPage();
     await screen.findByText('High Drop Rate');
     await waitFor(() => expect(screen.getAllByText(/silenced until/)).toHaveLength(2));
+  });
+});
+
+describe('Alerts: rule add / edit / delete', () => {
+  const apiError = (status: number, error: string) =>
+    Promise.reject(new AxiosError('x', String(status), undefined, undefined, { status, data: { error } } as AxiosResponse));
+
+  it('creates a rule and refreshes', async () => {
+    m.createAlertRule.mockImplementation(() => ok({}));
+    renderPage();
+    await screen.findByText('High Drop Rate');
+    fireEvent.click(screen.getByRole('button', { name: /New rule/ }));
+    fireEvent.change(screen.getByPlaceholderText('High drop rate'), { target: { value: ' Slow DNS ' } });
+    fireEvent.change(screen.getByPlaceholderText('drop_rate > 5% for 5m'), { target: { value: 'dns_servfail > 10/min' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(m.createAlertRule).toHaveBeenCalledWith({ name: 'Slow DNS', condition: 'dns_servfail > 10/min', severity: 'warning' }));
+    expect(await screen.findByText('Slow DNS created')).toBeInTheDocument();
+    await waitFor(() => expect(m.fetchAlertRules.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it('shows the server validation error and keeps the form open', async () => {
+    m.createAlertRule.mockImplementation(() => apiError(400, 'unsupported condition'));
+    renderPage();
+    await screen.findByText('High Drop Rate');
+    fireEvent.click(screen.getByRole('button', { name: /New rule/ }));
+    fireEvent.change(screen.getByPlaceholderText('High drop rate'), { target: { value: 'x' } });
+    fireEvent.change(screen.getByPlaceholderText('drop_rate > 5% for 5m'), { target: { value: 'cpu > 90%' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    expect(await screen.findByText('unsupported condition')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
+  });
+
+  it('edits a rule in place', async () => {
+    m.updateAlertRule.mockImplementation(() => ok({}));
+    renderPage();
+    await screen.findByText('High Drop Rate');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit High Drop Rate' }));
+    fireEvent.change(screen.getByDisplayValue('drop_rate > 5% for 5m'), { target: { value: 'drop_rate > 8% for 5m' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(m.updateAlertRule).toHaveBeenCalledWith('rule-001', { name: 'High Drop Rate', condition: 'drop_rate > 8% for 5m', severity: 'critical' }));
+    expect(await screen.findByText('High Drop Rate updated')).toBeInTheDocument();
+  });
+
+  it('deletes a rule after confirmation, and not when declined', async () => {
+    m.deleteAlertRule.mockImplementation(() => ok({}));
+    renderPage();
+    await screen.findByText('High Drop Rate');
+    vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete High Drop Rate' }));
+    expect(m.deleteAlertRule).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete High Drop Rate' }));
+    await waitFor(() => expect(m.deleteAlertRule).toHaveBeenCalledWith('rule-001'));
+    expect(await screen.findByText('High Drop Rate deleted')).toBeInTheDocument();
+  });
+
+  it('asks again before force-deleting a built-in rule', async () => {
+    m.deleteAlertRule
+      .mockImplementationOnce(() => apiError(400, 'built-in rule: disable it instead, or pass force=true to delete'))
+      .mockImplementationOnce(() => ok({}));
+    renderPage();
+    await screen.findByText('High Drop Rate');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete High Drop Rate' }));
+    await waitFor(() => expect(m.deleteAlertRule).toHaveBeenLastCalledWith('rule-001', true));
+    expect(await screen.findByText('High Drop Rate deleted')).toBeInTheDocument();
   });
 });
 

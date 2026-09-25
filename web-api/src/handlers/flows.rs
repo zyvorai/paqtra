@@ -149,9 +149,11 @@ pub async fn list_flows(
     // Fetch from Hubble with a hard timeout so the UI does not hang.
     let mut flows = match tokio::time::timeout(
         HUBBLE_FETCH_TIMEOUT,
-        state
-            .hubble
-            .get_flows(limit + offset, params.namespace.as_deref()),
+        state.hubble.get_flows_by_verdict(
+            limit + offset,
+            params.namespace.as_deref(),
+            params.verdict.as_deref(),
+        ),
     )
     .await
     {
