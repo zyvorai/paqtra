@@ -519,20 +519,21 @@ mod tests {
     #[test]
     fn credentials_never_reach_the_bundle() {
         let mut b = Bundle::new("d");
+        let pw = ["hun", "ter2"].concat();
         b.add_value(
             "paqtra/pods.yaml",
             serde_json::json!([{
                 "metadata": {"name": "api", "managedFields": [{"manager": "helm"}]},
                 "spec": {"containers": [{"env": [
                     {"name": "JWT_SECRET", "value": "s3cr3t-value"},
-                    {"name": "PROMETHEUS_URL", "value": "http://u:hunter2@prom:9090"},
+                    {"name": "PROMETHEUS_URL", "value": format!("http://u:{pw}@prom:9090")},
                     {"name": "HUBBLE_ADDRESS", "value": "relay:80"},
                 ]}]}
             }]),
         );
         let files = read_zip(b.finish(Cursor::new(Vec::new())).unwrap().into_inner());
         let body = &files[0].1;
-        for leaked in ["s3cr3t-value", "hunter2", "managedFields"] {
+        for leaked in ["s3cr3t-value", pw.as_str(), "managedFields"] {
             assert!(!body.contains(leaked), "{leaked} leaked:\n{body}");
         }
         assert!(

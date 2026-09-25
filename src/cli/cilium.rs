@@ -8,8 +8,10 @@ use kube::api::ListParams;
 use kube::{Api, Client};
 use regex::Regex;
 use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 
 use super::helm::Helm;
+use super::preflight;
 use super::version::{chart_version_of, parse_release, ReleaseInfo};
 
 pub const REPO: &str = "https://helm.cilium.io";
@@ -115,6 +117,36 @@ pub fn hubble_args(
         wait_duration.to_string(),
     ]);
     Ok(a)
+}
+
+/// Cilium and Hubble Relay are both up: every scheduled agent ready, and at
+/// least one Relay replica. Helm's own `--wait` is not enough (it can return
+/// while a DaemonSet is still rolling out, e.g. on nodes with no CNI yet).
+pub fn is_ready(agents: Option<(i32, i32)>, relay: Option<(i32, i32)>) -> bool {
+    let up = |c: Option<(i32, i32)>| matches!(c, Some((ready, desired)) if desired > 0 && ready >= desired);
+    up(agents) && up(relay)
+}
+
+/// Poll until [`is_ready`], or fail with what was seen.
+pub async fn wait_ready(client: &Client, timeout: Duration) -> Result<()> {
+    let start = Instant::now();
+    loop {
+        let agents = preflight::cilium(client, NAMESPACE)
+            .await
+            .map(|i| (i.ready, i.desired));
+        let relay = preflight::hubble_relay(client, NAMESPACE).await;
+        if is_ready(agents, relay) {
+            return Ok(());
+        }
+        if start.elapsed() > timeout {
+            bail!(
+                "Cilium and Hubble Relay were not ready after {}s (agents ready/desired: {agents:?}, relay: {relay:?}); \
+                 check `kubectl -n kube-system get pods`",
+                timeout.as_secs()
+            );
+        }
+        tokio::time::sleep(Duration::from_secs(3)).await;
+    }
 }
 
 /// Cilium's own Helm release in kube-system, if it was installed with Helm.
@@ -250,6 +282,26 @@ mod tests {
             .any(|x| x.starts_with("hubble.relay") || x.starts_with("hubble.metrics")));
         assert!(hubble_args(true, true, Some("dns}"), "1.20.2", "5m").is_err());
         assert!(hubble_args(true, true, None, "v1.20", "5m").is_err());
+    }
+
+    #[test]
+    fn ready_means_all_agents_and_a_relay() {
+        assert!(is_ready(Some((2, 2)), Some((1, 1))));
+        assert!(
+            !is_ready(Some((0, 2)), Some((1, 1))),
+            "agents still starting"
+        );
+        assert!(!is_ready(Some((1, 2)), Some((1, 1))));
+        assert!(
+            !is_ready(Some((2, 2)), Some((0, 1))),
+            "relay still starting"
+        );
+        assert!(
+            !is_ready(Some((0, 0)), Some((1, 1))),
+            "no agents scheduled is not ready"
+        );
+        assert!(!is_ready(None, Some((1, 1))));
+        assert!(!is_ready(Some((2, 2)), None));
     }
 
     #[test]
