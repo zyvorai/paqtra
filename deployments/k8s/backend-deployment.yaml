@@ -75,25 +75,25 @@ spec:
           value: "info,paqtra_api=debug"
         resources:
           requests:
-            memory: "256Mi"
+            memory: "512Mi"
             cpu: "100m"
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "2Gi"
+            cpu: "1000m"
         livenessProbe:
           httpGet:
             path: /health
             port: http
-          initialDelaySeconds: 10
-          periodSeconds: 30
-          timeoutSeconds: 5
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 15
         readinessProbe:
           httpGet:
             path: /ready
             port: http
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          timeoutSeconds: 3
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 15
         securityContext:
           runAsNonRoot: true
           runAsUser: 1000

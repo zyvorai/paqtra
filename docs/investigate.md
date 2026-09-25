@@ -22,7 +22,7 @@ Every step and impact claim carries one of:
 - Default retention: 7 days
 - Health: `GET /health` → `subsystems.flow_ingest` (`source`, `connected`, `disconnects`, `gaps`, `events_per_sec`, `lag_secs`, `hubble_mode`)
 
-Enable persistence in Helm: `api.persistence.enabled=true` (sets `PAQTRA_DATA_DIR`).
+Enable persistence in Helm: `api.persistence.enabled=true` (sets `PAQTRA_DATA_DIR`). Chart defaults size the API at **512Mi request / 2Gi limit** so the durable flow index and bpftool inventory do not OOM under stacked Overview probes.
 
 ## Explain API
 

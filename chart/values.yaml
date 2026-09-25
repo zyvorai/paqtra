@@ -16,12 +16,14 @@ api:
     pullPolicy: IfNotPresent
   replicas: 2
   port: 9191
+  # API memory: durable flows.db + bpftool inventory need headroom.
+  # Lab OOM-killed at 512Mi–1Gi under stacked Overview/eBPF probes.
   resources:
     requests:
-      memory: "256Mi"
+      memory: "512Mi"
       cpu: "100m"
     limits:
-      memory: "1Gi"
+      memory: "2Gi"
       cpu: "1000m"
   env:
     # Cilium's hubble-relay Service maps port 80 → container 4245 (gRPC).

@@ -23,8 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Overview auto-refreshes every 15s; `/ebpf/summary` defaults to counts-only
   (`?detail=full` for CT dumps); `/cluster/health` runs kubectl probes in parallel
   with a short cache.
-- API memory limit raised to **1Gi**; connectivity/change-impact flow queries run
-  via `spawn_blocking` so SQLite does not stall or OOM the async runtime.
+- Chart API memory defaults: request **512Mi**, limit **2Gi** (durable flow index
+  + bpftool inventory need headroom; 512Mi limits were OOM-killing under load).
+- Connectivity list stays cheap; per-path status is
+  `GET /api/v1/connectivity/paths/{id}/status`. Change-impact / status queries use
+  `spawn_blocking` so SQLite does not stall the async runtime.
+
 ## [2.1.0] - 2026-09-24
 
 ### Added

@@ -332,6 +332,23 @@ kubectl logs -f -n cilium-system -l component=api
 ## Performance Tuning
 
 ### Backend API
+
+With `api.persistence.enabled` (durable flow index), give the API enough RAM for
+SQLite + concurrent bpftool inventory. Chart defaults:
+
+```yaml
+api:
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "100m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+```
+
+Example production-oriented sizing:
+
 ```yaml
 resources:
   requests:
