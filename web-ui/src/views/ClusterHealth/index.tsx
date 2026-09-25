@@ -1,14 +1,43 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchClusterHealth, type ClusterHealthSummary } from '../../services/api';
+import {
+  fetchClusterHealth,
+  fetchFlowStore,
+  purgeFlowStore,
+  type ClusterHealthSummary,
+} from '../../services/api';
 import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+
+type FlowStoreInfo = {
+  retention_days?: number;
+  coverage?: { from?: string; to?: string; count?: number };
+  ingest?: {
+    connected?: boolean;
+    gaps?: number;
+    last_gap_at?: string | null;
+    recent_gaps?: string[];
+    events_per_sec?: number;
+    lag_secs?: number;
+    source?: string;
+  };
+};
 
 export default function ClusterHealth() {
   const [health, setHealth] = useState<ClusterHealthSummary | null>(null);
+  const [store, setStore] = useState<FlowStoreInfo | null>(null);
   const [err, setErr] = useState('');
+  const [msg, setMsg] = useState('');
+  const [purgeNs, setPurgeNs] = useState('');
+  const [purgeDays, setPurgeDays] = useState('7');
+  const [purging, setPurging] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      setHealth((await fetchClusterHealth()).data);
+      const [h, s] = await Promise.all([
+        fetchClusterHealth(),
+        fetchFlowStore().catch(() => null),
+      ]);
+      setHealth(h.data);
+      if (s) setStore(s.data as FlowStoreInfo);
       setErr('');
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -21,14 +50,38 @@ export default function ClusterHealth() {
     return () => clearInterval(t);
   }, [load]);
 
+  async function doPurge() {
+    if (!window.confirm('Purge old flow store rows? This cannot be undone.')) return;
+    setPurging(true);
+    setMsg('');
+    try {
+      const { data } = await purgeFlowStore({
+        namespace: purgeNs.trim() || undefined,
+        older_than_days: Number(purgeDays) || undefined,
+      });
+      setMsg(`Purged ${String((data as { deleted?: number }).deleted ?? 0)} rows`);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPurging(false);
+    }
+  }
+
   const score = health?.score ?? health?.health_score ?? 0;
   const status = health?.overall ?? health?.status ?? '—';
+  const gaps = store?.ingest?.recent_gaps ?? [];
 
   return (
     <Board>
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
+        </Card>
+      ) : null}
+      {msg ? (
+        <Card span={3}>
+          <p className="empty-state">{msg}</p>
         </Card>
       ) : null}
 
@@ -46,6 +99,57 @@ export default function ClusterHealth() {
             Refresh
           </button>
         </Toolbar>
+      </Card>
+
+      <Card span={3}>
+        <Eyebrow>FLOW STORE</Eyebrow>
+        <h3>Retention & ingest coverage</h3>
+        {!store ? (
+          <Empty>Flow store info unavailable.</Empty>
+        ) : (
+          <>
+            <Metrics>
+              <Metric value={store.retention_days ?? '—'} label="retention days" />
+              <Metric value={store.ingest?.gaps ?? 0} label="gap count" />
+              <Metric value={store.ingest?.events_per_sec ?? 0} label="events/s" />
+              <Metric value={store.ingest?.connected ? 'yes' : 'no'} label="stream connected" />
+            </Metrics>
+            <p className="empty-state" style={{ marginTop: 8 }}>
+              Source: {store.ingest?.source ?? '—'}
+              {store.coverage?.from
+                ? ` · coverage ${store.coverage.from} → ${store.coverage.to ?? 'now'} (${store.coverage.count ?? 0})`
+                : ''}
+              {store.ingest?.last_gap_at ? ` · last gap ${store.ingest.last_gap_at}` : ''}
+            </p>
+            <Toolbar>
+              <label>
+                Namespace (optional)
+                <input value={purgeNs} onChange={(e) => setPurgeNs(e.target.value)} placeholder="all" />
+              </label>
+              <label>
+                Older than days
+                <input value={purgeDays} onChange={(e) => setPurgeDays(e.target.value)} />
+              </label>
+              <button type="button" disabled={purging} onClick={() => void doPurge()}>
+                {purging ? 'Purging…' : 'Purge (admin)'}
+              </button>
+            </Toolbar>
+          </>
+        )}
+      </Card>
+
+      <Card span={3}>
+        <Eyebrow>INGEST GAP TIMELINE</Eyebrow>
+        <h3>Recent capture gaps</h3>
+        {gaps.length === 0 ? <Empty>No recent gaps recorded.</Empty> : null}
+        <div className="list">
+          {gaps.map((g) => (
+            <div className="agent wide" key={g}>
+              <b>gap</b>
+              <small>{g}</small>
+            </div>
+          ))}
+        </div>
       </Card>
 
       <Card span={3}>

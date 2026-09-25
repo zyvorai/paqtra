@@ -180,6 +180,118 @@ pub async fn export_bundle(
     })))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ShareRequest {
+    /// Share lifetime in seconds (default 3600, max 86400).
+    #[serde(default = "default_share_ttl")]
+    pub ttl_secs: u64,
+}
+
+fn default_share_ttl() -> u64 {
+    3600
+}
+
+/// POST /api/v1/investigate/bundles/{id}/share — time-limited redacted share token.
+pub async fn share_bundle(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+    Path(id): Path<String>,
+    Json(req): Json<ShareRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    super::check_editor(&state, &claims)?;
+    if id.is_empty() || id.contains('/') || id.contains("..") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "invalid bundle id"})),
+        ));
+    }
+    let key = format!("cv:investigate_bundle:{id}");
+    let bundle = match state.cache.get::<Value>(&key).await {
+        Ok(Some(v)) => v,
+        Ok(None) => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(json!({"error": "bundle not found"})),
+            ))
+        }
+        Err(e) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ))
+        }
+    };
+    enforce_bundle_ns(&state, &claims, &bundle)?;
+
+    let ttl = req.ttl_secs.clamp(60, 86_400);
+    let token = uuid::Uuid::new_v4().to_string();
+    let expires_at = chrono::Utc::now() + chrono::Duration::seconds(ttl as i64);
+    let record = json!({
+        "token": token,
+        "bundle_id": id,
+        "expires_at": expires_at.to_rfc3339(),
+        "namespaces": crate::services::investigate::bundle_namespaces(&bundle),
+        "incident_card": {
+            "id": bundle.get("id"),
+            "likely_owner": bundle.get("likely_owner").or_else(|| bundle.pointer("/result/likely_owner")),
+            "created_at": bundle.get("created_at").or_else(|| bundle.pointer("/result/created_at")),
+            "request": bundle.get("request").or_else(|| bundle.pointer("/result/request")),
+            "related_change_ids": bundle.get("related_change_ids").cloned().unwrap_or(json!([])),
+            "cited_flow_ids": bundle.get("cited_flow_ids").cloned().unwrap_or(json!([])),
+            "redaction": "No payloads, argv, or Secret contents included.",
+        },
+    });
+    let share_key = format!("cv:investigate_share:{token}");
+    let _ = state.cache.set_durable(&share_key, &record, ttl).await;
+    Ok(Json(json!({
+        "token": token,
+        "expires_at": expires_at.to_rfc3339(),
+        "ttl_secs": ttl,
+        "path": format!("/api/v1/investigate/share/{token}"),
+        "incident_card": record.get("incident_card"),
+    })))
+}
+
+/// GET /api/v1/investigate/share/{token} — redeem a time-limited share (editor+).
+pub async fn get_share(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+    Path(token): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    super::check_editor(&state, &claims)?;
+    if token.is_empty() || token.contains('/') || token.contains("..") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "invalid share token"})),
+        ));
+    }
+    let share_key = format!("cv:investigate_share:{token}");
+    match state.cache.get::<Value>(&share_key).await {
+        Ok(Some(v)) => {
+            if let Some(nss) = v.get("namespaces").and_then(|x| x.as_array()) {
+                let allowed = nss.iter().filter_map(|n| n.as_str()).any(|ns| {
+                    super::has_namespace_access(&state, &claims, ns)
+                });
+                if !nss.is_empty() && !allowed {
+                    return Err((
+                        StatusCode::FORBIDDEN,
+                        Json(json!({"error": "share namespaces not in scope"})),
+                    ));
+                }
+            }
+            Ok(Json(v))
+        }
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "share not found or expired"})),
+        )),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )),
+    }
+}
+
 fn enforce_bundle_ns(
     state: &AppState,
     claims: &Option<axum::Extension<crate::middleware::auth::Claims>>,

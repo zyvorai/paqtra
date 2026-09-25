@@ -133,6 +133,10 @@ async fn main() -> anyhow::Result<()> {
     services::change_tracker::spawn_change_tracker(app_state.clone());
     tracing::info!("Background change tracker started");
 
+    // Cheap /health + /ready — live probes run on a sampler, not the request path
+    handlers::health::spawn_health_sampler(app_state.clone());
+    tracing::info!("Background health sampler started");
+
     // Declared connectivity path monitor (observe-only)
     services::connectivity::spawn_connectivity_monitor(app_state.clone());
     tracing::info!("Background connectivity monitor started");
@@ -226,6 +230,14 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/investigate/bundles/{id}/export",
             get(handlers::investigate::export_bundle),
         )
+        .route(
+            "/api/v1/investigate/bundles/{id}/share",
+            post(handlers::investigate::share_bundle),
+        )
+        .route(
+            "/api/v1/investigate/share/{token}",
+            get(handlers::investigate::get_share),
+        )
         // Declared connectivity paths (observe-only)
         .route(
             "/api/v1/connectivity/paths",
@@ -242,6 +254,18 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/v1/connectivity/alerts",
             get(handlers::connectivity::list_alerts),
+        )
+        .route(
+            "/api/v1/connectivity/alerts/{id}/silence",
+            post(handlers::connectivity::silence_alert),
+        )
+        .route(
+            "/api/v1/flows/store",
+            get(handlers::flow_history::flow_store_info),
+        )
+        .route(
+            "/api/v1/flows/store/purge",
+            post(handlers::flow_history::flow_store_purge),
         )
         // Anomaly detection
         .route(

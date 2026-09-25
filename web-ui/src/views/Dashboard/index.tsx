@@ -14,6 +14,9 @@ import {
   fetchMetricsSummary,
 } from '../../services/api';
 
+const TILE_TIMEOUT_MS = 8_000;
+const STALE_AFTER_MS = 45_000;
+
 function Metric({ value, label }: { value: number | string; label: string }) {
   const numeric = typeof value === 'number' && Number.isFinite(value);
   const animated = useCountUp(numeric ? (value as number) : 0);
@@ -25,16 +28,43 @@ function Metric({ value, label }: { value: number | string; label: string }) {
   );
 }
 
+function StaleBadge({ at }: { at: number | null }) {
+  if (at == null) return null;
+  const age = Date.now() - at;
+  if (age < STALE_AFTER_MS) return null;
+  const secs = Math.round(age / 1000);
+  return (
+    <span
+      className="severity-badge warning"
+      style={{ fontSize: 11, marginLeft: 8 }}
+      title={`Last successful refresh ${secs}s ago`}
+    >
+      stale {secs}s
+    </span>
+  );
+}
+
 type Settled<T> = { ok: true; value: T } | { ok: false; error: string };
 
-async function settle<T>(p: Promise<{ data: T }>): Promise<Settled<T>> {
+async function settle<T>(p: Promise<{ data: T }>, timeoutMs = TILE_TIMEOUT_MS): Promise<Settled<T>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const { data } = await p;
+    const raced = Promise.race([
+      p.then((r) => ({ data: r.data })),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`tile timeout ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+    const { data } = await raced;
     return { ok: true, value: data };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
+
+type TileKey = 'cluster' | 'digest' | 'flows' | 'ebpf' | 'platform';
 
 export default function Overview() {
   const [nodes, setNodes] = useState<number | null>(null);
@@ -48,6 +78,13 @@ export default function Overview() {
   const [metrics, setMetrics] = useState<Record<string, unknown> | null>(null);
   const [digest, setDigest] = useState<Digest | null>(null);
   const [err, setErr] = useState('');
+  const [freshAt, setFreshAt] = useState<Partial<Record<TileKey, number>>>({});
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 5_000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,28 +103,40 @@ export default function Overview() {
       failed.push(msg);
       if (!cancelled) setErr(failed[0] ?? '');
     };
+    const mark = (key: TileKey) => {
+      if (!cancelled) setFreshAt((prev) => ({ ...prev, [key]: Date.now() }));
+    };
 
     const load = () => {
       // Paint each tile as its API returns — do not wait on Promise.all.
+      // Per-tile timeout keeps one slow kubectl from blanking the page.
       void settle(fetchNodes()).then((n) => {
         if (cancelled) return;
-        if (n.ok) setNodes((n.value as { nodes?: unknown[] }).nodes?.length ?? 0);
-        else noteErr(n.error);
+        if (n.ok) {
+          setNodes((n.value as { nodes?: unknown[] }).nodes?.length ?? 0);
+          mark('cluster');
+        } else noteErr(n.error);
       });
       void settle(fetchEndpoints()).then((e) => {
         if (cancelled) return;
-        if (e.ok) setEndpoints((e.value as { endpoints?: unknown[] }).endpoints?.length ?? 0);
-        else noteErr(e.error);
+        if (e.ok) {
+          setEndpoints((e.value as { endpoints?: unknown[] }).endpoints?.length ?? 0);
+          mark('cluster');
+        } else noteErr(e.error);
       });
       void settle(fetchCiliumStatus()).then((c) => {
         if (cancelled) return;
-        if (c.ok) setAgents(((c.value as { agents?: unknown[] }).agents ?? []).length);
-        else noteErr(c.error);
+        if (c.ok) {
+          setAgents(((c.value as { agents?: unknown[] }).agents ?? []).length);
+          mark('cluster');
+        } else noteErr(c.error);
       });
       void settle(fetchEbpfSummary()).then((s) => {
         if (cancelled) return;
-        if (s.ok) setEbpf(s.value as Record<string, unknown>);
-        else noteErr(s.error);
+        if (s.ok) {
+          setEbpf(s.value as Record<string, unknown>);
+          mark('ebpf');
+        } else noteErr(s.error);
       });
       void settle(fetchEbpfDrops()).then((d) => {
         if (cancelled) return;
@@ -95,6 +144,7 @@ export default function Overview() {
           dropCount = (d.value as { total_drops?: number }).total_drops ?? 0;
           setDrops(dropCount);
           gotDrops = true;
+          mark('digest');
           bumpDigest();
         } else noteErr(d.error);
       });
@@ -112,6 +162,8 @@ export default function Overview() {
           setClusterStatus(status);
           setClusterScore(score);
           gotHealth = true;
+          mark('cluster');
+          mark('digest');
           bumpDigest();
         } else noteErr(h.error);
       });
@@ -130,12 +182,15 @@ export default function Overview() {
             dropped: stats.dropped ?? stats.verdicts?.dropped ?? 0,
             total: stats.total ?? stats.total_flows,
           });
+          mark('flows');
         } else noteErr(f.error);
       });
       void settle(fetchMetricsSummary()).then((m) => {
         if (cancelled) return;
-        if (m.ok) setMetrics(m.value as Record<string, unknown>);
-        else noteErr(m.error);
+        if (m.ok) {
+          setMetrics(m.value as Record<string, unknown>);
+          mark('platform');
+        } else noteErr(m.error);
       });
     };
 
@@ -159,7 +214,10 @@ export default function Overview() {
     <div className="grid">
       <Reveal>
         <section className="card span2">
-          <p className="eyebrow">CILIUM DATAPATH</p>
+          <p className="eyebrow">
+            CILIUM DATAPATH
+            <StaleBadge at={freshAt.cluster ?? null} />
+          </p>
           <h3>Brothers with Cilium.</h3>
           <p>
             Paqtra observes Hubble flows and Cilium eBPF maps — it never attaches its own datapath programs or writes
@@ -183,7 +241,10 @@ export default function Overview() {
 
       <Reveal delay={80}>
         <section className="card span2">
-          <p className="eyebrow">ON-CALL DIGEST</p>
+          <p className="eyebrow">
+            ON-CALL DIGEST
+            <StaleBadge at={freshAt.digest ?? null} />
+          </p>
           <h3>{digest ? digest.headline : 'Waiting for signals…'}</h3>
           {digest ? (
             <>
@@ -212,7 +273,10 @@ export default function Overview() {
 
       <Reveal delay={120}>
         <section className="card span2">
-          <p className="eyebrow">HUBBLE / FLOWS</p>
+          <p className="eyebrow">
+            HUBBLE / FLOWS
+            <StaleBadge at={freshAt.flows ?? null} />
+          </p>
           <h3>Allow and drop at a glance</h3>
           <div className="metrics">
             <Metric value={flows?.total ?? flows?.forwarded ?? '—'} label="flows seen" />
@@ -227,7 +291,10 @@ export default function Overview() {
       </Reveal>
 
       <section className="card span3">
-        <p className="eyebrow">eBPF MAPS</p>
+        <p className="eyebrow">
+          eBPF MAPS
+          <StaleBadge at={freshAt.ebpf ?? null} />
+        </p>
         <h3>Read-only inventory</h3>
         <div className="metrics">
           <Metric value={programs || '—'} label="programs" />
@@ -240,7 +307,10 @@ export default function Overview() {
       </section>
 
       <section className="card span3">
-        <p className="eyebrow">PLATFORM</p>
+        <p className="eyebrow">
+          PLATFORM
+          <StaleBadge at={freshAt.platform ?? null} />
+        </p>
         <h3>API pulse</h3>
         <div className="metrics">
           <Metric

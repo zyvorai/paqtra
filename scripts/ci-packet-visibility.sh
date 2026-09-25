@@ -34,7 +34,19 @@ grep -q 'spawn_flow_ingest' web-api/src/main.rs || fail "flow_ingest spawn missi
 grep -q '"/api/v1/flows"' web-api/src/main.rs || fail "/api/v1/flows route missing"
 grep -q '"/api/v1/flows/stats"' web-api/src/main.rs || fail "/api/v1/flows/stats route missing"
 grep -q 'investigate/flow' web-api/src/main.rs || fail "investigate/flow route missing"
+grep -q 'investigate/bundles/{id}/share' web-api/src/main.rs || fail "investigate share route missing"
+grep -q 'connectivity/alerts/{id}/silence' web-api/src/main.rs || fail "connectivity silence route missing"
+grep -q '"/api/v1/flows/store"' web-api/src/main.rs || fail "flows/store route missing"
+grep -q 'changes/{id}/impact' web-api/src/main.rs || fail "change impact route missing"
 pass "API source contracts"
+
+# Offline: UI contracts for extension surfaces
+grep -q 'Silence 60m' web-ui/src/views/ConnectivityChecks/index.tsx || fail "connectivity silence UI missing"
+grep -q 'Share link' web-ui/src/views/InvestigatePath/index.tsx || fail "investigate share UI missing"
+grep -q 'Open evidence flows' web-ui/src/views/ChangeLog/index.tsx || fail "change impact evidence link missing"
+grep -q 'tile timeout' web-ui/src/views/Dashboard/index.tsx || fail "overview tile timeout missing"
+grep -q 'INGEST GAP TIMELINE' web-ui/src/views/ClusterHealth/index.tsx || fail "health gap timeline missing"
+pass "UI extension contracts"
 
 # Offline: docs
 grep -q 'Live packet stream' docs/features.md || fail "docs/features.md missing live packet stream"
@@ -130,5 +142,83 @@ print("owner=", r.get("likely_owner"), "steps=", len(r["steps"]))
 else
   echo "  ℹ no DROPPED flows in sample — skip investigate/flow"
 fi
+
+echo "==> connectivity paths CRUD + silence"
+PATH_BODY='{"name":"ci-path","src_namespace":"default","src_workload":"ci-src","dst_namespace":"default","dst_service":"ci-dst","port":80,"protocol":"TCP"}'
+PATH_RESP=$(curl -sf -X POST "$API/api/v1/connectivity/paths" "${auth[@]}" -d "$PATH_BODY")
+PATH_ID=$(echo "$PATH_RESP" | python3 -c 'import sys,json; r=json.load(sys.stdin); print(r.get("id") or r.get("path",{}).get("id") or "")')
+[[ -n "$PATH_ID" ]] || fail "connectivity path create returned no id: $PATH_RESP"
+curl -sf "$API/api/v1/connectivity/paths" "${auth[@]}" | python3 -c '
+import sys, json
+r=json.load(sys.stdin)
+assert "paths" in r, r
+print("paths=", len(r["paths"]))
+'
+# Status is best-effort (may be unknown with no traffic)
+curl -sS -o /tmp/paqtra-conn-status.json -w "%{http_code}" --max-time 30 \
+  "$API/api/v1/connectivity/paths/$PATH_ID/status" "${auth[@]}" >/tmp/paqtra-conn-status.code || true
+# Silence endpoint accepts path_id or calert-* id
+curl -sf -X POST "$API/api/v1/connectivity/alerts/$PATH_ID/silence" "${auth[@]}" \
+  -d '{"minutes":5}' | python3 -c '
+import sys, json
+r=json.load(sys.stdin)
+assert "path_id" in r or "silenced_until" in r, r
+print("silence=", r)
+'
+curl -sf -X DELETE "$API/api/v1/connectivity/paths/$PATH_ID" "${auth[@]}" >/dev/null
+pass "connectivity CRUD + silence"
+
+echo "==> change impact (best-effort when changes exist)"
+CHANGES=$(curl -sf "$API/api/v1/changes?limit=5" "${auth[@]}" || echo '{}')
+CHG_ID=$(echo "$CHANGES" | python3 -c '
+import sys, json
+r=json.load(sys.stdin)
+chs=r.get("changes") or r.get("items") or []
+print(chs[0]["id"] if chs else "")
+')
+if [[ -n "$CHG_ID" ]]; then
+  curl -sf "$API/api/v1/changes/$CHG_ID/impact?before=15m&after=15m" "${auth[@]}" | python3 -c '
+import sys, json
+r=json.load(sys.stdin)
+assert "status" in r and "confidence" in r, r
+assert "chart" in r or ("before" in r and "after" in r), r
+print("impact status=", r.get("status"), "confidence=", r.get("confidence"))
+'
+  pass "change impact"
+else
+  echo "  ℹ no changes recorded — skip impact"
+fi
+
+echo "==> investigate path + export + share"
+INV=$(curl -sf -X POST "$API/api/v1/investigate/path" "${auth[@]}" \
+  -d '{"source":{"namespace":"default","name":"ci"},"destination":{"namespace":"default","name":"svc"},"port":80,"protocol":"TCP","time_window_minutes":15}')
+INV_ID=$(echo "$INV" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("id",""))')
+[[ -n "$INV_ID" ]] || fail "investigate/path returned no id"
+curl -sf "$API/api/v1/investigate/bundles/$INV_ID/export?format=markdown" "${auth[@]}" | python3 -c '
+import sys, json
+r=json.load(sys.stdin)
+assert "content" in r or "bundle" in r, r
+print("export keys=", sorted(r.keys())[:8])
+'
+SHARE=$(curl -sf -X POST "$API/api/v1/investigate/bundles/$INV_ID/share" "${auth[@]}" -d '{"ttl_secs":600}')
+TOKEN=$(echo "$SHARE" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))')
+[[ -n "$TOKEN" ]] || fail "share returned no token"
+curl -sf "$API/api/v1/investigate/share/$TOKEN" "${auth[@]}" | python3 -c '
+import sys, json
+r=json.load(sys.stdin)
+assert "incident_card" in r or "bundle_id" in r or "token" in r, r
+print("share ok")
+'
+pass "investigate export + share"
+
+echo "==> flows/store info"
+curl -sf "$API/api/v1/flows/store" "${auth[@]}" | python3 -c '
+import sys, json
+r=json.load(sys.stdin)
+assert "retention_days" in r and "ingest" in r, r
+assert "gaps" in r["ingest"] or "recent_gaps" in r["ingest"], r
+print("store retention=", r.get("retention_days"), "gaps=", r["ingest"].get("gaps"))
+'
+pass "flows/store"
 
 echo "==> packet visibility OK (live)"

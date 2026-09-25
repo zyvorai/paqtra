@@ -51,19 +51,34 @@ Explain a single flow (from Flows “Why denied?”): identities, CNP/CCNP candi
 ```http
 GET /api/v1/investigate/bundles/{id}
 GET /api/v1/investigate/bundles/{id}/export?format=json|markdown
+POST /api/v1/investigate/bundles/{id}/share
+GET /api/v1/investigate/share/{token}
 ```
 
 Bundles include time range, source/ingest health, gap counts, cited flow IDs, related change IDs, and Kubernetes policy identity — never payloads, argv, or Secret contents ([AGENTS.md](../AGENTS.md)). Namespace RBAC is enforced on create and retrieval. Export returns the same redacted JSON or a concise Markdown incident summary.
 
+Share creates a **time-limited token** (default 1h, max 24h) with a redacted **incident card** (owner, path, related changes, cited flows). Redeem with `GET …/share/{token}` (editor+; namespaces re-checked).
+
+## Flow store ops
+
+```http
+GET /api/v1/flows/store
+POST /api/v1/flows/store/purge
+```
+
+Returns retention days, coverage window, ingest connectivity, gap count, and a recent gap timeline. Purge is **admin-only** and may be scoped by namespace / older-than days.
+
+UI: Cluster Health → **Flow store** + **Ingest gap timeline**.
+
 ## Change impact
 
 ```http
-GET /api/v1/changes/{id}/impact?before=30m&after=30m
+GET /api/v1/changes/{id}/impact?before=30m&after=30m&kind=&namespace=
 ```
 
-Compares verdict counts and src→dst pairs in bounded windows around a recorded Cilium/Service/Deployment change. Returns evidence flow IDs, `observed|inferred|unavailable` confidence, and `inconclusive` when ingest gaps or short windows make the comparison unreliable. Correlation is **not** causation.
+Compares verdict counts and src→dst pairs in bounded windows around a recorded Cilium/Service/Deployment change. Optional `kind` / `namespace` filters skip mismatched changes. Response includes a before/after **chart**, evidence flow IDs, `observed|inferred|unavailable` confidence, and `inconclusive` when ingest gaps or short windows make the comparison unreliable. Correlation is **not** causation.
 
-UI: Change Log → **Analyze impact** (links to Flows and Path investigation).
+UI: Change Log → filters + **Analyze impact** (chart + open evidence flows + Path investigation).
 
 ## Declared connectivity (observe-only)
 
@@ -72,11 +87,12 @@ GET|POST /api/v1/connectivity/paths
 GET /api/v1/connectivity/paths/{id}/status
 DELETE /api/v1/connectivity/paths/{id}
 GET /api/v1/connectivity/alerts
+POST /api/v1/connectivity/alerts/{id}/silence
 ```
 
-Teams declare `source namespace/workload → destination service:port`. List returns declared paths quickly; status is fetched per path. Paqtra compares recent flows with a short baseline. Quiet traffic is **`unknown`**, never healthy. Sustained drop patterns create deduplicated alerts with evidence IDs and investigate deep-links. No automatic policy apply and no BPF changes.
+Teams declare `source namespace/workload → destination service:port`. List returns declared paths quickly; status is fetched per path. Paqtra compares recent flows with a short baseline and requires **sustained** multi-sample regressions before alerting. Quiet traffic is **`unknown`**, never healthy. Alerts carry evidence IDs and investigate deep-links; silence suppresses re-alert for a TTL. No automatic policy apply and no BPF changes.
 
-UI: Investigate → **Connectivity** (`/connectivity`).
+UI: Investigate → **Connectivity** (`/connectivity`) — silence, investigate, evidence flows.
 
 ## Policy preview
 
@@ -89,9 +105,11 @@ UI: Investigate → **Connectivity** (`/connectivity`).
 
 ## UI
 
-Investigate → **Path** (`/investigate`): form for A→B:port, step timeline, owner, evidence bundle, **Export JSON / Markdown**.
+Investigate → **Path** (`/investigate`): form for A→B:port, incident card, step timeline, evidence bundle, **Export JSON / Markdown**, **Share link (1h)**. Prefills from Connectivity / Change Log deep-links.
 
-Investigate → **Connectivity** (`/connectivity`): declare critical paths and review sustained-regression alerts.
+Investigate → **Connectivity** (`/connectivity`): declare critical paths, review sustained-regression alerts, silence, deep-link to Path + Flows.
+
+Overview: per-tile **8s timeouts** and **stale** badges so one slow probe never blanks the page.
 
 Flows → **Why denied?** on a DROPPED row: opens the flow explain result (identities, CNP/CCNP candidates, drop reason, draft allow).
 

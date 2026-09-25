@@ -12,14 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Quiet Hubble follow streams flush every **2s** (in addition to the 64-flow batch)
   so low-volume clusters persist evidence promptly.
 - `GET /api/v1/changes/{id}/impact` — before/after flow correlation for Change Log
-  (evidence-backed; gaps → `inconclusive`; not causation).
-- Investigation bundle export: `GET /api/v1/investigate/bundles/{id}/export`
-  (`json` | `markdown`), with ingest health, cited flows, and related change IDs.
-- Declared connectivity paths (observe-only): `/api/v1/connectivity/paths` and
-  `/alerts`; UI at `/connectivity`. Quiet traffic stays `unknown`.
+  (filters, chart, evidence-backed; gaps → `inconclusive`; not causation).
+- Investigation bundle export + **time-limited share** with redacted incident card:
+  `…/export`, `…/share`, `GET …/investigate/share/{token}`.
+- Declared connectivity paths (observe-only): sustained multi-sample alerts,
+  silence (`POST …/connectivity/alerts/{id}/silence`), evidence deep-links.
+- Flow store ops: `GET /api/v1/flows/store`, admin `POST …/purge`; gap timeline on
+  Cluster Health.
+- Overview per-tile **8s timeouts** and **stale** badges.
+- CI `RUN_LIVE` gates for connectivity, impact, investigate export/share, flows/store.
 
 ### Changed
 
+- `/health` and `/ready` stay cheap via background sampler; cache SQLite I/O uses
+  `spawn_blocking`; bpftool concurrency capped.
 - Overview auto-refreshes every 15s; `/ebpf/summary` defaults to counts-only
   (`?detail=full` for CT dumps); `/cluster/health` runs kubectl probes in parallel
   with a short cache.

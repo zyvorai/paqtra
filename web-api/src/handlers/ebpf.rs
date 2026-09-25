@@ -44,9 +44,15 @@ fn bpf_cache() -> &'static Mutex<HashMap<String, BpfCacheEntry>> {
 
 const BPF_CACHE_TTL: Duration = Duration::from_secs(30);
 const BPFTOOL_TIMEOUT: Duration = Duration::from_secs(8);
+const BPFTOOL_MAX_CONCURRENT: usize = 2;
+
+fn bpf_semaphore() -> &'static tokio::sync::Semaphore {
+    static SEM: OnceLock<tokio::sync::Semaphore> = OnceLock::new();
+    SEM.get_or_init(|| tokio::sync::Semaphore::new(BPFTOOL_MAX_CONCURRENT))
+}
 
 // ---------------------------------------------------------------------------
-// Helper: run bpftool with a short timeout + 30s result cache
+// Helper: run bpftool with a short timeout + 30s result cache + concurrency cap
 // ---------------------------------------------------------------------------
 
 async fn run_bpftool(args: &[&str]) -> Result<Value, String> {
@@ -59,6 +65,10 @@ async fn run_bpftool(args: &[&str]) -> Result<Value, String> {
         }
     }
 
+    let _permit = bpf_semaphore()
+        .acquire()
+        .await
+        .map_err(|e| format!("bpftool semaphore: {e}"))?;
     let value = run_bpftool_uncached(args).await?;
     if let Ok(mut cache) = bpf_cache().lock() {
         cache.insert(

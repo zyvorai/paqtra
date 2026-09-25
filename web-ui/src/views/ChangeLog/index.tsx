@@ -27,6 +27,9 @@ type ImpactResult = {
   evidence_flow_ids?: string[];
   before?: { forwarded?: number; dropped?: number; total?: number };
   after?: { forwarded?: number; dropped?: number; total?: number };
+  chart?: { labels?: string[]; forwarded?: number[]; dropped?: number[] };
+  investigate_link?: string;
+  flows_link?: string;
 };
 
 const ChangeLog: React.FC = () => {
@@ -35,6 +38,8 @@ const ChangeLog: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useAutoDismiss<string | null>(null);
   const [search, setSearch] = useState('');
+  const [kindFilter, setKindFilter] = useState('');
+  const [nsFilter, setNsFilter] = useState('');
   const [rolling, setRolling] = useState<string | null>(null);
   const [impactId, setImpactId] = useState<string | null>(null);
   const [impact, setImpact] = useState<ImpactResult | null>(null);
@@ -73,7 +78,12 @@ const ChangeLog: React.FC = () => {
     setImpact(null);
     setError(null);
     try {
-      const { data } = await fetchChangeImpact(c.id);
+      const { data } = await fetchChangeImpact(c.id, {
+        before: '30m',
+        after: '30m',
+        kind: kindFilter.trim() || undefined,
+        namespace: nsFilter.trim() || c.namespace || undefined,
+      });
       setImpact(data as ImpactResult);
     } catch (err) {
       setError(errorMessage(err, 'Impact analysis failed'));
@@ -83,13 +93,32 @@ const ChangeLog: React.FC = () => {
   };
 
   const q = search.toLowerCase();
-  const filtered = search
-    ? changes.filter((c) =>
-        [c.resource, c.author, c.diff_summary, c.message].some(
-          (f) => typeof f === 'string' && f.toLowerCase().includes(q),
-        ),
-      )
-    : changes;
+  const filtered = changes.filter((c) => {
+    if (kindFilter && !(c.type ?? '').toLowerCase().includes(kindFilter.toLowerCase())
+      && !(c.resource ?? '').toLowerCase().includes(kindFilter.toLowerCase())) {
+      return false;
+    }
+    if (nsFilter && (c.namespace ?? '').toLowerCase() !== nsFilter.toLowerCase()) return false;
+    if (!search) return true;
+    return [c.resource, c.author, c.diff_summary, c.message].some(
+      (f) => typeof f === 'string' && f.toLowerCase().includes(q),
+    );
+  });
+
+  const chartFwd = impact?.chart?.forwarded ?? [
+    impact?.before?.forwarded ?? 0,
+    impact?.after?.forwarded ?? 0,
+  ];
+  const chartDrop = impact?.chart?.dropped ?? [
+    impact?.before?.dropped ?? 0,
+    impact?.after?.dropped ?? 0,
+  ];
+  const chartMax = Math.max(1, ...chartFwd, ...chartDrop);
+
+  const evidenceHref =
+    (impact?.evidence_flow_ids ?? []).length > 0
+      ? `/flows?ids=${encodeURIComponent((impact?.evidence_flow_ids ?? []).slice(0, 8).join(','))}`
+      : '/flows';
 
   return (
     <div className="netra-page">
@@ -134,11 +163,19 @@ const ChangeLog: React.FC = () => {
           <div className="grid grid-cols-2 gap-3 text-sm mb-3">
             <div className="rounded-lg bg-slate-900/50 p-3">
               <div className="text-xs text-slate-400 mb-1">Before</div>
-              <div className="text-white">fwd {impact.before?.forwarded ?? 0} · drop {impact.before?.dropped ?? 0}</div>
+              <div className="text-white">fwd {chartFwd[0] ?? 0} · drop {chartDrop[0] ?? 0}</div>
+              <div className="mt-2 h-2 rounded bg-slate-700 overflow-hidden flex">
+                <div className="bg-emerald-500/80" style={{ width: `${((chartFwd[0] ?? 0) / chartMax) * 100}%` }} />
+                <div className="bg-red-500/80" style={{ width: `${((chartDrop[0] ?? 0) / chartMax) * 100}%` }} />
+              </div>
             </div>
             <div className="rounded-lg bg-slate-900/50 p-3">
               <div className="text-xs text-slate-400 mb-1">After</div>
-              <div className="text-white">fwd {impact.after?.forwarded ?? 0} · drop {impact.after?.dropped ?? 0}</div>
+              <div className="text-white">fwd {chartFwd[1] ?? 0} · drop {chartDrop[1] ?? 0}</div>
+              <div className="mt-2 h-2 rounded bg-slate-700 overflow-hidden flex">
+                <div className="bg-emerald-500/80" style={{ width: `${((chartFwd[1] ?? 0) / chartMax) * 100}%` }} />
+                <div className="bg-red-500/80" style={{ width: `${((chartDrop[1] ?? 0) / chartMax) * 100}%` }} />
+              </div>
             </div>
           </div>
           {(impact.notes ?? []).length > 0 ? (
@@ -159,29 +196,45 @@ const ChangeLog: React.FC = () => {
           ) : (
             <p className="text-xs text-slate-400 mb-2">No new drop regressions in the window.</p>
           )}
-          {(impact.evidence_flow_ids ?? []).length > 0 ? (
-            <p className="text-xs text-slate-400">
-              Evidence:{' '}
-              <Link className="text-blue-400 hover:underline" to="/flows">
-                {(impact.evidence_flow_ids ?? []).slice(0, 5).join(', ')}
-              </Link>
-              {' · '}
-              <Link className="text-blue-400 hover:underline" to="/investigate">
-                Path investigation
-              </Link>
-            </p>
-          ) : null}
+          <p className="text-xs text-slate-400">
+            <Link className="text-blue-400 hover:underline" to={evidenceHref}>
+              Open evidence flows
+              {(impact.evidence_flow_ids ?? []).length > 0
+                ? ` (${(impact.evidence_flow_ids ?? []).length})`
+                : ''}
+            </Link>
+            {' · '}
+            <Link className="text-blue-400 hover:underline" to="/investigate">
+              Path investigation
+            </Link>
+          </p>
         </div>
       ) : null}
 
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+      <div className="flex flex-wrap gap-2 mb-4">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search changes..."
+            className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
         <input
           type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search changes..."
-          className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          value={kindFilter}
+          onChange={(e) => setKindFilter(e.target.value)}
+          placeholder="Kind (create/CNP/…)"
+          className="w-40 px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <input
+          type="text"
+          value={nsFilter}
+          onChange={(e) => setNsFilter(e.target.value)}
+          placeholder="Namespace"
+          className="w-36 px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-700/50 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 

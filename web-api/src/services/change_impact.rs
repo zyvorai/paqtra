@@ -17,6 +17,10 @@ pub struct ImpactQuery {
     pub before: Duration,
     pub after: Duration,
     pub limit: usize,
+    /// Optional filter: only analyze if change.type matches (case-insensitive contains).
+    pub kind: Option<String>,
+    /// Optional filter: only analyze if change.namespace matches.
+    pub namespace: Option<String>,
 }
 
 impl Default for ImpactQuery {
@@ -25,6 +29,8 @@ impl Default for ImpactQuery {
             before: Duration::minutes(30),
             after: Duration::minutes(30),
             limit: 40,
+            kind: None,
+            namespace: None,
         }
     }
 }
@@ -160,6 +166,31 @@ pub async fn analyze_change_impact(
     let change = change_tracker::get_change(state, change_id)
         .await
         .ok_or((axum::http::StatusCode::NOT_FOUND, "change not found".into()))?;
+
+    if let Some(want) = q.kind.as_deref().filter(|s| !s.is_empty()) {
+        let got = change
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if !got.to_lowercase().contains(&want.to_lowercase()) {
+            return Err((
+                axum::http::StatusCode::NOT_FOUND,
+                format!("change kind {got} does not match filter {want}"),
+            ));
+        }
+    }
+    if let Some(want_ns) = q.namespace.as_deref().filter(|s| !s.is_empty()) {
+        let got = change
+            .get("namespace")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if got != want_ns {
+            return Err((
+                axum::http::StatusCode::NOT_FOUND,
+                format!("change namespace {got} does not match filter {want_ns}"),
+            ));
+        }
+    }
 
     let ns = change
         .get("namespace")
@@ -308,6 +339,19 @@ pub async fn analyze_change_impact(
         },
         "before": before_sum,
         "after": after_sum,
+        "chart": {
+            "labels": ["before", "after"],
+            "forwarded": [
+                before_sum.get("forwarded").and_then(|v| v.as_u64()).unwrap_or(0),
+                after_sum.get("forwarded").and_then(|v| v.as_u64()).unwrap_or(0),
+            ],
+            "dropped": [
+                before_sum.get("dropped").and_then(|v| v.as_u64()).unwrap_or(0),
+                after_sum.get("dropped").and_then(|v| v.as_u64()).unwrap_or(0),
+            ],
+        },
+        "flows_link": "/flows",
+        "investigate_link": "/investigate",
         "regressions": regressions,
         "evidence_flow_ids": evidence_ids.into_iter().collect::<Vec<_>>(),
         "capture": {

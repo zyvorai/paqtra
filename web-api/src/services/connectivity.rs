@@ -17,9 +17,12 @@ use crate::AppState;
 
 const PATHS_PREFIX: &str = "cv:connectivity_path:";
 const ALERTS_PREFIX: &str = "cv:connectivity_alert:";
+const SILENCE_PREFIX: &str = "cv:connectivity_silence:";
+const SAMPLE_PREFIX: &str = "cv:connectivity_sample:";
 const PATHS_TTL: u64 = 2_592_000; // 30 days
 const ALERT_TTL: u64 = 604_800; // 7 days
 const SUSTAIN_MINUTES: i64 = 5;
+const SUSTAIN_SAMPLES: usize = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectivityPath {
@@ -325,12 +328,66 @@ async fn evaluate_all(state: &AppState) -> anyhow::Result<()> {
         }
         let status = status_for_path(state, &p).await;
         let st = status.get("status").and_then(|v| v.as_str()).unwrap_or("");
-        if st != "regression" && st != "degraded" {
+        let path_id = p.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        if path_id.is_empty() {
             continue;
         }
-        let path_id = p.get("id").and_then(|v| v.as_str()).unwrap_or("");
+
+        // Rolling sample history for sustained-evidence gating.
+        let sample_key = format!("{}{}", SAMPLE_PREFIX, path_id);
+        let mut samples: Vec<String> = state
+            .cache
+            .get::<Value>(&sample_key)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|v| {
+                v.get("statuses")
+                    .and_then(|s| s.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(str::to_string))
+                            .collect()
+                    })
+            })
+            .unwrap_or_default();
+        samples.push(st.to_string());
+        if samples.len() > 8 {
+            let drain = samples.len() - 8;
+            samples.drain(0..drain);
+        }
+        let _ = state
+            .cache
+            .set_durable(
+                &sample_key,
+                &json!({ "statuses": samples.clone(), "updated_at": Utc::now().to_rfc3339() }),
+                ALERT_TTL,
+            )
+            .await;
+
+        let sustained = samples.len() >= SUSTAIN_SAMPLES
+            && samples
+                .iter()
+                .rev()
+                .take(SUSTAIN_SAMPLES)
+                .all(|s| s == "regression" || s == "degraded");
+        if !sustained {
+            continue;
+        }
+
+        let silence_key = format!("{}{}", SILENCE_PREFIX, path_id);
+        if state
+            .cache
+            .get::<Value>(&silence_key)
+            .await
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            continue;
+        }
+
         let alert_key = format!("{}{}", ALERTS_PREFIX, path_id);
-        // Deduplicate: refresh existing alert instead of spawning duplicates.
         let alert = json!({
             "id": format!("calert-{}", path_id),
             "path_id": path_id,
@@ -339,12 +396,67 @@ async fn evaluate_all(state: &AppState) -> anyhow::Result<()> {
             "summary": status.get("notes"),
             "evidence_flow_ids": status.get("evidence_flow_ids"),
             "investigate": status.get("investigate"),
+            "flows_link": "/flows",
+            "investigate_link": "/investigate",
+            "samples": samples,
             "updated_at": Utc::now().to_rfc3339(),
             "observe_only": true,
         });
         let _ = state.cache.set_durable(&alert_key, &alert, ALERT_TTL).await;
     }
     Ok(())
+}
+
+pub async fn silence_alert(
+    state: &AppState,
+    claims: &Option<axum::Extension<crate::middleware::auth::Claims>>,
+    alert_or_path_id: &str,
+    minutes: u64,
+) -> Result<Value, (axum::http::StatusCode, String)> {
+    let path_id = alert_or_path_id
+        .strip_prefix("calert-")
+        .unwrap_or(alert_or_path_id);
+    let path_key = format!("{}{}", PATHS_PREFIX, path_id);
+    let path = state
+        .cache
+        .get::<Value>(&path_key)
+        .await
+        .ok()
+        .flatten()
+        .ok_or((axum::http::StatusCode::NOT_FOUND, "path not found".into()))?;
+    let src = path
+        .get("src_namespace")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if !has_namespace_access(state, claims, src) {
+        return Err((
+            axum::http::StatusCode::FORBIDDEN,
+            "namespace not in scope".into(),
+        ));
+    }
+    let ttl = minutes.clamp(5, 24 * 60) * 60;
+    let silence_key = format!("{}{}", SILENCE_PREFIX, path_id);
+    let body = json!({
+        "path_id": path_id,
+        "silenced_until": (Utc::now() + chrono::Duration::seconds(ttl as i64)).to_rfc3339(),
+        "minutes": minutes.clamp(5, 24 * 60),
+    });
+    state
+        .cache
+        .set_durable(&silence_key, &body, ttl)
+        .await
+        .map_err(|e| {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                e.to_string(),
+            )
+        })?;
+    // Drop active alert while silenced.
+    let _ = state
+        .cache
+        .delete(&format!("{}{}", ALERTS_PREFIX, path_id))
+        .await;
+    Ok(body)
 }
 
 pub async fn list_alerts(

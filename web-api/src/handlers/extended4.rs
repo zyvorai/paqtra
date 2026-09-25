@@ -434,6 +434,8 @@ pub struct ImpactQueryParams {
     pub after: String,
     #[serde(default = "default_impact_limit")]
     pub limit: usize,
+    pub kind: Option<String>,
+    pub namespace: Option<String>,
 }
 
 fn default_before() -> String {
@@ -466,6 +468,8 @@ pub async fn change_impact(
             chrono::Duration::minutes(30),
         ),
         limit: params.limit.clamp(1, 200),
+        kind: params.kind.clone(),
+        namespace: params.namespace.clone(),
     };
 
     match crate::services::change_impact::analyze_change_impact(&state, &claims, &id, q).await {

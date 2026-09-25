@@ -93,3 +93,26 @@ pub async fn list_alerts(
         "alerts": connectivity::list_alerts(&state, &claims).await
     })))
 }
+
+#[derive(Debug, serde::Deserialize)]
+pub struct SilenceRequest {
+    #[serde(default = "default_silence_minutes")]
+    pub minutes: u64,
+}
+
+fn default_silence_minutes() -> u64 {
+    60
+}
+
+pub async fn silence_alert(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+    Path(id): Path<String>,
+    Json(req): Json<SilenceRequest>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    super::check_editor(&state, &claims)?;
+    match connectivity::silence_alert(&state, &claims, &id, req.minutes).await {
+        Ok(v) => Ok(Json(v)),
+        Err((st, msg)) => Err((st, Json(json!({ "error": msg })))),
+    }
+}

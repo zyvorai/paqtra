@@ -72,6 +72,11 @@ pub const EDITOR_WRITES: &[(&str, &str)] = &[
     ("POST", "/api/v1/policies/validate"),
     ("POST", "/api/v1/modules/rootcause/analyze"),
     ("POST", "/api/v1/investigate/path"),
+    ("POST", "/api/v1/investigate/flow"),
+    ("POST", "/api/v1/investigate/bundles/{id}/share"),
+    ("POST", "/api/v1/connectivity/paths"),
+    ("DELETE", "/api/v1/connectivity/paths/{id}"),
+    ("POST", "/api/v1/connectivity/alerts/{id}/silence"),
     ("POST", "/api/v1/compliance/audit"),
     // Network policies
     ("POST", "/api/v1/policies"),

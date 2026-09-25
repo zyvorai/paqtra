@@ -322,6 +322,7 @@ pub struct FlowStore {
     disconnect_count: AtomicU64,
     gap_count: AtomicU64,
     last_gap_at: Mutex<Option<String>>,
+    gap_events: Mutex<Vec<String>>,
     rate_window: Mutex<Vec<i64>>,
 }
 
@@ -342,6 +343,7 @@ impl FlowStore {
             disconnect_count: AtomicU64::new(0),
             gap_count: AtomicU64::new(0),
             last_gap_at: Mutex::new(None),
+            gap_events: Mutex::new(Vec::new()),
             rate_window: Mutex::new(Vec::new()),
         }
     }
@@ -393,6 +395,7 @@ impl FlowStore {
             disconnect_count: AtomicU64::new(0),
             gap_count: AtomicU64::new(0),
             last_gap_at: Mutex::new(None),
+            gap_events: Mutex::new(Vec::new()),
             rate_window: Mutex::new(Vec::new()),
         };
         let _ = store.purge_expired();
@@ -452,7 +455,68 @@ impl FlowStore {
         self.disconnect_count.fetch_add(1, Ordering::Relaxed);
         self.gap_count.fetch_add(1, Ordering::Relaxed);
         self.stream_connected.store(0, Ordering::Relaxed);
-        if let Ok(mut g) = self.last_gap_at.lock() { *g = Some(Utc::now().to_rfc3339()); }
+        let at = Utc::now().to_rfc3339();
+        if let Ok(mut g) = self.last_gap_at.lock() {
+            *g = Some(at.clone());
+        }
+        if let Ok(mut ring) = self.gap_events.lock() {
+            ring.push(at);
+            if ring.len() > 64 {
+                let drain = ring.len() - 64;
+                ring.drain(0..drain);
+            }
+        }
+    }
+
+    pub fn recent_gaps(&self) -> Vec<String> {
+        self.gap_events
+            .lock()
+            .ok()
+            .map(|g| g.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn retention_days(&self) -> i64 {
+        self.retention_days
+    }
+
+    /// Delete flows older than `days` (defaults to store retention), optional namespace scope.
+    pub fn purge(
+        &self,
+        namespace: Option<&str>,
+        older_than_days: Option<i64>,
+    ) -> Result<usize> {
+        let days = older_than_days.unwrap_or(self.retention_days).max(0);
+        let cutoff = format_ts(Utc::now() - ChronoDuration::days(days));
+        if let Some(db) = &self.db {
+            let conn = db
+                .lock()
+                .map_err(|_| anyhow::anyhow!("flow db lock poisoned"))?;
+            let n = if let Some(ns) = namespace.filter(|s| !s.is_empty()) {
+                conn.execute(
+                    "DELETE FROM flows WHERE ts < ?1 AND (src_namespace = ?2 OR dst_namespace = ?2)",
+                    params![cutoff, ns],
+                )?
+            } else {
+                conn.execute("DELETE FROM flows WHERE ts < ?1", params![cutoff])?
+            };
+            return Ok(n);
+        }
+        let mut mem = self
+            .memory
+            .lock()
+            .map_err(|_| anyhow::anyhow!("flow memory lock poisoned"))?;
+        let before = mem.len();
+        mem.retain(|f| {
+            if f.ts >= cutoff {
+                return true;
+            }
+            match namespace.filter(|s| !s.is_empty()) {
+                Some(ns) => !(f.src_namespace == ns || f.dst_namespace == ns),
+                None => false,
+            }
+        });
+        Ok(before.saturating_sub(mem.len()))
     }
 
     pub fn note_stream_event(&self) {

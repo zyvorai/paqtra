@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import api from '../../services/api';
+import { useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import api, { shareInvestigateBundle } from '../../services/api';
 import { Board, Card, Eyebrow, Empty, Warning, Toolbar } from '../../components/Board';
 import TerminalFrame from '../../components/TerminalFrame';
 
@@ -19,6 +19,20 @@ type InvestigateResult = {
   steps: Step[];
   flow_ingest?: { status?: string; source?: string; indexed?: number };
   created_at?: string;
+  related_change_ids?: string[];
+  cited_flow_ids?: string[];
+  request?: {
+    source?: { namespace?: string; name?: string };
+    destination?: { namespace?: string; name?: string };
+    port?: number;
+  };
+};
+
+type ShareInfo = {
+  token: string;
+  expires_at: string;
+  path: string;
+  incident_card?: Record<string, unknown>;
 };
 
 const CONF_COLOR: Record<string, string> = {
@@ -27,23 +41,44 @@ const CONF_COLOR: Record<string, string> = {
   unavailable: 'var(--text-tertiary, #888)',
 };
 
+type LocState = {
+  source?: { namespace?: string; name?: string };
+  destination?: { namespace?: string; name?: string };
+  port?: number;
+};
+
 export default function InvestigatePath() {
-  const [srcNs, setSrcNs] = useState('default');
-  const [srcName, setSrcName] = useState('checkout');
-  const [dstNs, setDstNs] = useState('default');
-  const [dstName, setDstName] = useState('payments');
-  const [port, setPort] = useState('443');
+  const location = useLocation();
+  const prefill = (location.state as LocState | null) ?? null;
+
+  const [srcNs, setSrcNs] = useState(prefill?.source?.namespace ?? 'default');
+  const [srcName, setSrcName] = useState(prefill?.source?.name ?? 'checkout');
+  const [dstNs, setDstNs] = useState(prefill?.destination?.namespace ?? 'default');
+  const [dstName, setDstName] = useState(prefill?.destination?.name ?? 'payments');
+  const [port, setPort] = useState(String(prefill?.port ?? 443));
   const [protocol, setProtocol] = useState('TCP');
   const [windowMin, setWindowMin] = useState('60');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [result, setResult] = useState<InvestigateResult | null>(null);
   const [bundleJson, setBundleJson] = useState('');
+  const [share, setShare] = useState<ShareInfo | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+
+  useEffect(() => {
+    if (!prefill) return;
+    if (prefill.source?.namespace) setSrcNs(prefill.source.namespace);
+    if (prefill.source?.name) setSrcName(prefill.source.name);
+    if (prefill.destination?.namespace) setDstNs(prefill.destination.namespace);
+    if (prefill.destination?.name) setDstName(prefill.destination.name);
+    if (prefill.port != null) setPort(String(prefill.port));
+  }, [prefill]);
 
   async function run() {
     setBusy(true);
     setErr('');
     setBundleJson('');
+    setShare(null);
     try {
       const { data } = await api.post<InvestigateResult>('/investigate/path', {
         source: { namespace: srcNs.trim(), name: srcName.trim() },
@@ -95,6 +130,22 @@ export default function InvestigatePath() {
       setErr(e instanceof Error ? e.message : String(e));
     }
   }
+
+  async function createShare() {
+    if (!result?.id) return;
+    setShareBusy(true);
+    setErr('');
+    try {
+      const { data } = await shareInvestigateBundle(result.id, 3600);
+      setShare(data as ShareInfo);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  const card = share?.incident_card;
 
   return (
     <Board>
@@ -149,9 +200,26 @@ export default function InvestigatePath() {
       {result ? (
         <>
           <Card>
-            <Eyebrow>OWNER</Eyebrow>
+            <Eyebrow>INCIDENT CARD</Eyebrow>
             <h3>{result.likely_owner}</h3>
             <p className="empty-state">Investigation {result.id}</p>
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 13 }}>
+              <li>
+                Path: {srcNs}/{srcName} → {dstNs}/{dstName}:{port}
+              </li>
+              {result.created_at ? <li>Created: {result.created_at}</li> : null}
+              {(result.related_change_ids ?? []).length > 0 ? (
+                <li>Related changes: {(result.related_change_ids ?? []).slice(0, 5).join(', ')}</li>
+              ) : null}
+              {(result.cited_flow_ids ?? []).length > 0 ? (
+                <li>
+                  Cited flows:{' '}
+                  <Link to={`/flows?ids=${encodeURIComponent((result.cited_flow_ids ?? []).slice(0, 8).join(','))}`}>
+                    {(result.cited_flow_ids ?? []).slice(0, 3).join(', ')}
+                  </Link>
+                </li>
+              ) : null}
+            </ul>
             {result.likely_owner === 'policy' ? (
               <p style={{ marginTop: 12 }}>
                 <Link to="/policies">Preview a Cilium CNP change →</Link>
@@ -170,14 +238,30 @@ export default function InvestigatePath() {
             <button type="button" className="primary" style={{ marginTop: 12 }} onClick={() => void loadBundle()}>
               Load evidence bundle
             </button>
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               <button type="button" onClick={() => void exportBundle('json')}>
                 Export JSON
               </button>
               <button type="button" onClick={() => void exportBundle('markdown')}>
                 Export Markdown
               </button>
+              <button type="button" disabled={shareBusy} onClick={() => void createShare()}>
+                {shareBusy ? 'Sharing…' : 'Share link (1h)'}
+              </button>
             </div>
+            {share ? (
+              <p className="empty-state" style={{ marginTop: 10, wordBreak: 'break-all' }}>
+                Token expires {share.expires_at}
+                <br />
+                <code>{share.path}</code>
+                {card ? (
+                  <>
+                    <br />
+                    Owner: {String(card.likely_owner ?? '—')} · redacted incident card attached
+                  </>
+                ) : null}
+              </p>
+            ) : null}
           </Card>
           <Card span={3}>
             <Eyebrow>STEPS</Eyebrow>

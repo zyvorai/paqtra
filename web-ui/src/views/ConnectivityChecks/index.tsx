@@ -6,6 +6,7 @@ import {
   fetchConnectivityAlerts,
   fetchConnectivityPaths,
   fetchConnectivityPathStatus,
+  silenceConnectivityAlert,
 } from '../../services/api';
 import { Board, Card, Eyebrow, Empty, Warning, Toolbar, Metric, Metrics } from '../../components/Board';
 
@@ -25,27 +26,44 @@ type PathRow = {
     confidence?: string;
     notes?: string[];
     evidence_flow_ids?: string[];
-    investigate?: { source?: { namespace?: string; name?: string }; destination?: { namespace?: string; name?: string }; port?: number };
+    investigate?: {
+      source?: { namespace?: string; name?: string };
+      destination?: { namespace?: string; name?: string };
+      port?: number;
+    };
   };
+};
+
+type AlertRow = {
+  id?: string;
+  path_id?: string;
+  status?: string;
+  summary?: string | string[];
+  notes?: string | string[];
+  evidence_flow_ids?: string[];
+  investigate?: PathRow['status']['investigate'];
+  samples?: number;
 };
 
 export default function ConnectivityChecks() {
   const [rows, setRows] = useState<PathRow[]>([]);
-  const [alerts, setAlerts] = useState<Record<string, unknown>[]>([]);
+  const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [err, setErr] = useState('');
+  const [msg, setMsg] = useState('');
   const [name, setName] = useState('checkout→payments');
   const [srcNs, setSrcNs] = useState('default');
   const [srcWl, setSrcWl] = useState('checkout');
   const [dstNs, setDstNs] = useState('default');
   const [dstSvc, setDstSvc] = useState('payments');
   const [port, setPort] = useState('443');
+  const [silencing, setSilencing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       const [p, a] = await Promise.all([fetchConnectivityPaths(), fetchConnectivityAlerts()]);
       const base = ((p.data as { paths?: PathRow[] }).paths ?? []) as PathRow[];
       setRows(base);
-      setAlerts(((a.data as { alerts?: Record<string, unknown>[] }).alerts ?? []) as Record<string, unknown>[]);
+      setAlerts(((a.data as { alerts?: AlertRow[] }).alerts ?? []) as AlertRow[]);
       setErr('');
       // Enrich status one-by-one so the list paints first.
       const enriched = await Promise.all(
@@ -97,15 +115,35 @@ export default function ConnectivityChecks() {
     }
   }
 
+  async function silence(alertId: string) {
+    setSilencing(alertId);
+    setMsg('');
+    try {
+      await silenceConnectivityAlert(alertId, 60);
+      setMsg(`Silenced ${alertId} for 60 minutes`);
+      await load();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSilencing(null);
+    }
+  }
+
   const regressions = rows.filter((r) => r.status?.status === 'regression' || r.status?.status === 'degraded').length;
   const unknown = rows.filter((r) => r.status?.status === 'unknown').length;
+
+  const flowsHref = (ids?: string[]) =>
+    ids && ids.length > 0 ? `/flows?ids=${encodeURIComponent(ids.slice(0, 8).join(','))}` : '/flows';
 
   return (
     <Board>
       <Card span={3}>
         <Eyebrow>CONNECTIVITY</Eyebrow>
         <h3>Declared service paths</h3>
-        <p>Observe-only checks. Quiet traffic is unknown — never assumed healthy. No policy apply or BPF changes.</p>
+        <p>
+          Observe-only checks. Quiet traffic is unknown — never assumed healthy. Sustained regressions alert with
+          evidence. No policy apply or BPF changes.
+        </p>
         <Metrics>
           <Metric value={rows.length} label="paths" />
           <Metric value={regressions} label="regressions" />
@@ -117,6 +155,11 @@ export default function ConnectivityChecks() {
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
+        </Card>
+      ) : null}
+      {msg ? (
+        <Card span={3}>
+          <p className="empty-state">{msg}</p>
         </Card>
       ) : null}
 
@@ -170,13 +213,15 @@ export default function ConnectivityChecks() {
               <small>
                 {r.status?.status ?? '—'} · {r.status?.confidence ?? '—'}
               </small>
-              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-                <Link
-                  to="/investigate"
-                  state={r.status?.investigate}
-                >
+              <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                <Link to="/investigate" state={r.status?.investigate ?? {
+                  source: { namespace: r.path.src_namespace, name: r.path.src_workload },
+                  destination: { namespace: r.path.dst_namespace, name: r.path.dst_service },
+                  port: r.path.port,
+                }}>
                   Investigate
                 </Link>
+                <Link to={flowsHref(r.status?.evidence_flow_ids)}>Evidence flows</Link>
                 <button type="button" onClick={() => void remove(r.path.id)}>
                   Remove
                 </button>
@@ -188,15 +233,34 @@ export default function ConnectivityChecks() {
 
       <Card span={3}>
         <Eyebrow>ALERTS</Eyebrow>
+        <p className="empty-state" style={{ marginBottom: 8 }}>
+          Sustained multi-sample regressions only. Silence for 60 minutes during maintenance.
+        </p>
         {alerts.length === 0 ? <Empty>No sustained regressions.</Empty> : null}
         <div className="list">
-          {alerts.map((a, i) => (
-            <div className="agent wide" key={String(a.id ?? i)}>
-              <b>{String(a.path_id ?? 'alert')}</b>
-              <span>{String(a.status ?? '')}</span>
-              <small>{JSON.stringify(a.summary ?? a.notes ?? '')}</small>
-            </div>
-          ))}
+          {alerts.map((a, i) => {
+            const id = String(a.id ?? a.path_id ?? i);
+            return (
+              <div className="agent wide" key={id}>
+                <b>{String(a.path_id ?? a.id ?? 'alert')}</b>
+                <span>{String(a.status ?? '')}{a.samples != null ? ` · ${a.samples} samples` : ''}</span>
+                <small>{JSON.stringify(a.summary ?? a.notes ?? '')}</small>
+                <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                  <Link to="/investigate" state={a.investigate}>
+                    Investigate
+                  </Link>
+                  <Link to={flowsHref(a.evidence_flow_ids)}>Evidence flows</Link>
+                  <button
+                    type="button"
+                    disabled={silencing === id}
+                    onClick={() => void silence(id)}
+                  >
+                    {silencing === id ? 'Silencing…' : 'Silence 60m'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </Card>
     </Board>

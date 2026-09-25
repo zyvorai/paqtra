@@ -353,6 +353,72 @@ pub async fn flow_timeline(
     Ok(Json(body))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PurgeRequest {
+    pub namespace: Option<String>,
+    pub older_than_days: Option<i64>,
+}
+
+/// GET /api/v1/flows/store — retention + coverage + recent ingest gaps.
+pub async fn flow_store_info(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+) -> ApiResult {
+    track_request(&state, |_| {}).await;
+    let scope = scope_of(&state, &claims);
+    let store = state.flow_store.clone();
+    let scope_owned = scope.clone();
+    let (coverage, purged_hint) = on_pool(move || {
+        Ok((
+            store.coverage(scope_owned.as_deref())?,
+            store.retention_days(),
+        ))
+    })
+    .await?;
+    let stats = state.flow_store.stats();
+    Ok(Json(json!({
+        "retention_days": purged_hint,
+        "coverage": coverage,
+        "ingest": {
+            "connected": stats.stream_connected,
+            "gaps": stats.gap_count,
+            "last_gap_at": stats.last_gap_at,
+            "recent_gaps": state.flow_store.recent_gaps(),
+            "events_per_sec": stats.events_per_sec,
+            "lag_secs": stats.lag_secs,
+            "source": stats.ingest_source,
+        },
+        "observe_only": true,
+    })))
+}
+
+/// POST /api/v1/flows/store/purge — namespace-scoped or global age purge (admin).
+pub async fn flow_store_purge(
+    State(state): State<Arc<AppState>>,
+    claims: Claims,
+    Json(req): Json<PurgeRequest>,
+) -> ApiResult {
+    super::check_admin(&state, &claims)?;
+    track_request(&state, |_| {}).await;
+    if let Some(ns) = req.namespace.as_deref() {
+        if !super::has_namespace_access(&state, &claims, ns) {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(json!({ "error": "namespace not in scope" })),
+            ));
+        }
+    }
+    let store = state.flow_store.clone();
+    let ns = req.namespace.clone();
+    let days = req.older_than_days;
+    let deleted = on_pool(move || store.purge(ns.as_deref(), days)).await?;
+    Ok(Json(json!({
+        "deleted": deleted,
+        "namespace": req.namespace,
+        "older_than_days": req.older_than_days.unwrap_or_else(|| state.flow_store.retention_days()),
+    })))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

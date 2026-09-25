@@ -1287,11 +1287,28 @@ export const fetchIncidents = () => api.get<{ incidents: Incident[] }>('/inciden
 // Change Log
 export const fetchChangeLog = () => api.get<{ changes: ChangeEntry[]; entries?: ChangeEntry[] }>('/changes');
 export const rollbackChange = (id: string) => api.post(`/changes/${id}/rollback`);
-export const fetchChangeImpact = (id: string, before = '30m', after = '30m') =>
-  api.get(`/changes/${id}/impact`, { params: { before, after } });
+export const fetchChangeImpact = (
+  id: string,
+  params?: { before?: string; after?: string; kind?: string; namespace?: string; limit?: number },
+) =>
+  api.get(`/changes/${id}/impact`, {
+    params: {
+      before: params?.before ?? '30m',
+      after: params?.after ?? '30m',
+      kind: params?.kind || undefined,
+      namespace: params?.namespace || undefined,
+      limit: params?.limit,
+    },
+  });
 
 export const exportInvestigateBundle = (id: string, format: 'json' | 'markdown' = 'json') =>
   api.get(`/investigate/bundles/${id}/export`, { params: { format } });
+
+export const shareInvestigateBundle = (id: string, ttl_secs = 3600) =>
+  api.post(`/investigate/bundles/${id}/share`, { ttl_secs });
+
+export const fetchInvestigateShare = (token: string) =>
+  api.get(`/investigate/share/${token}`);
 
 export interface ConnectivityPathInput {
   name: string;
@@ -1310,6 +1327,12 @@ export const createConnectivityPath = (body: ConnectivityPathInput) =>
   api.post('/connectivity/paths', body);
 export const deleteConnectivityPath = (id: string) => api.delete(`/connectivity/paths/${id}`);
 export const fetchConnectivityAlerts = () => api.get('/connectivity/alerts');
+export const silenceConnectivityAlert = (id: string, minutes = 60) =>
+  api.post(`/connectivity/alerts/${id}/silence`, { minutes });
+
+export const fetchFlowStore = () => api.get('/flows/store');
+export const purgeFlowStore = (body?: { namespace?: string; older_than_days?: number }) =>
+  api.post('/flows/store/purge', body ?? {});
 
 // Node Drain
 export const fetchNodeDrainStatus = () => api.get<{ nodes: NodeDrainStatus[] }>('/nodes/drain');

@@ -134,7 +134,18 @@ impl CacheService {
                 if Instant::now() >= exp {
                     drop(entry);
                     self.store.remove(key);
-                    let _ = self.db_delete(key);
+                    // Disk delete is best-effort and deferred — never block get() on SQLite.
+                    if let Some(db) = self.db.clone() {
+                        let key = key.to_string();
+                        tokio::spawn(async move {
+                            let _ = tokio::task::spawn_blocking(move || {
+                                if let Ok(conn) = db.lock() {
+                                    let _ = conn.execute("DELETE FROM kv WHERE key = ?1", params![key]);
+                                }
+                            })
+                            .await;
+                        });
+                    }
                 }
             }
         }
@@ -169,8 +180,26 @@ impl CacheService {
     pub async fn set_persistent<T: Serialize>(&self, key: &str, value: &T) -> Result<()> {
         let json_str =
             serde_json::to_string(value).context("Failed to serialize value for storage")?;
-        // Write to disk first so a failed write is never reported as success.
-        self.db_write(key, &json_str, None)?;
+        if let Some(db) = self.db.clone() {
+            let key_owned = key.to_string();
+            let payload = json_str.clone();
+            tokio::task::spawn_blocking(move || {
+                let conn = db
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+                conn.execute(
+                    "INSERT INTO kv (key, value, expires_at) VALUES (?1, ?2, NULL)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                         expires_at = NULL,
+                         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')",
+                    params![key_owned, payload],
+                )
+                .context("persist kv")?;
+                Ok::<(), anyhow::Error>(())
+            })
+            .await
+            .context("join persist")??;
+        }
         self.store.insert(
             key.to_string(),
             Entry {
@@ -192,7 +221,27 @@ impl CacheService {
     ) -> Result<()> {
         let json_str =
             serde_json::to_string(value).context("Failed to serialize value for storage")?;
-        self.db_write(key, &json_str, Some(now_epoch_secs() + ttl_secs as i64))?;
+        let expires_at = now_epoch_secs() + ttl_secs as i64;
+        if let Some(db) = self.db.clone() {
+            let key_owned = key.to_string();
+            let payload = json_str.clone();
+            tokio::task::spawn_blocking(move || {
+                let conn = db
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
+                conn.execute(
+                    "INSERT INTO kv (key, value, expires_at) VALUES (?1, ?2, ?3)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                         expires_at = excluded.expires_at,
+                         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')",
+                    params![key_owned, payload, expires_at],
+                )
+                .context("persist durable kv")?;
+                Ok::<(), anyhow::Error>(())
+            })
+            .await
+            .context("join durable")??;
+        }
         self.store.insert(
             key.to_string(),
             Entry {
@@ -204,7 +253,15 @@ impl CacheService {
     }
 
     pub async fn delete(&self, key: &str) -> Result<()> {
-        self.db_delete(key)?;
+        if let Some(db) = self.db.clone() {
+            let key_owned = key.to_string();
+            let _ = tokio::task::spawn_blocking(move || {
+                if let Ok(conn) = db.lock() {
+                    let _ = conn.execute("DELETE FROM kv WHERE key = ?1", params![key_owned]);
+                }
+            })
+            .await;
+        }
         self.store.remove(key);
         Ok(())
     }
@@ -227,14 +284,30 @@ impl CacheService {
                 }
             })
             .collect();
-        // Drop expired while listing
-        for key in self.store.iter().filter_map(|kv| {
-            kv.expires_at
-                .filter(|e| now >= *e)
-                .map(|_| kv.key().clone())
-        }) {
-            self.store.remove(&key);
-            let _ = self.db_delete(&key);
+        // Drop expired from memory; persist deletes off the async runtime.
+        let expired: Vec<String> = self
+            .store
+            .iter()
+            .filter_map(|kv| {
+                kv.expires_at
+                    .filter(|e| now >= *e)
+                    .map(|_| kv.key().clone())
+            })
+            .collect();
+        for key in &expired {
+            self.store.remove(key);
+        }
+        if !expired.is_empty() {
+            if let Some(db) = self.db.clone() {
+                let _ = tokio::task::spawn_blocking(move || {
+                    if let Ok(conn) = db.lock() {
+                        for key in expired {
+                            let _ = conn.execute("DELETE FROM kv WHERE key = ?1", params![key]);
+                        }
+                    }
+                })
+                .await;
+            }
         }
         Ok(keys)
     }

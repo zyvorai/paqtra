@@ -57,8 +57,11 @@ Paqtra explains failures and previews Cilium policy changes; it does not become 
 
 - `POST /api/v1/investigate/path` — why can’t A reach B (evidence + confidence)
 - `GET /api/v1/investigate/bundles/{id}/export` — redacted JSON or Markdown incident export
+- `POST /api/v1/investigate/bundles/{id}/share` — time-limited redacted share token
 - `GET /api/v1/changes/{id}/impact` — before/after flow correlation (not causation)
 - `GET|POST /api/v1/connectivity/paths` — declared path monitoring (observe-only; quiet = unknown)
+- `POST /api/v1/connectivity/alerts/{id}/silence` — maintenance silence for sustained alerts
+- `GET /api/v1/flows/store` — retention, coverage, ingest gap timeline
 - `POST /api/v1/policies/simulate` — flow-matched preview; unsupported constructs → unknown
 - Apply / rollback only via Cilium CRDs (`CiliumNetworkPolicy`)
 
