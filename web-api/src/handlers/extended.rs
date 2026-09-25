@@ -382,8 +382,6 @@ pub async fn list_clusters(
 ) -> Json<serde_json::Value> {
     track_request(&state, |_| {}).await;
 
-    use crate::services::k8s::K8sService;
-
     let configured_clusters = state.hubble.clusters();
 
     // If we have configured clusters, build info from them first
@@ -432,25 +430,10 @@ pub async fn list_clusters(
     }
 
     // Try to get cluster mesh status from cilium agent
-    let mesh_output = K8sService::run_cmd(
-        "kubectl",
-        &[
-            "exec",
-            "-n",
-            "kube-system",
-            "-l",
-            "k8s-app=cilium",
-            "-c",
-            "cilium-agent",
-            "--",
-            "cilium",
-            "clustermesh",
-            "status",
-            "-o",
-            "json",
-        ],
-    )
-    .await;
+    let mesh_output = state
+        .k8s
+        .exec_cilium_agent(&["cilium", "clustermesh", "status", "-o", "json"])
+        .await;
 
     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&mesh_output) {
         if let Some(clusters) = parsed.get("clusters").and_then(|v| v.as_array()) {

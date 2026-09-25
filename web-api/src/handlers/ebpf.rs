@@ -108,7 +108,9 @@ async fn run_bpftool_uncached(args: &[&str]) -> Result<Value, String> {
             ])
             .output();
         match tokio::time::timeout(Duration::from_secs(5), fut).await {
-            Ok(Ok(o)) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+            Ok(Ok(o)) if o.status.success() => {
+                String::from_utf8_lossy(&o.stdout).trim().to_string()
+            }
             _ => String::new(),
         }
     };
@@ -390,8 +392,16 @@ pub async fn list_real_programs(
             let keep = owner != "other"
                 || matches!(
                     ptype,
-                    "sched_cls" | "xdp" | "cgroup_skb" | "cgroup_sock" | "cgroup_device"
-                        | "cgroup_sysctl" | "lwt_in" | "lwt_out" | "lwt_xmit" | "sched_act"
+                    "sched_cls"
+                        | "xdp"
+                        | "cgroup_skb"
+                        | "cgroup_sock"
+                        | "cgroup_device"
+                        | "cgroup_sysctl"
+                        | "lwt_in"
+                        | "lwt_out"
+                        | "lwt_xmit"
+                        | "sched_act"
                 );
             if !keep {
                 return None;
@@ -848,22 +858,103 @@ pub async fn get_lb_backends(
 // (h) GET /api/v1/ebpf/drops — drop statistics
 // ---------------------------------------------------------------------------
 
-fn drop_reason_name(code: u32) -> &'static str {
-    match code {
-        0 => "Other",
-        1 => "PolicyDenied",
-        2 => "InvalidPacket",
-        3 => "NoRoute",
-        4 => "NoTunnel",
-        5 => "NoEncap",
-        6 => "UnknownL3",
-        7 => "MissedTailCall",
-        8 => "CTMapFull",
-        9 => "InvalidSrcMAC",
-        10 => "InvalidDstMAC",
-        11 => "AuthRequired",
-        _ => "Unknown",
+/// Cilium's drop reason for a `cilium_metrics` reason code. The codes are the
+/// datapath's `DROP_*` values, the same numbers Hubble reports in
+/// `drop_reason_desc`, so its enum is the one authority (`POLICY_DENIED` = 133).
+fn drop_reason_name(code: u32) -> String {
+    use crate::services::hubble_grpc::pb::flow::DropReason;
+    i32::try_from(code)
+        .ok()
+        .and_then(|c| DropReason::try_from(c).ok())
+        .filter(|r| *r != DropReason::Unknown)
+        .map(|r| r.as_str_name().to_string())
+        .unwrap_or_else(|| format!("DROP_{code}"))
+}
+
+/// Smallest `cilium_metrics` reason that is a drop. Codes below it count
+/// forwarded traffic by how it was handled (0 forwarded, 3 plaintext, 4 decrypt,
+/// LB and fragment reasons, ...): they are not drops. Hubble's `DropReason`
+/// numbering starts here as well.
+const FIRST_DROP_REASON: u32 = 130;
+
+/// One decoded `cilium_metrics` entry.
+#[derive(Debug, PartialEq, Eq)]
+struct MetricsSample {
+    /// Below [`FIRST_DROP_REASON`] this is forwarded traffic, not a drop.
+    reason: u32,
+    /// `ingress`, `egress` or `unknown`.
+    direction: &'static str,
+    count: u64,
+    bytes: u64,
+}
+
+fn metrics_direction(dir: u64) -> &'static str {
+    match dir & 0x3 {
+        1 => "ingress",
+        2 => "egress",
+        _ => "unknown",
     }
+}
+
+/// `{count, bytes}` from one value: raw bytes (`struct metrics_value`, two
+/// little-endian u64) or a BTF-decoded object.
+fn metrics_value(v: &Value) -> Option<(u64, u64)> {
+    match v {
+        Value::Array(a) => {
+            let b = hex_array_to_bytes(a);
+            (b.len() >= 8).then(|| {
+                (
+                    bytes_to_u64_le(&b[0..8]),
+                    b.get(8..).map_or(0, bytes_to_u64_le),
+                )
+            })
+        }
+        Value::Object(o) => Some((
+            o.get("count").and_then(Value::as_u64).unwrap_or(0),
+            o.get("bytes").and_then(Value::as_u64).unwrap_or(0),
+        )),
+        _ => None,
+    }
+}
+
+/// Decode one entry of `bpftool map dump id <cilium_metrics> -j`.
+///
+/// The key is `{ u8 reason; u8 dir:2; ... }`: the reason is the first byte only
+/// (reading four bytes would fold the direction into it). The map is per-CPU,
+/// so bpftool lists one value per CPU under `values`; they are summed.
+fn parse_metrics_entry(entry: &Value) -> Option<MetricsSample> {
+    let (reason, dir) = match entry.get("key")? {
+        Value::Array(a) => {
+            let b = hex_array_to_bytes(a);
+            (
+                u32::from(*b.first()?),
+                u64::from(b.get(1).copied().unwrap_or(0)),
+            )
+        }
+        Value::Object(o) => (
+            u32::try_from(o.get("reason")?.as_u64()?).ok()?,
+            o.get("dir").and_then(Value::as_u64).unwrap_or(0),
+        ),
+        _ => return None,
+    };
+
+    let (count, bytes) = if let Some(per_cpu) = entry.get("values").and_then(Value::as_array) {
+        per_cpu
+            .iter()
+            .filter_map(|c| metrics_value(c.get("value")?))
+            .fold((0u64, 0u64), |(n, b), (cn, cb)| {
+                (n.saturating_add(cn), b.saturating_add(cb))
+            })
+    } else {
+        metrics_value(entry.get("value")?)?
+    };
+
+    Some(MetricsSample {
+        reason,
+        direction: metrics_direction(dir),
+        count,
+        bytes,
+    })
 }
 
 pub async fn get_drop_stats(
@@ -912,42 +1003,18 @@ pub async fn get_drop_stats(
     let entries_arr = dump.as_array().cloned().unwrap_or_default();
     let mut items: Vec<Value> = Vec::new();
 
-    for entry in &entries_arr {
-        let key_arr = entry
-            .get("key")
-            .and_then(|k| k.as_array())
-            .cloned()
-            .unwrap_or_default();
-        let val_arr = entry
-            .get("value")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
-
-        let key_bytes = hex_array_to_bytes(&key_arr);
-        let val_bytes = hex_array_to_bytes(&val_arr);
-
-        let reason_code = if key_bytes.len() >= 4 {
-            bytes_to_u32_le(&key_bytes[0..4])
-        } else {
-            continue;
-        };
-        let count = if val_bytes.len() >= 8 {
-            bytes_to_u64_le(&val_bytes[0..8])
-        } else {
-            0
-        };
-        let bytes_val = if val_bytes.len() >= 16 {
-            bytes_to_u64_le(&val_bytes[8..16])
-        } else {
-            0
-        };
-
+    // Only reasons from FIRST_DROP_REASON up are drops.
+    for sample in entries_arr
+        .iter()
+        .filter_map(parse_metrics_entry)
+        .filter(|m| m.reason >= FIRST_DROP_REASON)
+    {
         items.push(json!({
-            "reason": drop_reason_name(reason_code),
-            "reason_code": reason_code,
-            "count": count,
-            "bytes": bytes_val,
+            "reason": drop_reason_name(sample.reason),
+            "reason_code": sample.reason,
+            "direction": sample.direction,
+            "count": sample.count,
+            "bytes": sample.bytes,
         }));
     }
 
@@ -1070,36 +1137,17 @@ pub async fn get_ebpf_summary(
         if let Some(mid) = map_id(metrics_map) {
             let id_str = mid.to_string();
             if let Ok(dump) = run_bpftool(&["map", "dump", "id", &id_str, "-j"]).await {
-                for entry in dump.as_array().unwrap_or(&vec![]) {
-                    let key_arr = entry
-                        .get("key")
-                        .and_then(|k| k.as_array())
-                        .cloned()
-                        .unwrap_or_default();
-                    let val_arr = entry
-                        .get("value")
-                        .and_then(|v| v.as_array())
-                        .cloned()
-                        .unwrap_or_default();
-
-                    let key_bytes = hex_array_to_bytes(&key_arr);
-                    let val_bytes = hex_array_to_bytes(&val_arr);
-
-                    let reason_code = if key_bytes.len() >= 4 {
-                        bytes_to_u32_le(&key_bytes[0..4])
-                    } else {
-                        continue;
-                    };
-                    let count = if val_bytes.len() >= 8 {
-                        bytes_to_u64_le(&val_bytes[0..8])
-                    } else {
-                        0
-                    };
-
-                    total_drops += count;
-                    if count > top_drop_count {
-                        top_drop_count = count;
-                        top_drop_reason = drop_reason_name(reason_code).to_string();
+                for sample in dump
+                    .as_array()
+                    .unwrap_or(&vec![])
+                    .iter()
+                    .filter_map(parse_metrics_entry)
+                    .filter(|m| m.reason >= FIRST_DROP_REASON)
+                {
+                    total_drops += sample.count;
+                    if sample.count > top_drop_count {
+                        top_drop_count = sample.count;
+                        top_drop_reason = drop_reason_name(sample.reason);
                     }
                 }
             }
@@ -1126,5 +1174,114 @@ mod tests {
         assert_eq!(classify_owner("cilium_host"), "cilium");
         assert_eq!(classify_owner("netra_tcx_ingress"), "netra");
         assert_eq!(classify_owner("custom_xdp"), "other");
+    }
+}
+
+#[cfg(test)]
+mod metrics_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn hex(bytes: &[u8]) -> Value {
+        Value::Array(bytes.iter().map(|b| json!(format!("0x{b:02x}"))).collect())
+    }
+    fn value_bytes(count: u64, bytes: u64) -> Vec<u8> {
+        [count.to_le_bytes(), bytes.to_le_bytes()].concat()
+    }
+
+    #[test]
+    fn the_reason_is_the_first_key_byte_not_four_bytes() {
+        // reason 133 (policy denied), dir 1 (ingress): as u32 this would be 389.
+        let entry = json!({
+            "key": hex(&[133, 1, 0, 0, 0, 0, 0, 0]),
+            "value": hex(&value_bytes(5, 700)),
+        });
+        assert_eq!(
+            parse_metrics_entry(&entry),
+            Some(MetricsSample {
+                reason: 133,
+                direction: "ingress",
+                count: 5,
+                bytes: 700
+            })
+        );
+    }
+
+    #[test]
+    fn direction_uses_only_the_low_two_bits() {
+        let entry = json!({ "key": hex(&[133, 0b1111_1110]), "value": hex(&value_bytes(1, 1)) });
+        assert_eq!(parse_metrics_entry(&entry).unwrap().direction, "egress");
+        let entry = json!({ "key": hex(&[133, 0]), "value": hex(&value_bytes(1, 1)) });
+        assert_eq!(parse_metrics_entry(&entry).unwrap().direction, "unknown");
+    }
+
+    #[test]
+    fn per_cpu_values_are_summed() {
+        let entry = json!({
+            "key": hex(&[181, 2, 0, 0, 0, 0, 0, 0]),
+            "values": [
+                { "cpu": 0, "value": hex(&value_bytes(3, 30)) },
+                { "cpu": 1, "value": hex(&value_bytes(4, 40)) },
+                { "cpu": 2, "value": hex(&value_bytes(0, 0)) },
+            ],
+        });
+        let s = parse_metrics_entry(&entry).unwrap();
+        assert_eq!(
+            (s.reason, s.direction, s.count, s.bytes),
+            (181, "egress", 7, 70)
+        );
+    }
+
+    #[test]
+    fn btf_decoded_entries_are_understood() {
+        let entry = json!({
+            "key": { "reason": 133, "dir": 1 },
+            "value": { "count": 9, "bytes": 90 },
+        });
+        assert_eq!(
+            parse_metrics_entry(&entry),
+            Some(MetricsSample {
+                reason: 133,
+                direction: "ingress",
+                count: 9,
+                bytes: 90
+            })
+        );
+    }
+
+    #[test]
+    fn forwarded_traffic_decodes_but_is_not_a_drop() {
+        // Seen on a live node: reason 3 (plaintext) carried 66M packets and was
+        // reported as a "drop" until only reasons >= 130 counted.
+        for reason in [0u8, 3, 4, 129] {
+            let entry = json!({ "key": hex(&[reason, 1]), "value": hex(&value_bytes(100, 1)) });
+            let s = parse_metrics_entry(&entry).unwrap();
+            assert_eq!(s.reason, u32::from(reason));
+            assert!(s.reason < FIRST_DROP_REASON, "{reason}");
+        }
+        let drop = json!({ "key": hex(&[133, 1]), "value": hex(&value_bytes(1, 1)) });
+        assert!(parse_metrics_entry(&drop).unwrap().reason >= FIRST_DROP_REASON);
+    }
+
+    #[test]
+    fn malformed_entries_are_skipped_not_guessed() {
+        assert!(parse_metrics_entry(&json!({})).is_none());
+        assert!(
+            parse_metrics_entry(&json!({ "key": hex(&[]), "value": hex(&value_bytes(1, 1)) }))
+                .is_none()
+        );
+        assert!(
+            parse_metrics_entry(&json!({ "key": hex(&[133, 1]), "value": hex(&[1, 2]) })).is_none()
+        );
+        assert!(parse_metrics_entry(&json!({ "key": "nope", "value": [] })).is_none());
+    }
+
+    #[test]
+    fn drop_reasons_use_ciliums_names() {
+        assert_eq!(drop_reason_name(133), "POLICY_DENIED");
+        assert_eq!(drop_reason_name(132), "INVALID_SOURCE_IP");
+        assert_eq!(drop_reason_name(9999), "DROP_9999");
+        // Not a drop reason: no Hubble name, so a code, never an invented label.
+        assert_eq!(drop_reason_name(3), "DROP_3");
     }
 }

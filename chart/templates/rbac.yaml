@@ -61,6 +61,29 @@ rules:
     resources:
       - ciliumendpoints
       - ciliumidentities
+      # IPAM, egress gateway, BGP (v1 peering policy + v2 config CRDs), LB-IPAM,
+      # L2 announcements and pod IP pools: read-only views.
+      - ciliumnodes
+      - ciliumegressgatewaypolicies
+      - ciliumbgppeeringpolicies
+      - ciliumbgpclusterconfigs
+      - ciliumbgppeerconfigs
+      - ciliumbgpadvertisements
+      - ciliumbgpnodeconfigs
+      - ciliumloadbalancerippools
+      - ciliuml2announcementpolicies
+      - ciliumpodippools
+      - ciliumcidrgroups
+    verbs:
+      - get
+      - list
+      - watch
+  # Gateway API objects served by Cilium's Gateway controller (read-only)
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources:
+      - gatewayclasses
+      - gateways
+      - httproutes
     verbs:
       - get
       - list

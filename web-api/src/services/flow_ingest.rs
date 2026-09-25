@@ -196,6 +196,7 @@ mod tests {
             verdict: verdict.into(),
             protocol: "TCP".into(),
             port: 80,
+            hubble: None,
             http_method: None,
             http_url: None,
             http_code: None,

@@ -661,7 +661,7 @@ fn paths_policies() -> serde_json::Value {
             "get": {
                 "tags": ["Policies"],
                 "summary": "Get policy by ID",
-                "description": "Retrieve a single network policy by its unique identifier.",
+                "description": "Retrieve a single network policy by its unique identifier, including its spec, resource_version and per-direction rule_counts.",
                 "parameters": [
                     { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
                 ],
@@ -703,6 +703,90 @@ fn paths_policies() -> serde_json::Value {
                     "401": { "$ref": "#/components/responses/Unauthorized" },
                     "403": { "$ref": "#/components/responses/Forbidden" },
                     "404": { "$ref": "#/components/responses/NotFound" },
+                    "500": { "$ref": "#/components/responses/InternalError" }
+                }
+            }
+        },
+        "/policies/{id}/rules": {
+            "post": {
+                "tags": ["Policies"],
+                "summary": "Add a rule to a policy",
+                "description": "Append one rule to the policy's ingress, egress, ingressDeny or egressDeny list and apply it through the CiliumNetworkPolicy CRD. Editor role and namespace access required. dry_run=true validates server-side without persisting; a stale resource_version returns 409.",
+                "parameters": [
+                    { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+                    { "name": "dry_run", "in": "query", "schema": { "type": "boolean", "default": false } }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": { "application/json": { "schema": {
+                        "type": "object",
+                        "required": ["direction", "rule"],
+                        "properties": {
+                            "direction": { "type": "string", "enum": ["ingress", "egress", "ingressDeny", "egressDeny"] },
+                            "rule": { "type": "object" },
+                            "resource_version": { "type": "string" }
+                        }
+                    } } }
+                },
+                "responses": {
+                    "200": { "description": "Rule added; body has the resulting spec and rule_counts" },
+                    "400": { "description": "Invalid rule or spec" },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" },
+                    "409": { "description": "Policy changed since resource_version was read" },
+                    "500": { "$ref": "#/components/responses/InternalError" }
+                }
+            },
+            "put": {
+                "tags": ["Policies"],
+                "summary": "Replace one rule of a policy",
+                "description": "Replace the rule at `index` within `direction`. Same semantics as adding.",
+                "parameters": [
+                    { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+                    { "name": "dry_run", "in": "query", "schema": { "type": "boolean", "default": false } }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": { "application/json": { "schema": {
+                        "type": "object",
+                        "required": ["direction", "index", "rule"],
+                        "properties": {
+                            "direction": { "type": "string", "enum": ["ingress", "egress", "ingressDeny", "egressDeny"] },
+                            "index": { "type": "integer", "minimum": 0 },
+                            "rule": { "type": "object" },
+                            "resource_version": { "type": "string" }
+                        }
+                    } } }
+                },
+                "responses": {
+                    "200": { "description": "Rule replaced" },
+                    "400": { "description": "Invalid rule, spec or index" },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" },
+                    "409": { "description": "Policy changed since resource_version was read" },
+                    "500": { "$ref": "#/components/responses/InternalError" }
+                }
+            },
+            "delete": {
+                "tags": ["Policies"],
+                "summary": "Delete one rule of a policy",
+                "description": "Remove the rule at `index` within `direction`. The policy's last rule cannot be removed (Cilium rejects a policy with no rules): delete the policy instead.",
+                "parameters": [
+                    { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+                    { "name": "direction", "in": "query", "required": true, "schema": { "type": "string", "enum": ["ingress", "egress", "ingressDeny", "egressDeny"] } },
+                    { "name": "index", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 0 } },
+                    { "name": "resource_version", "in": "query", "schema": { "type": "string" } },
+                    { "name": "dry_run", "in": "query", "schema": { "type": "boolean", "default": false } }
+                ],
+                "responses": {
+                    "200": { "description": "Rule deleted; result.removed holds it" },
+                    "400": { "description": "Invalid index, or the policy's last rule" },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" },
+                    "409": { "description": "Policy changed since resource_version was read" },
                     "500": { "$ref": "#/components/responses/InternalError" }
                 }
             }

@@ -357,6 +357,10 @@ pub async fn audit_log(
 // ── Alerts ──────────────────────────────────────────────────
 
 const ALERT_RULES_PREFIX: &str = "cv:alert_rules:";
+const ALERT_RULES_SEEDED_KEY: &str = "cv:alert_rules_seeded";
+/// Ids of the rules seeded by `list_alert_rules`; deleting one needs `?force=true`.
+const BUILTIN_ALERT_RULES: [&str; 5] = ["rule-001", "rule-002", "rule-003", "rule-004", "rule-005"];
+const ALERT_SEVERITIES: [&str; 4] = ["critical", "high", "warning", "info"];
 
 pub async fn list_alert_rules(
     State(state): State<Arc<AppState>>,
@@ -370,8 +374,19 @@ pub async fn list_alert_rules(
         .await
         .unwrap_or_default();
 
-    // Seed default rules if empty
-    if items.is_empty() {
+    // Seed default rules once: after the marker is set, an empty list stays empty.
+    let seeded = state
+        .cache
+        .get::<bool>(ALERT_RULES_SEEDED_KEY)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(false);
+    if items.is_empty() && !seeded {
+        let _ = state
+            .cache
+            .set_persistent(ALERT_RULES_SEEDED_KEY, &true)
+            .await;
         let defaults = vec![
             serde_json::json!({ "id": "rule-001", "name": "High Drop Rate", "condition": "drop_rate > 5% for 5m", "severity": "critical", "enabled": true }),
             serde_json::json!({ "id": "rule-002", "name": "DNS Resolution Failure", "condition": "dns_servfail > 10/min", "severity": "high", "enabled": true }),
@@ -436,6 +451,184 @@ pub async fn toggle_alert_rule(
     } else {
         Ok(Json(serde_json::json!({ "id": id, "status": "not_found" })))
     }
+}
+
+#[derive(serde::Deserialize)]
+pub struct AlertRuleRequest {
+    pub name: String,
+    pub condition: String,
+    pub severity: String,
+    pub enabled: Option<bool>,
+}
+
+#[derive(Default, serde::Deserialize)]
+pub struct DeleteAlertRuleQuery {
+    #[serde(default)]
+    pub force: bool,
+}
+
+type HandlerError = (StatusCode, Json<serde_json::Value>);
+
+fn bad_request(msg: impl Into<String>) -> HandlerError {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({ "error": msg.into() })),
+    )
+}
+
+/// Validate a rule body. `keep_condition` lets an edit leave a stored
+/// condition unchanged even if the engine cannot evaluate it (seeded
+/// `ct_entries` rule).
+fn validate_alert_rule(
+    req: &AlertRuleRequest,
+    keep_condition: Option<&str>,
+) -> Result<(), HandlerError> {
+    let name = req.name.trim();
+    if name.is_empty() || name.len() > 100 {
+        return Err(bad_request("name must be 1-100 characters"));
+    }
+    if req.condition.len() > 200 {
+        return Err(bad_request("condition must be at most 200 characters"));
+    }
+    if !ALERT_SEVERITIES.contains(&req.severity.as_str()) {
+        return Err(bad_request(format!(
+            "severity must be one of {}",
+            ALERT_SEVERITIES.join(", ")
+        )));
+    }
+    if keep_condition.is_some_and(|c| c == req.condition.trim()) {
+        return Ok(());
+    }
+    crate::services::alerting::validate_condition(&req.condition).map_err(bad_request)
+}
+
+pub async fn create_alert_rule(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+    Json(req): Json<AlertRuleRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), HandlerError> {
+    super::check_editor(&state, &claims)?;
+    track_request(&state, |_| {}).await;
+    validate_alert_rule(&req, None)?;
+
+    let id = format!("rule-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
+    let rule = serde_json::json!({
+        "id": id,
+        "name": req.name.trim(),
+        "condition": req.condition.trim(),
+        "severity": req.severity,
+        "enabled": req.enabled.unwrap_or(true),
+    });
+    state
+        .cache
+        .set_persistent(&format!("{}{}", ALERT_RULES_PREFIX, id), &rule)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to save alert rule: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to save alert rule" })),
+            )
+        })?;
+    emit_audit(
+        &state,
+        "alert.rule.create",
+        &id,
+        "",
+        &format!("Alert rule '{}' created", req.name.trim()),
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
+    Ok((StatusCode::CREATED, Json(rule)))
+}
+
+pub async fn update_alert_rule(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+    Path(id): Path<String>,
+    Json(req): Json<AlertRuleRequest>,
+) -> Result<Json<serde_json::Value>, HandlerError> {
+    super::check_editor(&state, &claims)?;
+    track_request(&state, |_| {}).await;
+
+    let key = format!("{}{}", ALERT_RULES_PREFIX, id);
+    let Ok(Some(mut rule)) = state.cache.get::<serde_json::Value>(&key).await else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Alert rule not found" })),
+        ));
+    };
+    let stored_condition = rule
+        .get("condition")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    validate_alert_rule(&req, Some(&stored_condition))?;
+
+    // Edit only the definition; keep id, trigger history and (unless given) enabled.
+    rule["name"] = serde_json::json!(req.name.trim());
+    rule["condition"] = serde_json::json!(req.condition.trim());
+    rule["severity"] = serde_json::json!(req.severity);
+    if let Some(enabled) = req.enabled {
+        rule["enabled"] = serde_json::json!(enabled);
+    }
+    state.cache.set_persistent(&key, &rule).await.map_err(|e| {
+        tracing::error!("Failed to save alert rule: {}", e);
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "Failed to save alert rule" })),
+        )
+    })?;
+    emit_audit(
+        &state,
+        "alert.rule.update",
+        &id,
+        "",
+        &format!("Alert rule '{}' updated", req.name.trim()),
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
+    Ok(Json(rule))
+}
+
+pub async fn delete_alert_rule(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+    Path(id): Path<String>,
+    Query(q): Query<DeleteAlertRuleQuery>,
+) -> Result<StatusCode, HandlerError> {
+    super::check_editor(&state, &claims)?;
+    track_request(&state, |_| {}).await;
+
+    if BUILTIN_ALERT_RULES.contains(&id.as_str()) && !q.force {
+        return Err(bad_request(
+            "built-in rule: disable it instead, or pass force=true to delete",
+        ));
+    }
+    let key = format!("{}{}", ALERT_RULES_PREFIX, id);
+    if !matches!(
+        state.cache.get::<serde_json::Value>(&key).await,
+        Ok(Some(_))
+    ) {
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Alert rule not found" })),
+        ));
+    }
+    let _ = state.cache.delete(&key).await;
+    emit_audit(
+        &state,
+        "alert.rule.delete",
+        &id,
+        "",
+        "Alert rule deleted",
+        &actor_from_claims(&claims),
+        "success",
+    )
+    .await;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ── Service Map ─────────────────────────────────────────────
@@ -824,26 +1017,10 @@ pub async fn list_mesh_peers(
     track_request(&state, |_| {}).await;
 
     // Query ClusterMesh status via Cilium
-    use crate::services::k8s::K8sService;
-    let mesh_output = K8sService::run_cmd(
-        "kubectl",
-        &[
-            "exec",
-            "-n",
-            "kube-system",
-            "-l",
-            "k8s-app=cilium",
-            "-c",
-            "cilium-agent",
-            "--",
-            "cilium",
-            "clustermesh",
-            "status",
-            "-o",
-            "json",
-        ],
-    )
-    .await;
+    let mesh_output = state
+        .k8s
+        .exec_cilium_agent(&["cilium", "clustermesh", "status", "-o", "json"])
+        .await;
 
     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&mesh_output) {
         if let Some(clusters) = parsed.get("clusters").and_then(|v| v.as_array()) {

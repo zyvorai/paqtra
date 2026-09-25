@@ -12,6 +12,9 @@ pub enum ApiError {
     Unauthorized(String),
     Forbidden,
     Conflict(String),
+    /// A dependency (cluster, Cilium agent) failed. The message is shown: it is
+    /// what the operator needs to fix, unlike an internal error.
+    BadGateway(String),
     InternalError(String),
 }
 
@@ -23,6 +26,7 @@ impl IntoResponse for ApiError {
             ApiError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
             ApiError::Forbidden => (StatusCode::FORBIDDEN, "Forbidden".to_string()),
             ApiError::Conflict(msg) => (StatusCode::CONFLICT, msg),
+            ApiError::BadGateway(msg) => (StatusCode::BAD_GATEWAY, msg),
             ApiError::InternalError(msg) => {
                 tracing::error!("Internal error: {}", msg);
                 (

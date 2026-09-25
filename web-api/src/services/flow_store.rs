@@ -95,11 +95,19 @@ impl StoredFlow {
             src_namespace: flow.source.namespace.clone(),
             src_pod: flow.source.pod.clone(),
             src_ip: flow.source.ip.clone(),
-            src_identity: 0,
+            src_identity: flow
+                .hubble
+                .as_ref()
+                .and_then(|m| m.source_identity)
+                .map_or(0, i64::from),
             dst_namespace: flow.destination.namespace.clone(),
             dst_pod: flow.destination.pod.clone(),
             dst_ip: flow.destination.ip.clone(),
-            dst_identity: 0,
+            dst_identity: flow
+                .hubble
+                .as_ref()
+                .and_then(|m| m.destination_identity)
+                .map_or(0, i64::from),
             source,
         }
     }
@@ -129,6 +137,13 @@ impl StoredFlow {
             } else {
                 Some(self.drop_reason)
             },
+            // Only identities are persisted; the rest of the Hubble context is not.
+            hubble: crate::models::flow::FlowMeta {
+                source_identity: u32::try_from(self.src_identity).ok().filter(|&i| i != 0),
+                destination_identity: u32::try_from(self.dst_identity).ok().filter(|&i| i != 0),
+                ..Default::default()
+            }
+            .or_none(),
             ..Default::default()
         }
     }
@@ -872,6 +887,26 @@ mod tests {
             FlowSource::HubbleCli,
             "Policy denied",
         )
+    }
+
+    #[test]
+    fn identities_survive_the_stored_row() {
+        let mut flow = sample("f-ident").into_flow();
+        flow.hubble = Some(crate::models::flow::FlowMeta {
+            source_identity: Some(4242),
+            destination_identity: Some(7),
+            node_name: Some("not-persisted".into()),
+            ..Default::default()
+        });
+        let row = StoredFlow::from_flow(&flow, FlowSource::HubbleCli, "");
+        assert_eq!((row.src_identity, row.dst_identity), (4242, 7));
+
+        let meta = row.into_flow().hubble.expect("identities restored");
+        assert_eq!(meta.source_identity, Some(4242));
+        assert_eq!(meta.destination_identity, Some(7));
+        assert_eq!(meta.node_name, None);
+        // No identities: no object at all.
+        assert!(sample("plain").into_flow().hubble.is_none());
     }
 
     #[test]

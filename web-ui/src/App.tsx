@@ -60,6 +60,8 @@ const WireGuardPeers = React.lazy(() => import('./views/WireGuardPeers'));
 const CiliumStatusView = React.lazy(() => import('./views/CiliumStatus'));
 const PolicyEditorView = React.lazy(() => import('./views/PolicyEditor'));
 const RuleBuilderView = React.lazy(() => import('./views/RuleBuilder'));
+const PolicyRulesView = React.lazy(() => import('./views/PolicyRules'));
+const CiliumInsightsView = React.lazy(() => import('./views/CiliumInsights'));
 const FlowExporter = React.lazy(() => import('./views/FlowExporter'));
 const SLODashboard = React.lazy(() => import('./views/SLODashboard'));
 const IncidentTimeline = React.lazy(() => import('./views/IncidentTimeline'));
@@ -173,6 +175,8 @@ const App: React.FC = () => {
                   <Route path="/cilium-status" element={<V><CiliumStatusView /></V>} />
                   <Route path="/policy-editor" element={<V><PolicyEditorView /></V>} />
                   <Route path="/rule-builder" element={<V><RuleBuilderView /></V>} />
+                  <Route path="/policy-rules" element={<V><PolicyRulesView /></V>} />
+                  <Route path="/cilium-insights" element={<V><CiliumInsightsView /></V>} />
                   <Route path="/flow-export" element={<V><FlowExporter /></V>} />
                   <Route path="/slo" element={<V><SLODashboard /></V>} />
                   <Route path="/incidents" element={<V><IncidentTimeline /></V>} />

@@ -137,6 +137,84 @@ impl K8sService {
         }
     }
 
+    /// Run `args` inside the `cilium-agent` container of one Cilium agent pod
+    /// and return stdout (empty on any failure, like [`Self::run_cmd`]).
+    pub async fn exec_cilium_agent(&self, args: &[&str]) -> String {
+        self.exec_cilium_agent_result(args).await.unwrap_or_default()
+    }
+
+    /// Like [`Self::exec_cilium_agent`], but says why it failed.
+    ///
+    /// `kubectl exec` has no label selector (`-l` is rejected), so a pod name is
+    /// resolved first. Only that one node's agent answers: use it for status and
+    /// samples, not cluster-wide totals.
+    pub async fn exec_cilium_agent_result(&self, args: &[&str]) -> Result<String> {
+        let mut get = self.kubectl(&[
+            "get",
+            "pods",
+            "-n",
+            "kube-system",
+            "-l",
+            "k8s-app=cilium",
+            "-o",
+            "jsonpath={.items[0].metadata.name}",
+        ]);
+        let out = timeout(Duration::from_secs(5), get.output())
+            .await
+            .context("timed out looking up a Cilium agent pod")?
+            .context("kubectl not available")?;
+        if !out.status.success() {
+            anyhow::bail!(
+                "cannot list Cilium agent pods: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        let pod = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if pod.is_empty() {
+            anyhow::bail!("no Cilium agent pod found (label k8s-app=cilium in kube-system)");
+        }
+
+        let mut exec_args = vec![
+            "exec",
+            "-n",
+            "kube-system",
+            pod.as_str(),
+            "-c",
+            "cilium-agent",
+            "--",
+        ];
+        exec_args.extend_from_slice(args);
+        let mut cmd = self.kubectl(&exec_args);
+        let out = timeout(Duration::from_secs(15), cmd.output())
+            .await
+            .context("timed out running the command in the Cilium agent")?
+            .context("kubectl not available")?;
+        if !out.status.success() {
+            anyhow::bail!(
+                "command failed in the Cilium agent: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    }
+
+    /// Run a `cilium-dbg` subcommand in the agent, falling back to the older
+    /// `cilium` binary name (Cilium < 1.15 has no `cilium-dbg`).
+    pub async fn cilium_dbg(&self, args: &[&str]) -> Result<String> {
+        let mut with_dbg = vec!["cilium-dbg"];
+        with_dbg.extend_from_slice(args);
+        match self.exec_cilium_agent_result(&with_dbg).await {
+            Ok(out) => Ok(out),
+            Err(first) => {
+                let mut legacy = vec!["cilium"];
+                legacy.extend_from_slice(args);
+                self.exec_cilium_agent_result(&legacy)
+                    .await
+                    .map_err(|second| anyhow::anyhow!("{first}; fallback: {second}"))
+            }
+        }
+    }
+
     /// Run a CLI command with data piped to stdin. Returns (success, stdout, stderr).
     pub async fn run_cmd_stdin(
         program: &str,
@@ -214,24 +292,78 @@ impl K8sService {
         }
     }
 
+    /// Fetch one CiliumNetworkPolicy object (spec, resourceVersion, ...).
+    /// `Ok(None)` when it does not exist.
+    pub async fn get_policy_object(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> Result<Option<serde_json::Value>> {
+        validate_k8s_name(name, "policy name")?;
+        validate_k8s_name(namespace, "namespace")?;
+
+        let mut cmd = self.kubectl(&[
+            "get",
+            "ciliumnetworkpolicy",
+            name,
+            "-n",
+            namespace,
+            "-o",
+            "json",
+        ]);
+        let out = timeout(Duration::from_secs(30), cmd.output())
+            .await
+            .context("kubectl get policy timed out after 30 seconds")?
+            .context("kubectl not available")?;
+        if out.status.success() {
+            let obj = serde_json::from_slice(&out.stdout)
+                .context("Failed to parse kubectl JSON output")?;
+            return Ok(Some(obj));
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        if stderr.contains("NotFound") || stderr.contains("not found") {
+            return Ok(None);
+        }
+        anyhow::bail!("kubectl get failed: {}", stderr.trim())
+    }
+
     /// Create a CiliumNetworkPolicy from a request
     pub async fn create_policy(&self, req: &CreatePolicyRequest) -> Result<Policy> {
+        self.apply_policy(req, &ApplyOptions::default()).await
+    }
+
+    /// `kubectl apply` a CiliumNetworkPolicy. With `resource_version` the API
+    /// server rejects the write if the object changed meanwhile (see
+    /// [`is_conflict`]); with `dry_run` nothing is persisted.
+    pub async fn apply_policy(
+        &self,
+        req: &CreatePolicyRequest,
+        opts: &ApplyOptions,
+    ) -> Result<Policy> {
         validate_k8s_name(&req.name, "policy name")?;
         validate_k8s_name(&req.namespace, "namespace")?;
 
+        let mut metadata = serde_json::json!({
+            "name": req.name,
+            "namespace": req.namespace,
+        });
+        if let Some(rv) = &opts.resource_version {
+            metadata["resourceVersion"] = serde_json::Value::String(rv.clone());
+        }
         let policy_manifest = serde_json::json!({
             "apiVersion": "cilium.io/v2",
             "kind": "CiliumNetworkPolicy",
-            "metadata": {
-                "name": req.name,
-                "namespace": req.namespace,
-            },
+            "metadata": metadata,
             "spec": req.spec,
         });
 
         let manifest_str = serde_json::to_string(&policy_manifest)?;
 
-        let mut cmd = self.kubectl(&["apply", "-f", "-"]);
+        let mut args = vec!["apply", "-f", "-"];
+        if opts.dry_run {
+            args.push("--dry-run=server");
+        }
+        let mut cmd = self.kubectl(&args);
 
         let mut child = cmd
             .stdin(std::process::Stdio::piped())
@@ -261,7 +393,7 @@ impl K8sService {
             name: req.name.clone(),
             namespace: req.namespace.clone(),
             created_at: chrono::Utc::now().to_rfc3339(),
-            status: "created".to_string(),
+            status: if opts.dry_run { "dry-run" } else { "created" }.to_string(),
         })
     }
 
@@ -319,6 +451,20 @@ impl K8sService {
             Err(e) => anyhow::bail!("kubectl not available: {}", e),
         }
     }
+}
+
+/// Knobs for [`K8sService::apply_policy`].
+#[derive(Debug, Default, Clone)]
+pub struct ApplyOptions {
+    pub dry_run: bool,
+    /// Optimistic-concurrency token: the resourceVersion the caller read.
+    pub resource_version: Option<String>,
+}
+
+/// Whether an apply error is the API server's optimistic-concurrency conflict.
+pub fn is_conflict(err: &anyhow::Error) -> bool {
+    let msg = err.to_string();
+    msg.contains("Conflict") || msg.contains("the object has been modified")
 }
 
 /// Extract a string field from a JSON value, returning `fallback` if absent.

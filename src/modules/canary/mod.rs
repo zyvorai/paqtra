@@ -308,11 +308,12 @@ impl CanaryEngine {
             new_canary_pct
         );
 
-        // Annotate the Kubernetes service with the desired traffic weight.
-        // Cilium's L7 load balancer reads the `cilium.io/canary-weight`
-        // annotation to split traffic between stable and canary backends.
-        let weight_annotation = format!("cilium.io/canary-weight={}", new_canary_pct);
-        let version_annotation = format!("cilium.io/canary-version={}", canary.canary_version);
+        // Record the desired traffic weight on the Kubernetes service.
+        // These are Paqtra-owned keys: Cilium does not read them, so this alone
+        // does not split traffic. Something that acts on the weight (Gateway API
+        // HTTPRoute backendRef weights, a CiliumEnvoyConfig) has to consume it.
+        let weight_annotation = format!("paqtra.io/canary-weight={}", new_canary_pct);
+        let version_annotation = format!("paqtra.io/canary-version={}", canary.canary_version);
         let svc = &canary.service_name;
         let ns = &canary.namespace;
 

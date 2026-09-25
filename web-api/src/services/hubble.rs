@@ -127,10 +127,11 @@ impl HubbleService {
             let mode = self.mode;
 
             handles.push(tokio::spawn(async move {
-                let flows = fetch_flows(mode, &addr, limit, namespace.as_deref(), Some(&name))
-                    .await
-                    .map(|(flows, _)| flows)
-                    .unwrap_or_default();
+                let flows =
+                    fetch_flows(mode, &addr, limit, namespace.as_deref(), None, Some(&name))
+                        .await
+                        .map(|(flows, _)| flows)
+                        .unwrap_or_default();
                 (name, flows)
             }));
         }
@@ -155,7 +156,23 @@ impl HubbleService {
         limit: usize,
         namespace: Option<&str>,
     ) -> Result<(Vec<Flow>, FlowSource)> {
-        fetch_flows(self.mode, &self.address, limit, namespace, None).await
+        fetch_flows(self.mode, &self.address, limit, namespace, None, None).await
+    }
+
+    /// The most recent `limit` flows that have `verdict`, filtered by Hubble
+    /// itself. Filtering the last N flows afterwards would return only the few
+    /// drops that happen to be among them.
+    pub async fn get_flows_by_verdict(
+        &self,
+        limit: usize,
+        namespace: Option<&str>,
+        verdict: Option<&str>,
+    ) -> Result<Vec<Flow>> {
+        Ok(
+            fetch_flows(self.mode, &self.address, limit, namespace, verdict, None)
+                .await?
+                .0,
+        )
     }
 
     /// Follow new flows as they happen. Connection errors are returned here;
@@ -215,6 +232,7 @@ async fn fetch_flows(
     address: &str,
     limit: usize,
     namespace: Option<&str>,
+    verdict: Option<&str>,
     cluster: Option<&str>,
 ) -> Result<(Vec<Flow>, FlowSource)> {
     // Cap the limit to prevent excessive resource consumption
@@ -223,28 +241,30 @@ async fn fetch_flows(
 
     match mode {
         HubbleMode::Cli => Ok((
-            cli_flows(address, limit, namespace, cluster).await,
+            cli_flows(address, limit, namespace, verdict, cluster).await,
             FlowSource::HubbleCli,
         )),
         HubbleMode::Grpc => {
-            let flows = hubble_grpc::last_flows(address, limit, namespace, cluster).await?;
+            let flows =
+                hubble_grpc::last_flows(address, limit, namespace, verdict, cluster).await?;
             Ok((flows, FlowSource::HubbleGrpc))
         }
-        HubbleMode::Auto => match hubble_grpc::last_flows(address, limit, namespace, cluster).await
-        {
-            Ok(flows) => Ok((flows, FlowSource::HubbleGrpc)),
-            Err(e) if on_path("hubble") => {
-                tracing::debug!("Hubble gRPC failed for {address} ({e:#}); trying the CLI");
-                Ok((
-                    cli_flows(address, limit, namespace, cluster).await,
-                    FlowSource::HubbleCli,
-                ))
+        HubbleMode::Auto => {
+            match hubble_grpc::last_flows(address, limit, namespace, verdict, cluster).await {
+                Ok(flows) => Ok((flows, FlowSource::HubbleGrpc)),
+                Err(e) if on_path("hubble") => {
+                    tracing::debug!("Hubble gRPC failed for {address} ({e:#}); trying the CLI");
+                    Ok((
+                        cli_flows(address, limit, namespace, verdict, cluster).await,
+                        FlowSource::HubbleCli,
+                    ))
+                }
+                Err(e) => {
+                    tracing::debug!("Hubble gRPC failed for {address} and no hubble CLI: {e:#}");
+                    Ok((Vec::new(), FlowSource::Unavailable))
+                }
             }
-            Err(e) => {
-                tracing::debug!("Hubble gRPC failed for {address} and no hubble CLI: {e:#}");
-                Ok((Vec::new(), FlowSource::Unavailable))
-            }
-        },
+        }
     }
 }
 
@@ -253,6 +273,7 @@ async fn cli_flows(
     address: &str,
     limit: usize,
     namespace: Option<&str>,
+    verdict: Option<&str>,
     cluster: Option<&str>,
 ) -> Vec<Flow> {
     let mut cmd = Command::new("hubble");
@@ -265,6 +286,10 @@ async fn cli_flows(
         .arg(address);
     if let Some(ns) = namespace {
         cmd.arg("--namespace").arg(ns);
+    }
+    // Only a verdict Hubble knows is passed; the caller post-filters the rest.
+    if let Some(v) = verdict.and_then(hubble_grpc::parse_verdict) {
+        cmd.arg("--verdict").arg(v.as_str_name());
     }
 
     let output = match cmd.output().await {
@@ -550,7 +575,9 @@ pub fn hubble_json_to_flow(_index: usize, v: &serde_json::Value) -> Flow {
         .and_then(|d| d.get("rcode").or_else(|| d.get("Rcode")))
         .and_then(|x| x.as_u64())
         .map(|n| n as u32);
-    let dns_rcode_name = dns_rcode.map(crate::models::flow::dns_rcode_name).map(str::to_string);
+    let dns_rcode_name = dns_rcode
+        .map(crate::models::flow::dns_rcode_name)
+        .map(str::to_string);
     let dns_ips = l7_dns.and_then(|d| {
         d.get("ips")
             .or_else(|| d.get("Ips"))
@@ -577,6 +604,8 @@ pub fn hubble_json_to_flow(_index: usize, v: &serde_json::Value) -> Flow {
         })
         .filter(|s| !s.is_empty() && s != "DROP_REASON_UNKNOWN" && s != "0");
 
+    let hubble = hubble_json_meta(v);
+
     Flow {
         id,
         timestamp,
@@ -585,6 +614,7 @@ pub fn hubble_json_to_flow(_index: usize, v: &serde_json::Value) -> Flow {
         verdict,
         protocol,
         port,
+        hubble,
         http_method,
         http_url,
         http_code,
@@ -600,6 +630,53 @@ pub fn hubble_json_to_flow(_index: usize, v: &serde_json::Value) -> Flow {
         dns_latency_ns,
         drop_reason,
     }
+}
+
+/// Context fields of a `hubble observe -o json` flow (same data the gRPC path
+/// reads from the protobuf). Enum fields arrive as names, `policy_match_type`
+/// as a number; anything absent stays `None`.
+fn hubble_json_meta(v: &serde_json::Value) -> Option<crate::models::flow::FlowMeta> {
+    use crate::models::flow::{policy_match_name, FlowMeta, MAX_FLOW_LABELS};
+    let s = |k: &str| {
+        v.get(k)
+            .and_then(|x| x.as_str())
+            .filter(|x| !x.is_empty() && !x.ends_with("UNKNOWN") && *x != "UNKNOWN_POINT")
+            .map(str::to_string)
+    };
+    let identity = |ep: &str| {
+        v.get(ep)
+            .and_then(|e| e.get("identity"))
+            .and_then(|x| x.as_u64())
+            .filter(|&i| i != 0)
+            .and_then(|i| u32::try_from(i).ok())
+    };
+    let labels = |ep: &str| -> Vec<String> {
+        v.get(ep)
+            .and_then(|e| e.get("labels"))
+            .and_then(|x| x.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|l| l.as_str().map(str::to_string))
+                    .take(MAX_FLOW_LABELS)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    FlowMeta {
+        traffic_direction: s("traffic_direction"),
+        is_reply: v.get("is_reply").and_then(|x| x.as_bool()),
+        policy_match_type: v
+            .get("policy_match_type")
+            .and_then(|x| x.as_u64())
+            .and_then(|n| policy_match_name(n as u32)),
+        trace_observation_point: s("trace_observation_point"),
+        node_name: s("node_name"),
+        source_identity: identity("source"),
+        destination_identity: identity("destination"),
+        source_labels: labels("source"),
+        destination_labels: labels("destination"),
+    }
+    .or_none()
 }
 
 /// An id derived from a flow's content, for flows Hubble sent without a `uuid`.
@@ -709,6 +786,35 @@ mod hubble_format_tests {
         let f = flow_from_hubble_line(0, &wrapped_drop()).unwrap();
         assert_eq!(f.source.ip, "10.0.1.5");
         assert_eq!(f.destination.ip, "10.0.2.7");
+    }
+
+    #[test]
+    fn reads_identities_labels_direction_and_node() {
+        let mut line = wrapped_drop();
+        line["flow"]["policy_match_type"] = json!(4);
+        let meta = flow_from_hubble_line(0, &line)
+            .unwrap()
+            .hubble
+            .expect("context");
+        assert_eq!(meta.traffic_direction.as_deref(), Some("INGRESS"));
+        assert_eq!(meta.is_reply, Some(false));
+        assert_eq!(meta.policy_match_type.as_deref(), Some("all"));
+        assert_eq!(meta.trace_observation_point.as_deref(), Some("TO_ENDPOINT"));
+        assert_eq!(meta.node_name.as_deref(), Some("kind-worker"));
+        assert_eq!(meta.source_identity, Some(54321));
+        assert_eq!(meta.destination_identity, Some(12345));
+        assert_eq!(meta.source_labels, vec!["k8s:app=web".to_string()]);
+        assert_eq!(meta.destination_labels, vec!["k8s:app=gw".to_string()]);
+    }
+
+    #[test]
+    fn unknown_enum_names_are_dropped_not_shown() {
+        let mut line = wrapped_drop();
+        line["flow"]["traffic_direction"] = json!("TRAFFIC_DIRECTION_UNKNOWN");
+        line["flow"]["trace_observation_point"] = json!("UNKNOWN_POINT");
+        let meta = flow_from_hubble_line(0, &line).unwrap().hubble.unwrap();
+        assert_eq!(meta.traffic_direction, None);
+        assert_eq!(meta.trace_observation_point, None);
     }
 
     #[test]

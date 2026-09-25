@@ -173,6 +173,37 @@ export const updatePolicy = (id: string, body: {
 
 export const deletePolicy = (id: string) => api.delete(`/policies/${id}`);
 
+// Policy rules: individual ingress/egress/deny rules inside one CiliumNetworkPolicy.
+export type RuleDirection = 'ingress' | 'egress' | 'ingressDeny' | 'egressDeny';
+export const RULE_DIRECTIONS: RuleDirection[] = ['ingress', 'egress', 'ingressDeny', 'egressDeny'];
+export type PolicyRule = Record<string, unknown>;
+
+export interface PolicyDetail extends Policy {
+  /** Optimistic-concurrency token: send it back to get a 409 if the policy changed. */
+  resource_version: string;
+  rule_counts: Record<RuleDirection, number>;
+  spec: Record<string, unknown>;
+}
+
+export interface RuleChangeResult {
+  policy: string;
+  action: 'add' | 'edit' | 'delete';
+  direction: RuleDirection;
+  dry_run: boolean;
+  rule_counts: Record<RuleDirection, number>;
+  spec: Record<string, unknown>;
+  result: { index: number; removed?: PolicyRule };
+}
+
+const policyPath = (id: string) => `/policies/${encodeURIComponent(id)}`;
+export const fetchPolicy = (id: string) => api.get<PolicyDetail>(policyPath(id));
+export const addPolicyRule = (id: string, body: { direction: RuleDirection; rule: PolicyRule; resource_version?: string }, dryRun = false) =>
+  api.post<RuleChangeResult>(`${policyPath(id)}/rules`, body, { params: dryRun ? { dry_run: true } : undefined });
+export const updatePolicyRule = (id: string, body: { direction: RuleDirection; index: number; rule: PolicyRule; resource_version?: string }, dryRun = false) =>
+  api.put<RuleChangeResult>(`${policyPath(id)}/rules`, body, { params: dryRun ? { dry_run: true } : undefined });
+export const deletePolicyRule = (id: string, q: { direction: RuleDirection; index: number; resource_version?: string }, dryRun = false) =>
+  api.delete<RuleChangeResult>(`${policyPath(id)}/rules`, { params: { ...q, ...(dryRun ? { dry_run: true } : {}) } });
+
 export const simulatePolicy = (body: {
   name: string;
   namespace: string;
@@ -1158,10 +1189,90 @@ export const fetchConnectivityTest = () => api.post('/diagnostics/connectivity')
 // Audit
 export const fetchAuditLog = () => api.get<{ entries: AuditEntry[] }>('/audit/log');
 
+// Cilium / Hubble insights
+export type FeatureState = 'enabled' | 'disabled' | 'set' | 'unknown';
+export interface CiliumFeature {
+  key: string;
+  title: string;
+  category: string;
+  state: FeatureState;
+  value?: string;
+  config_key?: string;
+  /** Paqtra page that shows this feature. */
+  view?: string;
+}
+export interface HubbleNodeInfo {
+  cluster: string;
+  name: string;
+  version: string;
+  address: string;
+  state: string;
+  tls_enabled: boolean;
+  uptime_seconds: number;
+  num_flows: number;
+  max_flows: number;
+  seen_flows: number;
+}
+export interface MetricSeries { labels: Record<string, string>; value: number }
+export interface MetricGroup {
+  key: string;
+  title: string;
+  unit: string;
+  series: MetricSeries[];
+  hint?: string | null;
+  error?: string | null;
+}
+export interface MetricsReport { available: boolean; reason?: string; window?: string; metrics: MetricGroup[] }
+export interface CiliumResource {
+  name: string | null;
+  namespace: string | null;
+  created_at: string | null;
+  spec: unknown;
+  status: unknown;
+}
+export const RESOURCE_KINDS: { kind: string; label: string }[] = [
+  { kind: 'nodes', label: 'CiliumNodes' },
+  { kind: 'egress-gateway-policies', label: 'Egress gateway policies' },
+  { kind: 'bgp-peering-policies', label: 'BGP peering policies (v1)' },
+  { kind: 'bgp-cluster-configs', label: 'BGP cluster configs' },
+  { kind: 'bgp-peer-configs', label: 'BGP peer configs' },
+  { kind: 'bgp-advertisements', label: 'BGP advertisements' },
+  { kind: 'bgp-node-configs', label: 'BGP node configs' },
+  { kind: 'lb-ip-pools', label: 'LB IP pools' },
+  { kind: 'l2-announcement-policies', label: 'L2 announcement policies' },
+  { kind: 'pod-ip-pools', label: 'Pod IP pools' },
+  { kind: 'cidr-groups', label: 'CIDR groups' },
+  { kind: 'gateway-classes', label: 'Gateway classes' },
+  { kind: 'gateways', label: 'Gateways' },
+  { kind: 'http-routes', label: 'HTTP routes' },
+];
+export const fetchCiliumFeatures = () =>
+  api.get<{ available: boolean; reason?: string; features: CiliumFeature[] }>('/cilium/features');
+export const fetchHubbleNodes = () =>
+  api.get<{ available: boolean; total: number; nodes: HubbleNodeInfo[]; errors: { cluster: string; error: string }[] }>('/hubble/nodes');
+export const fetchHubbleMetrics = () => api.get<MetricsReport>('/hubble/metrics');
+export const fetchCiliumMetrics = () => api.get<MetricsReport>('/cilium/metrics');
+export const fetchCiliumResources = (kind: string) =>
+  api.get<{ kind: string; installed: boolean; total: number; items: CiliumResource[] }>(`/cilium/resources/${encodeURIComponent(kind)}`);
+export const fetchAgentQuery = (what: string) =>
+  api.get<{ what: string; scope: string; data: unknown }>(`/cilium/agent/${encodeURIComponent(what)}`);
+
 // Alerts
 export const fetchAlertRules = () => api.get<{ rules: AlertRule[] }>('/alerts/rules');
 export const fetchAlertHistory = () => api.get<{ alerts: AlertEvent[]; events?: AlertEvent[] }>('/alerts/history');
 export const toggleAlertRule = (id: string) => api.put(`/alerts/rules/${id}`);
+export interface AlertRuleInput {
+  name: string;
+  condition: string;
+  severity: string;
+  enabled?: boolean;
+}
+export const createAlertRule = (body: AlertRuleInput) => api.post<AlertRule>('/alerts/rules', body);
+export const updateAlertRule = (id: string, body: AlertRuleInput) =>
+  api.put<AlertRule>(`/alerts/rules/${encodeURIComponent(id)}/definition`, body);
+/** Seeded default rules are only deleted with `force`. */
+export const deleteAlertRule = (id: string, force = false) =>
+  api.delete(`/alerts/rules/${encodeURIComponent(id)}`, { params: force ? { force: true } : undefined });
 export type UserRole = 'admin' | 'editor' | 'viewer';
 
 export interface AppUser {
