@@ -280,7 +280,7 @@ async fn run_release(g: &Global, o: InstallOpts, mode: Mode) -> Result<()> {
     if mode == Mode::Install {
         let persistence = persistence_wanted(&chart.path, &o.values, &o.set);
         println!("{} Checking prerequisites...", "→".cyan());
-        let report = preflight::run(g, DEFAULT_CILIUM_NAMESPACE, persistence).await;
+        let report = preflight::run(g, DEFAULT_CILIUM_NAMESPACE, persistence, true).await;
         print!("{}", report.render());
         preflight::ensure_passes(&report, o.skip_preflight).await?;
         println!();

@@ -229,7 +229,7 @@ async fn api_health(client: &Client, g: &Global) -> Option<Component> {
     })
 }
 
-async fn gather(client: &Client, g: &Global) -> Vec<Component> {
+pub(super) async fn gather(client: &Client, g: &Global) -> Vec<Component> {
     let mut out = vec![
         component(
             "Agent",

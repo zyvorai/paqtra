@@ -29,6 +29,8 @@ pub const RECOMMENDED_CILIUM: (u32, u32) = (1, 19);
 #[serde(rename_all = "lowercase")]
 pub enum Level {
     Ok,
+    /// Worth knowing, needs no action.
+    Info,
     Warn,
     Fail,
 }
@@ -52,13 +54,16 @@ impl Check {
             hint: hint.map(str::to_string),
         }
     }
-    fn ok(name: &str, detail: impl Into<String>) -> Self {
+    pub fn ok(name: &str, detail: impl Into<String>) -> Self {
         Self::new(name, Level::Ok, detail, None)
     }
-    fn warn(name: &str, detail: impl Into<String>, hint: &str) -> Self {
+    pub fn info(name: &str, detail: impl Into<String>) -> Self {
+        Self::new(name, Level::Info, detail, None)
+    }
+    pub fn warn(name: &str, detail: impl Into<String>, hint: &str) -> Self {
         Self::new(name, Level::Warn, detail, Some(hint))
     }
-    fn fail(name: &str, detail: impl Into<String>, hint: &str) -> Self {
+    pub fn fail(name: &str, detail: impl Into<String>, hint: &str) -> Self {
         Self::new(name, Level::Fail, detail, Some(hint))
     }
 }
@@ -88,6 +93,7 @@ impl Report {
         for c in &self.checks {
             let mark = match c.level {
                 Level::Ok => "✔".green().to_string(),
+                Level::Info => "ℹ".blue().to_string(),
                 Level::Warn => "⚠".yellow().to_string(),
                 Level::Fail => "✘".red().to_string(),
             };
@@ -218,6 +224,21 @@ pub fn eval_hubble(enable_hubble: Option<&str>, relay: Option<(i32, i32)>) -> Ve
     out
 }
 
+/// `hubble-metrics` from cilium-config: empty means no Hubble metrics are
+/// exported, so Paqtra's Hubble metrics page has nothing to show.
+pub fn eval_hubble_metrics(config: Option<&std::collections::BTreeMap<String, String>>) -> Check {
+    let name = "Hubble metrics";
+    match config.map(|c| c.get("hubble-metrics").map(|v| v.trim().to_string())) {
+        None => Check::info(name, "cilium-config not readable"),
+        Some(Some(v)) if !v.is_empty() => Check::ok(name, v),
+        Some(_) => Check::warn(
+            name,
+            "none exported: the Hubble metrics page will be empty",
+            "enable some: `paqtra hubble enable --metrics dns,drop,tcp,flow,icmp,http,policy`",
+        ),
+    }
+}
+
 pub fn eval_access(what: &str, allowed: Option<bool>) -> Check {
     let name = format!("RBAC: {what}");
     match allowed {
@@ -273,8 +294,22 @@ async fn can_i(
     resp.status.map(|s| s.allowed)
 }
 
-/// Run the checks against the cluster `g` points at.
-pub async fn run(g: &Global, cilium_namespace: &str, persistence: bool) -> Report {
+/// The `cilium-config` ConfigMap's data, if readable.
+pub async fn cilium_config(
+    client: &Client,
+    ns: &str,
+) -> Option<std::collections::BTreeMap<String, String>> {
+    let cm: Api<ConfigMap> = Api::namespaced(client.clone(), ns);
+    cm.get_opt("cilium-config")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|c| c.data)
+}
+
+/// Run the checks against the cluster `g` points at. `access` adds the RBAC
+/// checks for creating what the chart installs (needed to install, not to diagnose).
+pub async fn run(g: &Global, cilium_namespace: &str, persistence: bool, access: bool) -> Report {
     let mut report = Report::default();
     let client = match super::kube::client(g).await {
         Ok(c) => c,
@@ -312,8 +347,13 @@ pub async fn run(g: &Global, cilium_namespace: &str, persistence: bool) -> Repor
     report.push(eval_cilium(
         cilium(&client, cilium_namespace).await.as_ref(),
     ));
-    let (enable_hubble, relay) = hubble(&client, cilium_namespace).await;
-    report.extend(eval_hubble(enable_hubble.as_deref(), relay));
+    let config = cilium_config(&client, cilium_namespace).await;
+    let relay = hubble_relay(&client, cilium_namespace).await;
+    let enable = config
+        .as_ref()
+        .and_then(|c| c.get("enable-hubble").cloned());
+    report.extend(eval_hubble(enable.as_deref(), relay));
+    report.push(eval_hubble_metrics(config.as_ref()));
 
     for (group, resource, ns, label) in [
         (
@@ -335,10 +375,13 @@ pub async fn run(g: &Global, cilium_namespace: &str, persistence: bool) -> Repor
             "create CiliumNetworkPolicies",
         ),
     ] {
-        report.push(eval_access(
-            label,
-            can_i(&client, group, resource, ns).await,
-        ));
+        // Diagnosing needs no rights to create things; installing does.
+        if access {
+            report.push(eval_access(
+                label,
+                can_i(&client, group, resource, ns).await,
+            ));
+        }
     }
 
     if let Some(c) = eval_storage(persistence, has_default_storage_class(&client).await) {
@@ -375,19 +418,9 @@ async fn cilium(client: &Client, ns: &str) -> Option<CiliumInfo> {
     })
 }
 
-async fn hubble(client: &Client, ns: &str) -> (Option<String>, Option<(i32, i32)>) {
-    let cm: Api<ConfigMap> = Api::namespaced(client.clone(), ns);
-    let enable = cm
-        .get_opt("cilium-config")
-        .await
-        .ok()
-        .flatten()
-        .and_then(|c| c.data)
-        .and_then(|d| d.get("enable-hubble").cloned());
-
+async fn hubble_relay(client: &Client, ns: &str) -> Option<(i32, i32)> {
     let dep: Api<Deployment> = Api::namespaced(client.clone(), ns);
-    let relay = dep
-        .list(&ListParams::default().labels("k8s-app=hubble-relay"))
+    dep.list(&ListParams::default().labels("k8s-app=hubble-relay"))
         .await
         .ok()
         .and_then(|l| l.items.into_iter().next())
@@ -397,8 +430,7 @@ async fn hubble(client: &Client, ns: &str) -> (Option<String>, Option<(i32, i32)
                 s.ready_replicas.unwrap_or(0),
                 d.spec.and_then(|s| s.replicas).unwrap_or(1),
             )
-        });
-    (enable, relay)
+        })
 }
 
 async fn has_default_storage_class(client: &Client) -> bool {
@@ -537,6 +569,33 @@ mod tests {
             eval_hubble(Some("true"), Some((0, 0)))[1].level,
             Level::Fail
         );
+    }
+
+    #[test]
+    fn hubble_metrics_verdicts() {
+        let cfg = |v: &str| {
+            let mut m = std::collections::BTreeMap::new();
+            m.insert("hubble-metrics".to_string(), v.to_string());
+            m
+        };
+        assert_eq!(
+            eval_hubble_metrics(Some(&cfg("dns drop tcp"))).level,
+            Level::Ok
+        );
+        assert_eq!(eval_hubble_metrics(Some(&cfg("  "))).level, Level::Warn);
+        assert_eq!(
+            eval_hubble_metrics(Some(&std::collections::BTreeMap::new())).level,
+            Level::Warn
+        );
+        assert_eq!(eval_hubble_metrics(None).level, Level::Info);
+    }
+
+    #[test]
+    fn info_is_not_a_warning() {
+        let mut r = Report::default();
+        r.push(Check::info("x", "fyi"));
+        assert!(!r.has_warnings() && !r.has_failures());
+        assert!(r.render().contains("fyi"));
     }
 
     #[test]

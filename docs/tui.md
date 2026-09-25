@@ -258,10 +258,10 @@ Fixed Drops:       20
 ./target/release/paqtra
 
 # With auto-install
-./target/release/paqtra --auto-install
+./target/release/paqtra tui --auto-install
 
 # Skip bootstrap
-./target/release/paqtra --skip-bootstrap
+./target/release/paqtra tui --skip-bootstrap
 
 # Verbose mode
 ./target/release/paqtra -v
@@ -489,7 +489,7 @@ let ebpf_reader = CiliumMapReader::new()?;
 cargo build --release
 
 # Run TUI
-./target/release/paqtra --skip-bootstrap
+./target/release/paqtra tui --skip-bootstrap
 
 # Verify:
 # 1. Press Tab to cycle through all 9 tabs

@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use tracing::Level;
 
 use bootstrap::BootstrapManager;
-use cli::{Global, InstallOpts, StatusOpts, UninstallOpts};
+use cli::{ConnOpts, Global, InstallOpts, StatusOpts, SysdumpOpts, UninstallOpts};
 use tui::TuiApp;
 
 #[derive(Parser, Debug)]
@@ -81,6 +81,35 @@ enum Commands {
     },
     /// Show cluster / install info
     Info,
+    /// Collect a redacted support bundle (zip): objects, logs, Helm values, doctor report
+    Sysdump {
+        /// Output file (default: paqtra-sysdump-<timestamp>.zip)
+        #[arg(short = 'o', long, value_name = "FILE")]
+        output_filename: Option<PathBuf>,
+        /// Only logs from this long ago (e.g. 30m, 1h)
+        #[arg(long, default_value = "1h", value_name = "DURATION")]
+        since: String,
+        /// Log lines per container
+        #[arg(long, default_value_t = 2000)]
+        log_lines: i64,
+        /// Namespace Cilium runs in
+        #[arg(long, default_value = "kube-system")]
+        cilium_namespace: String,
+        /// Leave out CiliumNetworkPolicies and CiliumNodes
+        #[arg(long)]
+        no_policies: bool,
+    },
+    /// Verify that Cilium enforces policy and that Paqtra sees the flows
+    Connectivity {
+        #[command(subcommand)]
+        command: ConnectivityCommands,
+    },
+    /// Diagnose the installation: prerequisites, pods, agent coverage, ingest health
+    Doctor {
+        /// Output format: summary | json
+        #[arg(short, long, default_value = "summary")]
+        output: String,
+    },
     /// Enable, disable or reach Hubble
     Hubble {
         #[command(subcommand)]
@@ -255,6 +284,34 @@ enum HubbleCommands {
 }
 
 #[derive(Subcommand, Debug)]
+enum ConnectivityCommands {
+    /// Deploy a temporary server and clients, apply a CiliumNetworkPolicy, and check who can connect
+    Test {
+        /// Run only this scenario (repeatable): baseline, enforcement, restore, flows
+        #[arg(long = "test", value_name = "NAME")]
+        tests: Vec<String>,
+        /// How long to wait for the server and for each result
+        #[arg(long, default_value = "3m", value_name = "DURATION")]
+        timeout: String,
+        /// Leave the test namespace in place
+        #[arg(long)]
+        no_cleanup: bool,
+        /// Test image (default: agnhost from registry.k8s.io)
+        #[arg(long, default_value = cli::CONNECTIVITY_IMAGE)]
+        image: String,
+        /// Pull the test image from a mirror: <prefix>/agnhost:<tag>
+        #[arg(long, value_name = "PREFIX")]
+        registry: Option<String>,
+        /// Paqtra API token; enables the `flows` scenario (env PAQTRA_API_TOKEN)
+        #[arg(long, env = "PAQTRA_API_TOKEN", hide_env_values = true)]
+        api_token: Option<String>,
+        /// Output format: summary | json
+        #[arg(short, long, default_value = "summary")]
+        output: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 enum ConfigCommands {
     /// Print the release's Helm values
     View {
@@ -360,6 +417,61 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Some(Commands::Info) => cli::cmd_info(&args.global).await,
+        Some(Commands::Connectivity { command }) => match command {
+            ConnectivityCommands::Test {
+                tests,
+                timeout,
+                no_cleanup,
+                image,
+                registry,
+                api_token,
+                output,
+            } => {
+                let ok = cli::cmd_connectivity_test(
+                    &args.global,
+                    ConnOpts {
+                        tests,
+                        timeout: cli::parse_duration(&timeout)?,
+                        cleanup: !no_cleanup,
+                        image,
+                        registry,
+                        api_token,
+                        output,
+                    },
+                )
+                .await?;
+                if !ok {
+                    std::process::exit(1);
+                }
+                Ok(())
+            }
+        },
+        Some(Commands::Sysdump {
+            output_filename,
+            since,
+            log_lines,
+            cilium_namespace,
+            no_policies,
+        }) => {
+            cli::cmd_sysdump(
+                &args.global,
+                SysdumpOpts {
+                    output: output_filename,
+                    since: cli::parse_duration(&since)?,
+                    log_lines,
+                    cilium_namespace,
+                    no_policies,
+                },
+            )
+            .await
+        }
+        Some(Commands::Doctor { output }) => {
+            let ok = cli::cmd_doctor(&args.global, &output).await?;
+            if !ok {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
         Some(Commands::Hubble { command }) => match command {
             HubbleCommands::Enable { no_relay, metrics } => {
                 cli::cmd_hubble_enable(&args.global, no_relay, metrics).await
@@ -549,6 +661,27 @@ mod tests {
                 "--local",
             ][..],
             &["version", "--client"][..],
+            &["doctor"][..],
+            &[
+                "connectivity",
+                "test",
+                "--test",
+                "baseline",
+                "--timeout",
+                "90s",
+                "--no-cleanup",
+            ][..],
+            &["doctor", "-o", "json"][..],
+            &[
+                "sysdump",
+                "-o",
+                "/tmp/x.zip",
+                "--since",
+                "30m",
+                "--log-lines",
+                "50",
+                "--no-policies",
+            ][..],
             &["completion", "zsh"][..],
             &["hubble", "enable", "--no-relay", "--metrics", "dns,drop"][..],
             &["hubble", "disable"][..],

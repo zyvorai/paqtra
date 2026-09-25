@@ -64,6 +64,32 @@ pub async fn serve(
     }
 }
 
+/// Forward a random local port to `pod:remote` in the background and return the
+/// local port. The listener stops when the returned handle is aborted/dropped by
+/// the caller (`JoinHandle::abort`).
+pub async fn spawn(
+    client: Client,
+    ns: &str,
+    pod: &str,
+    remote: u16,
+) -> Result<(u16, tokio::task::JoinHandle<()>)> {
+    let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+        .await
+        .context("cannot open a local port")?;
+    let port = listener.local_addr()?.port();
+    let api: Api<Pod> = Api::namespaced(client, ns);
+    let pod = pod.to_string();
+    let handle = tokio::spawn(async move {
+        while let Ok((sock, _)) = listener.accept().await {
+            let (api, pod) = (api.clone(), pod.clone());
+            tokio::spawn(async move {
+                let _ = forward_one(api, pod, remote, sock).await;
+            });
+        }
+    });
+    Ok((port, handle))
+}
+
 /// Open a URL in the user's browser; failure is only a hint, never an error.
 pub fn open_browser(url: &str) {
     let opener = if cfg!(target_os = "macos") {

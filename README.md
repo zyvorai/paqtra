@@ -261,7 +261,28 @@ Full endpoint list: [docs/web-architecture.md](docs/web-architecture.md) and [do
 
 ## Quick start
 
-Prerequisites: a Kubernetes cluster with Cilium and Hubble enabled, `kubectl` configured, and Rust and Node.js to build from source (see [Requirements](#requirements)).
+Prerequisites: a Kubernetes cluster and a kube-context. Cilium with Hubble Relay is required too; `paqtra install --with-cilium` sets it up if it is missing.
+
+```bash
+# Install the CLI (downloads, verifies and installs the latest release)
+curl -fsSL https://raw.githubusercontent.com/zyvorai/paqtra/main/install.sh | sh   # or: brew install zyvorai/tap/paqtra
+
+# Install Paqtra into the current kube-context (the Helm chart is built in)
+paqtra install            # add --with-cilium if the cluster has no Cilium yet
+paqtra status --wait
+paqtra ui                 # open the console
+
+# Something wrong?
+paqtra doctor
+paqtra connectivity test
+paqtra sysdump            # redacted support bundle
+```
+
+Full reference: [docs/cli.md](docs/cli.md).
+
+### Build from source
+
+Needs Rust and Node.js (see [Requirements](#requirements)).
 
 ```bash
 git clone https://github.com/zyvorai/paqtra.git
@@ -273,7 +294,7 @@ cd web-api && cargo build --release      # API server
 cd ../web-ui && npm ci && npm run build  # Web dashboard
 
 # Run the TUI
-./target/release/paqtra                  # or: paqtra --skip-bootstrap
+./target/release/paqtra tui              # or: paqtra tui --skip-bootstrap
 
 # Or deploy to a remote K3s cluster
 ./scripts/deploy-k3s-test.sh <host> <user> <password> --test
@@ -287,9 +308,9 @@ See [QUICKSTART.md](QUICKSTART.md) for the Docker Compose and manual web-stack p
 |--------|---------|
 | **Remote K3s** | `./scripts/deploy-k3s-test.sh <host> <user> <pass> --test` |
 | **Docker** | `docker compose -f deployments/docker-compose.yaml up` |
-| **Helm** | `helm install paqtra ./chart` |
-| **Systemd** | `bash install.sh setup-services && bash install.sh start` |
-| **Binary** | `cargo build --release && cp target/release/paqtra /usr/local/bin/` |
+| **CLI (recommended)** | `paqtra install` (chart built in; see [docs/cli.md](docs/cli.md)) |
+| **Helm** | `helm install paqtra oci://ghcr.io/zyvorai/charts/paqtra --version <X.Y.Z>` or `./chart` from a checkout |
+| **CLI binary** | `curl -fsSL https://raw.githubusercontent.com/zyvorai/paqtra/main/install.sh \| sh`, or `./install.sh --from-source` |
 
 ### Environment variables
 
