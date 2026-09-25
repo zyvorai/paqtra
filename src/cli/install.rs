@@ -338,7 +338,10 @@ async fn install_cilium_if_missing(g: &Global, helm: &helm::Helm, o: &InstallOpt
         return Ok(());
     }
     helm.run_ok(&args, "helm install cilium").await?;
-    println!("{} Cilium installed.\n", "✔".green());
+    // Helm can return before the agents are up; the checks that follow need them.
+    println!("  Waiting for Cilium and Hubble Relay to be ready...");
+    cilium::wait_ready(&client, std::time::Duration::from_secs(600)).await?;
+    println!("{} Cilium installed and ready.\n", "✔".green());
     Ok(())
 }
 

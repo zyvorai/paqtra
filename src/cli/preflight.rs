@@ -390,7 +390,7 @@ pub async fn run(g: &Global, cilium_namespace: &str, persistence: bool, access: 
     report
 }
 
-async fn cilium(client: &Client, ns: &str) -> Option<CiliumInfo> {
+pub(super) async fn cilium(client: &Client, ns: &str) -> Option<CiliumInfo> {
     let api: Api<DaemonSet> = Api::namespaced(client.clone(), ns);
     let list = api
         .list(&ListParams::default().labels("k8s-app=cilium"))
@@ -418,7 +418,7 @@ async fn cilium(client: &Client, ns: &str) -> Option<CiliumInfo> {
     })
 }
 
-async fn hubble_relay(client: &Client, ns: &str) -> Option<(i32, i32)> {
+pub(super) async fn hubble_relay(client: &Client, ns: &str) -> Option<(i32, i32)> {
     let dep: Api<Deployment> = Api::namespaced(client.clone(), ns);
     dep.list(&ListParams::default().labels("k8s-app=hubble-relay"))
         .await
