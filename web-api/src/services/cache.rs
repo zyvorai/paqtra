@@ -96,34 +96,6 @@ impl CacheService {
         })
     }
 
-    fn db_write(&self, key: &str, value: &str, expires_at: Option<i64>) -> Result<()> {
-        if let Some(db) = &self.db {
-            let conn = db
-                .lock()
-                .map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
-            conn.execute(
-                "INSERT INTO kv (key, value, expires_at) VALUES (?1, ?2, ?3)
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value,
-                     expires_at = excluded.expires_at,
-                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')",
-                params![key, value, expires_at],
-            )
-            .with_context(|| format!("Failed to persist key '{key}'"))?;
-        }
-        Ok(())
-    }
-
-    fn db_delete(&self, key: &str) -> Result<()> {
-        if let Some(db) = &self.db {
-            let conn = db
-                .lock()
-                .map_err(|_| anyhow::anyhow!("database lock poisoned"))?;
-            conn.execute("DELETE FROM kv WHERE key = ?1", params![key])
-                .with_context(|| format!("Failed to delete persisted key '{key}'"))?;
-        }
-        Ok(())
-    }
-
     pub async fn is_healthy(&self) -> bool {
         true
     }

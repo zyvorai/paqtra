@@ -30,6 +30,8 @@ function Metric({ value, label }: { value: number | string; label: string }) {
 
 function StaleBadge({ at }: { at: number | null }) {
   if (at == null) return null;
+  // Staleness is measured against the current time on every render.
+  // eslint-disable-next-line react-hooks/purity
   const age = Date.now() - at;
   if (age < STALE_AFTER_MS) return null;
   const secs = Math.round(age / 1000);
