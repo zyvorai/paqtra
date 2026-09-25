@@ -5,6 +5,7 @@ import {
   deleteConnectivityPath,
   fetchConnectivityAlerts,
   fetchConnectivityPaths,
+  fetchConnectivityPathStatus,
 } from '../../services/api';
 import { Board, Card, Eyebrow, Empty, Warning, Toolbar, Metric, Metrics } from '../../components/Board';
 
@@ -42,9 +43,23 @@ export default function ConnectivityChecks() {
   const load = useCallback(async () => {
     try {
       const [p, a] = await Promise.all([fetchConnectivityPaths(), fetchConnectivityAlerts()]);
-      setRows(((p.data as { paths?: PathRow[] }).paths ?? []) as PathRow[]);
+      const base = ((p.data as { paths?: PathRow[] }).paths ?? []) as PathRow[];
+      setRows(base);
       setAlerts(((a.data as { alerts?: Record<string, unknown>[] }).alerts ?? []) as Record<string, unknown>[]);
       setErr('');
+      // Enrich status one-by-one so the list paints first.
+      const enriched = await Promise.all(
+        base.map(async (r) => {
+          try {
+            const { data } = await fetchConnectivityPathStatus(r.path.id);
+            const status = (data as { status?: PathRow['status'] }).status;
+            return status ? { ...r, status } : r;
+          } catch {
+            return r;
+          }
+        }),
+      );
+      setRows(enriched);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
     }

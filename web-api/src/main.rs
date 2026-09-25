@@ -232,6 +232,10 @@ async fn main() -> anyhow::Result<()> {
             get(handlers::connectivity::list_paths).post(handlers::connectivity::create_path),
         )
         .route(
+            "/api/v1/connectivity/paths/{id}/status",
+            get(handlers::connectivity::path_status),
+        )
+        .route(
             "/api/v1/connectivity/paths/{id}",
             axum::routing::delete(handlers::connectivity::delete_path),
         )

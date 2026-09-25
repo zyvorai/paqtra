@@ -190,37 +190,46 @@ pub async fn analyze_change_impact(
 
     let scope = namespace_scope(claims);
 
-    let before_flows = state
-        .flow_store
-        .query(&FlowQuery {
-            namespace: if ns.is_empty() {
-                None
-            } else {
-                Some(ns.to_string())
-            },
-            since_rfc3339: normalize_ts(&before_start.to_rfc3339()),
-            until_rfc3339: normalize_ts(&pivot.to_rfc3339()),
-            scope: scope.clone(),
-            limit: 2000,
-            ..Default::default()
-        })
-        .unwrap_or_default();
+    let ns_owned = ns.to_string();
+    let before_since = normalize_ts(&before_start.to_rfc3339());
+    let pivot_ts = normalize_ts(&pivot.to_rfc3339());
+    let after_until = normalize_ts(&after_end.to_rfc3339());
+    let store = state.flow_store.clone();
+    let scope_q = scope.clone();
 
-    let after_flows = state
-        .flow_store
-        .query(&FlowQuery {
-            namespace: if ns.is_empty() {
-                None
-            } else {
-                Some(ns.to_string())
-            },
-            since_rfc3339: normalize_ts(&pivot.to_rfc3339()),
-            until_rfc3339: normalize_ts(&after_end.to_rfc3339()),
-            scope: scope.clone(),
-            limit: 2000,
-            ..Default::default()
-        })
-        .unwrap_or_default();
+    let (before_flows, after_flows) = tokio::task::spawn_blocking(move || {
+        let before_flows = store
+            .query(&FlowQuery {
+                namespace: if ns_owned.is_empty() {
+                    None
+                } else {
+                    Some(ns_owned.clone())
+                },
+                since_rfc3339: before_since,
+                until_rfc3339: pivot_ts.clone(),
+                scope: scope_q.clone(),
+                limit: 1000,
+                ..Default::default()
+            })
+            .unwrap_or_default();
+        let after_flows = store
+            .query(&FlowQuery {
+                namespace: if ns_owned.is_empty() {
+                    None
+                } else {
+                    Some(ns_owned)
+                },
+                since_rfc3339: pivot_ts,
+                until_rfc3339: after_until,
+                scope: scope_q,
+                limit: 1000,
+                ..Default::default()
+            })
+            .unwrap_or_default();
+        (before_flows, after_flows)
+    })
+    .await
+    .unwrap_or_default();
 
     // Drop evidence the caller may not see (defense in depth beyond SQL scope).
     let visible = |f: &StoredFlow| {

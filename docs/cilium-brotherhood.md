@@ -56,6 +56,9 @@ None of these findings mutate the datapath.
 Paqtra explains failures and previews Cilium policy changes; it does not become a second datapath:
 
 - `POST /api/v1/investigate/path` — why can’t A reach B (evidence + confidence)
+- `GET /api/v1/investigate/bundles/{id}/export` — redacted JSON or Markdown incident export
+- `GET /api/v1/changes/{id}/impact` — before/after flow correlation (not causation)
+- `GET|POST /api/v1/connectivity/paths` — declared path monitoring (observe-only; quiet = unknown)
 - `POST /api/v1/policies/simulate` — flow-matched preview; unsupported constructs → unknown
 - Apply / rollback only via Cilium CRDs (`CiliumNetworkPolicy`)
 

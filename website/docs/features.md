@@ -6,7 +6,7 @@ sidebar_position: 3
 ## Core Observability (Tabs 0-4)
 
 ### Flows
-Live packet stream from Hubble Relay over the Observer **gRPC** API (chart default `HUBBLE_MODE=grpc`), with verdict coloring (FORWARDED/DROPPED), source/destination pods, namespaces, and IPs. Continuous **follow** ingest fills a local flow store with gap/disconnect visibility on `/health`. Navigate with arrow keys, press `e` to explain any packet — or use **Why denied?** in the Flows UI. Auto-refresh every 30s with DataFreshness indicator. Export CSV/JSON.
+Live packet stream from Hubble Relay over the Observer **gRPC** API (chart default `HUBBLE_MODE=grpc`), with verdict coloring (FORWARDED/DROPPED), source/destination pods, namespaces, and IPs. Continuous **follow** ingest fills a local flow store with gap/disconnect visibility on `/health`. Quiet streams flush at least every **2 seconds** so low-volume clusters still persist evidence. Navigate with arrow keys, press `e` to explain any packet — or use **Why denied?** in the Flows UI. Auto-refresh every 30s with DataFreshness indicator. Export CSV/JSON.
 
 
 ### Connections
@@ -174,11 +174,11 @@ Full-featured React 19 web application with 64 views, 34 shared components, and 
 ### Key Views
 | Category | Count | Highlights |
 |----------|-------|-----------|
-| Overview | 7 | Dashboard with live metrics, cluster health, Cilium agent status |
+| Overview | 7 | Dashboard with live metrics, cluster health, Cilium agent status (15s auto-refresh; slim eBPF summary) |
 | Observability | 12 | Flows, topology, service map, heatmap, latency, DNS, bandwidth |
 | Security | 15 | Policies, policy editor (Monaco), anomalies, encryption, RBAC, compliance |
-| Intelligence | 6 | AutoPolicy ML engine, healer, root cause, diagnostics, forecasting |
-| Operations | 11 | Chaos engineering, canary, replay, packet capture, multi-cluster, eBPF |
+| Intelligence | 7 | AutoPolicy ML, healer, root cause, diagnostics, forecasting, path investigation, declared connectivity |
+| Operations | 11 | Chaos engineering, canary, replay, packet capture, multi-cluster, eBPF, change log impact |
 | eBPF Data | 5 | Conntrack table, policy map, IP cache, LB map, drop analytics |
 | Networking | 8 | Load balancer, ingress/egress, service mesh, IPAM, cost analytics |
 

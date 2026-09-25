@@ -1304,6 +1304,8 @@ export interface ConnectivityPathInput {
 }
 
 export const fetchConnectivityPaths = () => api.get('/connectivity/paths');
+export const fetchConnectivityPathStatus = (id: string) =>
+  api.get(`/connectivity/paths/${id}/status`);
 export const createConnectivityPath = (body: ConnectivityPathInput) =>
   api.post('/connectivity/paths', body);
 export const deleteConnectivityPath = (id: string) => api.delete(`/connectivity/paths/${id}`);

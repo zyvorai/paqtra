@@ -18,6 +18,7 @@ Every step and impact claim carries one of:
 
 - SQLite table under `PAQTRA_DATA_DIR/flows.db` (or in-memory if unset)
 - Background **follow** ingest from Hubble Observer gRPC (`hubble_grpc` source; CLI only if `HUBBLE_MODE=cli|auto` falls back). Chart default is `grpc`.
+- Follow buffers flush at **64 flows** or every **2 seconds** when the buffer is nonempty (quiet clusters still persist evidence promptly).
 - Default retention: 7 days
 - Health: `GET /health` → `subsystems.flow_ingest` (`source`, `connected`, `disconnects`, `gaps`, `events_per_sec`, `lag_secs`, `hubble_mode`)
 
@@ -49,9 +50,33 @@ Explain a single flow (from Flows “Why denied?”): identities, CNP/CCNP candi
 
 ```http
 GET /api/v1/investigate/bundles/{id}
+GET /api/v1/investigate/bundles/{id}/export?format=json|markdown
 ```
 
-Bundles omit payloads, argv, and Secret contents ([AGENTS.md](../AGENTS.md)).
+Bundles include time range, source/ingest health, gap counts, cited flow IDs, related change IDs, and Kubernetes policy identity — never payloads, argv, or Secret contents ([AGENTS.md](../AGENTS.md)). Namespace RBAC is enforced on create and retrieval. Export returns the same redacted JSON or a concise Markdown incident summary.
+
+## Change impact
+
+```http
+GET /api/v1/changes/{id}/impact?before=30m&after=30m
+```
+
+Compares verdict counts and src→dst pairs in bounded windows around a recorded Cilium/Service/Deployment change. Returns evidence flow IDs, `observed|inferred|unavailable` confidence, and `inconclusive` when ingest gaps or short windows make the comparison unreliable. Correlation is **not** causation.
+
+UI: Change Log → **Analyze impact** (links to Flows and Path investigation).
+
+## Declared connectivity (observe-only)
+
+```http
+GET|POST /api/v1/connectivity/paths
+GET /api/v1/connectivity/paths/{id}/status
+DELETE /api/v1/connectivity/paths/{id}
+GET /api/v1/connectivity/alerts
+```
+
+Teams declare `source namespace/workload → destination service:port`. List returns declared paths quickly; status is fetched per path. Paqtra compares recent flows with a short baseline. Quiet traffic is **`unknown`**, never healthy. Sustained drop patterns create deduplicated alerts with evidence IDs and investigate deep-links. No automatic policy apply and no BPF changes.
+
+UI: Investigate → **Connectivity** (`/connectivity`).
 
 ## Policy preview
 
@@ -64,7 +89,9 @@ Bundles omit payloads, argv, and Secret contents ([AGENTS.md](../AGENTS.md)).
 
 ## UI
 
-Investigate → **Path** (`/investigate`): form for A→B:port, step timeline, owner, evidence bundle.
+Investigate → **Path** (`/investigate`): form for A→B:port, step timeline, owner, evidence bundle, **Export JSON / Markdown**.
+
+Investigate → **Connectivity** (`/connectivity`): declare critical paths and review sustained-regression alerts.
 
 Flows → **Why denied?** on a DROPPED row: opens the flow explain result (identities, CNP/CCNP candidates, drop reason, draft allow).
 

@@ -54,7 +54,10 @@ fn default_proto() -> String {
 
 pub fn spawn_connectivity_monitor(state: Arc<AppState>) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        // Delay first evaluation; skip missed ticks under load.
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(120));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        interval.tick().await;
         loop {
             interval.tick().await;
             if let Err(e) = evaluate_all(&state).await {
@@ -192,50 +195,58 @@ pub async fn status_for_path(state: &AppState, path: &Value) -> Value {
     let baseline_since = normalize_ts(&(now - Duration::hours(1)).to_rfc3339());
     let baseline_until = recent_since.clone();
 
-    let recent = state
-        .flow_store
-        .query(&FlowQuery {
-            src_namespace: Some(src_ns.into()),
-            src_pod: if src_wl.is_empty() {
-                None
-            } else {
-                Some(src_wl.into())
-            },
-            dst_namespace: Some(dst_ns.into()),
-            dst_pod: if dst_svc.is_empty() {
-                None
-            } else {
-                Some(dst_svc.into())
-            },
-            port: if port == 0 { None } else { Some(port) },
-            since_rfc3339: recent_since,
-            limit: 500,
-            ..Default::default()
-        })
-        .unwrap_or_default();
+    let src_ns_q = src_ns.to_string();
+    let src_wl_q = src_wl.to_string();
+    let dst_ns_q = dst_ns.to_string();
+    let dst_svc_q = dst_svc.to_string();
+    let store = state.flow_store.clone();
 
-    let baseline = state
-        .flow_store
-        .query(&FlowQuery {
-            src_namespace: Some(src_ns.into()),
-            src_pod: if src_wl.is_empty() {
-                None
-            } else {
-                Some(src_wl.into())
-            },
-            dst_namespace: Some(dst_ns.into()),
-            dst_pod: if dst_svc.is_empty() {
-                None
-            } else {
-                Some(dst_svc.into())
-            },
-            port: if port == 0 { None } else { Some(port) },
-            since_rfc3339: baseline_since,
-            until_rfc3339: baseline_until,
-            limit: 500,
-            ..Default::default()
-        })
-        .unwrap_or_default();
+    let (recent, baseline) = tokio::task::spawn_blocking(move || {
+        let recent = store
+            .query(&FlowQuery {
+                src_namespace: Some(src_ns_q.clone()),
+                src_pod: if src_wl_q.is_empty() {
+                    None
+                } else {
+                    Some(src_wl_q.clone())
+                },
+                dst_namespace: Some(dst_ns_q.clone()),
+                dst_pod: if dst_svc_q.is_empty() {
+                    None
+                } else {
+                    Some(dst_svc_q.clone())
+                },
+                port: if port == 0 { None } else { Some(port) },
+                since_rfc3339: recent_since,
+                limit: 200,
+                ..Default::default()
+            })
+            .unwrap_or_default();
+        let baseline = store
+            .query(&FlowQuery {
+                src_namespace: Some(src_ns_q),
+                src_pod: if src_wl_q.is_empty() {
+                    None
+                } else {
+                    Some(src_wl_q)
+                },
+                dst_namespace: Some(dst_ns_q),
+                dst_pod: if dst_svc_q.is_empty() {
+                    None
+                } else {
+                    Some(dst_svc_q)
+                },
+                port: if port == 0 { None } else { Some(port) },
+                since_rfc3339: baseline_since,
+                until_rfc3339: baseline_until,
+                limit: 200,
+                ..Default::default()
+            })
+            .unwrap_or_default();
+        (recent, baseline)
+    })
+    .await
+    .unwrap_or_default();
 
     let count = |flows: &[crate::services::flow_store::StoredFlow], drop: bool| {
         flows

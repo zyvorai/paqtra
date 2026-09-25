@@ -16,13 +16,48 @@ pub async fn list_paths(
     claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     super::check_editor(&state, &claims)?;
+    // List is cheap: declared paths only. Status is on-demand via
+    // GET /connectivity/paths/{id}/status so probes stay responsive.
     let paths = connectivity::list_paths(&state, &claims).await;
-    let mut with_status = Vec::new();
-    for p in paths {
-        let status = connectivity::status_for_path(&state, &p).await;
-        with_status.push(json!({ "path": p, "status": status }));
-    }
+    let with_status: Vec<Value> = paths
+        .into_iter()
+        .take(100)
+        .map(|p| json!({ "path": p, "status": { "status": "pending", "confidence": "unavailable" } }))
+        .collect();
     Ok(Json(json!({ "paths": with_status })))
+}
+
+pub async fn path_status(
+    State(state): State<Arc<AppState>>,
+    claims: Option<axum::Extension<crate::middleware::auth::Claims>>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    super::check_editor(&state, &claims)?;
+    let key = format!("cv:connectivity_path:{id}");
+    let path = state
+        .cache
+        .get::<Value>(&key)
+        .await
+        .ok()
+        .flatten()
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({ "error": "path not found" })),
+            )
+        })?;
+    let src = path
+        .get("src_namespace")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if !super::has_namespace_access(&state, &claims, src) {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "namespace not in scope" })),
+        ));
+    }
+    let status = connectivity::status_for_path(&state, &path).await;
+    Ok(Json(json!({ "path": path, "status": status })))
 }
 
 pub async fn create_path(

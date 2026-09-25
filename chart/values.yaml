@@ -21,8 +21,8 @@ api:
       memory: "256Mi"
       cpu: "100m"
     limits:
-      memory: "512Mi"
-      cpu: "500m"
+      memory: "1Gi"
+      cpu: "1000m"
   env:
     # Cilium's hubble-relay Service maps port 80 → container 4245 (gRPC).
     # Use the Service port in-cluster; use localhost:4245 with port-forward locally.
