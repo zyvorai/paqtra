@@ -222,7 +222,7 @@ All data is queried from the running kernel via 11 dedicated eBPF API endpoints.
 
 ## Web API (75+ REST Endpoints)
 
-Rust/Axum backend serving the web dashboard with 75+ REST API endpoints, including 11 eBPF-specific endpoints querying real kernel data via bpftool.
+Rust/Axum backend serving the web dashboard with 75+ REST API endpoints, including 11 eBPF-specific endpoints querying real kernel data via bpftool. Helm chart defaults: **512Mi request / 2Gi limit** when persistence is enabled (durable flow index).
 
 ### Authentication & Authorization
 - **JWT Authentication**: Token-based auth on all protected endpoints
