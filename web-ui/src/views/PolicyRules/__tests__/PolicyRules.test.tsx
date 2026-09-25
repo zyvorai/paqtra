@@ -81,7 +81,7 @@ describe('PolicyRules', () => {
     await choosePolicy();
     fireEvent.click(screen.getByRole('button', { name: /Add egress rule/ }));
     fireEvent.change(screen.getByLabelText('Template'), { target: { value: '1' } });
-    expect((screen.getByLabelText('Rule JSON') as HTMLTextAreaElement).value).toContain('toFQDNs');
+    expect(screen.getByLabelText('Rule JSON')).toHaveDisplayValue(/toFQDNs/);
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     await waitFor(() => expect(m.addPolicyRule).toHaveBeenCalled());
     expect(m.addPolicyRule.mock.calls[0][1].rule).toHaveProperty('toFQDNs');

@@ -7,7 +7,7 @@ describe('API Client', () => {
   });
 
   it('has correct timeout', () => {
-    expect(api.defaults.timeout).toBe(15000);
+    expect(api.defaults.timeout).toBe(45_000);
   });
 
   it('has JSON content type header', () => {

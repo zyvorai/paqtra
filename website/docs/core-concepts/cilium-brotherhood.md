@@ -62,6 +62,8 @@ Paqtra explains failures and previews Cilium policy changes; it does not become 
 - `POST /api/v1/investigate/flow` — why was this connection denied (from a DROPPED flow)
 - Prefer Hubble Observer gRPC for flows (`HUBBLE_MODE=grpc` in the chart); maps for node-local enrichment only
 - `POST /api/v1/policies/simulate` — flow-matched preview; unsupported constructs → unknown
+- `POST|PUT|DELETE /api/v1/policies/{id}/rules` — add, edit or delete one rule of a `CiliumNetworkPolicy`; applied through the CRD with `resource_version` concurrency, optional `dry_run`, and an audit entry
+- `GET /api/v1/cilium/{features,metrics,resources/{kind},agent/{what}}`, `GET /api/v1/hubble/{nodes,metrics}` — read-only: `cilium-config`, Prometheus, Cilium CRDs, and allow-listed `cilium-dbg` queries in one agent pod. Nothing writes to Cilium.
 - Apply / rollback only via Cilium CRDs (`CiliumNetworkPolicy`)
 
 See [investigate.md](https://github.com/zyvorai/paqtra/blob/main/docs/investigate.md).

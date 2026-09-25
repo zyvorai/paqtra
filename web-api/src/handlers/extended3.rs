@@ -769,11 +769,7 @@ pub async fn cluster_health(State(state): State<Arc<AppState>>) -> Json<serde_js
     };
 
     // Simple score for Overview digest (100 when healthy, else proportion ready).
-    let score = if nodes_total == 0 {
-        0
-    } else {
-        ((nodes_ready * 100) / nodes_total) as u64
-    };
+    let score = (nodes_ready * 100).checked_div(nodes_total).unwrap_or(0) as u64;
 
     let body = serde_json::json!({
         "status": overall,

@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rule-level policy editing**: `POST|PUT|DELETE /api/v1/policies/{id}/rules` add,
+  replace or delete one rule of a CiliumNetworkPolicy through the CRD, with
+  `resource_version` concurrency (409), `?dry_run=true`, audit entries
+  (`policy.rule.*`), and the cluster's validation message as a 400. `GET
+  /policies/{id}` now returns `spec`, `resource_version` and `rule_counts`. New
+  **Policy Rules** page (`/policy-rules`) with templates for entities, CIDR sets,
+  ICMP, FQDN, DNS and L7 HTTP rules. A policy's last rule cannot be deleted
+  (Cilium rejects rule-less policies).
+- **Alert rule CRUD**: `POST /alerts/rules`, `PUT /alerts/rules/{id}/definition`,
+  `DELETE /alerts/rules/{id}`; conditions are validated against what the engine can
+  evaluate; built-in rules need `?force=true`.
+- **Cilium Insights** (`/cilium-insights`) and read-only endpoints:
+  `/cilium/features` (from `cilium-config`), `/hubble/nodes` (`GetNodes`, buffer
+  fill), `/hubble/metrics` and `/cilium/metrics` (Prometheus), `/cilium/resources/{kind}`
+  (BGP v2, LB-IPAM, L2, pod IP pools, CIDR groups, Gateway API, ...),
+  `/cilium/agent/{what}` (allow-listed `cilium-dbg` queries).
+- Flows carry an optional `hubble` object (identities, labels, direction,
+  `policy_match_type`, observation point, node); identities are persisted in the
+  flow store.
+- Chart value `api.env.prometheusUrl` (`PROMETHEUS_URL`); chart and manifest RBAC
+  now grant read access to the Cilium CRDs the views use (nodes, egress gateway,
+  BGP, LB-IPAM, L2, pod IP pools, CIDR groups, Gateway API).
 - Quiet Hubble follow streams flush every **2s** (in addition to the 64-flow batch)
   so low-volume clusters persist evidence promptly.
 - `GET /api/v1/changes/{id}/impact` — before/after flow correlation for Change Log
@@ -24,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `GET /flows?verdict=` is filtered by Hubble itself, so `limit` returns the most
+  recent flows with that verdict rather than the few matches among the last N.
+- Renamed the invented `cilium.io/canary-*` and `cilium.io/mtu` annotations to
+  `paqtra.io/*`; Cilium never read them. Docs no longer claim chaos loads eBPF programs.
 - `/health` and `/ready` stay cheap via background sampler; cache SQLite I/O uses
   `spawn_blocking`; bpftool concurrency capped.
 - Overview auto-refreshes every 15s; `/ebpf/summary` defaults to counts-only
@@ -34,6 +60,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Connectivity list stays cheap; per-path status is
   `GET /api/v1/connectivity/paths/{id}/status`. Change-impact / status queries use
   `spawn_blocking` so SQLite does not stall the async runtime.
+
+### Fixed
+
+- `/ebpf/drops` and `/ebpf/summary` counted forwarded traffic as drops (only
+  `cilium_metrics` reasons >= 130 are drops), read four key bytes instead of the
+  reason byte, missed per-CPU values, and used invented reason names; now decoded
+  correctly and named with Hubble's `DropReason`.
+- Five `kubectl exec -l k8s-app=cilium` calls (invalid) now resolve an agent pod
+  first: ClusterMesh, WireGuard/encryption and NAT/CT counts returned nothing.
+- Policy rule/apply failures no longer surface as "Internal server error".
 
 ## [2.1.0] - 2026-09-24
 

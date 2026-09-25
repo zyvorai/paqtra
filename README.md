@@ -162,7 +162,7 @@ See [docs/architecture.md](docs/architecture.md) and [docs/web-architecture.md](
 
 - **Investigate**: Path ("why can't A reach B?"), Flows (**Why denied?** on DROPPED rows), Endpoints, Identities, DNS (L7 when available), Capture, Topology, Service Map
 - **Diagnostics**: Health (Hubble mode, ingest gaps/lag), latency, Drops, eBPF profiler and map explorer, Root Cause, Healer
-- **Security**: Policies, Policy Editor, Visual Rule Builder, Templates, Anomalies, Compliance, RBAC
+- **Security**: Policies, Policy Rules (add/edit/delete single rules), Policy Editor, Visual Rule Builder, Templates, Anomalies, Compliance, RBAC
 - **Intelligence**: AutoPolicy, Chaos Engineering, Canary Deployments
 - **Operations**: Alerts, Audit Log, SLOs, Incident Timeline, Settings
 - **Networking**: ClusterMesh, BGP, Load Balancer, Ingress/Egress Gateway, IPAM, Encryption, WireGuard
