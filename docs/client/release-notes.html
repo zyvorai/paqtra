@@ -85,6 +85,7 @@
   }
   .cat-feature { background: var(--green); }
   .cat-security { background: var(--red); }
+  .cat-fix { background: var(--accent); }
   .cat-known { background: var(--orange); }
   .cat-roadmap { background: var(--purple); }
 
@@ -160,12 +161,42 @@
 
 <div class="container">
 
+<!-- v2.2.0 -->
+<div class="version-block">
+  <div class="version-header">
+    <span class="version-tag">v2.2.0</span>
+    <span class="version-date">September 2026</span>
+    <span class="version-badge badge-current">Current Release</span>
+  </div>
+
+  <div class="category">
+    <div class="category-title"><span class="cat-icon cat-feature"></span> Features</div>
+    <ul>
+      <li><strong>Installer CLI</strong> &mdash; <code>curl | sh</code> or <code>brew install</code>, then <code>paqtra install</code>. The Helm chart is built in (CLI vX installs chart vX); <code>--with-cilium</code> sets up Cilium, Hubble and Relay first</li>
+      <li><strong>Operate from one binary</strong> &mdash; <code>status --wait</code> (exit 1 when unhealthy), <code>doctor</code>, <code>connectivity test</code>, <code>sysdump</code> (redacted; never reads Secrets), <code>upgrade</code>, <code>config</code>, <code>hubble</code>, <code>ui</code>, <code>uninstall --purge</code></li>
+      <li><strong>Verified releases</strong> &mdash; static Linux and macOS binaries, <code>sha256sums.txt</code>, cosign signature, SBOM, chart on OCI, multi-arch images including the agent image</li>
+      <li><strong>Rule-level policy editing</strong> &mdash; add, edit and delete single CiliumNetworkPolicy rules with dry run and concurrency checks; alert rule CRUD</li>
+      <li><strong>Cilium Insights</strong> &mdash; enabled features, Hubble node health, Hubble and Cilium metrics, BGP v2 / LB-IPAM / Gateway API views, read-only agent queries</li>
+    </ul>
+  </div>
+
+  <div class="category">
+    <div class="category-title"><span class="cat-icon cat-fix"></span> Fixes</div>
+    <ul>
+      <li><strong>Drop statistics</strong> &mdash; forwarded traffic was reported as tens of millions of drops; only reasons &ge; 130 are drops now, named from Hubble&rsquo;s enum</li>
+      <li><strong><code>kubectl exec -l</code></strong> &mdash; five invalid calls (ClusterMesh, WireGuard, NAT/CT counts) now resolve an agent pod</li>
+      <li><strong>Agent image</strong> &mdash; the chart&rsquo;s default agent image is now actually published</li>
+    </ul>
+  </div>
+</div>
+
+<hr class="divider">
+
 <!-- v2.1.0 -->
 <div class="version-block">
   <div class="version-header">
     <span class="version-tag">v2.1.0</span>
     <span class="version-date">September 2026</span>
-    <span class="version-badge badge-current">Current Release</span>
   </div>
 
   <div class="category">
@@ -321,7 +352,7 @@
 </div>
 
 <div class="footer">
-  Paqtra Release Notes &mdash; v2.1.0 &mdash; September 2026
+  Paqtra Release Notes &mdash; v2.2.0 &mdash; September 2026
 </div>
 
 </body>
