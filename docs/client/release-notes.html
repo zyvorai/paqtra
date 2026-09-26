@@ -161,12 +161,30 @@
 
 <div class="container">
 
+<!-- v2.2.1 -->
+<div class="version-block">
+  <div class="version-header">
+    <span class="version-tag">v2.2.1</span>
+    <span class="version-date">September 2026</span>
+    <span class="version-badge badge-current">Current Release</span>
+  </div>
+
+  <div class="category">
+    <div class="category-title"><span class="cat-icon cat-fix"></span> Fixes</div>
+    <ul>
+      <li><strong>Large flow stores no longer stall the API</strong> &mdash; on a store with millions of flows, a namespace-filtered flows query could make the API unresponsive for minutes. Store statistics no longer scan the table, reads use their own connection and a 5&nbsp;s deadline (<code>PAQTRA_FLOW_QUERY_TIMEOUT_SECS</code>), and ingest is never blocked by a slow read</li>
+      <li><strong><code>connectivity test</code></strong> &mdash; checks flows through the time-bounded history endpoint</li>
+    </ul>
+  </div>
+</div>
+
+<hr class="divider">
+
 <!-- v2.2.0 -->
 <div class="version-block">
   <div class="version-header">
     <span class="version-tag">v2.2.0</span>
     <span class="version-date">September 2026</span>
-    <span class="version-badge badge-current">Current Release</span>
   </div>
 
   <div class="category">
@@ -352,7 +370,7 @@
 </div>
 
 <div class="footer">
-  Paqtra Release Notes &mdash; v2.2.0 &mdash; September 2026
+  Paqtra Release Notes &mdash; v2.2.1 &mdash; September 2026
 </div>
 
 </body>

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-09-26
+
+### Fixed
+
+- **A large flow store no longer stalls the API.** On a host with 10.6M stored flows
+  (4.5 GB), a flows query filtered by namespace made the API stop answering until the
+  scan finished, minutes later. The flow store's `stats()` ran two full-table scans
+  under its single lock on every call, reads shared the ingest connection, and a
+  namespace filter has no usable index. Now: `stats()`/`lag_secs()` never wait (last
+  known value when busy; totals by rowid span above 100k rows), reads use a separate
+  `query_only` connection so they cannot block ingest, and every read has a deadline
+  (5s, `PAQTRA_FLOW_QUERY_TIMEOUT_SECS`) after which the API falls back to Hubble.
+  Coverage of the whole store is an index lookup, not a scan.
+- `paqtra connectivity test` checks flows through the time-bounded `/flows/history`
+  endpoint, which stays cheap however large the store is.
+
 ## [2.2.0] - 2026-09-26
 
 ### Added
@@ -112,6 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README and product docs updated for gRPC follow ingest, DNS evidence, and
   deny explanation.
 
+[2.2.1]: https://github.com/zyvorai/paqtra/releases/tag/v2.2.1
 [2.2.0]: https://github.com/zyvorai/paqtra/releases/tag/v2.2.0
 [2.1.0]: https://github.com/zyvorai/paqtra/releases/tag/v2.1.0
 
