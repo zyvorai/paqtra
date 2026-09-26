@@ -10,11 +10,20 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use crate::models::flow::Flow;
 
 pub const DEFAULT_RETENTION_DAYS: i64 = 7;
 const MAX_MEMORY_FLOWS: usize = 50_000;
+/// A read that runs longer than this is cut off. The store is one SQLite file
+/// holding millions of rows; a filter with no usable index (a namespace on the
+/// destination side, a pod-name LIKE) is a full scan, and without a limit it
+/// ran for minutes and starved the API. Override: PAQTRA_FLOW_QUERY_TIMEOUT_SECS.
+const READ_DEADLINE_SECS: u64 = 5;
+/// Tables this small are counted exactly; larger ones by rowid span, which is
+/// O(1) (COUNT(*) over millions of rows takes seconds).
+const EXACT_COUNT_BELOW: i64 = 100_000;
 
 /// Provenance of a stored flow row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -324,7 +333,16 @@ pub struct FlowStoreStats {
 }
 
 pub struct FlowStore {
+    /// Writer: ingest, purge. Never used for long reads.
     db: Option<Arc<Mutex<Connection>>>,
+    /// A second connection to the same WAL database for reads, so a slow query
+    /// cannot hold up ingest (or the reverse). `query_only`.
+    read_db: Option<Arc<Mutex<Connection>>>,
+    read_deadline: Duration,
+    /// Last total `stats()` computed; returned instead of waiting when busy.
+    total_hint: AtomicU64,
+    /// Newest flow timestamp `lag_secs` last saw; used when the store is busy.
+    newest_hint: Mutex<Option<String>>,
     memory: Mutex<Vec<StoredFlow>>,
     retention_days: i64,
     pub ingested_total: AtomicU64,
@@ -346,6 +364,10 @@ impl FlowStore {
     pub fn memory_only() -> Self {
         Self {
             db: None,
+            read_db: None,
+            read_deadline: Duration::from_secs(READ_DEADLINE_SECS),
+            total_hint: AtomicU64::new(0),
+            newest_hint: Mutex::new(None),
             memory: Mutex::new(Vec::new()),
             retention_days: DEFAULT_RETENTION_DAYS,
             ingested_total: AtomicU64::new(0),
@@ -396,8 +418,20 @@ impl FlowStore {
             ",
         )?;
         tracing::info!("FlowStore ready at {}", path.display());
+        let read_conn = Connection::open(&path)
+            .with_context(|| format!("open {} for reading", path.display()))?;
+        read_conn.pragma_update(None, "query_only", true)?;
+        let deadline_secs = std::env::var("PAQTRA_FLOW_QUERY_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .filter(|s| *s > 0)
+            .unwrap_or(READ_DEADLINE_SECS);
         let store = Self {
             db: Some(Arc::new(Mutex::new(conn))),
+            read_db: Some(Arc::new(Mutex::new(read_conn))),
+            read_deadline: Duration::from_secs(deadline_secs),
+            total_hint: AtomicU64::new(0),
+            newest_hint: Mutex::new(None),
             memory: Mutex::new(Vec::new()),
             retention_days,
             ingested_total: AtomicU64::new(0),
@@ -417,15 +451,54 @@ impl FlowStore {
         Ok(store)
     }
 
+    /// The connection reads use: the read-only one, else the writer.
+    fn read_conn(&self) -> Option<&Arc<Mutex<Connection>>> {
+        self.read_db.as_ref().or(self.db.as_ref())
+    }
+
+    /// Run a read under [`READ_DEADLINE_SECS`]: SQLite is told to abandon the
+    /// statement once it has run too long, so the lock is never held for minutes.
+    fn read<T>(
+        &self,
+        db: &Arc<Mutex<Connection>>,
+        f: impl FnOnce(&Connection) -> rusqlite::Result<T>,
+    ) -> Result<T> {
+        let conn = db
+            .lock()
+            .map_err(|_| anyhow::anyhow!("flow db lock poisoned"))?;
+        let started = Instant::now();
+        let limit = self.read_deadline;
+        conn.progress_handler(10_000, Some(move || started.elapsed() > limit))?;
+        let result = f(&conn);
+        // Clearing the handler is cleanup: a failure here must not mask the result.
+        let _ = conn.progress_handler(0, None::<fn() -> bool>);
+        result.map_err(|e| match e {
+            rusqlite::Error::SqliteFailure(f, _)
+                if f.code == rusqlite::ErrorCode::OperationInterrupted =>
+            {
+                anyhow::anyhow!(
+                    "flow query exceeded {}s; narrow it with a time range (from/to) or a pod",
+                    limit.as_secs().max(1)
+                )
+            }
+            other => other.into(),
+        })
+    }
+
     pub fn stats(&self) -> FlowStoreStats {
-        let total = if let Some(db) = &self.db {
-            db.lock()
-                .ok()
-                .and_then(|c| {
-                    c.query_row("SELECT COUNT(*) FROM flows", [], |r| r.get::<_, i64>(0))
-                        .ok()
-                })
-                .unwrap_or(0) as u64
+        // Called on every request, so it must be cheap and must never wait behind
+        // a long read: when the store is busy the last known total is returned.
+        let total = if let Some(db) = self.read_conn() {
+            match db.try_lock() {
+                Ok(conn) => match fast_total(&conn) {
+                    Ok(n) => {
+                        self.total_hint.store(n as u64, Ordering::Relaxed);
+                        n as u64
+                    }
+                    Err(_) => self.total_hint.load(Ordering::Relaxed),
+                },
+                Err(_) => self.total_hint.load(Ordering::Relaxed),
+            }
         } else {
             self.memory.lock().map(|m| m.len() as u64).unwrap_or(0)
         };
@@ -451,19 +524,47 @@ impl FlowStore {
 
     fn events_per_sec(&self) -> f64 {
         let now = Utc::now().timestamp();
-        let Ok(mut w) = self.rate_window.lock() else { return 0.0; };
+        let Ok(mut w) = self.rate_window.lock() else {
+            return 0.0;
+        };
         w.retain(|t| now - *t <= 60);
-        if w.is_empty() { 0.0 } else { w.len() as f64 / 60.0 }
+        if w.is_empty() {
+            0.0
+        } else {
+            w.len() as f64 / 60.0
+        }
+    }
+
+    /// Newest stored timestamp, without ever waiting for the store: an index
+    /// lookup when it is free, the last known value when it is busy.
+    fn newest_ts(&self) -> Option<String> {
+        let Some(db) = self.read_conn() else {
+            return self.coverage(None).ok()?.newest;
+        };
+        if let Ok(conn) = db.try_lock() {
+            if let Ok(v) = conn.query_row("SELECT MAX(ts) FROM flows", [], |r| {
+                r.get::<_, Option<String>>(0)
+            }) {
+                if let Ok(mut hint) = self.newest_hint.lock() {
+                    *hint = v.clone();
+                }
+                return v;
+            }
+        }
+        self.newest_hint.lock().ok().and_then(|h| h.clone())
     }
 
     fn lag_secs(&self) -> Option<i64> {
-        let newest = self.coverage(None).ok()?.newest?;
-        let ts = DateTime::parse_from_rfc3339(&newest).ok()?.with_timezone(&Utc);
+        let newest = self.newest_ts()?;
+        let ts = DateTime::parse_from_rfc3339(&newest)
+            .ok()?
+            .with_timezone(&Utc);
         Some((Utc::now() - ts).num_seconds().max(0))
     }
 
     pub fn set_stream_connected(&self, connected: bool) {
-        self.stream_connected.store(if connected { 1 } else { 0 }, Ordering::Relaxed);
+        self.stream_connected
+            .store(if connected { 1 } else { 0 }, Ordering::Relaxed);
     }
 
     pub fn record_stream_gap(&self) {
@@ -496,11 +597,7 @@ impl FlowStore {
     }
 
     /// Delete flows older than `days` (defaults to store retention), optional namespace scope.
-    pub fn purge(
-        &self,
-        namespace: Option<&str>,
-        older_than_days: Option<i64>,
-    ) -> Result<usize> {
+    pub fn purge(&self, namespace: Option<&str>, older_than_days: Option<i64>) -> Result<usize> {
         let days = older_than_days.unwrap_or(self.retention_days).max(0);
         let cutoff = format_ts(Utc::now() - ChronoDuration::days(days));
         if let Some(db) = &self.db {
@@ -646,10 +743,7 @@ impl FlowStore {
         let limit = q.limit.clamp(1, 5_000);
         let offset = q.offset;
 
-        if let Some(db) = &self.db {
-            let conn = db
-                .lock()
-                .map_err(|_| anyhow::anyhow!("flow db lock poisoned"))?;
+        if let Some(db) = self.read_conn() {
             let (conds, mut vals) = q.where_sql();
             let sql = format!(
                 "SELECT id, ts, cluster, verdict, drop_reason, protocol, port,
@@ -659,15 +753,13 @@ impl FlowStore {
             );
             vals.push(Box::new(limit as i64));
             vals.push(Box::new(offset as i64));
-            let mut stmt = conn.prepare(&sql)?;
-            let params_ref: Vec<&dyn rusqlite::types::ToSql> =
-                vals.iter().map(|b| b.as_ref()).collect();
-            let rows = stmt.query_map(params_ref.as_slice(), row_to_stored)?;
-            let mut out = Vec::new();
-            for r in rows {
-                out.push(r?);
-            }
-            return Ok(out);
+            return self.read(db, |conn| {
+                let mut stmt = conn.prepare(&sql)?;
+                let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                    vals.iter().map(|b| b.as_ref()).collect();
+                let rows = stmt.query_map(params_ref.as_slice(), row_to_stored)?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()
+            });
         }
 
         let mem = self
@@ -681,18 +773,14 @@ impl FlowStore {
 
     /// How many stored flows match, ignoring limit and offset.
     pub fn count(&self, q: &FlowQuery) -> Result<u64> {
-        if let Some(db) = &self.db {
-            let conn = db
-                .lock()
-                .map_err(|_| anyhow::anyhow!("flow db lock poisoned"))?;
+        if let Some(db) = self.read_conn() {
             let (conds, vals) = q.where_sql();
-            let params_ref: Vec<&dyn rusqlite::types::ToSql> =
-                vals.iter().map(|b| b.as_ref()).collect();
-            let n: i64 = conn.query_row(
-                &format!("SELECT COUNT(*) FROM flows WHERE 1=1{conds}"),
-                params_ref.as_slice(),
-                |r| r.get(0),
-            )?;
+            let sql = format!("SELECT COUNT(*) FROM flows WHERE 1=1{conds}");
+            let n = self.read(db, |conn| {
+                let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                    vals.iter().map(|b| b.as_ref()).collect();
+                conn.query_row(&sql, params_ref.as_slice(), |r| r.get::<_, i64>(0))
+            })?;
             return Ok(n as u64);
         }
         let mem = self
@@ -707,10 +795,7 @@ impl FlowStore {
     /// offset.
     pub fn timeline(&self, q: &FlowQuery, bucket_secs: i64) -> Result<Vec<TimelineBucket>> {
         let bucket_secs = bucket_secs.max(1);
-        if let Some(db) = &self.db {
-            let conn = db
-                .lock()
-                .map_err(|_| anyhow::anyhow!("flow db lock poisoned"))?;
+        if let Some(db) = self.read_conn() {
             let (conds, mut vals) = q.where_sql();
             // strftime('%s') is unix seconds; integer division floors to the bucket.
             let sql = format!(
@@ -722,25 +807,23 @@ impl FlowStore {
             let mut all: Vec<Box<dyn rusqlite::types::ToSql>> =
                 vec![Box::new(bucket_secs), Box::new(bucket_secs)];
             all.append(&mut vals);
-            let mut stmt = conn.prepare(&sql)?;
-            let params_ref: Vec<&dyn rusqlite::types::ToSql> =
-                all.iter().map(|b| b.as_ref()).collect();
-            let rows = stmt.query_map(params_ref.as_slice(), |r| {
-                let fwd: i64 = r.get(1)?;
-                let drp: i64 = r.get(2)?;
-                let all: i64 = r.get(3)?;
-                Ok(TimelineBucket {
-                    start: r.get(0)?,
-                    forwarded: fwd as u64,
-                    dropped: drp as u64,
-                    other: (all - fwd - drp).max(0) as u64,
-                })
-            })?;
-            let mut out = Vec::new();
-            for r in rows {
-                out.push(r?);
-            }
-            return Ok(out);
+            return self.read(db, |conn| {
+                let mut stmt = conn.prepare(&sql)?;
+                let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                    all.iter().map(|b| b.as_ref()).collect();
+                let rows = stmt.query_map(params_ref.as_slice(), |r| {
+                    let fwd: i64 = r.get(1)?;
+                    let drp: i64 = r.get(2)?;
+                    let all: i64 = r.get(3)?;
+                    Ok(TimelineBucket {
+                        start: r.get(0)?,
+                        forwarded: fwd as u64,
+                        dropped: drp as u64,
+                        other: (all - fwd - drp).max(0) as u64,
+                    })
+                })?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()
+            });
         }
 
         let mem = self
@@ -775,18 +858,27 @@ impl FlowStore {
             scope: scope.map(|s| s.to_vec()),
             ..Default::default()
         };
-        if let Some(db) = &self.db {
-            let conn = db
-                .lock()
-                .map_err(|_| anyhow::anyhow!("flow db lock poisoned"))?;
+        if let Some(db) = self.read_conn() {
             let (conds, vals) = q.where_sql();
-            let params_ref: Vec<&dyn rusqlite::types::ToSql> =
-                vals.iter().map(|b| b.as_ref()).collect();
-            let (oldest, newest, total): (Option<String>, Option<String>, i64) = conn.query_row(
-                &format!("SELECT MIN(ts), MAX(ts), COUNT(*) FROM flows WHERE 1=1{conds}"),
-                params_ref.as_slice(),
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )?;
+            let unscoped = scope.is_none();
+            let (oldest, newest, total) = self.read(db, |conn| {
+                if unscoped {
+                    // The whole table: MIN/MAX(ts) are index lookups and the
+                    // total is the cheap estimate, not a scan of every row.
+                    let (oldest, newest): (Option<String>, Option<String>) =
+                        conn.query_row("SELECT MIN(ts), MAX(ts) FROM flows", [], |r| {
+                            Ok((r.get(0)?, r.get(1)?))
+                        })?;
+                    return Ok((oldest, newest, fast_total(conn)?));
+                }
+                let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                    vals.iter().map(|b| b.as_ref()).collect();
+                conn.query_row(
+                    &format!("SELECT MIN(ts), MAX(ts), COUNT(*) FROM flows WHERE 1=1{conds}"),
+                    params_ref.as_slice(),
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+            })?;
             return Ok(Coverage {
                 oldest,
                 newest,
@@ -810,12 +902,9 @@ impl FlowStore {
     }
 
     pub fn get_by_id(&self, id: &str) -> Result<Option<StoredFlow>> {
-        if let Some(db) = &self.db {
-            let conn = db
-                .lock()
-                .map_err(|_| anyhow::anyhow!("flow db lock poisoned"))?;
-            let row = conn
-                .query_row(
+        if let Some(db) = self.read_conn() {
+            return self.read(db, |conn| {
+                conn.query_row(
                     "SELECT id, ts, cluster, verdict, drop_reason, protocol, port,
                             src_namespace, src_pod, src_ip, src_identity,
                             dst_namespace, dst_pod, dst_ip, dst_identity, source
@@ -823,14 +912,30 @@ impl FlowStore {
                     params![id],
                     row_to_stored,
                 )
-                .optional()?;
-            return Ok(row);
+                .optional()
+            });
         }
         let mem = self
             .memory
             .lock()
             .map_err(|_| anyhow::anyhow!("flow memory lock poisoned"))?;
         Ok(mem.iter().rev().find(|f| f.id == id).cloned())
+    }
+}
+
+/// Number of stored flows. Exact while the table is small; for a big one the
+/// rowid span (`MAX - MIN + 1`, both O(log n)), which is accurate because rows
+/// are appended and expired oldest-first.
+fn fast_total(conn: &Connection) -> rusqlite::Result<i64> {
+    let span: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(rowid) - MIN(rowid) + 1, 0) FROM flows",
+        [],
+        |r| r.get(0),
+    )?;
+    if span <= EXACT_COUNT_BELOW {
+        conn.query_row("SELECT COUNT(*) FROM flows", [], |r| r.get(0))
+    } else {
+        Ok(span)
     }
 }
 
@@ -1475,6 +1580,149 @@ mod tests {
         store.insert_batch(&rows[1..]).unwrap();
         assert_eq!(store.count(&FlowQuery::default()).unwrap(), 1);
         drop(store);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    // ── reads must never take the API down (found on a 10M-row store) ────────
+
+    fn many(n: usize) -> Vec<StoredFlow> {
+        (0..n)
+            .map(|i| {
+                let mut f = sample(&format!("f{i}"));
+                f.ts = format!(
+                    "2026-09-25T10:{:02}:{:02}.{:06}Z",
+                    (i / 3600) % 60,
+                    (i / 60) % 60,
+                    i % 60
+                );
+                f.src_pod = format!("pod-{}", i % 50);
+                f
+            })
+            .collect()
+    }
+
+    fn temp_store() -> (FlowStore, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "paqtra-flowread-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        (FlowStore::open(&dir, 36500).unwrap(), dir)
+    }
+
+    #[test]
+    fn a_runaway_read_is_cut_off_with_a_clear_error() {
+        let (mut store, dir) = temp_store();
+        store.insert_batch(&many(60_000)).unwrap();
+        store.read_deadline = Duration::from_millis(1);
+        // A LIKE on a pod name has no index: a full scan.
+        let err = store
+            .query(&FlowQuery {
+                pod: Some("zzz-no-such-pod".into()),
+                limit: 10,
+                ..Default::default()
+            })
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("exceeded") && err.contains("time range"),
+            "{err}"
+        );
+
+        // The connection is usable again straight after (handler cleared).
+        store.read_deadline = Duration::from_secs(30);
+        let rows = store
+            .query(&FlowQuery {
+                limit: 5,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(rows.len(), 5);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn stats_never_waits_behind_a_busy_store() {
+        let (store, dir) = temp_store();
+        store.insert_batch(&many(3)).unwrap();
+        assert_eq!(store.stats().total, 3, "exact while small, and remembered");
+
+        let store = Arc::new(store);
+        let s2 = store.clone();
+        // Hold the read connection, as a long scan would.
+        let guard = store.read_db.as_ref().unwrap().lock().unwrap();
+        let started = Instant::now();
+        let handle = std::thread::spawn(move || s2.stats().total);
+        let total = handle.join().unwrap();
+        drop(guard);
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "stats waited for the lock"
+        );
+        assert_eq!(total, 3, "falls back to the last known total");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn writes_are_not_blocked_by_a_long_read() {
+        let (store, dir) = temp_store();
+        store.insert_batch(&many(10)).unwrap();
+        // A reader holding its connection for a long time...
+        let guard = store.read_db.as_ref().unwrap().lock().unwrap();
+        // ...does not stop ingest, which has its own connection.
+        let started = Instant::now();
+        store.insert_batch(&many(20)).unwrap();
+        assert!(started.elapsed() < Duration::from_secs(2));
+        drop(guard);
+        assert_eq!(
+            store.count(&FlowQuery::default()).unwrap(),
+            20,
+            "ids repeat: replaced, not duplicated"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_read_connection_cannot_write() {
+        let (store, dir) = temp_store();
+        let r = store
+            .read_db
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM flows", []);
+        assert!(r.is_err(), "readers are query_only");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn totals_are_exact_when_small_and_the_rowid_span_when_large() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE flows (id TEXT)", []).unwrap();
+        assert_eq!(fast_total(&conn).unwrap(), 0);
+        conn.execute(
+            "INSERT INTO flows (rowid, id) VALUES (1, 'a'), (2, 'b'), (3, 'c')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(fast_total(&conn).unwrap(), 3);
+        // Two rows far apart: a big table by span, so the O(1) estimate is used.
+        conn.execute("INSERT INTO flows (rowid, id) VALUES (500000, 'z')", [])
+            .unwrap();
+        assert_eq!(fast_total(&conn).unwrap(), 500_000);
+    }
+
+    #[test]
+    fn coverage_of_the_whole_store_does_not_scan() {
+        let (store, dir) = temp_store();
+        store.insert_batch(&many(50)).unwrap();
+        let c = store.coverage(None).unwrap();
+        assert_eq!(c.total, 50);
+        assert!(c.oldest.is_some() && c.newest.is_some() && c.durable);
+        // Scoped coverage still counts exactly.
+        let scoped = store.coverage(Some(&["nope".to_string()])).unwrap();
+        assert_eq!(scoped.total, 0);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

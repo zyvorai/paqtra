@@ -9,6 +9,7 @@
 //! on Ctrl-C.
 
 use anyhow::{bail, Context, Result};
+use chrono::{DateTime, Utc};
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::core::v1::{Namespace, Pod, Service};
 use kube::api::{DeleteParams, DynamicObject, PostParams};
@@ -173,6 +174,18 @@ pub fn flows_evidence(body: &Value, denied_prefix: &str, allowed_prefix: &str) -
         }
     }
     e
+}
+
+/// The API request for flows in the test namespace since `since`. It uses the
+/// time-bounded history endpoint on purpose: `/flows?namespace=` filters the
+/// whole store, and on a cluster with millions of stored flows that is a full
+/// scan. A time range is an index lookup, so this stays cheap however big the
+/// store is (and however often it is polled).
+pub fn flows_url(port: u16, since: DateTime<Utc>) -> String {
+    format!(
+        "http://127.0.0.1:{port}/api/v1/flows/history?namespace={NAMESPACE}&from={}&limit=500",
+        since.format("%Y-%m-%dT%H:%M:%SZ")
+    )
 }
 
 pub fn render_results(results: &[TestResult]) -> String {
@@ -379,6 +392,7 @@ async fn run_one(
     o: &ConnOpts,
     image: &str,
     g: &Global,
+    since: DateTime<Utc>,
 ) -> Result<String> {
     match name {
         "baseline" => {
@@ -460,7 +474,7 @@ async fn run_one(
                 o.timeout,
             )
             .await?;
-            check_flows(client, g, token, o.timeout).await
+            check_flows(client, g, token, o.timeout, since).await
         }
         other => bail!("unknown test {other}"),
     }
@@ -473,6 +487,7 @@ async fn check_flows(
     g: &Global,
     token: &str,
     timeout: Duration,
+    since: DateTime<Utc>,
 ) -> Result<String> {
     let selector = format!(
         "app.kubernetes.io/instance={},app.kubernetes.io/component=api",
@@ -490,7 +505,7 @@ async fn check_flows(
         .unwrap_or(9191);
     let (local, handle) =
         portforward::spawn(client.clone(), &g.namespace, &pod, port_remote).await?;
-    let url = format!("http://127.0.0.1:{local}/api/v1/flows?namespace={NAMESPACE}&limit=500");
+    let url = flows_url(local, since);
     let token = token.to_string();
 
     let start = Instant::now();
@@ -539,6 +554,8 @@ async fn cleanup(client: &Client) {
 /// Runs the selected scenarios; returns whether all passed.
 pub async fn cmd_connectivity_test(g: &Global, o: ConnOpts) -> Result<bool> {
     let tests = validate_tests(&o.tests)?;
+    // Flows older than this run are of no interest (and cost the API to find).
+    let since = Utc::now() - chrono::Duration::seconds(30);
     let client = super::kube::client(g).await?;
     let image = image_for(&o.image, o.registry.as_deref());
     let json = o.output == "json";
@@ -570,7 +587,7 @@ pub async fn cmd_connectivity_test(g: &Global, o: ConnOpts) -> Result<bool> {
                 });
                 continue;
             }
-            let outcome = run_one(name, &client, &o, &image, g).await;
+            let outcome = run_one(name, &client, &o, &image, g, since).await;
             let (passed, detail) = match outcome {
                 Ok(d) => (true, d),
                 Err(e) => (false, format!("{e:#}")),
@@ -740,6 +757,20 @@ mod tests {
             flows_evidence(&json!({"flows": "no"}), "a", "b"),
             Evidence::default()
         );
+    }
+
+    #[test]
+    fn the_flows_request_is_time_bounded() {
+        let since = DateTime::parse_from_rfc3339("2026-09-26T04:26:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let url = flows_url(19191, since);
+        assert_eq!(
+            url,
+            "http://127.0.0.1:19191/api/v1/flows/history?namespace=paqtra-connectivity-test&from=2026-09-26T04:26:00Z&limit=500"
+        );
+        // Never the unbounded list: that one scans the whole store.
+        assert!(url.contains("/flows/history") && url.contains("from="));
     }
 
     fn res(name: &str, passed: bool, skipped: bool) -> TestResult {
