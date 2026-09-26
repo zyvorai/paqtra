@@ -5,14 +5,33 @@ sidebar_position: 1
 
 **Paqtra — trace every flow.** Get up and running in minutes.
 
-## Prerequisites
+## Install into a cluster (recommended)
+
+You need a Kubernetes cluster, a kube-context, and Cilium with Hubble Relay
+(`paqtra install --with-cilium` sets Cilium up when it is missing).
+
+```bash
+# Install the CLI: downloads, verifies (sha256, and cosign if present) and installs
+curl -fsSL https://raw.githubusercontent.com/zyvorai/paqtra/main/install.sh | sh
+# or: brew install zyvorai/tap/paqtra
+
+paqtra install            # the Helm chart is built in; add --with-cilium if needed
+paqtra status --wait      # exits 0 only when everything is healthy
+paqtra ui                 # open the console
+```
+
+Something wrong? `paqtra doctor` diagnoses it, `paqtra connectivity test` proves
+policy enforcement end to end, and `paqtra sysdump` collects a redacted support
+bundle. See the [CLI reference](../cli.md).
+
+## Build from source
 
 | Component | Requirement |
 |-----------|-------------|
 | Rust | 1.75+ (TUI and web-api) |
 | Node.js | 18+ with npm (20+ recommended for web-ui) |
 | Docker | Optional, for containerised deployment |
-| kubectl | Required for TUI; cluster must have Cilium + Hubble enabled |
+| kubectl | Required for the TUI; cluster must have Cilium + Hubble enabled |
 
 ## Quick Start (TUI)
 
@@ -21,7 +40,7 @@ git clone https://github.com/zyvorai/paqtra.git
 cd paqtra
 
 cargo build --release
-./target/release/paqtra
+./target/release/paqtra tui
 ```
 
 ### Key Bindings
@@ -97,7 +116,7 @@ kubectl apply -f deployments/k8s/
 
 Review and update `deployments/k8s/secrets.yaml` with your own JWT secret before applying.
 
-Helm chart: `helm install paqtra ./chart`.
+The CLI has the chart built in: `paqtra install` (see the [CLI reference](../cli.md)). From a checkout, `helm install paqtra ./chart` works too.
 
 ## Web UI Keyboard Shortcuts
 
