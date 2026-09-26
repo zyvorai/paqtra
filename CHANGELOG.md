@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A recent-window flow query no longer scans the namespace index.** With no
+  statistics, SQLite read `idx_flows_path` and sorted the result for any query naming
+  a source and destination namespace, ignoring the time bound: on a 12M-flow store the
+  connectivity monitor's two-minute lookups each hit the 5s read deadline every cycle,
+  holding the read connection and leaving every store-backed endpoint 10-17s slow, and
+  `paqtra connectivity test` failing with a 500. Queries (and their counts and
+  timelines) whose window is at most a day now read through the time index, so cost
+  follows the window, not the filters.
+
 ## [2.2.1] - 2026-09-26
 
 ### Fixed
