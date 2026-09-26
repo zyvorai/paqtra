@@ -39,10 +39,11 @@ step "doctor must report no failures"
 "$PAQTRA" doctor
 
 step "version now sees the release and the server"
-out=$("$PAQTRA" version)
+# The CLI colours its output; strip the escape codes before matching text.
+out=$("$PAQTRA" version | sed 's/\x1b\[[0-9;]*m//g')
 echo "$out"
-grep -q "Release:" <<<"$out" || fail "version did not report the release"
-grep -q "Server:  Paqtra API" <<<"$out" || fail "version did not reach the API"
+grep -q "Release: .*chart paqtra-" <<<"$out" || fail "version did not report the release"
+grep -q "Server: *Paqtra API v" <<<"$out" || fail "version did not reach the API"
 
 step "config get/set round trip"
 [ "$("$PAQTRA" config get api.env.hubbleMode)" = "grpc" ] || fail "unexpected hubbleMode"
