@@ -181,6 +181,39 @@ pub struct FlowQuery {
     pub offset: usize,
 }
 
+/// A window at most this wide is read through the time index (see
+/// `FlowQuery::table`); wider ones are left to the planner.
+const TIME_INDEX_WINDOW_HOURS: i64 = 24;
+
+impl FlowQuery {
+    /// The `FROM` target. With a lower time bound of at most a day, read through
+    /// `idx_flows_ts`. Left alone, SQLite has no statistics here and prefers
+    /// `idx_flows_path` whenever a namespace is given: for a busy namespace that
+    /// reads a large slice of the table and sorts it, ignoring the time bound, so
+    /// a two-minute question costs seconds on a store of millions of rows. The
+    /// time index makes the cost track the window, whatever the filters.
+    fn table(&self) -> &'static str {
+        let narrow = self.since_rfc3339.as_deref().is_some_and(|since| {
+            let parse = |v: &str| chrono::DateTime::parse_from_rfc3339(v).ok();
+            let Some(from) = parse(since) else {
+                return false;
+            };
+            let to = self
+                .until_rfc3339
+                .as_deref()
+                .and_then(parse)
+                .map(|t| t.with_timezone(&Utc))
+                .unwrap_or_else(Utc::now);
+            to - from.with_timezone(&Utc) <= ChronoDuration::hours(TIME_INDEX_WINDOW_HOURS)
+        });
+        if narrow {
+            "flows INDEXED BY idx_flows_ts"
+        } else {
+            "flows"
+        }
+    }
+}
+
 /// Escape `\`, `%` and `_` so user text matches literally in a LIKE.
 fn like_contains(v: &str) -> String {
     let mut out = String::with_capacity(v.len() + 2);
@@ -749,7 +782,8 @@ impl FlowStore {
                 "SELECT id, ts, cluster, verdict, drop_reason, protocol, port,
                         src_namespace, src_pod, src_ip, src_identity,
                         dst_namespace, dst_pod, dst_ip, dst_identity, source
-                 FROM flows WHERE 1=1{conds} ORDER BY ts DESC LIMIT ? OFFSET ?"
+                 FROM {} WHERE 1=1{conds} ORDER BY ts DESC LIMIT ? OFFSET ?",
+                q.table()
             );
             vals.push(Box::new(limit as i64));
             vals.push(Box::new(offset as i64));
@@ -775,7 +809,7 @@ impl FlowStore {
     pub fn count(&self, q: &FlowQuery) -> Result<u64> {
         if let Some(db) = self.read_conn() {
             let (conds, vals) = q.where_sql();
-            let sql = format!("SELECT COUNT(*) FROM flows WHERE 1=1{conds}");
+            let sql = format!("SELECT COUNT(*) FROM {} WHERE 1=1{conds}", q.table());
             let n = self.read(db, |conn| {
                 let params_ref: Vec<&dyn rusqlite::types::ToSql> =
                     vals.iter().map(|b| b.as_ref()).collect();
@@ -801,8 +835,9 @@ impl FlowStore {
             let sql = format!(
                 "SELECT CAST(strftime('%s', ts) AS INTEGER) / ? * ? AS b,
                         SUM(verdict = 'FORWARDED'), SUM(verdict = 'DROPPED'), COUNT(*)
-                 FROM flows WHERE strftime('%s', ts) IS NOT NULL{conds}
-                 GROUP BY b ORDER BY b"
+                 FROM {} WHERE strftime('%s', ts) IS NOT NULL{conds}
+                 GROUP BY b ORDER BY b",
+                q.table()
             );
             let mut all: Vec<Box<dyn rusqlite::types::ToSql>> =
                 vec![Box::new(bucket_secs), Box::new(bucket_secs)];
@@ -1723,6 +1758,115 @@ mod tests {
         // Scoped coverage still counts exactly.
         let scoped = store.coverage(Some(&["nope".to_string()])).unwrap();
         assert_eq!(scoped.total, 0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn plan_of(store: &FlowStore, q: &FlowQuery) -> String {
+        let (conds, mut vals) = q.where_sql();
+        vals.push(Box::new(10_i64));
+        vals.push(Box::new(0_i64));
+        let sql = format!(
+            "EXPLAIN QUERY PLAN SELECT id FROM {} WHERE 1=1{conds} ORDER BY ts DESC LIMIT ? OFFSET ?",
+            q.table()
+        );
+        let db = store.read_conn().unwrap();
+        store
+            .read(db, |conn| {
+                let mut stmt = conn.prepare(&sql)?;
+                let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+                    vals.iter().map(|b| b.as_ref()).collect();
+                let rows = stmt.query_map(params_ref.as_slice(), |r| r.get::<_, String>(3))?;
+                Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?.join(" | "))
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn a_recent_window_reads_the_time_index_not_the_namespace_index() {
+        let (store, dir) = temp_store();
+        store.insert_batch(&many(200)).unwrap();
+        let now = Utc::now();
+        let stamp = |ago: ChronoDuration| (now - ago).to_rfc3339_opts(SecondsFormat::Micros, true);
+        let pair = |since: Option<String>, until: Option<String>| FlowQuery {
+            src_namespace: Some("kube-system".into()),
+            dst_namespace: Some("kube-system".into()),
+            port: Some(53),
+            since_rfc3339: since,
+            until_rfc3339: until,
+            ..Default::default()
+        };
+
+        // Without the hint SQLite picks the namespace index and sorts a big slice.
+        let free = pair(None, None);
+        assert_eq!(free.table(), "flows");
+        assert!(plan_of(&store, &free).contains("idx_flows_path"));
+
+        // The connectivity monitor's two windows: the last minutes, and the hour before.
+        let recent = pair(Some(stamp(ChronoDuration::minutes(2))), None);
+        let baseline = pair(
+            Some(stamp(ChronoDuration::hours(1))),
+            Some(stamp(ChronoDuration::minutes(2))),
+        );
+        for q in [&recent, &baseline] {
+            let plan = plan_of(&store, q);
+            assert!(plan.contains("idx_flows_ts"), "{plan}");
+            assert!(!plan.contains("idx_flows_path"), "{plan}");
+            assert!(!plan.contains("TEMP B-TREE"), "no sort needed: {plan}");
+        }
+
+        // A window wider than a day, or a bound that does not parse, is left to the planner.
+        assert_eq!(
+            pair(Some(stamp(ChronoDuration::days(3))), None).table(),
+            "flows"
+        );
+        assert_eq!(pair(Some("not-a-time".into()), None).table(), "flows");
+        // An old but narrow window is still narrow.
+        let old = pair(
+            Some(stamp(ChronoDuration::days(5))),
+            Some(stamp(ChronoDuration::days(5) - ChronoDuration::hours(1))),
+        );
+        assert_eq!(old.table(), "flows INDEXED BY idx_flows_ts");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_time_index_hint_does_not_change_results() {
+        let (store, dir) = temp_store();
+        let rows = many(300);
+        store.insert_batch(&rows).unwrap();
+        let q = FlowQuery {
+            src_namespace: Some(rows[0].src_namespace.clone()),
+            dst_namespace: Some(rows[0].dst_namespace.clone()),
+            since_rfc3339: Some("2026-09-25T10:00:00.000000Z".into()),
+            until_rfc3339: Some("2026-09-25T10:00:02.000000Z".into()),
+            limit: 1000,
+            ..Default::default()
+        };
+        assert_eq!(q.table(), "flows INDEXED BY idx_flows_ts");
+        let hinted = store.query(&q).unwrap();
+        let expected = rows
+            .iter()
+            .filter(|f| {
+                f.ts.as_str() >= "2026-09-25T10:00:00.000000Z"
+                    && f.ts.as_str() < "2026-09-25T10:00:02.000000Z"
+            })
+            .count();
+        assert!(expected > 0 && expected < rows.len());
+        assert_eq!(hinted.len(), expected);
+        assert_eq!(store.count(&q).unwrap() as usize, expected);
+        assert!(
+            hinted.windows(2).all(|w| w[0].ts >= w[1].ts),
+            "newest first"
+        );
+        assert_eq!(
+            store
+                .timeline(&q, 60)
+                .unwrap()
+                .iter()
+                .map(|b| b.forwarded + b.dropped + b.other)
+                .sum::<u64>() as usize,
+            expected
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 }
