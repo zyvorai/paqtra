@@ -6,7 +6,7 @@
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
 
-VERSION="2.1.0"
+VERSION="2.2.0"
 INSTALL_DIR="/usr/local/bin"
 SHARE_DIR="/usr/share/paqtra"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

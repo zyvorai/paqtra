@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-26
+
 ### Added
 
 - **`paqtra` installs itself like `cilium-cli`.** The Helm chart is compiled into the
@@ -110,6 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README and product docs updated for gRPC follow ingest, DNS evidence, and
   deny explanation.
 
+[2.2.0]: https://github.com/zyvorai/paqtra/releases/tag/v2.2.0
 [2.1.0]: https://github.com/zyvorai/paqtra/releases/tag/v2.1.0
 
 ## [2.0.0] - 2026-09-24
