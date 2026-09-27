@@ -11,7 +11,7 @@ import Reveal from '@site/src/components/Reveal';
 import styles from './index.module.css';
 
 function HomepageHeader() {
-  const hero = useBaseUrl('/00-overview.png');
+  const hero = useBaseUrl('/paqtra-live-demo.gif');
   return (
     <header className={clsx('hero hero--primary', styles.heroBanner)}>
       <div className="container">
@@ -44,7 +44,7 @@ function HomepageHeader() {
             </div>
           </div>
           <div className={styles.heroMedia}>
-            <img src={hero} alt="Paqtra Overview dashboard" />
+            <img src={hero} alt="Paqtra live demo — Overview dashboard, live datapath and flow chapters" />
             <p className={styles.heroMediaCaption}>
               Captured against a live lab cluster, not a mockup.
             </p>

@@ -41,9 +41,9 @@ export function buildDigest(opts: {
   }
   if (drops > 1000) {
     severity = severity === 'info' ? 'warning' : severity;
-    why.push(`${drops} drop events`);
+    why.push(`${drops.toLocaleString()} packets dropped by Cilium`);
   }
-  const fingerprint = `${score}-${drops}-${status}`.slice(0, 12);
+  const fingerprint = shortHash(`${score}|${drops}|${status}|${severity}`);
   return {
     severity,
     fingerprint,
@@ -53,12 +53,25 @@ export function buildDigest(opts: {
   };
 }
 
+function shortHash(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(16).padStart(8, '0').slice(0, 6);
+}
+
+/** Packets dropped across every Cilium drop reason (`total_drops` counts reason entries). */
+export function dropPackets(data: { drops?: { count?: number }[]; total_drops?: number } | null | undefined): number {
+  if (!data) return 0;
+  if (data.drops?.length) return data.drops.reduce((n, d) => n + (d.count ?? 0), 0);
+  return data.total_drops ?? 0;
+}
+
 /** Client-side digest from health + drops (until a dedicated digest API exists). */
 export async function loadDigest(): Promise<Digest | null> {
   try {
     const [h, d] = await Promise.allSettled([fetchClusterHealth(), fetchEbpfDrops()]);
     const health = h.status === 'fulfilled' ? h.value.data : null;
-    const drops = d.status === 'fulfilled' ? d.value.data.total_drops ?? 0 : 0;
+    const drops = d.status === 'fulfilled' ? dropPackets(d.value.data) : 0;
     return buildDigest({
       score: health?.score ?? health?.health_score,
       status: health?.overall ?? health?.status,

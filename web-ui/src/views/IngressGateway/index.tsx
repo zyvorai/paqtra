@@ -6,6 +6,9 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRoute = Record<string, any>;
@@ -47,6 +50,7 @@ const IngressGateway: React.FC = () => {
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
+  const tick = useChanged(routes);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -60,6 +64,16 @@ const IngressGateway: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (routes.length ? `${routes.length} ingress and gateway route${routes.length === 1 ? '' : 's'}.` : 'No ingress or gateway routes.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'routes', value: tick ? routes.length : undefined },
+          { label: 'with TLS', value: tick ? routes.filter((r) => isTls(r)).length : undefined },
+          { label: 'without TLS', value: tick ? routes.filter((r) => !isTls(r)).length : undefined, tone: tick ? (countTone(routes.filter((r) => !isTls(r)).length)) : undefined },
+        ]}
+      />
       {loading && routes.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

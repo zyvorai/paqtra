@@ -7,6 +7,9 @@ import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 const SEV_BADGE: Record<string, string> = {
   critical: 'bg-red-500/15 text-red-400 border-red-500/30',
@@ -55,6 +58,7 @@ const Healer: React.FC = () => {
     finally { setFixing(null); }
   };
 
+  const tick = useChanged(problems);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -69,6 +73,16 @@ const Healer: React.FC = () => {
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (problems.length ? `${problems.filter((p) => !/fix|resolv/i.test(p.status || '')).length} open problem${problems.filter((p) => !/fix|resolv/i.test(p.status || '')).length === 1 ? '' : 's'} with proposed fixes.` : 'No problems detected.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'problems', value: tick ? problems.length : undefined },
+          { label: 'open', value: tick ? problems.filter((p) => !/fix|resolv/i.test(p.status || '')).length : undefined, tone: tick ? (countTone(problems.filter((p) => !/fix|resolv/i.test(p.status || '')).length)) : undefined },
+          { label: 'high or critical', value: tick ? problems.filter((p) => /crit|high/i.test(p.severity || "")).length : undefined, tone: tick ? (countTone(problems.filter((p) => /crit|high/i.test(p.severity || "")).length)) : undefined },
+        ]}
+      />
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
       {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}

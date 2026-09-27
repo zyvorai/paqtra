@@ -7,6 +7,8 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 interface PolicyMapEntry {
   src_identity: number;
@@ -37,6 +39,7 @@ const PolicyMapViewer: React.FC = () => {
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(loadData, 30000, autoRefreshOn);
 
+  const tick = useChanged(entries);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -53,6 +56,16 @@ const PolicyMapViewer: React.FC = () => {
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? `${entries.length.toLocaleString()} policy map entries, read-only.` : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'entries', value: tick ? entries.length : undefined },
+          { label: 'identities', value: tick ? new Set(entries.map((e) => e.src_identity)).size : undefined },
+          { label: 'packets', value: tick ? entries.reduce((n, e) => n + (e.packets || 0), 0).toLocaleString() : undefined },
+        ]}
+      />
 
       <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 overflow-hidden">
         {entries.length > 0 && (

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchServiceMap } from '../../services/api';
 import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
 import PagePulse from '../../components/kit/PagePulse';
 import { useChanged } from '../../components/kit/useSeries';
+import NetworkGraph, { type GraphEdge, type GraphNode } from '../../components/NetworkGraph';
 
 type Node = { id?: string; name?: string; namespace?: string };
 type Edge = { source?: string; target?: string; protocol?: string };
@@ -26,6 +27,16 @@ export default function ServiceMap() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const graphNodes = useMemo<GraphNode[]>(
+    () => nodes.map((n, i) => ({ id: n.id || n.name || `node-${i}`, label: n.name || n.id || `node-${i}`, group: n.namespace })),
+    [nodes],
+  );
+
+  const graphEdges = useMemo<GraphEdge[]>(
+    () => edges.flatMap((e) => (e.source && e.target ? [{ source: e.source, target: e.target, label: e.protocol }] : [])),
+    [edges],
+  );
 
   const tick = useChanged(edges);
   return (
@@ -52,6 +63,7 @@ export default function ServiceMap() {
             Refresh
           </button>
         </Toolbar>
+        <NetworkGraph nodes={graphNodes} edges={graphEdges} label="Service map graph" />
       </Card>
       <Card span={2}>
         <Eyebrow>SERVICES</Eyebrow>

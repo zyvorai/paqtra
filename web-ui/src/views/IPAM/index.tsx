@@ -6,6 +6,8 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const IPAM: React.FC = () => {
   usePageTitle('IPAM');
@@ -28,6 +30,7 @@ const IPAM: React.FC = () => {
   const totalAvailable = pools.reduce((a, p) => a + p.available, 0);
   const filteredAllocs = search ? allocations.filter((a) => a.ip.includes(search) || a.pod.includes(search) || a.namespace.includes(search)) : allocations;
 
+  const tick = useChanged(pools);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -41,12 +44,17 @@ const IPAM: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? `${pools.length} IP pool${pools.length === 1 ? '' : 's'}, ${totalAllocated} addresses allocated.` : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'Pools', value: tick ? pools.length : undefined },
+          { label: 'Allocated IPs', value: tick ? totalAllocated : undefined },
+          { label: 'Available IPs', value: tick ? totalAvailable : undefined },
+        ]}
+      />
 
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-blue card-glow transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Pools</div><div className="text-2xl font-bold text-white">{pools.length}</div></div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-green card-glow-green transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Allocated IPs</div><div className="text-2xl font-bold text-white">{totalAllocated}</div></div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-purple card-glow-purple transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Available IPs</div><div className="text-2xl font-bold text-green-400">{totalAvailable}</div></div>
-      </div>
 
       <div className="flex gap-1 mb-4 p-1 rounded-lg bg-slate-900/50 w-fit">
         <button onClick={() => setTab('pools')} className={`px-4 py-2 rounded-md text-sm transition-colors ${tab === 'pools' ? 'bg-slate-800/50 text-white shadow' : 'text-slate-400'}`}>Pools ({pools.length})</button>

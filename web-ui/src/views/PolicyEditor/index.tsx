@@ -5,6 +5,8 @@ import { validatePolicy, createPolicy } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const DEFAULT_YAML = `apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -77,6 +79,7 @@ const PolicyEditor: React.FC = () => {
 
   const lineCount = yaml.split('\n').length;
 
+  const tick = useChanged(validation);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -86,6 +89,17 @@ const PolicyEditor: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (validation ? (validation.valid ? 'Policy is valid — review, then apply.' : `${validation.errors.length} validation error${validation.errors.length === 1 ? '' : 's'}.`) : undefined) : undefined}
+        tone={tick ? (validation && !validation.valid ? 'bad' : undefined) : undefined}
+        tick={tick}
+        live={false}
+        error={error || undefined}
+        figures={[
+          { label: 'validation', value: tick ? (validation ? (validation.valid ? 'valid' : 'invalid') : '—') : undefined, tone: tick ? ((validation ? (validation.valid ? 'ok' : 'bad') : undefined)) : undefined },
+          { label: 'YAML lines', value: tick ? yaml.split("\n").length : undefined },
+        ]}
+      />
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

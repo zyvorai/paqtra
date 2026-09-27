@@ -4,6 +4,8 @@ import { fetchExportConfigs, createExportConfig, deleteExportConfig, ExportConfi
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const STATUS_BADGE: Record<string, string> = { active: 'bg-green-500/15 text-green-400 border-green-500/30', paused: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', error: 'bg-red-500/15 text-red-400 border-red-500/30' };
 const FORMAT_BADGE: Record<string, string> = { json: 'bg-blue-500/15 text-blue-400 border-blue-500/30', csv: 'bg-green-500/15 text-green-400 border-green-500/30', syslog: 'bg-purple-500/15 text-purple-400 border-purple-500/30', s3: 'bg-orange-500/15 text-orange-400 border-orange-500/30' };
@@ -42,6 +44,7 @@ const FlowExporter: React.FC = () => {
     catch (err) { setError(isAxiosError(err) ? err.response?.data?.message ?? err.message : 'Failed'); }
   };
 
+  const tick = useChanged(configs);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -55,6 +58,16 @@ const FlowExporter: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (configs.length ? `${configs.length} flow export${configs.length === 1 ? '' : 's'} configured.` : 'No flow exports configured.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'exports', value: tick ? configs.length : undefined },
+          { label: 'active', value: tick ? configs.filter((c) => /activ|run/i.test(c.status || '')).length : undefined },
+          { label: 'flows exported', value: tick ? configs.reduce((n, c) => n + (c.exported_count || 0), 0).toLocaleString() : undefined },
+        ]}
+      />
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
       {showCreate && (

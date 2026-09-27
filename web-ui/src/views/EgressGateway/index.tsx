@@ -6,6 +6,8 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const STATUS_BADGE: Record<string, string> = { active: 'bg-green-500/15 text-green-400 border-green-500/30', pending: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', error: 'bg-red-500/15 text-red-400 border-red-500/30' };
 
@@ -23,6 +25,7 @@ const EgressGateway: React.FC = () => {
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
+  const tick = useChanged(policies);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -36,6 +39,16 @@ const EgressGateway: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (policies.length ? `${policies.length} egress gateway polic${policies.length === 1 ? 'y' : 'ies'}.` : 'No egress gateway policies.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'policies', value: tick ? policies.length : undefined },
+          { label: 'gateway nodes', value: tick ? new Set(policies.map((p) => p.gateway_node)).size : undefined },
+          { label: 'destination CIDRs', value: tick ? policies.reduce((n, p) => n + (p.destination_cidrs?.length ?? 0), 0) : undefined },
+        ]}
+      />
       {loading && policies.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

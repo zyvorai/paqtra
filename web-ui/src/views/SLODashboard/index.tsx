@@ -6,6 +6,9 @@ import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 function statusIcon(s: string) {
   if (s === 'met') return <CheckCircle className="w-5 h-5 text-green-400" />;
@@ -62,6 +65,7 @@ const SLODashboard: React.FC = () => {
   const met = slos.filter((s) => s.status === 'met').length;
   const breached = slos.filter((s) => s.status === 'breached').length;
 
+  const tick = useChanged(slos);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -76,6 +80,16 @@ const SLODashboard: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (slos.length ? `${slos.length} objective${slos.length === 1 ? '' : 's'} tracked.` : 'No objectives defined.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'Total SLOs', value: tick ? slos.length : undefined },
+          { label: 'Meeting Target', value: tick ? met : undefined },
+          { label: 'Breached', value: tick ? breached : undefined, tone: tick ? countTone(Number(breached)) : undefined },
+        ]}
+      />
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
       {showForm && (
@@ -88,11 +102,6 @@ const SLODashboard: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-blue card-glow transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Total SLOs</div><div className="text-2xl font-bold text-white">{slos.length}</div></div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-green card-glow-green transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Meeting Target</div><div className="text-2xl font-bold text-green-400">{met}</div></div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-red card-glow transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Breached</div><div className="text-2xl font-bold text-red-400">{breached}</div></div>
-      </div>
 
       {loading && slos.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 

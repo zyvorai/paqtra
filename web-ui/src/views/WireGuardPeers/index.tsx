@@ -6,6 +6,8 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 function fmt(b: number): string { return b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${(b / 1e3).toFixed(1)} KB`; }
 
@@ -23,6 +25,7 @@ const WireGuardPeers: React.FC = () => {
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
+  const tick = useChanged(peers);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -36,6 +39,16 @@ const WireGuardPeers: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (peers.length ? `${peers.length} WireGuard peer${peers.length === 1 ? '' : 's'} across ${new Set(peers.map((p) => p.node)).size} nodes.` : 'No WireGuard peers.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'peers', value: tick ? peers.length : undefined },
+          { label: 'nodes', value: tick ? new Set(peers.map((p) => p.node)).size : undefined },
+          { label: 'allowed IPs', value: tick ? peers.reduce((n, p) => n + (p.allowed_ips?.length ?? 0), 0) : undefined },
+        ]}
+      />
       {loading && peers.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 
       {!loading && peers.length === 0 && !error && (

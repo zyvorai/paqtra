@@ -7,6 +7,8 @@ import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const STATUS_BADGE: Record<string, string> = {
   completed: 'bg-green-500/15 text-green-400 border-green-500/30',
@@ -51,6 +53,7 @@ const Replay: React.FC = () => {
     finally { setCreating(false); }
   };
 
+  const tick = useChanged(recordings);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -68,6 +71,15 @@ const Replay: React.FC = () => {
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (recordings.length ? `${recordings.length} recording${recordings.length === 1 ? '' : 's'} ready to replay.` : 'No recordings yet.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'recordings', value: tick ? recordings.length : undefined },
+          { label: 'flows', value: tick ? recordings.reduce((n, r) => n + (r.flow_count || 0), 0).toLocaleString() : undefined },
+        ]}
+      />
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
       {/* Create form */}

@@ -1,12 +1,14 @@
 import React, { useState, useCallback } from 'react';
-import { DollarSign, Loader2, TrendingUp, TrendingDown, Lightbulb } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { DollarSign, Loader2, TrendingUp, TrendingDown } from 'lucide-react';
 import { fetchCostBreakdown, CostBreakdown, CostSummary } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import ChartContainer from '../../components/ChartContainer';
 
 const CostAnalytics: React.FC = () => {
   usePageTitle('Cost Analytics');
@@ -23,6 +25,7 @@ const CostAnalytics: React.FC = () => {
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
+  const tick = useChanged(summary);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -36,27 +39,18 @@ const CostAnalytics: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (summary ? String(summary.note ?? 'Resource-proportional cost breakdown.') : undefined) : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'namespaces', value: tick ? Number(summary?.total_namespaces ?? costs.length) : undefined },
+          { label: 'pods', value: tick ? (summary?.total_pods != null ? Number(summary.total_pods) : '—') : undefined },
+          { label: 'CPU requested', value: tick ? (summary?.total_cpu_request_millicores != null ? `${(Number(summary.total_cpu_request_millicores) / 1000).toFixed(1)} cores` : '—') : undefined },
+          { label: 'memory requested', value: tick ? (summary?.total_memory_request_mib != null ? `${(Number(summary.total_memory_request_mib) / 1024).toFixed(1)} GiB` : '—') : undefined },
+        ]}
+      />
 
-      {summary && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <div className="rounded-xl border border-slate-700/50 p-4 stat-card-green card-glow-green transition-all hover:scale-[1.02]">
-            <div className="text-xs text-slate-400 mb-1">Monthly Cost</div>
-            <div className="text-2xl font-bold text-white">${(summary.total_monthly ?? summary.total_monthly_cost ?? 0).toLocaleString()}</div>
-          </div>
-          <div className="rounded-xl border border-slate-700/50 p-4 stat-card-blue card-glow transition-all hover:scale-[1.02]">
-            <div className="text-xs text-slate-400 mb-1">Daily Cost</div>
-            <div className="text-2xl font-bold text-white">${(summary.total_daily ?? (summary.total_monthly_cost ? summary.total_monthly_cost / 30 : 0)).toFixed(0)}</div>
-          </div>
-          <div className="rounded-xl border border-slate-700/50 p-4 stat-card-purple card-glow-purple transition-all hover:scale-[1.02]">
-            <div className="flex items-center gap-1 text-xs text-slate-400 mb-1">Trend {(summary.cost_trend ?? summary.trend ?? '-') === 'decreasing' ? <TrendingDown className="w-3 h-3 text-green-400" /> : <TrendingUp className="w-3 h-3 text-red-400" />}</div>
-            <div className={`text-2xl font-bold ${(summary.cost_trend ?? summary.trend ?? '-') === 'decreasing' ? 'text-green-400' : 'text-red-400'}`}>{summary.cost_trend ?? summary.trend ?? '-'}</div>
-          </div>
-          <div className="rounded-xl border border-slate-700/50 p-4 stat-card-orange card-glow transition-all hover:scale-[1.02]">
-            <div className="flex items-center gap-1 text-xs text-slate-400 mb-1"><Lightbulb className="w-3 h-3" /> Savings Potential</div>
-            <div className="text-2xl font-bold text-green-400">${(summary.savings_potential ?? 0).toLocaleString()}</div>
-          </div>
-        </div>
-      )}
 
       {loading && costs.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 
@@ -65,26 +59,24 @@ const CostAnalytics: React.FC = () => {
       )}
 
       {costs.length > 0 && (
-        <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-5 mb-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-green-700 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-              <DollarSign className="w-4 h-4 text-white" />
-            </div>
-            <h2 className="text-base font-semibold text-white">Cost by Namespace</h2>
-          </div>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={costs}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="namespace" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} tickFormatter={(v) => `$${v}`} />
-              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8 }} formatter={(v) => `$${Number(v ?? 0).toFixed(2)}`} />
-              <Legend />
-              <Bar dataKey="cpu_cost" name="CPU" fill="#3b82f6" radius={[2, 2, 0, 0]} />
-              <Bar dataKey="memory_cost" name="Memory" fill="#a855f7" radius={[2, 2, 0, 0]} />
-              <Bar dataKey="network_cost" name="Network" fill="#22c55e" radius={[2, 2, 0, 0]} />
-              <Bar dataKey="storage_cost" name="Storage" fill="#f97316" radius={[2, 2, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+        <div className="mb-6">
+          <ChartContainer
+            title="Cost by Namespace"
+            type="bar"
+            data={costs as unknown as Record<string, unknown>[]}
+            xAxisKey="namespace"
+            dataKeys={['cpu_cost', 'memory_cost', 'network_cost', 'storage_cost']}
+            dataKeyLabels={{
+              cpu_cost: 'CPU',
+              memory_cost: 'Memory',
+              network_cost: 'Network',
+              storage_cost: 'Storage',
+            }}
+            colors={['var(--apple-blue)', 'var(--accent-purple)', 'var(--accent-green)', 'var(--accent-amber)']}
+            valueFormatter={(v) => `$${v.toFixed(2)}`}
+            icon={<DollarSign className="w-4 h-4" style={{ color: 'var(--accent-green)' }} />}
+            height={300}
+          />
         </div>
       )}
 

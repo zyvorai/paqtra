@@ -11,6 +11,8 @@ import {
 import { fetchCanaryStatus } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 interface CanaryData {
   id: string;
@@ -54,6 +56,7 @@ const Canary: React.FC = () => {
     }
   };
 
+  const tick = useChanged(data);
   return (
     <div className="netra-page">
       <div className="mb-6">
@@ -62,6 +65,18 @@ const Canary: React.FC = () => {
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (data ? `${data.name} at ${data.current_weight}% of traffic, target ${data.target_weight}%.` : undefined) : undefined}
+        tick={tick}
+        live={false}
+        error={error || undefined}
+        figures={[
+          { label: 'status', value: tick ? data?.status ?? "—" : undefined },
+          { label: 'weight', value: tick ? data ? `${data.current_weight}%` : "—" : undefined },
+          { label: 'success rate', value: tick ? data ? `${data.success_rate}%` : "—" : undefined },
+          { label: 'error rate', value: tick ? data ? `${data.error_rate}%` : "—" : undefined },
+        ]}
+      />
 
       {/* Lookup */}
       <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-6 mb-6">

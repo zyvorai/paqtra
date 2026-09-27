@@ -3,11 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useCountUp } from '../../hooks/useCountUp';
 import Reveal from '../../components/Reveal';
 import DatapathHero from '../../components/DatapathHero';
-import { buildDigest, type Digest } from '../../components/digest';
+import { buildDigest, dropPackets, type Digest } from '../../components/digest';
 import { PulseFigure } from '../../components/kit/PagePulse';
 import RankedList from '../../components/kit/RankedList';
 import ToneDot from '../../components/kit/ToneDot';
-import { countTone, scoreTone, type Tone } from '../../components/kit/tone';
+import { scoreTone, type Tone } from '../../components/kit/tone';
 import { compact } from '../../components/kit/format';
 import { useRate, useSeries } from '../../components/kit/useSeries';
 import {
@@ -19,6 +19,8 @@ import {
   fetchClusterHealth,
   fetchFlowStats,
   fetchMetricsSummary,
+  fetchDnsStats,
+  fetchAnomalies,
 } from '../../services/api';
 
 const TILE_TIMEOUT_MS = 8_000;
@@ -29,7 +31,7 @@ function Metric({ value, label }: { value: number | string; label: string }) {
   const animated = useCountUp(numeric ? (value as number) : 0);
   return (
     <div>
-      <b>{numeric ? Math.round(animated).toLocaleString() : value}</b>
+      <b>{numeric ? compact(animated) : value}</b>
       <span>{label}</span>
     </div>
   );
@@ -75,18 +77,43 @@ async function settle<T>(p: Promise<{ data: T }>, timeoutMs = TILE_TIMEOUT_MS): 
 
 type TileKey = 'cluster' | 'digest' | 'flows' | 'ebpf' | 'platform';
 
+type DropRow = { reason: string; count: number; direction?: string; bytes?: number };
+type AnomalyRow = { id?: string; severity?: string; description?: string; anomaly_type?: string; source_pod?: string | null; source_namespace?: string | null; status?: string };
+type DnsRow = { total_queries?: number; total?: number; failures?: number; l7_observed?: number; l4_only?: number; avg_latency_ms?: number; source?: string };
+
+const FLOW_POLL_MS = 5_000;
+const SLOW_POLL_MS = 15_000;
+
+function sevClass(sev?: string): string {
+  const s = (sev || '').toLowerCase();
+  if (s === 'critical' || s === 'high') return 'critical';
+  if (s === 'warning' || s === 'medium') return 'warning';
+  return 'info';
+}
+
+function uptime(secs?: number): string {
+  if (typeof secs !== 'number' || !Number.isFinite(secs)) return '—';
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  return d ? `${d}d ${h}h` : `${h}h ${Math.floor((secs % 3600) / 60)}m`;
+}
+
 export default function Overview() {
   const navigate = useNavigate();
   const [nodes, setNodes] = useState<number | null>(null);
   const [endpoints, setEndpoints] = useState<number | null>(null);
   const [endpointList, setEndpointList] = useState<{ name?: string; namespace?: string; status?: string }[]>([]);
   const [agents, setAgents] = useState<number | null>(null);
+  const [agentsHealthy, setAgentsHealthy] = useState<number | null>(null);
   const [clusterStatus, setClusterStatus] = useState<string>('—');
   const [clusterScore, setClusterScore] = useState<number | null>(null);
   const [ebpf, setEbpf] = useState<Record<string, unknown> | null>(null);
   const [drops, setDrops] = useState<number | null>(null);
-  const [flows, setFlows] = useState<{ forwarded?: number; dropped?: number; total?: number } | null>(null);
+  const [dropList, setDropList] = useState<DropRow[]>([]);
+  const [flows, setFlows] = useState<{ forwarded?: number; dropped?: number; total?: number; rps?: number; window?: number; source?: string } | null>(null);
   const [metrics, setMetrics] = useState<Record<string, unknown> | null>(null);
+  const [dns, setDns] = useState<DnsRow | null>(null);
+  const [anomalies, setAnomalies] = useState<AnomalyRow[] | null>(null);
   const [digest, setDigest] = useState<Digest | null>(null);
   const [err, setErr] = useState('');
   const [freshAt, setFreshAt] = useState<Partial<Record<TileKey, number>>>({});
@@ -118,6 +145,33 @@ export default function Overview() {
       if (!cancelled) setFreshAt((prev) => ({ ...prev, [key]: Date.now() }));
     };
 
+    const loadFlows = () => {
+      void settle(fetchFlowStats()).then((f) => {
+        if (cancelled) return;
+        if (f.ok) {
+          const stats = f.value as {
+            forwarded?: number;
+            dropped?: number;
+            total?: number;
+            total_flows?: number;
+            requests_per_second?: number;
+            window_sampled?: number;
+            source?: string;
+            verdicts?: { forwarded?: number; dropped?: number };
+          };
+          setFlows({
+            forwarded: stats.forwarded ?? stats.verdicts?.forwarded ?? 0,
+            dropped: stats.dropped ?? stats.verdicts?.dropped ?? 0,
+            total: stats.total ?? stats.total_flows,
+            rps: typeof stats.requests_per_second === 'number' ? stats.requests_per_second : undefined,
+            window: stats.window_sampled,
+            source: stats.source,
+          });
+          mark('flows');
+        } else noteErr(f.error);
+      });
+    };
+
     const load = () => {
       // Paint each tile as its API returns — do not wait on Promise.all.
       // Per-tile timeout keeps one slow kubectl from blanking the page.
@@ -140,7 +194,10 @@ export default function Overview() {
       void settle(fetchCiliumStatus()).then((c) => {
         if (cancelled) return;
         if (c.ok) {
-          setAgents(((c.value as { agents?: unknown[] }).agents ?? []).length);
+          const cv = c.value as { agents?: { ready?: boolean }[]; healthy?: number };
+          const list = cv.agents ?? [];
+          setAgents(list.length);
+          setAgentsHealthy(cv.healthy ?? list.filter((a) => a.ready).length);
           mark('cluster');
         } else noteErr(c.error);
       });
@@ -154,8 +211,10 @@ export default function Overview() {
       void settle(fetchEbpfDrops()).then((d) => {
         if (cancelled) return;
         if (d.ok) {
-          dropCount = (d.value as { total_drops?: number }).total_drops ?? 0;
+          const dv = d.value as { drops?: DropRow[]; total_drops?: number };
+          dropCount = dropPackets(dv);
           setDrops(dropCount);
+          setDropList(dv.drops ?? []);
           gotDrops = true;
           mark('digest');
           bumpDigest();
@@ -180,24 +239,6 @@ export default function Overview() {
           bumpDigest();
         } else noteErr(h.error);
       });
-      void settle(fetchFlowStats()).then((f) => {
-        if (cancelled) return;
-        if (f.ok) {
-          const stats = f.value as {
-            forwarded?: number;
-            dropped?: number;
-            total?: number;
-            total_flows?: number;
-            verdicts?: { forwarded?: number; dropped?: number };
-          };
-          setFlows({
-            forwarded: stats.forwarded ?? stats.verdicts?.forwarded ?? 0,
-            dropped: stats.dropped ?? stats.verdicts?.dropped ?? 0,
-            total: stats.total ?? stats.total_flows,
-          });
-          mark('flows');
-        } else noteErr(f.error);
-      });
       void settle(fetchMetricsSummary()).then((m) => {
         if (cancelled) return;
         if (m.ok) {
@@ -205,13 +246,22 @@ export default function Overview() {
           mark('platform');
         } else noteErr(m.error);
       });
+      void settle(fetchDnsStats()).then((d) => {
+        if (!cancelled && d.ok) setDns(d.value as DnsRow);
+      });
+      void settle(fetchAnomalies()).then((a) => {
+        if (!cancelled && a.ok) setAnomalies(((a.value as { anomalies?: AnomalyRow[] }).anomalies ?? []) as AnomalyRow[]);
+      });
     };
 
     load();
-    const t = setInterval(load, 15_000);
+    loadFlows();
+    const slow = setInterval(load, SLOW_POLL_MS);
+    const fast = setInterval(loadFlows, FLOW_POLL_MS);
     return () => {
       cancelled = true;
-      clearInterval(t);
+      clearInterval(slow);
+      clearInterval(fast);
     };
   }, []);
 
@@ -224,19 +274,33 @@ export default function Overview() {
     Number(ebpf?.total_maps ?? ebpf?.maps_total ?? ebpf?.map_count ?? ebpf?.maps ?? 0) || 0;
 
   const flowsTotal = flows ? (flows.total ?? (flows.forwarded ?? 0) + (flows.dropped ?? 0)) : undefined;
-  const flowRate = useRate(flowsTotal, freshAt.flows);
-  const dropRate = useRate(flows?.dropped, freshAt.flows);
-  const flowSeries = useSeries(flowRate, flowRate);
-  const dropSeries = useSeries(dropRate, dropRate);
+  const derivedRate = useRate(flowsTotal, freshAt.flows);
+  const flowRate = flows?.rps ?? derivedRate;
+  const windowDropShare = flows && flows.window ? (flows.dropped ?? 0) / flows.window : undefined;
+  const dropRate = flowRate != null && windowDropShare != null ? flowRate * windowDropShare : undefined;
+  const flowSeries = useSeries(flowRate, freshAt.flows);
+  const dropSeries = useSeries(dropRate, freshAt.flows);
 
   const byNamespace = new Map<string, number>();
-  const byStatus = new Map<string, number>();
-  for (const e of endpointList) {
-    byNamespace.set(e.namespace || '—', (byNamespace.get(e.namespace || '—') ?? 0) + 1);
-    byStatus.set(e.status || 'unknown', (byStatus.get(e.status || 'unknown') ?? 0) + 1);
-  }
+  for (const e of endpointList) byNamespace.set(e.namespace || '—', (byNamespace.get(e.namespace || '—') ?? 0) + 1);
   const rank = (m: Map<string, number>) => [...m.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
   const notReady = endpointList.filter((e) => e.status && !/ready/i.test(e.status)).length;
+
+  const dropByReason = new Map<string, number>();
+  for (const d of dropList) dropByReason.set(d.reason, (dropByReason.get(d.reason) ?? 0) + (d.count ?? 0));
+  const dropReasons = rank(dropByReason);
+  const policyDenied = dropByReason.get('POLICY_DENIED') ?? 0;
+
+  const activeAnomalies = (anomalies ?? []).filter((a) => !/resolv|clos/i.test(a.status || ''));
+  const criticalAnomalies = activeAnomalies.filter((a) => sevClass(a.severity) === 'critical');
+  const anomalySources = new Map<string, number>();
+  for (const a of activeAnomalies) {
+    const who = a.source_pod ? `${a.source_namespace ? a.source_namespace + '/' : ''}${a.source_pod}` : a.source_namespace || '—';
+    anomalySources.set(who, (anomalySources.get(who) ?? 0) + 1);
+  }
+
+  const dnsTotal = dns ? (dns.total_queries ?? dns.total ?? 0) : undefined;
+  const dnsL7 = (dns?.l7_observed ?? 0) > 0;
 
   const healthTone: Tone = clusterScore == null ? 'idle' : digest && digest.severity !== 'info' ? 'warn' : scoreTone(clusterScore);
   const dropped = flows?.dropped ?? 0;
@@ -244,9 +308,17 @@ export default function Overview() {
   const flowTitle = !flows
     ? 'Waiting for Hubble flows.'
     : dropped
-      ? `${compact(dropped)} of ${compact(flowsTotal ?? 0)} flows dropped.`
-      : `${compact(flowsTotal ?? 0)} flows, none dropped.`;
-  const apiTone: Tone = !metrics ? 'idle' : typeof metrics.error_rate === 'number' && metrics.error_rate > 0.01 ? 'warn' : 'ok';
+      ? `${compact(dropped)} of the last ${compact(flows.window ?? flowsTotal ?? 0)} flows dropped.`
+      : `${compact(flowsTotal ?? 0)} flows, none dropped lately.`;
+  const dropTone: Tone = drops == null ? 'idle' : drops ? 'warn' : 'ok';
+  const anomalyTone: Tone = anomalies == null ? 'idle' : criticalAnomalies.length ? 'bad' : activeAnomalies.length ? 'warn' : 'ok';
+  const dnsTone: Tone = dns == null ? 'idle' : (dns.failures ?? 0) > 0 ? 'warn' : 'ok';
+  const totalRequests = Number(metrics?.total_requests ?? metrics?.request_count ?? NaN);
+  const totalErrors = Number(metrics?.total_errors ?? metrics?.error_count ?? NaN);
+  const cacheHits = Number(metrics?.cache_hits ?? NaN);
+  const cacheMisses = Number(metrics?.cache_misses ?? NaN);
+  const cacheRatio = cacheHits + cacheMisses > 0 ? Math.round((cacheHits / (cacheHits + cacheMisses)) * 100) : undefined;
+  const apiTone: Tone = !metrics ? 'idle' : totalErrors > 0 ? 'warn' : 'ok';
 
   const topEndpoints = endpointList.slice(0, 3);
   const columns = [
@@ -256,14 +328,15 @@ export default function Overview() {
         label: e.name || 'endpoint',
         sub: e.namespace || 'pod',
         active: topEndpoints.length > 0,
+        targets: [0],
       })),
     },
     {
       title: 'Cilium eBPF',
       nodes: [
         { label: 'bpf_lxc', sub: 'endpoint', active: programs > 0 },
-        { label: 'bpf_host', sub: 'host', active: programs > 0 },
-        { label: 'bpf_overlay', sub: 'tunnel', active: programs > 0 },
+        { label: 'bpf_host', sub: 'host', active: false },
+        { label: 'bpf_overlay', sub: 'tunnel', active: false },
       ],
     },
     { title: 'Hubble', nodes: [{ label: 'hubble', sub: `${agents ?? 0} agent${agents === 1 ? '' : 's'}`, active: (flowsTotal ?? 0) > 0 || (agents ?? 0) > 0 }] },
@@ -305,7 +378,7 @@ export default function Overview() {
             <StaleBadge at={freshAt.flows ?? null} />
           </h2>
           <span className="overview-live">
-            <i aria-hidden="true" /> refreshes every 15s
+            <i aria-hidden="true" /> refreshes every 5s
           </span>
         </div>
         <DatapathHero
@@ -317,23 +390,23 @@ export default function Overview() {
         <div className="overview-pulse">
           <PulseFigure label="flows / s" value={flowRate} series={flowSeries} />
           <PulseFigure label="drops / s" value={dropRate} series={dropSeries} tone={(dropRate ?? 0) > 0 ? 'warn' : undefined} />
+          <PulseFigure label="DNS flows" value={dnsTotal} />
           <PulseFigure label="health score" value={clusterScore ?? undefined} tone={clusterScore == null ? undefined : scoreTone(clusterScore)} />
-          <PulseFigure label="eBPF drop entries" value={drops ?? undefined} tone={drops == null ? undefined : countTone(drops)} />
         </div>
         <div className="metrics overview-totals">
           <Metric value={agents ?? '—'} label="Cilium agents" />
-          <Metric value={nodes ?? '—'} label="nodes" />
+          <Metric value={flowsTotal ?? '—'} label="flows indexed" />
+          <Metric value={drops ?? '—'} label="packets dropped" />
           <Metric value={endpoints ?? '—'} label="endpoints" />
           <Metric value={programs || '—'} label="eBPF programs" />
-          <Metric value={maps || '—'} label="eBPF maps" />
         </div>
       </section>
 
       <Chapter eyebrow="On-call digest" title={digest ? digest.headline : 'Waiting for signals…'} tone={healthTone} link="Open Health" to="/clusterhealth"
         figures={
           <>
-            <Metric value={digest ? digest.severity : '—'} label="digest severity" />
-            <Metric value={clusterScore ?? '—'} label="health score" />
+            <Metric value={clusterScore ?? '—'} label="health score /100" />
+            <Metric value={agentsHealthy != null && agents != null ? `${agentsHealthy}/${agents}` : '—'} label="agents healthy" />
             <Metric value={clusterStatus} label="cluster" />
             <Metric value={notReady} label="endpoints not ready" />
           </>
@@ -344,7 +417,7 @@ export default function Overview() {
           <ul className="overview-signals">
             {digest.whyChanged.slice(0, 3).map((w) => (
               <li key={w}>
-                <span className={`severity-badge ${digest.severity}`}>{digest.severity}</span> {w}
+                <span className={`severity-badge ${sevClass(digest.severity)}`}>{digest.severity}</span> {w}
               </li>
             ))}
           </ul>
@@ -354,17 +427,80 @@ export default function Overview() {
       <Chapter eyebrow="Hubble flows" title={flowTitle} tone={flowTone} link="Open Flows" to="/flows" flip
         figures={
           <>
-            <Metric value={flowsTotal ?? '—'} label="flows seen" />
-            <Metric value={flows?.forwarded ?? '—'} label="forwarded" />
-            <Metric value={flows?.dropped ?? '—'} label="dropped" />
-            <Metric value={drops ?? '—'} label="eBPF drop entries" />
+            <Metric value={flowsTotal ?? '—'} label="flows indexed" />
+            <Metric value={flows?.forwarded ?? '—'} label="forwarded (recent)" />
+            <Metric value={flows?.dropped ?? '—'} label="dropped (recent)" />
+            <Metric value={flowRate != null ? Math.round(flowRate) : '—'} label="flows / s" />
           </>
         }
       >
         <p>Every flow from Hubble with its verdict. Cilium owns the verdict; Paqtra shows where traffic went and why.</p>
       </Chapter>
 
-      <Chapter eyebrow="eBPF maps" title={programs ? `${compact(programs)} programs, ${compact(maps)} maps — read-only.` : 'Read-only map inventory.'} tone={programs ? 'ok' : 'idle'} link="Open eBPF" to="/ebpf"
+      <Chapter eyebrow="Drop diagnostics" title={drops == null ? 'Reading Cilium drop counters…' : drops ? `${compact(drops)} packets dropped by Cilium.` : 'No Cilium drops recorded.'} tone={dropTone} link="Open Drops" to="/drops"
+        figures={
+          <>
+            <Metric value={drops ?? '—'} label="packets dropped" />
+            <Metric value={dropReasons.length} label="drop reasons" />
+            <Metric value={policyDenied} label="policy denied" />
+            <Metric value={dropList.length} label="reason entries" />
+          </>
+        }
+      >
+        <p>Cilium's own drop reasons from its metrics map, per direction. Read-only — Cilium decided; Paqtra explains.</p>
+        {dropList.length > 0 && (
+          <ul className="overview-signals">
+            {[...dropList].sort((a, b) => (b.count ?? 0) - (a.count ?? 0)).slice(0, 3).map((d) => (
+              <li key={`${d.reason}-${d.direction ?? ''}`}>
+                <span className="severity-badge warning">warning</span> {d.reason} {d.direction ? `(${d.direction})` : ''} · {(d.count ?? 0).toLocaleString()} packets
+              </li>
+            ))}
+          </ul>
+        )}
+      </Chapter>
+
+      <Chapter eyebrow="DNS" title={dns == null ? 'Waiting for DNS flows…' : `${compact(dnsTotal ?? 0)} DNS flows${dnsL7 ? '' : ', L4 only'}.`} tone={dnsTone} link="Open DNS" to="/dns" flip
+        figures={
+          <>
+            <Metric value={dnsTotal ?? '—'} label="DNS flows" />
+            <Metric value={dns?.failures ?? '—'} label="failures" />
+            <Metric value={dns?.l7_observed ?? '—'} label="L7 answers" />
+            <Metric value={typeof dns?.avg_latency_ms === 'number' && dnsL7 ? Number(dns.avg_latency_ms.toFixed(1)) : '—'} label="avg latency ms" />
+          </>
+        }
+      >
+        <p>
+          {dns && !dnsL7
+            ? 'Port-53 flows from Hubble. Enable Cilium DNS visibility to see query names, answers and latency.'
+            : 'DNS queries and answers as Hubble reports them — names and rcodes, never payloads.'}
+        </p>
+      </Chapter>
+
+      <Chapter eyebrow="Behavior insights" title={anomalies == null ? 'Learning normal behavior…' : activeAnomalies.length ? `${activeAnomalies.length} anomal${activeAnomalies.length === 1 ? 'y' : 'ies'} to review.` : 'Behavior matches what Paqtra learned.'} tone={anomalyTone} link="Open Anomalies" to="/anomalies"
+        figures={
+          <>
+            <Metric value={activeAnomalies.length} label="active" />
+            <Metric value={criticalAnomalies.length} label="critical" />
+            <Metric value={anomalySources.size} label="sources" />
+            <Metric value={new Set(activeAnomalies.map((a) => a.anomaly_type)).size} label="kinds" />
+          </>
+        }
+      >
+        <p>Baselines and drift learned from Hubble flows. Review-only — Paqtra never auto-enforces.</p>
+        {activeAnomalies.length > 0 && (
+          <ul className="overview-signals">
+            {[...criticalAnomalies, ...activeAnomalies.filter((a) => sevClass(a.severity) !== 'critical')].slice(0, 3).map((a, i) => (
+              <li key={a.id ?? i}>
+                <span className={`severity-badge ${sevClass(a.severity)}`}>{a.severity || 'info'}</span>{' '}
+                {(a.anomaly_type || 'anomaly').replace(/_/g, ' ')}
+                {a.source_pod ? ` · ${a.source_namespace ? a.source_namespace + '/' : ''}${workloadName(a.source_pod)}` : ''}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Chapter>
+
+      <Chapter eyebrow="eBPF maps" title={programs ? `${compact(programs)} programs, ${compact(maps)} maps — read-only.` : 'Read-only map inventory.'} tone={programs ? 'ok' : 'idle'} link="Open eBPF" to="/ebpf" flip
         figures={
           <>
             <Metric value={programs || '—'} label="programs" />
@@ -376,43 +512,46 @@ export default function Overview() {
         <p>Conntrack, policy map and IP cache viewers read Cilium's maps. Paqtra never writes them or attaches programs.</p>
       </Chapter>
 
-      <Chapter eyebrow="Platform" title={metrics ? 'API pulse.' : 'Waiting for metrics summary…'} tone={apiTone} link="Open Scorecard" to="/metrics" flip
+      <Chapter eyebrow="Platform" title={metrics ? `API up ${uptime(Number(metrics.uptime_seconds))}${totalErrors > 0 ? `, ${totalErrors} errors` : ', no errors'}.` : 'Waiting for metrics summary…'} tone={apiTone} link="Open Scorecard" to="/metrics"
         figures={
           <>
-            <Metric value={typeof metrics?.requests_per_sec === 'number' ? (metrics.requests_per_sec as number) : '—'} label="req/s" />
-            <Metric value={typeof metrics?.avg_latency_ms === 'number' ? (metrics.avg_latency_ms as number) : '—'} label="avg latency ms" />
-            <Metric
-              value={typeof metrics?.error_rate === 'number' ? Number(((metrics.error_rate as number) * 100).toFixed(2)) : '—'}
-              label="error %"
-            />
+            <Metric value={Number.isFinite(totalRequests) ? totalRequests : '—'} label="API requests" />
+            <Metric value={Number.isFinite(totalErrors) ? totalErrors : '—'} label="errors" />
+            <Metric value={cacheRatio != null ? `${cacheRatio}%` : '—'} label="cache hit" />
+            <Metric value={uptime(Number(metrics?.uptime_seconds))} label="uptime" />
           </>
         }
       >
-        <p>Request rate, latency and error ratio of the Paqtra API itself.</p>
+        <p>Request count, errors and cache efficiency of the Paqtra API itself.</p>
       </Chapter>
 
       <Reveal>
         <section className="overview-talking" aria-labelledby="overview-talking-title">
           <div className="overview-stage__head">
-            <h2 id="overview-talking-title">Who is running.</h2>
+            <h2 id="overview-talking-title">Who is talking.</h2>
             <Link className="overview-link" to="/endpoints">
               Open Endpoints ›
             </Link>
           </div>
           <div className="overview-talking__grid">
             <RankedList title="Endpoints by namespace" items={rank(byNamespace)} empty="No Cilium endpoints yet." limit={6} />
-            <RankedList title="Endpoint status" items={rank(byStatus)} empty="No Cilium endpoints yet." limit={6} mono={false} />
-            <div className="kit-ranked">
-              <h3>Where to go next</h3>
-              <div className="chips">
-                <Link to="/topology">Topology</Link>
-                <Link to="/policies">Policies</Link>
-                <Link to="/drops">Drops</Link>
-                <Link to="/nodes">Fleet</Link>
-                <Link to="/anomalies">Anomalies</Link>
-              </div>
-            </div>
+            <RankedList title="Drop reasons" items={dropReasons} empty="No Cilium drops recorded." limit={6} />
+            <RankedList title="Anomaly sources" items={rank(anomalySources).map((x) => ({ ...x, name: workloadName(x.name) }))} empty="No anomalies to review." limit={6} />
           </div>
+        </section>
+      </Reveal>
+
+      <Reveal>
+        <section className="overview-platform" aria-label="Datapath posture">
+          <ul>
+            <li><span>Datapath</span><b>Cilium eBPF</b></li>
+            <li><span>Nodes</span><b>{nodes ?? '—'}</b></li>
+            <li><span>Cilium agents</span><b>{agentsHealthy != null && agents != null ? `${agentsHealthy}/${agents} healthy` : '—'}</b></li>
+            <li><span>Flow source</span><b>{flows?.source ? flows.source.replace(/_/g, ' ') : 'hubble'}</b></li>
+            <li><span>DNS visibility</span><b>{dns == null ? '—' : dnsL7 ? 'L7' : 'L4 only'}</b></li>
+            <li><span>Top drop reason</span><b>{dropReasons[0] ? `${dropReasons[0].name} · ${dropReasons[0].count.toLocaleString()}` : 'none'}</b></li>
+            <li><span>Writes to Cilium</span><b>never</b></li>
+          </ul>
         </section>
       </Reveal>
 
@@ -422,6 +561,11 @@ export default function Overview() {
       </p>
     </div>
   );
+}
+
+/** Strip the ReplicaSet/pod hash suffixes so a pod reads as its workload. */
+function workloadName(name: string): string {
+  return name.replace(/-[a-z0-9]{8,10}-[a-z0-9]{5}$/, '').replace(/-[a-z0-9]{5}$/, '');
 }
 
 function StatusPill({ agents, score, digest }: { agents: number | null; score: number | null; digest: Digest | null }) {

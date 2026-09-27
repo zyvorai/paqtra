@@ -3,6 +3,9 @@ import { Wrench, Play, Loader2, CheckCircle, XCircle, AlertTriangle } from 'luci
 import { runTroubleshoot, TroubleshootResult } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 const STATUS_ICON: Record<string, React.ReactNode> = { pass: <CheckCircle className="w-5 h-5 text-green-400" />, fail: <XCircle className="w-5 h-5 text-red-400" />, warn: <AlertTriangle className="w-5 h-5 text-yellow-400" />, skip: <AlertTriangle className="w-5 h-5 text-slate-400" /> };
 const STATUS_BG: Record<string, string> = { pass: 'border-l-green-400', fail: 'border-l-red-400', warn: 'border-l-yellow-400', skip: 'border-l-border' };
@@ -30,6 +33,7 @@ const Troubleshoot: React.FC = () => {
   const pass = results.filter((r) => r.status === 'pass').length;
   const fail = results.filter((r) => r.status === 'fail').length;
 
+  const tick = useChanged(results);
   return (
     <div className="netra-page">
       <div className="mb-6">
@@ -37,6 +41,18 @@ const Troubleshoot: React.FC = () => {
         <p className="text-sm text-slate-400 mt-1">End-to-end connectivity troubleshooting between pods</p>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (results.length ? (fail ? `${fail} of ${results.length} checks failed.` : `All ${results.length} checks passed.`) : undefined) : undefined}
+        tone={tick ? (fail ? 'bad' : undefined) : undefined}
+        tick={tick}
+        live={false}
+        error={error || undefined}
+        figures={[
+          { label: 'steps', value: tick ? results.length : undefined },
+          { label: 'passed', value: tick ? pass : undefined },
+          { label: 'failed', value: tick ? fail : undefined, tone: tick ? (countTone(fail)) : undefined },
+        ]}
+      />
 
       {/* Input */}
       <div className="rounded-xl border border-slate-700/50 bg-slate-800/50 p-5 mb-6">
@@ -55,11 +71,6 @@ const Troubleshoot: React.FC = () => {
 
       {results.length > 0 && (
         <>
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="rounded-xl border border-slate-700/50 p-4 stat-card-blue card-glow transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Steps</div><div className="text-2xl font-bold text-white">{results.length}</div></div>
-            <div className="rounded-xl border border-slate-700/50 p-4 stat-card-green card-glow-green transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Passed</div><div className="text-2xl font-bold text-green-400">{pass}</div></div>
-            <div className="rounded-xl border border-slate-700/50 p-4 stat-card-red card-glow transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Failed</div><div className="text-2xl font-bold text-red-400">{fail}</div></div>
-          </div>
 
           <div className="space-y-2">
             {results.map((r, i) => (

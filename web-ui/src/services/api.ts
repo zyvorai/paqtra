@@ -381,7 +381,7 @@ export const fetchCanaryStatus = (id: string) =>
   api.get(`/modules/canary/${id}`);
 
 // Health
-export const checkHealth = () => api.get('/health');
+export const checkHealth = () => api.get('/health', { baseURL: '/' });
 export const checkReady = () => api.get('/ready');
 
 // ─── Extended Interfaces ───────────────────────────────────────────────────────
@@ -506,10 +506,11 @@ export interface ServiceDep {
   destination: string;
   protocol: string;
   port: number;
-  request_rate: number;
+  request_count?: number;
+  request_rate?: number;
   error_rate: number;
-  latency_p50: number;
-  latency_p99: number;
+  latency_p50?: number;
+  latency_p99?: number;
   [key: string]: unknown;
 }
 

@@ -12,6 +12,9 @@ import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
 import { ChannelsPanel, SilencesPanel } from './NotificationSettings';
 import AlertRuleForm from './AlertRuleForm';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 const SEV_BADGE: Record<string, string> = { critical: 'bg-red-500/15 text-red-400 border-red-500/30', high: 'bg-orange-500/15 text-orange-400 border-orange-500/30', warning: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' };
 const STATUS_BADGE: Record<string, string> = { firing: 'bg-red-500/15 text-red-400 border-red-500/30', resolved: 'bg-green-500/15 text-green-400 border-green-500/30' };
@@ -95,6 +98,7 @@ const Alerts: React.FC = () => {
     <button onClick={() => setTab(t)} className={`px-4 py-2 rounded-md text-sm transition-colors ${tab === t ? 'bg-slate-800/50 text-white shadow' : 'text-slate-400'}`}>{label}</button>
   );
 
+  const tick = useChanged(rules);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -110,6 +114,18 @@ const Alerts: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (rules.length ? `${rules.filter((r) => r.enabled).length} of ${rules.length} alert rules enabled.` : 'No alert rules yet.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'rules', value: tick ? rules.length : undefined },
+          { label: 'enabled', value: tick ? rules.filter((r) => r.enabled).length : undefined },
+          { label: 'firing', value: tick ? history.filter((h) => /fir|activ|trigger/i.test(h.status || '')).length : undefined, tone: tick ? (countTone(history.filter((h) => /fir|activ|trigger/i.test(h.status || '')).length)) : undefined },
+          { label: 'channels', value: tick ? channels.length : undefined },
+          { label: 'silences', value: tick ? silences.length : undefined },
+        ]}
+      />
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
       <div className="flex gap-1 mb-4 p-1 rounded-lg bg-slate-900/50 w-fit">
         {tabBtn('rules', `Rules (${rules.length})`)}

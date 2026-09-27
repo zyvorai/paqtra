@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchAuditLog, type AuditEntry } from '../../services/api';
 import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 export default function AuditLog() {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
@@ -30,8 +32,20 @@ export default function AuditLog() {
       )
     : entries;
 
+  const tick = useChanged(entries);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (entries.length ? `${entries.length} recorded console and policy actions.` : 'No audit events recorded yet.') : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'events', value: tick ? entries.length : undefined },
+          { label: 'actors', value: tick ? new Set(entries.map((x) => x.actor).filter(Boolean)).size : undefined },
+          { label: 'actions', value: tick ? new Set(entries.map((x) => x.action).filter(Boolean)).size : undefined },
+          { label: 'matching search', value: tick ? filtered.length : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>

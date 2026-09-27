@@ -4,6 +4,8 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { fetchForecast, fetchForecastMetrics, ForecastResult } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const METRIC_LABELS: Record<string, string> = { cpu_usage: 'CPU Usage', memory_usage: 'Memory Usage', network_throughput: 'Network Throughput', pod_count: 'Pod Count' };
 
@@ -30,6 +32,7 @@ const Forecasting: React.FC = () => {
   useEffect(() => { fetchMetrics(); }, [fetchMetrics]);
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const tick = useChanged(result);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -42,6 +45,17 @@ const Forecasting: React.FC = () => {
         </button>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (result ? (result.recommendation || `Forecast for ${result.metric}.`) : undefined) : undefined}
+        tick={tick}
+        live={false}
+        error={error || undefined}
+        figures={[
+          { label: 'metric', value: tick ? result?.metric ?? selected : undefined },
+          { label: 'points', value: tick ? result?.points.length ?? 0 : undefined },
+          { label: 'metrics available', value: tick ? metrics.length : undefined },
+        ]}
+      />
 
       {/* Metric selector */}
       <div className="flex gap-1 mb-6 p-1 rounded-lg bg-slate-900/50 w-fit">
@@ -77,18 +91,18 @@ const Forecasting: React.FC = () => {
               <AreaChart data={result.points}>
                 <defs>
                   <linearGradient id="confGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                    <stop offset="5%" stopColor="var(--accent-green)" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="var(--accent-green)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="timestamp" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="timestamp" tick={{ fill: 'var(--text-tertiary)', fontSize: 10 }} />
+                <YAxis tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }} />
+                <Tooltip contentStyle={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8 }} />
                 <Area type="monotone" dataKey="upper_bound" stroke="none" fill="url(#confGrad)" name="Upper Bound" />
                 <Area type="monotone" dataKey="lower_bound" stroke="none" fill="transparent" name="Lower Bound" />
-                <Area type="monotone" dataKey="predicted" stroke="#22c55e" fill="none" strokeDasharray="5 3" name="Predicted" />
-                <Area type="monotone" dataKey="actual" stroke="#3b82f6" fill="none" strokeWidth={2} name="Actual" />
+                <Area type="monotone" dataKey="predicted" stroke="var(--accent-green)" fill="none" strokeDasharray="5 3" name="Predicted" />
+                <Area type="monotone" dataKey="actual" stroke="var(--apple-blue)" fill="none" strokeWidth={2} name="Actual" />
               </AreaChart>
             </ResponsiveContainer>
           </div>

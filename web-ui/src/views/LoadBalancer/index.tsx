@@ -6,6 +6,8 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const STATE_BADGE: Record<string, string> = { active: 'bg-green-500/15 text-green-400 border-green-500/30', draining: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', inactive: 'bg-red-500/15 text-red-400 border-red-500/30' };
 
@@ -24,6 +26,7 @@ const LoadBalancer: React.FC = () => {
 
   const { lastUpdated, refreshing: loading, manualRefresh } = useAutoRefresh(fetchData, 30000, autoRefreshOn);
 
+  const tick = useChanged(services);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -37,6 +40,16 @@ const LoadBalancer: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (services.length ? `${services.length} load-balanced service${services.length === 1 ? '' : 's'}.` : 'No load-balanced services.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'services', value: tick ? services.length : undefined },
+          { label: 'backends', value: tick ? services.reduce((n, s) => n + (s.backends?.length ?? 0), 0) : undefined },
+          { label: 'namespaces', value: tick ? new Set(services.map((s) => s.namespace)).size : undefined },
+        ]}
+      />
       {loading && services.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 
       {!loading && services.length === 0 && !error && (

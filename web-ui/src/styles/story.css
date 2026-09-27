@@ -214,6 +214,13 @@ a.overview-link:hover { text-decoration: underline; }
 .dp-node-sub { font-size: 11px; fill: var(--text-tertiary); }
 .dp-hero--vertical .dp-node-label { font-size: 10px; }
 
+.ng-graph { margin: 12px 0 0; }
+.ng-graph svg { display: block; width: 100%; height: auto; }
+.ng-link { stroke: var(--hairline-1); stroke-width: 1.25; }
+.ng-node circle { stroke: var(--bg-page); stroke-width: 2; cursor: grab; }
+.ng-node:active circle { cursor: grabbing; }
+.ng-node-label { font-size: 10px; font-weight: 500; fill: var(--text-secondary); }
+
 .overview-pulse {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

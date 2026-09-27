@@ -3,6 +3,8 @@ import { Copy, RefreshCw, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { fetchMirrorRules, createMirrorRule, deleteMirrorRule, MirrorRule, apiErrorMessage } from '../../services/api';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const STATUS_BADGE: Record<string, string> = { active: 'bg-green-500/15 text-green-400 border-green-500/30', paused: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' };
 
@@ -46,6 +48,7 @@ const TrafficMirror: React.FC = () => {
     catch (err) { setError(apiErrorMessage(err, 'Failed')); }
   };
 
+  const tick = useChanged(rules);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -60,6 +63,16 @@ const TrafficMirror: React.FC = () => {
       </div>
       {!CREATE_AVAILABLE && <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">{NOT_AVAILABLE_MSG}</div>}
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (rules.length ? `${rules.length} mirror rule${rules.length === 1 ? '' : 's'}.` : 'No mirror rules.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'rules', value: tick ? rules.length : undefined },
+          { label: 'active', value: tick ? rules.filter((r) => /activ/i.test(r.status || '')).length : undefined },
+          { label: 'packets mirrored', value: tick ? rules.reduce((n, r) => n + (r.mirrored_packets || 0), 0).toLocaleString() : undefined },
+        ]}
+      />
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
       {showCreate && (

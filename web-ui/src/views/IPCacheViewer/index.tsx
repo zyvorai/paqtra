@@ -8,6 +8,8 @@ import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
 import Pagination from '../../components/Pagination';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 interface IPCacheEntry {
   ip: string;
@@ -62,6 +64,7 @@ const IPCacheViewer: React.FC = () => {
     return filtered.slice(start, start + PAGE_SIZE);
   }, [filtered, currentPage]);
 
+  const tick = useChanged(entries);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -78,17 +81,16 @@ const IPCacheViewer: React.FC = () => {
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? `${entries.length.toLocaleString()} IP cache entries, read-only.` : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'Total Entries', value: tick ? formatCount(entries.length) : undefined },
+          { label: 'Unique Identities', value: tick ? formatCount(new Set(entries.map((e) => e.identity)).size) : undefined },
+        ]}
+      />
 
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-blue card-glow transition-all hover:scale-[1.02]">
-          <div className="text-xs text-slate-400 mb-1">Total Entries</div>
-          <div className="text-2xl font-bold text-blue-400">{formatCount(entries.length)}</div>
-        </div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-green card-glow transition-all hover:scale-[1.02]">
-          <div className="text-xs text-slate-400 mb-1">Unique Identities</div>
-          <div className="text-2xl font-bold text-green-400">{formatCount(new Set(entries.map((e) => e.identity)).size)}</div>
-        </div>
-      </div>
 
       <div className="mb-4">
         <input

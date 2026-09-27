@@ -4,6 +4,8 @@ import { checkHealth } from '../../services/api';
 import { Board, Card, Eyebrow, Warning, Toolbar } from '../../components/Board';
 import { applyTheme, readStoredTheme, toggleTheme, type Theme } from '../../theme';
 import ChangePassword from './ChangePassword';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 interface AppSettings {
   apiUrl: string;
@@ -70,8 +72,20 @@ export default function Settings() {
     setMsg('Saved.');
   };
 
+  const tick = useChanged(apiStatus);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `API ${apiStatus}.` : undefined}
+        tone={tick ? (apiStatus === 'disconnected' ? 'bad' : undefined) : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'API', value: tick ? apiStatus : undefined, tone: tick ? ((apiStatus === 'connected' ? 'ok' : apiStatus === 'disconnected' ? 'bad' : undefined)) : undefined },
+          { label: 'theme', value: tick ? theme : undefined },
+          { label: 'refresh s', value: tick ? settings.refreshInterval : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>

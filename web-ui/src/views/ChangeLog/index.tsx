@@ -8,6 +8,8 @@ import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const TYPE_BADGE: Record<string, string> = {
   create: 'bg-green-500/15 text-green-400 border-green-500/30',
@@ -120,6 +122,7 @@ const ChangeLog: React.FC = () => {
       ? `/flows?ids=${encodeURIComponent((impact?.evidence_flow_ids ?? []).slice(0, 8).join(','))}`
       : '/flows';
 
+  const tick = useChanged(changes);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -145,6 +148,16 @@ const ChangeLog: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (changes.length ? `${changes.length} recorded changes.` : 'No changes recorded.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'changes', value: tick ? changes.length : undefined },
+          { label: 'resource kinds', value: tick ? new Set(changes.map((c) => c.type)).size : undefined },
+          { label: 'namespaces', value: tick ? new Set(changes.map((c) => c.namespace).filter(Boolean)).size : undefined },
+        ]}
+      />
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
       {impact && impactId ? (

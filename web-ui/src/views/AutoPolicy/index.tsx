@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react';
 import { generateAutopolicy } from '../../services/api';
 import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 export default function AutoPolicy() {
   const [ns, setNs] = useState('default');
@@ -22,8 +24,19 @@ export default function AutoPolicy() {
     }
   }, [ns]);
 
+  const tick = useChanged(draft);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `Draft for ${ns} ready — review before apply.` : undefined}
+        tick={tick}
+        live={false}
+        error={err || undefined}
+        figures={[
+          { label: 'draft lines', value: tick ? draft.split("\n").length : undefined },
+          { label: 'namespace', value: tick ? ns : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>

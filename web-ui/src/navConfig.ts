@@ -385,6 +385,196 @@ export const PAGE_HEROES: Record<string, PageHeroCopy> = {
     lede: 'Compact per-node inventory — the fleet board for this cluster.',
     tint: 'green',
   },
+  '/bgp': {
+    eyebrow: 'Diagnostics',
+    title: 'BGP, peer by peer.',
+    lede: 'BGP peer state and route advertisements from Cilium.',
+  },
+  '/clustermesh': {
+    eyebrow: 'Fleet',
+    title: 'ClusterMesh peers.',
+    lede: 'Connected clusters and what they sync — endpoints and services.',
+  },
+  '/multicluster': {
+    eyebrow: 'Fleet',
+    title: 'Every cluster in view.',
+    lede: 'Cross-cluster topology, health checks and policy sync.',
+  },
+  '/egress': {
+    eyebrow: 'Diagnostics',
+    title: 'Where traffic leaves.',
+    lede: 'Egress gateway policies: gateway nodes, egress IPs and destinations.',
+  },
+  '/ingress': {
+    eyebrow: 'Diagnostics',
+    title: 'Where traffic enters.',
+    lede: 'Ingress and Gateway API routes, hosts, paths and TLS.',
+  },
+  '/loadbalancer': {
+    eyebrow: 'Diagnostics',
+    title: 'Load-balanced services.',
+    lede: 'Service frontends and their backends as Cilium balances them.',
+  },
+  '/lb-map': {
+    eyebrow: 'Diagnostics',
+    title: 'The LB map, read-only.',
+    lede: 'Cilium load-balancer map entries — never written from this console.',
+  },
+  '/ipam': {
+    eyebrow: 'Diagnostics',
+    title: 'Addresses, allocated.',
+    lede: 'IP pools and allocations handed out by Cilium IPAM.',
+  },
+  '/ipcache': {
+    eyebrow: 'Diagnostics',
+    title: 'The IP cache, read-only.',
+    lede: 'IP to security identity mappings as the datapath sees them.',
+  },
+  '/policy-map': {
+    eyebrow: 'Diagnostics',
+    title: 'The policy map, read-only.',
+    lede: 'Per-identity policy map entries with packet and byte counters.',
+  },
+  '/kpr': {
+    eyebrow: 'Diagnostics',
+    title: 'kube-proxy, replaced.',
+    lede: 'Cilium eBPF kube-proxy replacement: mode, services and NAT tables.',
+  },
+  '/wireguard': {
+    eyebrow: 'Security',
+    title: 'WireGuard peers.',
+    lede: 'Transparent-encryption peers, allowed IPs and handshakes.',
+  },
+  '/interfaces': {
+    eyebrow: 'Diagnostics',
+    title: 'Network interfaces.',
+    lede: 'Per-node interfaces with byte, packet and error counters.',
+  },
+  '/service-mesh': {
+    eyebrow: 'Diagnostics',
+    title: 'The service mesh.',
+    lede: 'Cilium service mesh configuration and traffic policies.',
+  },
+  '/dependencies': {
+    eyebrow: 'Diagnostics',
+    title: 'Who calls whom.',
+    lede: 'Service dependencies observed from flows, with error rate and latency.',
+  },
+  '/flow-export': {
+    eyebrow: 'Reports',
+    title: 'Flows, exported.',
+    lede: 'Configured flow exports and how much each has shipped.',
+  },
+  '/pod-security': {
+    eyebrow: 'Security',
+    title: 'Pod security.',
+    lede: 'Pod Security Admission enforcement per namespace.',
+    tint: 'purple',
+  },
+  '/rbac': {
+    eyebrow: 'Security',
+    title: 'Who can do what in the cluster.',
+    lede: 'Kubernetes RBAC bindings: subjects, roles and permissions.',
+    tint: 'purple',
+  },
+  '/alerts': {
+    eyebrow: 'Reports',
+    title: 'Alerts that matter.',
+    lede: 'Alert rules, notification channels and silences.',
+    tint: 'red',
+  },
+  '/events': {
+    eyebrow: 'Reports',
+    title: 'What just happened.',
+    lede: 'Kubernetes cluster events, newest first.',
+  },
+  '/changelog': {
+    eyebrow: 'Reports',
+    title: 'What changed, when.',
+    lede: 'Configuration change history with impact analysis.',
+  },
+  '/heatmap': {
+    eyebrow: 'Reports',
+    title: 'Traffic, as heat.',
+    lede: 'Cross-namespace traffic density at a glance.',
+    tint: 'amber',
+  },
+  '/slo': {
+    eyebrow: 'Reports',
+    title: 'Objectives, kept.',
+    lede: 'Availability objectives, projected from the latest flow sample.',
+    tint: 'green',
+  },
+  '/forecast': {
+    eyebrow: 'Reports',
+    title: 'What is coming.',
+    lede: 'Resource forecasts with confidence intervals.',
+  },
+  '/costs': {
+    eyebrow: 'Reports',
+    title: 'What traffic costs.',
+    lede: 'Network infrastructure cost breakdown by namespace.',
+    tint: 'amber',
+  },
+  '/canary': {
+    eyebrow: 'Diagnostics',
+    title: 'Canary, measured.',
+    lede: 'Progressive traffic shifting with auto-promote and auto-rollback.',
+  },
+  '/chaos': {
+    eyebrow: 'Diagnostics',
+    title: 'Chaos, on purpose.',
+    lede: 'Network fault injection with tc-netem presets.',
+    tint: 'red',
+  },
+  '/healer': {
+    eyebrow: 'Diagnostics',
+    title: 'Self-healing, supervised.',
+    lede: 'Problem detection with proposed fixes.',
+  },
+  '/node-drain': {
+    eyebrow: 'Fleet',
+    title: 'Drain a node, safely.',
+    lede: 'Gracefully drain nodes for maintenance.',
+  },
+  '/replay': {
+    eyebrow: 'Investigate',
+    title: 'Replay a moment.',
+    lede: 'Record and replay network flows for time-travel debugging.',
+  },
+  '/mirror': {
+    eyebrow: 'Diagnostics',
+    title: 'Traffic, mirrored.',
+    lede: 'Shadow traffic to debug a service without touching production.',
+  },
+  '/troubleshoot': {
+    eyebrow: 'Diagnostics',
+    title: 'Troubleshoot a path.',
+    lede: 'End-to-end connectivity checks between two pods.',
+  },
+  '/diagnostics': {
+    eyebrow: 'Diagnostics',
+    title: 'Diagnostics.',
+    lede: 'Connectivity tests, DNS checks and health validation.',
+  },
+  '/policy-editor': {
+    eyebrow: 'Security',
+    title: 'Write a policy.',
+    lede: 'Write, validate and apply CiliumNetworkPolicies.',
+    tint: 'purple',
+  },
+  '/rule-builder': {
+    eyebrow: 'Security',
+    title: 'Build a rule.',
+    lede: 'Compose a policy rule from selectors and ports, then preview it.',
+    tint: 'purple',
+  },
+  '/templates': {
+    eyebrow: 'Security',
+    title: 'Start from a template.',
+    lede: 'Pre-built CiliumNetworkPolicy templates.',
+    tint: 'purple',
+  },
 };
 
 export function heroForPath(pathname: string): PageHeroCopy | null {

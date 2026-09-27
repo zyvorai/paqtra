@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchBandwidthData } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 type Entry = {
   name?: string;
@@ -32,8 +34,18 @@ export default function Bandwidth() {
     (a, b) => (b.bytes_out ?? 0) + (b.bytes_in ?? 0) - ((a.bytes_out ?? 0) + (a.bytes_in ?? 0)),
   );
 
+  const tick = useChanged(entries);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (ranked[0] ? `${ranked[0].name ?? ranked[0].namespace} is the top destination by bytes.` : 'No byte counts yet.') : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'entries', value: tick ? entries.length : undefined },
+          { label: 'top talker', value: tick ? ranked[0]?.name ?? ranked[0]?.namespace ?? '—' : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -43,10 +55,6 @@ export default function Bandwidth() {
       <Card span={3}>
         <Eyebrow>TALKERS</Eyebrow>
         <h3>Who is talking the most</h3>
-        <Metrics>
-          <Metric value={entries.length} label="entries" />
-          <Metric value={ranked[0]?.name ?? ranked[0]?.namespace ?? '—'} label="top talker" />
-        </Metrics>
         <p>Top destinations by byte count. No payloads.</p>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>
