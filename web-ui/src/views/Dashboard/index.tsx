@@ -1,8 +1,15 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useCountUp } from '../../hooks/useCountUp';
 import Reveal from '../../components/Reveal';
-import { buildDigest, digestLabel, type Digest } from '../../components/digest';
+import DatapathHero from '../../components/DatapathHero';
+import { buildDigest, type Digest } from '../../components/digest';
+import { PulseFigure } from '../../components/kit/PagePulse';
+import RankedList from '../../components/kit/RankedList';
+import ToneDot from '../../components/kit/ToneDot';
+import { countTone, scoreTone, type Tone } from '../../components/kit/tone';
+import { compact } from '../../components/kit/format';
+import { useRate, useSeries } from '../../components/kit/useSeries';
 import {
   fetchNodes,
   fetchEndpoints,
@@ -69,8 +76,10 @@ async function settle<T>(p: Promise<{ data: T }>, timeoutMs = TILE_TIMEOUT_MS): 
 type TileKey = 'cluster' | 'digest' | 'flows' | 'ebpf' | 'platform';
 
 export default function Overview() {
+  const navigate = useNavigate();
   const [nodes, setNodes] = useState<number | null>(null);
   const [endpoints, setEndpoints] = useState<number | null>(null);
+  const [endpointList, setEndpointList] = useState<{ name?: string; namespace?: string; status?: string }[]>([]);
   const [agents, setAgents] = useState<number | null>(null);
   const [clusterStatus, setClusterStatus] = useState<string>('—');
   const [clusterScore, setClusterScore] = useState<number | null>(null);
@@ -122,7 +131,9 @@ export default function Overview() {
       void settle(fetchEndpoints()).then((e) => {
         if (cancelled) return;
         if (e.ok) {
-          setEndpoints((e.value as { endpoints?: unknown[] }).endpoints?.length ?? 0);
+          const list = (e.value as { endpoints?: { name?: string; namespace?: string; status?: string }[] }).endpoints ?? [];
+          setEndpoints(list.length);
+          setEndpointList(list);
           mark('cluster');
         } else noteErr(e.error);
       });
@@ -212,149 +223,258 @@ export default function Overview() {
   const maps =
     Number(ebpf?.total_maps ?? ebpf?.maps_total ?? ebpf?.map_count ?? ebpf?.maps ?? 0) || 0;
 
+  const flowsTotal = flows ? (flows.total ?? (flows.forwarded ?? 0) + (flows.dropped ?? 0)) : undefined;
+  const flowRate = useRate(flowsTotal, freshAt.flows);
+  const dropRate = useRate(flows?.dropped, freshAt.flows);
+  const flowSeries = useSeries(flowRate, flowRate);
+  const dropSeries = useSeries(dropRate, dropRate);
+
+  const byNamespace = new Map<string, number>();
+  const byStatus = new Map<string, number>();
+  for (const e of endpointList) {
+    byNamespace.set(e.namespace || '—', (byNamespace.get(e.namespace || '—') ?? 0) + 1);
+    byStatus.set(e.status || 'unknown', (byStatus.get(e.status || 'unknown') ?? 0) + 1);
+  }
+  const rank = (m: Map<string, number>) => [...m.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  const notReady = endpointList.filter((e) => e.status && !/ready/i.test(e.status)).length;
+
+  const healthTone: Tone = clusterScore == null ? 'idle' : digest && digest.severity !== 'info' ? 'warn' : scoreTone(clusterScore);
+  const dropped = flows?.dropped ?? 0;
+  const flowTone: Tone = !flows ? 'idle' : dropped ? 'warn' : 'ok';
+  const flowTitle = !flows
+    ? 'Waiting for Hubble flows.'
+    : dropped
+      ? `${compact(dropped)} of ${compact(flowsTotal ?? 0)} flows dropped.`
+      : `${compact(flowsTotal ?? 0)} flows, none dropped.`;
+  const apiTone: Tone = !metrics ? 'idle' : typeof metrics.error_rate === 'number' && metrics.error_rate > 0.01 ? 'warn' : 'ok';
+
+  const topEndpoints = endpointList.slice(0, 3);
+  const columns = [
+    {
+      title: 'Endpoints',
+      nodes: (topEndpoints.length ? topEndpoints : [{ name: 'endpoints' }]).map((e) => ({
+        label: e.name || 'endpoint',
+        sub: e.namespace || 'pod',
+        active: topEndpoints.length > 0,
+      })),
+    },
+    {
+      title: 'Cilium eBPF',
+      nodes: [
+        { label: 'bpf_lxc', sub: 'endpoint', active: programs > 0 },
+        { label: 'bpf_host', sub: 'host', active: programs > 0 },
+        { label: 'bpf_overlay', sub: 'tunnel', active: programs > 0 },
+      ],
+    },
+    { title: 'Hubble', nodes: [{ label: 'hubble', sub: `${agents ?? 0} agent${agents === 1 ? '' : 's'}`, active: (flowsTotal ?? 0) > 0 || (agents ?? 0) > 0 }] },
+    { title: 'Paqtra', nodes: [{ label: 'paqtra-api', sub: 'observe only', active: metrics != null || flows != null }] },
+  ];
+
   return (
-    <div className="grid">
-      <Reveal>
-        <section className="card span2">
-          <p className="eyebrow">
-            CILIUM DATAPATH
-            <StaleBadge at={freshAt.cluster ?? null} />
-          </p>
-          <h3>Brothers with Cilium.</h3>
-          <p>
-            Paqtra observes Hubble flows and Cilium eBPF maps — it never attaches its own datapath programs or writes
-            Cilium pins. Trace every flow; Cilium owns the verdict.
-          </p>
-          <div className="metrics">
-            <Metric value={agents ?? '—'} label="Cilium agents" />
-            <Metric value={nodes ?? '—'} label="nodes" />
-            <Metric value={endpoints ?? '—'} label="endpoints" />
-            <Metric value={clusterStatus} label="cluster" />
-          </div>
-          {err ? (
-            <p className="warning">
-              API unreachable or partial failure — showing only live responses. No demo data.
-              <br />
-              <span style={{ fontSize: 12, opacity: 0.85 }}>{err}</span>
-            </p>
-          ) : null}
-        </section>
-      </Reveal>
+    <div className="overview">
+      <header className="hero">
+        <p className="eyebrow">CILIUM-NATIVE OBSERVABILITY</p>
+        <h1>Trace every flow.</h1>
+        <p>
+          See where network traffic goes and why it is allowed or dropped — powered by Cilium eBPF. Paqtra observes; Cilium
+          decides.
+        </p>
+        <div className="overview-hero-row">
+          <StatusPill agents={agents} score={clusterScore} digest={digest} />
+          <button type="button" className="primary" onClick={() => navigate('/investigate')}>
+            Investigate a path
+          </button>
+          <button type="button" className="overview-link" onClick={() => navigate('/flows')}>
+            Open Hubble flows ›
+          </button>
+        </div>
+      </header>
 
-      <Reveal delay={80}>
-        <section className="card span2">
-          <p className="eyebrow">
-            ON-CALL DIGEST
-            <StaleBadge at={freshAt.digest ?? null} />
-          </p>
-          <h3>{digest ? digest.headline : 'Waiting for signals…'}</h3>
-          {digest ? (
-            <>
-              <div className="metrics">
-                <Metric value={digestLabel(digest)} label="digest" />
-                <Metric value={clusterScore ?? '—'} label="health score" />
-                <Metric value={drops ?? '—'} label="drop events" />
-              </div>
-              {(digest.whyChanged || []).length > 0 ? (
-                <div className="list">
-                  {digest.whyChanged.map((w) => (
-                    <p key={w}>
-                      <span className={`severity-badge ${digest.severity}`}>{digest.severity}</span> {w}
-                    </p>
-                  ))}
-                </div>
-              ) : (
-                <p className="empty-state">No digest changes — cluster looks quiet.</p>
-              )}
-            </>
-          ) : (
-            <p className="empty-state">Digest builds from cluster health and drop counts.</p>
-          )}
-        </section>
-      </Reveal>
+      {err ? (
+        <p className="warning">
+          API unreachable or partial failure — showing only live responses. No demo data.
+          <br />
+          <span style={{ fontSize: 12, opacity: 0.85 }}>{err}</span>
+        </p>
+      ) : null}
 
-      <Reveal delay={120}>
-        <section className="card span2">
-          <p className="eyebrow">
-            HUBBLE / FLOWS
+      <section className="overview-stage" aria-labelledby="overview-stage-title">
+        <div className="overview-stage__head">
+          <h2 id="overview-stage-title">
+            The datapath, live.
             <StaleBadge at={freshAt.flows ?? null} />
-          </p>
-          <h3>Allow and drop at a glance</h3>
-          <div className="metrics">
-            <Metric value={flows?.total ?? flows?.forwarded ?? '—'} label="flows seen" />
+          </h2>
+          <span className="overview-live">
+            <i aria-hidden="true" /> refreshes every 15s
+          </span>
+        </div>
+        <DatapathHero
+          columns={columns}
+          flowsPerSecond={flowRate}
+          dropsPerSecond={dropRate}
+          label="Live Cilium datapath: endpoints, Cilium eBPF programs, Hubble and the Paqtra API"
+        />
+        <div className="overview-pulse">
+          <PulseFigure label="flows / s" value={flowRate} series={flowSeries} />
+          <PulseFigure label="drops / s" value={dropRate} series={dropSeries} tone={(dropRate ?? 0) > 0 ? 'warn' : undefined} />
+          <PulseFigure label="health score" value={clusterScore ?? undefined} tone={clusterScore == null ? undefined : scoreTone(clusterScore)} />
+          <PulseFigure label="eBPF drop entries" value={drops ?? undefined} tone={drops == null ? undefined : countTone(drops)} />
+        </div>
+        <div className="metrics overview-totals">
+          <Metric value={agents ?? '—'} label="Cilium agents" />
+          <Metric value={nodes ?? '—'} label="nodes" />
+          <Metric value={endpoints ?? '—'} label="endpoints" />
+          <Metric value={programs || '—'} label="eBPF programs" />
+          <Metric value={maps || '—'} label="eBPF maps" />
+        </div>
+      </section>
+
+      <Chapter eyebrow="On-call digest" title={digest ? digest.headline : 'Waiting for signals…'} tone={healthTone} link="Open Health" to="/clusterhealth"
+        figures={
+          <>
+            <Metric value={digest ? digest.severity : '—'} label="digest severity" />
+            <Metric value={clusterScore ?? '—'} label="health score" />
+            <Metric value={clusterStatus} label="cluster" />
+            <Metric value={notReady} label="endpoints not ready" />
+          </>
+        }
+      >
+        <p>Cluster health, Cilium components and drop counts folded into one line for whoever is on call.</p>
+        {digest && digest.whyChanged.length > 0 && (
+          <ul className="overview-signals">
+            {digest.whyChanged.slice(0, 3).map((w) => (
+              <li key={w}>
+                <span className={`severity-badge ${digest.severity}`}>{digest.severity}</span> {w}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Chapter>
+
+      <Chapter eyebrow="Hubble flows" title={flowTitle} tone={flowTone} link="Open Flows" to="/flows" flip
+        figures={
+          <>
+            <Metric value={flowsTotal ?? '—'} label="flows seen" />
             <Metric value={flows?.forwarded ?? '—'} label="forwarded" />
             <Metric value={flows?.dropped ?? '—'} label="dropped" />
             <Metric value={drops ?? '—'} label="eBPF drop entries" />
+          </>
+        }
+      >
+        <p>Every flow from Hubble with its verdict. Cilium owns the verdict; Paqtra shows where traffic went and why.</p>
+      </Chapter>
+
+      <Chapter eyebrow="eBPF maps" title={programs ? `${compact(programs)} programs, ${compact(maps)} maps — read-only.` : 'Read-only map inventory.'} tone={programs ? 'ok' : 'idle'} link="Open eBPF" to="/ebpf"
+        figures={
+          <>
+            <Metric value={programs || '—'} label="programs" />
+            <Metric value={maps || '—'} label="maps" />
+            <Metric value={endpoints ?? '—'} label="identities/endpoints" />
+          </>
+        }
+      >
+        <p>Conntrack, policy map and IP cache viewers read Cilium's maps. Paqtra never writes them or attaches programs.</p>
+      </Chapter>
+
+      <Chapter eyebrow="Platform" title={metrics ? 'API pulse.' : 'Waiting for metrics summary…'} tone={apiTone} link="Open Scorecard" to="/metrics" flip
+        figures={
+          <>
+            <Metric value={typeof metrics?.requests_per_sec === 'number' ? (metrics.requests_per_sec as number) : '—'} label="req/s" />
+            <Metric value={typeof metrics?.avg_latency_ms === 'number' ? (metrics.avg_latency_ms as number) : '—'} label="avg latency ms" />
+            <Metric
+              value={typeof metrics?.error_rate === 'number' ? Number(((metrics.error_rate as number) * 100).toFixed(2)) : '—'}
+              label="error %"
+            />
+          </>
+        }
+      >
+        <p>Request rate, latency and error ratio of the Paqtra API itself.</p>
+      </Chapter>
+
+      <Reveal>
+        <section className="overview-talking" aria-labelledby="overview-talking-title">
+          <div className="overview-stage__head">
+            <h2 id="overview-talking-title">Who is running.</h2>
+            <Link className="overview-link" to="/endpoints">
+              Open Endpoints ›
+            </Link>
           </div>
-          <p>
-            Full tables live on <Link to="/flows">Flows</Link> and <Link to="/drops">Drops</Link>.
-          </p>
+          <div className="overview-talking__grid">
+            <RankedList title="Endpoints by namespace" items={rank(byNamespace)} empty="No Cilium endpoints yet." limit={6} />
+            <RankedList title="Endpoint status" items={rank(byStatus)} empty="No Cilium endpoints yet." limit={6} mono={false} />
+            <div className="kit-ranked">
+              <h3>Where to go next</h3>
+              <div className="chips">
+                <Link to="/topology">Topology</Link>
+                <Link to="/policies">Policies</Link>
+                <Link to="/drops">Drops</Link>
+                <Link to="/nodes">Fleet</Link>
+                <Link to="/anomalies">Anomalies</Link>
+              </div>
+            </div>
+          </div>
         </section>
       </Reveal>
 
-      <section className="card span3">
-        <p className="eyebrow">
-          eBPF MAPS
-          <StaleBadge at={freshAt.ebpf ?? null} />
-        </p>
-        <h3>Read-only inventory</h3>
-        <div className="metrics">
-          <Metric value={programs || '—'} label="programs" />
-          <Metric value={maps || '—'} label="maps" />
-          <Metric value={endpoints ?? '—'} label="identities/endpoints" />
-        </div>
-        <p>
-          Conntrack, policy map, and IP cache viewers are under Diagnostics — never mutate Cilium maps from this console.
-        </p>
-      </section>
-
-      <section className="card span3">
-        <p className="eyebrow">
-          PLATFORM
-          <StaleBadge at={freshAt.platform ?? null} />
-        </p>
-        <h3>API pulse</h3>
-        <div className="metrics">
-          <Metric
-            value={typeof metrics?.requests_per_sec === 'number' ? (metrics.requests_per_sec as number) : '—'}
-            label="req/s"
-          />
-          <Metric
-            value={typeof metrics?.avg_latency_ms === 'number' ? (metrics.avg_latency_ms as number) : '—'}
-            label="avg latency ms"
-          />
-          <Metric
-            value={typeof metrics?.error_rate === 'number' ? Number(((metrics.error_rate as number) * 100).toFixed(2)) : '—'}
-            label="error %"
-          />
-        </div>
-        {!metrics && !err ? <p className="empty-state">Waiting for metrics summary…</p> : null}
-        {!metrics && err ? <p className="empty-state">Metrics unavailable until the API is reachable.</p> : null}
-      </section>
-
-      <section className="card span2">
-        <p className="eyebrow">INVESTIGATE</p>
-        <h3>Where to go next</h3>
-        <div className="chips">
-          <Link to="/flows">Flows</Link>
-          <Link to="/topology">Topology</Link>
-          <Link to="/policies">Policies</Link>
-          <Link to="/drops">Drops</Link>
-          <Link to="/clusterhealth">Health</Link>
-          <Link to="/nodes">Fleet</Link>
-          <Link to="/ebpf">eBPF</Link>
-          <Link to="/anomalies">Anomalies</Link>
-        </div>
-      </section>
-
-      <section className="card span2">
-        <p className="eyebrow">BROTHERHOOD</p>
-        <h3>Cilium · Paqtra · Netra</h3>
-        <p>
-          Cilium owns CNI and policy. Paqtra is the Cilium-native observe/ops sibling. Netra remains the independent
-          eBPF datapath — Paqtra does not compete with either.
-        </p>
-      </section>
+      <p className="overview-closing">
+        Brothers with Cilium. Cilium owns CNI and policy; Paqtra is the Cilium-native observe and ops sibling; Netra remains the
+        independent eBPF datapath. Paqtra never attaches its own datapath programs or writes Cilium pins.
+      </p>
     </div>
+  );
+}
+
+function StatusPill({ agents, score, digest }: { agents: number | null; score: number | null; digest: Digest | null }) {
+  if (!agents) {
+    return (
+      <span className="overview-status tone-idle" role="status">
+        <i aria-hidden="true" /> Waiting for Cilium agents
+      </span>
+    );
+  }
+  const tone = (digest && digest.severity !== 'info') || (score != null && score < 80) ? 'warn' : 'ok';
+  return (
+    <span className={`overview-status tone-${tone}`} role="status">
+      <i aria-hidden="true" /> Observing · {agents} Cilium agent{agents === 1 ? '' : 's'}
+    </span>
+  );
+}
+
+function Chapter({
+  eyebrow,
+  title,
+  tone,
+  children,
+  figures,
+  link,
+  to,
+  flip,
+}: {
+  eyebrow: string;
+  title: string;
+  tone: Tone;
+  children: ReactNode;
+  figures: ReactNode;
+  link: string;
+  to: string;
+  flip?: boolean;
+}) {
+  return (
+    <Reveal>
+      <section className={`overview-chapter${flip ? ' overview-chapter--flip' : ''}`}>
+        <div className="overview-chapter__copy">
+          <p className="apple-eyebrow">
+            <ToneDot tone={tone} />
+            {eyebrow}
+          </p>
+          <h2>{title}</h2>
+          {children}
+          <Link className="overview-link" to={to}>
+            {link} ›
+          </Link>
+        </div>
+        <div className="metrics overview-chapter__figures">{figures}</div>
+      </section>
+    </Reveal>
   );
 }
