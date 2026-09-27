@@ -8,6 +8,9 @@ import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
 import { useNamespaceStore } from '../../stores/namespaceStore';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 function cellColor(count: number, max: number): string {
   if (max === 0) return 'bg-slate-900/50';
@@ -49,6 +52,7 @@ const Heatmap: React.FC = () => {
   const getCell = (src: string, dst: string) => cells.find((c) => c.source_namespace === src && c.destination_namespace === dst);
   const maxFlows = Math.max(...cells.map((c) => c.flow_count), 1);
 
+  const tick = useChanged(cells);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -63,6 +67,17 @@ const Heatmap: React.FC = () => {
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? `${namespaces.length} namespaces, ${cells.length} talking pairs.` : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'namespaces', value: tick ? namespaces.length : undefined },
+          { label: 'pairs', value: tick ? cells.length : undefined },
+          { label: 'flows', value: tick ? cells.reduce((n, c) => n + (c.flow_count || 0), 0).toLocaleString() : undefined },
+          { label: 'dropped', value: tick ? cells.reduce((n, c) => n + (c.dropped_count || 0), 0).toLocaleString() : undefined, tone: tick ? (countTone(cells.reduce((n, c) => n + (c.dropped_count || 0), 0))) : undefined },
+        ]}
+      />
 
       {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 
@@ -94,7 +109,7 @@ const Heatmap: React.FC = () => {
                   return (
                     <div key={dst} className={`w-28 h-16 flex-shrink-0 p-1 cursor-pointer ${selectedNamespace && (src === selectedNamespace || dst === selectedNamespace) ? 'bg-blue-500/5' : ''}`} title={`${src} → ${dst}: ${cell?.flow_count ?? 0} flows, ${cell?.dropped_count ?? 0} drops — Click to view flows`}
                       onClick={() => navigate(`/flows?namespace=${encodeURIComponent(src)}&search=${encodeURIComponent(dst)}`)}>
-                      <div className={`w-full h-full rounded-lg flex flex-col items-center justify-center ${cellColor(cell?.flow_count ?? 0, maxFlows)} transition-colors hover:ring-2 hover:ring-blue-400/50 ${selectedNamespace && (src === selectedNamespace || dst === selectedNamespace) ? 'ring-1 ring-blue-400/30' : ''}`}>
+                      <div className={`w-full h-full rounded-md flex flex-col items-center justify-center ${cellColor(cell?.flow_count ?? 0, maxFlows)} transition-colors hover:ring-2 hover:ring-blue-400/50 ${selectedNamespace && (src === selectedNamespace || dst === selectedNamespace) ? 'ring-1 ring-blue-400/30' : ''}`}>
                         {cell ? (
                           <>
                             <span className="text-xs font-bold text-white">{cell.flow_count >= 1000 ? `${(cell.flow_count / 1000).toFixed(1)}k` : cell.flow_count}</span>

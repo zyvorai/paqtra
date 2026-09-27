@@ -4,6 +4,8 @@ import { fetchPolicyTemplates, applyTemplate, PolicyTemplate } from '../../servi
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const CAT_COLOR: Record<string, string> = {
   security: 'bg-red-500/15 text-red-400 border-red-500/30',
@@ -40,6 +42,7 @@ const PolicyTemplates: React.FC = () => {
 
   const filtered = search ? templates.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()) || t.description.toLowerCase().includes(search.toLowerCase()) || t.tags.some((tag) => tag.includes(search.toLowerCase()))) : templates;
 
+  const tick = useChanged(templates);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -53,6 +56,15 @@ const PolicyTemplates: React.FC = () => {
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? `${templates.length} policy templates in ${new Set(templates.map((t) => t.category)).size} categories.` : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'templates', value: tick ? templates.length : undefined },
+          { label: 'categories', value: tick ? new Set(templates.map((t) => t.category)).size : undefined },
+        ]}
+      />
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
       <div className="relative mb-4">

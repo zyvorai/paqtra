@@ -5,6 +5,8 @@ import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 import { useAuthStore } from '../../stores/authStore';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const STATUS_BADGE: Record<string, string> = { ready: 'bg-green-500/15 text-green-400 border-green-500/30', draining: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', cordoned: 'bg-orange-500/15 text-orange-400 border-orange-500/30', drained: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
 
@@ -45,6 +47,7 @@ const NodeDrain: React.FC = () => {
     finally { setActing(null); }
   };
 
+  const tick = useChanged(nodes);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -55,6 +58,16 @@ const NodeDrain: React.FC = () => {
         <button onClick={fetchData} disabled={loading} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700/50 text-sm text-slate-400 hover:text-white hover:bg-slate-700/30 transition-colors"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /></button>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? `${nodes.length} node${nodes.length === 1 ? '' : 's'}, ${nodes.filter((n) => n.cordon).length} cordoned.` : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'nodes', value: tick ? nodes.length : undefined },
+          { label: 'cordoned', value: tick ? nodes.filter((n) => n.cordon).length : undefined },
+          { label: 'pods remaining', value: tick ? nodes.reduce((n, x) => n + (x.pods_remaining || 0), 0) : undefined },
+        ]}
+      />
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
       {!isAdmin && (
         <div className="mb-4 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-sm">

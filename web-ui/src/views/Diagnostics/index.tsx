@@ -3,6 +3,9 @@ import { Stethoscope, Play, Loader2, CheckCircle, XCircle, AlertTriangle } from 
 import { runDiagnostics, DiagnosticTest } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 const STATUS_ICON: Record<string, React.ReactNode> = {
   pass: <CheckCircle className="w-5 h-5 text-green-400" />,
@@ -32,6 +35,7 @@ const Diagnostics: React.FC = () => {
   const fail = tests.filter((t) => t.status === 'fail').length;
   const warn = tests.filter((t) => t.status === 'warn').length;
 
+  const tick = useChanged(tests);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -47,23 +51,21 @@ const Diagnostics: React.FC = () => {
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (tests.length ? (fail ? `${fail} of ${tests.length} checks failed.` : `All ${tests.length} checks passed.`) : undefined) : undefined}
+        tone={tick ? (fail ? 'bad' : warn ? 'warn' : undefined) : undefined}
+        tick={tick}
+        live={false}
+        error={error || undefined}
+        figures={[
+          { label: 'passed', value: tick ? pass : undefined },
+          { label: 'failed', value: tick ? fail : undefined, tone: tick ? (countTone(fail)) : undefined },
+          { label: 'warnings', value: tick ? warn : undefined, tone: tick ? (countTone(warn)) : undefined },
+        ]}
+      />
 
       {tests.length > 0 && (
         <>
-          <div className="grid grid-cols-3 gap-3 mb-6">
-            <div className="rounded-xl border border-slate-700/50 p-4 stat-card-green card-glow-green transition-all hover:scale-[1.02]">
-              <div className="text-xs text-slate-400 mb-1">Passed</div>
-              <div className="text-2xl font-bold text-green-400">{pass}</div>
-            </div>
-            <div className="rounded-xl border border-slate-700/50 p-4 stat-card-red card-glow transition-all hover:scale-[1.02]">
-              <div className="text-xs text-slate-400 mb-1">Failed</div>
-              <div className="text-2xl font-bold text-red-400">{fail}</div>
-            </div>
-            <div className="rounded-xl border border-slate-700/50 p-4 stat-card-orange card-glow transition-all hover:scale-[1.02]">
-              <div className="text-xs text-slate-400 mb-1">Warnings</div>
-              <div className="text-2xl font-bold text-yellow-400">{warn}</div>
-            </div>
-          </div>
 
           <div className="space-y-2">
             {tests.map((t, i) => (

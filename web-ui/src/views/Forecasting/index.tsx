@@ -4,6 +4,8 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { fetchForecast, fetchForecastMetrics, ForecastResult } from '../../services/api';
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const METRIC_LABELS: Record<string, string> = { cpu_usage: 'CPU Usage', memory_usage: 'Memory Usage', network_throughput: 'Network Throughput', pod_count: 'Pod Count' };
 
@@ -30,6 +32,7 @@ const Forecasting: React.FC = () => {
   useEffect(() => { fetchMetrics(); }, [fetchMetrics]);
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const tick = useChanged(result);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -42,6 +45,17 @@ const Forecasting: React.FC = () => {
         </button>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (result ? (result.recommendation || `Forecast for ${result.metric}.`) : undefined) : undefined}
+        tick={tick}
+        live={false}
+        error={error || undefined}
+        figures={[
+          { label: 'metric', value: tick ? result?.metric ?? selected : undefined },
+          { label: 'points', value: tick ? result?.points.length ?? 0 : undefined },
+          { label: 'metrics available', value: tick ? metrics.length : undefined },
+        ]}
+      />
 
       {/* Metric selector */}
       <div className="flex gap-1 mb-6 p-1 rounded-lg bg-slate-900/50 w-fit">

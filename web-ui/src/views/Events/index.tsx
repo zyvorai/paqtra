@@ -8,6 +8,9 @@ import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
 import { useNamespaceStore } from '../../stores/namespaceStore';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 const TYPE_BADGE: Record<string, string> = {
   Normal: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
@@ -69,6 +72,7 @@ const Events: React.FC = () => {
 
   const warnings = namespacedEvents.filter((e) => e.type === 'Warning').length;
 
+  const tick = useChanged(events);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -84,6 +88,16 @@ const Events: React.FC = () => {
       </div>
 
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (events.length ? `${events.length} cluster events, ${events.filter((e) => e.type === 'Warning').length} warnings.` : 'No cluster events.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'events', value: tick ? events.length : undefined },
+          { label: 'warnings', value: tick ? events.filter((e) => e.type === 'Warning').length : undefined, tone: tick ? (countTone(events.filter((e) => e.type === 'Warning').length)) : undefined },
+          { label: 'namespaces', value: tick ? new Set(events.map((e) => e.namespace).filter(Boolean)).size : undefined },
+        ]}
+      />
 
       <div className="flex items-center gap-3 mb-4">
         <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search events..."

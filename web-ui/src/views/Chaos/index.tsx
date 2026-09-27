@@ -14,6 +14,8 @@ import { fetchChaosExperiments, runChaosExperiment, apiErrorMessage } from '../.
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 import { useAuthStore } from '../../stores/authStore';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 interface Experiment {
   id: string;
@@ -78,6 +80,7 @@ const Chaos: React.FC = () => {
     finally { setRunning(null); }
   };
 
+  const tick = useChanged(experiments);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -92,6 +95,16 @@ const Chaos: React.FC = () => {
 
       {!RUN_AVAILABLE && <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">{NOT_AVAILABLE_MSG}</div>}
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (experiments.length ? `${experiments.length} chaos experiment${experiments.length === 1 ? '' : 's'} on record.` : 'No chaos experiments yet.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'experiments', value: tick ? experiments.length : undefined },
+          { label: 'running', value: tick ? experiments.filter((e) => /run|activ/i.test(e.status || '')).length : undefined },
+          { label: 'namespaces', value: tick ? new Set(experiments.map((e) => e.target_namespace).filter(Boolean)).size : undefined },
+        ]}
+      />
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
       {!isAdmin && (
