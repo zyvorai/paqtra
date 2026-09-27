@@ -4,6 +4,7 @@ import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/
 import PagePulse from '../../components/kit/PagePulse';
 import { useChanged } from '../../components/kit/useSeries';
 import { scoreTone } from '../../components/kit/tone';
+import ScoreGauge from '../../components/ScoreGauge';
 
 export default function SecurityDash() {
   const [score, setScore] = useState<Record<string, number> | null>(null);
@@ -48,7 +49,7 @@ export default function SecurityDash() {
           <Warning>{err}</Warning>
         </Card>
       ) : null}
-      <Card span={3}>
+      <Card span={2}>
         <Eyebrow>SECURITY POSTURE</Eyebrow>
         <h3>Zero-trust board</h3>
         <Toolbar>
@@ -56,6 +57,12 @@ export default function SecurityDash() {
             Refresh
           </button>
         </Toolbar>
+      </Card>
+      <Card>
+        <Eyebrow>OVERALL SCORE</Eyebrow>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
+          <ScoreGauge score={typeof score?.overall === 'number' ? score.overall : 0} label="/ 100" />
+        </div>
       </Card>
       <Card span={3}>
         <Eyebrow>FINDINGS</Eyebrow>

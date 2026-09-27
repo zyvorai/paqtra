@@ -91,18 +91,18 @@ const Forecasting: React.FC = () => {
               <AreaChart data={result.points}>
                 <defs>
                   <linearGradient id="confGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                    <stop offset="5%" stopColor="var(--accent-green)" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="var(--accent-green)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="timestamp" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="timestamp" tick={{ fill: 'var(--text-tertiary)', fontSize: 10 }} />
+                <YAxis tick={{ fill: 'var(--text-tertiary)', fontSize: 11 }} />
+                <Tooltip contentStyle={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8 }} />
                 <Area type="monotone" dataKey="upper_bound" stroke="none" fill="url(#confGrad)" name="Upper Bound" />
                 <Area type="monotone" dataKey="lower_bound" stroke="none" fill="transparent" name="Lower Bound" />
-                <Area type="monotone" dataKey="predicted" stroke="#22c55e" fill="none" strokeDasharray="5 3" name="Predicted" />
-                <Area type="monotone" dataKey="actual" stroke="#3b82f6" fill="none" strokeWidth={2} name="Actual" />
+                <Area type="monotone" dataKey="predicted" stroke="var(--accent-green)" fill="none" strokeDasharray="5 3" name="Predicted" />
+                <Area type="monotone" dataKey="actual" stroke="var(--apple-blue)" fill="none" strokeWidth={2} name="Actual" />
               </AreaChart>
             </ResponsiveContainer>
           </div>

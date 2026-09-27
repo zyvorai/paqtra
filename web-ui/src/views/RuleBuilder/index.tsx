@@ -7,6 +7,8 @@ import { createPolicy, validatePolicy, simulatePolicy } from '../../services/api
 import { isAxiosError } from 'axios';
 import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -441,6 +443,8 @@ const RuleBuilder: React.FC = () => {
   const ingressSourceTypes: IngressSourceType[] = ['Labels', 'CIDR', 'Any'];
   const egressDestTypes: EgressDestType[] = ['Labels', 'CIDR', 'FQDN', 'Service', 'Any'];
 
+  const tick = useChanged(validation);
+
   return (
     <div className="netra-page">
       {/* Header */}
@@ -457,6 +461,32 @@ const RuleBuilder: React.FC = () => {
           </p>
         </div>
       </div>
+
+      <PagePulse
+        headline={
+          tick
+            ? validation
+              ? validation.valid
+                ? 'Policy is valid — review, then apply.'
+                : `${validation.errors.length} validation error${validation.errors.length === 1 ? '' : 's'}.`
+              : `${form.ingress.length} ingress, ${form.egress.length} egress rule${form.ingress.length + form.egress.length === 1 ? '' : 's'} drafted.`
+            : undefined
+        }
+        tone={tick ? (validation && !validation.valid ? 'bad' : undefined) : undefined}
+        tick={tick}
+        live={false}
+        error={error || undefined}
+        figures={[
+          { label: 'ingress rules', value: form.ingress.length },
+          { label: 'egress rules', value: form.egress.length },
+          {
+            label: 'validation',
+            value: tick ? (validation ? (validation.valid ? 'valid' : 'invalid') : '—') : undefined,
+            tone: tick ? (validation ? (validation.valid ? 'ok' : 'bad') : undefined) : undefined,
+          },
+          { label: 'YAML lines', value: yaml.split('\n').length },
+        ]}
+      />
 
       {/* Status banners */}
       {error && (

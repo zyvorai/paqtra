@@ -21,20 +21,31 @@ interface ChartContainerProps {
   type: 'line' | 'bar' | 'pie';
   data: Record<string, unknown>[];
   dataKeys?: string[];
+  /** Friendly legend name per data key; falls back to the raw key. */
+  dataKeyLabels?: Record<string, string>;
   colors?: string[];
   xAxisKey?: string;
   height?: number;
   icon?: React.ReactNode;
+  /** Formats Y-axis ticks and tooltip values, e.g. `(v) => `$${v}``. */
+  valueFormatter?: (value: number) => string;
 }
 
-const DEFAULT_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
+const DEFAULT_COLORS = [
+  'var(--apple-blue)',
+  'var(--accent-green)',
+  'var(--accent-amber)',
+  'var(--danger)',
+  'var(--accent-purple)',
+  'var(--accent-cyan)',
+];
 
 const tooltipStyle = {
-  backgroundColor: '#0f172a',
-  border: '1px solid #1e293b',
-  borderRadius: '0.75rem',
+  backgroundColor: 'var(--bg-elevated)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
   fontSize: '12px',
-  color: '#e2e8f0',
+  color: 'var(--text-primary)',
 };
 
 export const ChartContainer: React.FC<ChartContainerProps> = ({
@@ -42,10 +53,12 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
   type,
   data,
   dataKeys = [],
+  dataKeyLabels = {},
   colors = DEFAULT_COLORS,
   xAxisKey = 'timestamp',
   height = 300,
   icon,
+  valueFormatter,
 }) => {
   const renderChart = () => {
     switch (type) {
@@ -53,10 +66,10 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
         return (
           <ResponsiveContainer width="100%" height={height}>
             <LineChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis
                 dataKey={xAxisKey}
-                stroke="#475569"
+                stroke="var(--text-tertiary)"
                 fontSize={11}
                 tickFormatter={(value) => {
                   if (xAxisKey === 'timestamp') {
@@ -66,14 +79,18 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
                   return value;
                 }}
               />
-              <YAxis stroke="#475569" fontSize={11} />
-              <Tooltip contentStyle={tooltipStyle} />
+              <YAxis stroke="var(--text-tertiary)" fontSize={11} tickFormatter={valueFormatter} />
+              <Tooltip
+                contentStyle={tooltipStyle}
+                formatter={valueFormatter ? (v) => valueFormatter(Number(v ?? 0)) : undefined}
+              />
               <Legend />
               {dataKeys.map((key, index) => (
                 <Line
                   key={key}
                   type="monotone"
                   dataKey={key}
+                  name={dataKeyLabels[key] ?? key}
                   stroke={colors[index % colors.length]}
                   strokeWidth={2}
                   dot={false}
@@ -88,16 +105,21 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
         return (
           <ResponsiveContainer width="100%" height={height}>
             <BarChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey={xAxisKey} stroke="#475569" fontSize={11} />
-              <YAxis stroke="#475569" fontSize={11} />
-              <Tooltip contentStyle={tooltipStyle} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey={xAxisKey} stroke="var(--text-tertiary)" fontSize={11} />
+              <YAxis stroke="var(--text-tertiary)" fontSize={11} tickFormatter={valueFormatter} />
+              <Tooltip
+                contentStyle={tooltipStyle}
+                formatter={valueFormatter ? (v) => valueFormatter(Number(v ?? 0)) : undefined}
+              />
               <Legend />
               {dataKeys.map((key, index) => (
                 <Bar
                   key={key}
                   dataKey={key}
+                  name={dataKeyLabels[key] ?? key}
                   fill={colors[index % colors.length]}
+                  radius={[2, 2, 0, 0]}
                   animationDuration={300}
                 />
               ))}
@@ -135,15 +157,15 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
   };
 
   return (
-    <div className="bg-slate-800/50 rounded-xl p-5 border border-slate-700/50 border-t-2 border-t-blue-500/30">
-      <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-4">
-        {icon || <BarChart3 className="w-4 h-4 text-slate-400" />}
+    <div className="card">
+      <h3 className="text-sm font-semibold flex items-center gap-2 mb-4" style={{ color: 'var(--text-primary)' }}>
+        {icon || <BarChart3 className="w-4 h-4" style={{ color: 'var(--text-tertiary)' }} />}
         {title}
       </h3>
       {data.length === 0 ? (
         <div
-          className="flex items-center justify-center text-slate-500"
-          style={{ height }}
+          className="flex items-center justify-center"
+          style={{ height, color: 'var(--text-tertiary)' }}
         >
           No data available
         </div>

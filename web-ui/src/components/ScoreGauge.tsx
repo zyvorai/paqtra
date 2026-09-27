@@ -8,15 +8,9 @@ interface ScoreGaugeProps {
 }
 
 function scoreColor(score: number): string {
-  if (score >= 80) return '#22c55e';
-  if (score >= 60) return '#eab308';
-  return '#ef4444';
-}
-
-function scoreTextClass(score: number): string {
-  if (score >= 80) return 'text-green-400';
-  if (score >= 60) return 'text-yellow-400';
-  return 'text-red-400';
+  if (score >= 80) return 'var(--accent-green)';
+  if (score >= 60) return 'var(--accent-amber)';
+  return 'var(--danger)';
 }
 
 const ScoreGauge: React.FC<ScoreGaugeProps> = ({ score, max = 100, size = 120, label }) => {
@@ -32,7 +26,7 @@ const ScoreGauge: React.FC<ScoreGaugeProps> = ({ score, max = 100, size = 120, l
           cy={size / 2}
           r={r}
           fill="none"
-          stroke="#334155"
+          stroke="var(--border)"
           strokeWidth="8"
         />
         <circle
@@ -48,8 +42,10 @@ const ScoreGauge: React.FC<ScoreGaugeProps> = ({ score, max = 100, size = 120, l
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={`text-3xl font-bold ${scoreTextClass(score)}`}>{Math.round(score)}</span>
-        {label && <span className="text-xs text-slate-400">{label}</span>}
+        <span className="text-3xl font-bold" style={{ color: scoreColor(score) }}>
+          {Math.round(score)}
+        </span>
+        {label && <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{label}</span>}
       </div>
     </div>
   );
