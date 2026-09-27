@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchEbpfConntrack } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 type Entry = {
   src?: string;
@@ -30,8 +32,17 @@ export default function ConntrackViewer() {
     void load();
   }, [load]);
 
+  const tick = useChanged(entries);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `${(total || entries.length).toLocaleString()} conntrack entries, read-only.` : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'entries', value: tick ? total || entries.length : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -40,9 +51,6 @@ export default function ConntrackViewer() {
       <Card span={3}>
         <Eyebrow>CONNTRACK</Eyebrow>
         <h3>Read-only CT table</h3>
-        <Metrics>
-          <Metric value={total || entries.length} label="entries" />
-        </Metrics>
         <p>Paqtra reads Cilium conntrack — it never writes the map.</p>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>

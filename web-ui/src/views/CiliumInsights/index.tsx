@@ -7,6 +7,7 @@ import {
   CiliumFeature, HubbleNodeInfo, MetricsReport, CiliumResource, FeatureState,
 } from '../../services/api';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import PagePulse from '../../components/kit/PagePulse';
 
 type Tab = 'features' | 'hubble' | 'metrics' | 'resources' | 'agent';
 
@@ -37,8 +38,21 @@ const FeaturesTab: React.FC = () => {
   if (!features) return <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />;
   if (reason) return <div className="text-slate-400 py-8 text-center">{reason}</div>;
   const categories = Array.from(new Set(features.map((f) => f.category)));
+  const count = (st: FeatureState) => features.filter((f) => f.state === st).length;
   return (
     <div className="space-y-6">
+      <PagePulse
+        headline={`${count('enabled')} of ${features.length} Cilium features enabled.`}
+        tick={features}
+        live={false}
+        figures={[
+          { label: 'features on', value: count('enabled') },
+          { label: 'keys set', value: count('set') },
+          { label: 'features off', value: count('disabled') },
+          { label: 'keys absent', value: count('unknown'), tone: count('unknown') ? 'warn' : undefined },
+          { label: 'categories', value: categories.length },
+        ]}
+      />
       <p className="text-sm text-slate-400">From the <code>cilium-config</code> ConfigMap. <span className="text-yellow-400">unknown</span> means the key is absent (an older Cilium, or never configured), not that the feature is off.</p>
       {categories.map((c) => (
         <section key={c}>

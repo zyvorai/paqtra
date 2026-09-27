@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchPacketDrops } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 type Drop = {
   reason?: string;
@@ -28,8 +31,18 @@ export default function RootCause() {
     void load();
   }, [load]);
 
+  const tick = useChanged(drops);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (drops.length ? `${drops.length} drop finding${drops.length === 1 ? '' : 's'} to explain.` : 'No drop findings to explain.') : undefined}
+        tone={tick ? (drops.length ? 'warn' : undefined) : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'findings', value: tick ? drops.length : undefined, tone: tick ? (countTone(drops.length)) : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -38,9 +51,6 @@ export default function RootCause() {
       <Card span={3}>
         <Eyebrow>ROOT CAUSE</Eyebrow>
         <h3>Why it dropped</h3>
-        <Metrics>
-          <Metric value={drops.length} label="findings" />
-        </Metrics>
         <p>
           Correlates drops with policy evidence. Raw drop counts live on <Link to="/drops">Drops</Link>.
         </p>

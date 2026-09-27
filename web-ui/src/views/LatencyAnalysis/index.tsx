@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchLatencyAnalysis } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 type Row = {
   service?: string;
@@ -29,8 +32,19 @@ export default function LatencyAnalysis() {
 
   const worst = [...rows].sort((a, b) => (b.p99_ms ?? 0) - (a.p99_ms ?? 0))[0];
 
+  const tick = useChanged(rows);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (worst ? `${worst.service} has the highest p99 at ${worst.p99_ms ?? '—'} ms.` : 'No latency samples yet.') : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'services', value: tick ? rows.length : undefined },
+          { label: 'highest p99', value: tick ? worst?.service ?? '—' : undefined, tone: tick ? countTone(Number(worst?.service ?? '—')) : undefined },
+          { label: 'p99 ms', value: tick ? worst?.p99_ms ?? '—' : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -39,11 +53,6 @@ export default function LatencyAnalysis() {
       <Card span={3}>
         <Eyebrow>PATH</Eyebrow>
         <h3>Connect latency and pressure</h3>
-        <Metrics>
-          <Metric value={rows.length} label="services" />
-          <Metric value={worst?.service ?? '—'} label="highest p99" />
-          <Metric value={worst?.p99_ms ?? '—'} label="p99 ms" />
-        </Metrics>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>
             Refresh
