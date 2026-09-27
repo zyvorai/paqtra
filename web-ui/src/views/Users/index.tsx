@@ -5,7 +5,9 @@ import {
 } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const ROLES: UserRole[] = ['viewer', 'editor', 'admin'];
 
@@ -91,6 +93,7 @@ export default function Users() {
     await run(`del:${u.username}`, () => deleteUser(u.username), `Deleted ${u.username}`);
   };
 
+  const tick = useChanged(users);
   if (forbidden) {
     return (
       <Board>
@@ -105,16 +108,21 @@ export default function Users() {
 
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `${users.length} local user${users.length === 1 ? '' : 's'}, ${admins} enabled admin${admins === 1 ? '' : 's'}.` : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'local users', value: tick ? users.length : undefined },
+          { label: 'enabled admins', value: tick ? admins : undefined },
+        ]}
+      />
       {err ? <Card span={3}><Warning>{err}</Warning></Card> : null}
       {msg ? <Card span={3}><p className="empty-state">{msg}</p></Card> : null}
 
       <Card span={3}>
         <Eyebrow>ACCESS</Eyebrow>
         <h3>Users and roles</h3>
-        <Metrics>
-          <Metric value={users.length} label="local users" />
-          <Metric value={admins} label="enabled admins" />
-        </Metrics>
         <p>
           Changes apply immediately: disabling a user or changing their role takes effect on their next request, and a
           password reset signs them out everywhere. {configAdmin ? <>The account <code>{configAdmin}</code> comes from the server configuration and always works as admin.</> : null}

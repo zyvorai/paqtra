@@ -381,7 +381,7 @@ export const fetchCanaryStatus = (id: string) =>
   api.get(`/modules/canary/${id}`);
 
 // Health
-export const checkHealth = () => api.get('/health');
+export const checkHealth = () => api.get('/health', { baseURL: '/' });
 export const checkReady = () => api.get('/ready');
 
 // ─── Extended Interfaces ───────────────────────────────────────────────────────

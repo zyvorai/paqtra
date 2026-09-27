@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchZeroTrustScore, fetchSecurityFindings } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { scoreTone } from '../../components/kit/tone';
 
 export default function SecurityDash() {
   const [score, setScore] = useState<Record<string, number> | null>(null);
@@ -23,8 +26,23 @@ export default function SecurityDash() {
     void load();
   }, [load]);
 
+  const tick = useChanged(score);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `Security posture ${score?.overall ?? '—'}/100.` : undefined}
+        tone={tick ? (typeof score?.overall === 'number' ? scoreTone(score.overall) : undefined) : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'overall', value: tick ? score?.overall ?? '—' : undefined, tone: tick ? ((typeof score?.overall === 'number' ? scoreTone(score.overall) : undefined)) : undefined },
+          { label: 'segmentation', value: tick ? score?.network_segmentation ?? '—' : undefined, tone: tick ? ((typeof score?.network_segmentation === 'number' ? scoreTone(score.network_segmentation) : undefined)) : undefined },
+          { label: 'identity', value: tick ? score?.identity_verification ?? '—' : undefined, tone: tick ? ((typeof score?.identity_verification === 'number' ? scoreTone(score.identity_verification) : undefined)) : undefined },
+          { label: 'encryption', value: tick ? score?.encryption ?? '—' : undefined, tone: tick ? ((typeof score?.encryption === 'number' ? scoreTone(score.encryption) : undefined)) : undefined },
+          { label: 'least privilege', value: tick ? score?.least_privilege ?? '—' : undefined, tone: tick ? ((typeof score?.least_privilege === 'number' ? scoreTone(score.least_privilege) : undefined)) : undefined },
+          { label: 'monitoring', value: tick ? score?.monitoring ?? '—' : undefined, tone: tick ? ((typeof score?.monitoring === 'number' ? scoreTone(score.monitoring) : undefined)) : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -33,14 +51,6 @@ export default function SecurityDash() {
       <Card span={3}>
         <Eyebrow>SECURITY POSTURE</Eyebrow>
         <h3>Zero-trust board</h3>
-        <Metrics>
-          <Metric value={score?.overall ?? '—'} label="overall" />
-          <Metric value={score?.network_segmentation ?? '—'} label="segmentation" />
-          <Metric value={score?.identity_verification ?? '—'} label="identity" />
-          <Metric value={score?.encryption ?? '—'} label="encryption" />
-          <Metric value={score?.least_privilege ?? '—'} label="least privilege" />
-          <Metric value={score?.monitoring ?? '—'} label="monitoring" />
-        </Metrics>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>
             Refresh

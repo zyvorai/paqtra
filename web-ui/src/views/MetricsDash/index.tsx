@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchMetricsSummary, fetchCiliumStatus, fetchEbpfSummary } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 export default function MetricsDash() {
   const [metrics, setMetrics] = useState<Record<string, unknown> | null>(null);
@@ -31,8 +34,26 @@ export default function MetricsDash() {
     return () => clearInterval(t);
   }, [load]);
 
+  const tick = useChanged(metrics);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `${agents} agent${agents === 1 ? '' : 's'} reporting to the scorecard.` : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'req/s', value: tick ? typeof metrics?.requests_per_sec === 'number' ? Number(metrics.requests_per_sec).toFixed(1) : '—' : undefined },
+          { label: 'avg latency ms', value: tick ? typeof metrics?.avg_latency_ms === 'number' ? Number(metrics.avg_latency_ms).toFixed(1) : '—' : undefined },
+          { label: 'error rate', value: tick ? typeof metrics?.error_rate === 'number'
+                ? `${(Number(metrics.error_rate) * 100).toFixed(2)}%`
+                : '—' : undefined, tone: tick ? countTone(Number(typeof metrics?.error_rate === 'number'
+                ? `${(Number(metrics.error_rate) * 100).toFixed(2)}%`
+                : '—')) : undefined },
+          { label: 'Cilium agents', value: tick ? agents : undefined },
+          { label: 'BPF programs', value: tick ? Number(ebpf?.programs_total ?? ebpf?.programs ?? 0) || '—' : undefined },
+          { label: 'BPF maps', value: tick ? Number(ebpf?.maps_total ?? ebpf?.maps ?? 0) || '—' : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -42,27 +63,6 @@ export default function MetricsDash() {
       <Card span={3}>
         <Eyebrow>SCORECARD</Eyebrow>
         <h3>One board for the shift</h3>
-        <Metrics>
-          <Metric
-            value={typeof metrics?.requests_per_sec === 'number' ? Number(metrics.requests_per_sec).toFixed(1) : '—'}
-            label="req/s"
-          />
-          <Metric
-            value={typeof metrics?.avg_latency_ms === 'number' ? Number(metrics.avg_latency_ms).toFixed(1) : '—'}
-            label="avg latency ms"
-          />
-          <Metric
-            value={
-              typeof metrics?.error_rate === 'number'
-                ? `${(Number(metrics.error_rate) * 100).toFixed(2)}%`
-                : '—'
-            }
-            label="error rate"
-          />
-          <Metric value={agents} label="Cilium agents" />
-          <Metric value={Number(ebpf?.programs_total ?? ebpf?.programs ?? 0) || '—'} label="BPF programs" />
-          <Metric value={Number(ebpf?.maps_total ?? ebpf?.maps ?? 0) || '—'} label="BPF maps" />
-        </Metrics>
         {!metrics && !err ? <Empty>Waiting for metrics…</Empty> : null}
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>
