@@ -31,7 +31,7 @@ function Metric({ value, label }: { value: number | string; label: string }) {
   const animated = useCountUp(numeric ? (value as number) : 0);
   return (
     <div>
-      <b>{numeric ? Math.round(animated).toLocaleString() : value}</b>
+      <b>{numeric ? compact(animated) : value}</b>
       <span>{label}</span>
     </div>
   );
