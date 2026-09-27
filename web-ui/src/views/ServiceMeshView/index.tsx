@@ -6,6 +6,8 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const ServiceMeshView: React.FC = () => {
   usePageTitle('Service Mesh');
@@ -23,6 +25,7 @@ const ServiceMeshView: React.FC = () => {
 
   const mtlsCount = services.filter((s) => s.mtls).length;
 
+  const tick = useChanged(services);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -36,12 +39,17 @@ const ServiceMeshView: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (services.length ? `${services.length} mesh service${services.length === 1 ? '' : 's'}.` : 'No mesh services.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'Services', value: tick ? services.length : undefined },
+          { label: 'mTLS Enabled', value: tick ? mtlsCount : undefined },
+          { label: 'Circuit Breakers', value: tick ? services.filter((s) => s.circuit_breaker).length : undefined },
+        ]}
+      />
 
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-blue card-glow transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Services</div><div className="text-2xl font-bold text-white">{services.length}</div></div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-green card-glow-green transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">mTLS Enabled</div><div className="text-2xl font-bold text-green-400">{mtlsCount}</div></div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-purple card-glow-purple transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Circuit Breakers</div><div className="text-2xl font-bold text-white">{services.filter((s) => s.circuit_breaker).length}</div></div>
-      </div>
 
       {loading && services.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 

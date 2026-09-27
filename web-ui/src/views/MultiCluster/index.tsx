@@ -6,6 +6,8 @@ import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const STATUS_BADGE: Record<string, string> = {
   connected: 'bg-green-500/15 text-green-400 border-green-500/30',
@@ -43,6 +45,7 @@ const MultiCluster: React.FC = () => {
   const totalNodes = clusters.reduce((a, c) => a + c.nodes, 0);
   const totalPods = clusters.reduce((a, c) => a + c.pods, 0);
 
+  const tick = useChanged(clusters);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -58,27 +61,20 @@ const MultiCluster: React.FC = () => {
 
       {!SYNC_AVAILABLE && <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">{NOT_AVAILABLE_MSG}</div>}
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (clusters.length ? `${clusters.length} cluster${clusters.length === 1 ? '' : 's'} in view.` : 'No other clusters registered.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'Clusters', value: tick ? clusters.length : undefined },
+          { label: 'Connected', value: tick ? clusters.filter((c) => c.status === 'connected').length : undefined },
+          { label: 'Total Nodes', value: tick ? totalNodes : undefined },
+          { label: 'Total Pods', value: tick ? totalPods : undefined },
+        ]}
+      />
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
       {/* Summary */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-blue card-glow transition-all hover:scale-[1.02]">
-          <div className="text-xs text-slate-400 mb-1">Clusters</div>
-          <div className="text-2xl font-bold text-white">{clusters.length}</div>
-        </div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-green card-glow-green transition-all hover:scale-[1.02]">
-          <div className="text-xs text-slate-400 mb-1">Connected</div>
-          <div className="text-2xl font-bold text-green-400">{clusters.filter((c) => c.status === 'connected').length}</div>
-        </div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-purple card-glow-purple transition-all hover:scale-[1.02]">
-          <div className="text-xs text-slate-400 mb-1">Total Nodes</div>
-          <div className="text-2xl font-bold text-white">{totalNodes}</div>
-        </div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-orange card-glow transition-all hover:scale-[1.02]">
-          <div className="text-xs text-slate-400 mb-1">Total Pods</div>
-          <div className="text-2xl font-bold text-white">{totalPods}</div>
-        </div>
-      </div>
 
       {loading && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 

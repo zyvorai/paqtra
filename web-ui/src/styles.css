@@ -2131,6 +2131,11 @@ code {
   gap: 14px;
 }
 
+/* Card lists start single-column; keep their cards readable */
+.view-board .netra-page .grid.grid-cols-1 {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+}
+
 .view-board .netra-page .rounded-xl,
 .view-board .netra-page .rounded-2xl,
 .view-board .netra-page .rounded-lg {

@@ -6,6 +6,8 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const STATE_BADGE: Record<string, string> = { Established: 'bg-green-500/15 text-green-400 border-green-500/30', Idle: 'bg-red-500/15 text-red-400 border-red-500/30', Active: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', OpenSent: 'bg-blue-500/15 text-blue-400 border-blue-500/30' };
 
@@ -25,6 +27,7 @@ const BgpPeering: React.FC = () => {
 
   const established = peers.filter((p) => p.state === 'Established').length;
 
+  const tick = useChanged(peers);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -38,12 +41,19 @@ const BgpPeering: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (peers.length ? `${established} of ${peers.length} BGP peers established.` : 'No BGP peers configured.') : undefined}
+        tone={tick ? (peers.length - established ? 'warn' : undefined) : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'Peers', value: tick ? peers.length : undefined },
+          { label: 'Established', value: tick ? established : undefined },
+          { label: 'Prefixes Advertised', value: tick ? peers.reduce((a, p) => a + p.prefixes_advertised, 0) : undefined },
+          { label: 'not established', value: tick ? peers.length - established : undefined },
+        ]}
+      />
 
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-blue card-glow transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Peers</div><div className="text-2xl font-bold text-white">{peers.length}</div></div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-green card-glow-green transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Established</div><div className="text-2xl font-bold text-green-400">{established}</div></div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-purple card-glow-purple transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Prefixes Advertised</div><div className="text-2xl font-bold text-white">{peers.reduce((a, p) => a + p.prefixes_advertised, 0)}</div></div>
-      </div>
 
       {loading && peers.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 

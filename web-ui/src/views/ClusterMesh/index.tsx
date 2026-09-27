@@ -6,6 +6,8 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const STATUS_BADGE: Record<string, string> = { connected: 'bg-green-500/15 text-green-400 border-green-500/30', disconnected: 'bg-red-500/15 text-red-400 border-red-500/30', connecting: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' };
 
@@ -26,6 +28,7 @@ const ClusterMesh: React.FC = () => {
 
   const totalSynced = peers.reduce((a, p) => a + p.synced_endpoints, 0);
 
+  const tick = useChanged(peers);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -39,14 +42,19 @@ const ClusterMesh: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (peers.length ? `${peers.length} ClusterMesh peer${peers.length === 1 ? '' : 's'}.` : 'No ClusterMesh peers.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'Peers', value: tick ? peers.length : undefined },
+          { label: 'Connected', value: tick ? peers.filter((p) => p.status === 'connected').length : undefined },
+          { label: 'Synced Endpoints', value: tick ? totalSynced.toLocaleString() : undefined },
+          { label: 'Synced Services', value: tick ? peers.reduce((a, p) => a + p.synced_services, 0) : undefined },
+        ]}
+      />
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-blue card-glow transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Peers</div><div className="text-2xl font-bold text-white">{peers.length}</div></div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-green card-glow-green transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Connected</div><div className="text-2xl font-bold text-green-400">{peers.filter((p) => p.status === 'connected').length}</div></div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-purple card-glow-purple transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Synced Endpoints</div><div className="text-2xl font-bold text-white">{totalSynced.toLocaleString()}</div></div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-orange card-glow transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Synced Services</div><div className="text-2xl font-bold text-white">{peers.reduce((a, p) => a + p.synced_services, 0)}</div></div>
-      </div>
 
       {loading && peers.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 

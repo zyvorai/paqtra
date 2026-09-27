@@ -6,6 +6,9 @@ import { usePageTitle } from '../../hooks/usePageTitle';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
 import DataFreshness from '../../components/DataFreshness';
 import ExportButton from '../../components/ExportButton';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 const LEVEL_BADGE: Record<string, string> = { privileged: 'bg-red-500/15 text-red-400 border-red-500/30', baseline: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30', restricted: 'bg-green-500/15 text-green-400 border-green-500/30' };
 
@@ -25,6 +28,7 @@ const PodSecurity: React.FC = () => {
 
   const totalViolations = reports.reduce((a, r) => a + r.violations.length, 0);
 
+  const tick = useChanged(reports);
   return (
     <div className="netra-page">
       <div className="page-chrome flex items-center justify-between mb-6">
@@ -38,12 +42,17 @@ const PodSecurity: React.FC = () => {
         </div>
       </div>
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
+      <PagePulse
+        headline={tick ? (reports.length ? `${reports.length} pod security report${reports.length === 1 ? '' : 's'}.` : 'No pod security reports.') : undefined}
+        tick={tick}
+        error={error || undefined}
+        figures={[
+          { label: 'Namespaces', value: tick ? reports.length : undefined },
+          { label: 'Compliant Pods', value: tick ? reports.reduce((a, r) => a + r.compliant_pods, 0) : undefined },
+          { label: 'Violations', value: tick ? totalViolations : undefined, tone: tick ? countTone(Number(totalViolations)) : undefined },
+        ]}
+      />
 
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-blue card-glow transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Namespaces</div><div className="text-2xl font-bold text-white">{reports.length}</div></div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-green card-glow-green transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Compliant Pods</div><div className="text-2xl font-bold text-green-400">{reports.reduce((a, r) => a + r.compliant_pods, 0)}</div></div>
-        <div className="rounded-xl border border-slate-700/50 p-4 stat-card-red card-glow transition-all hover:scale-[1.02]"><div className="text-xs text-slate-400 mb-1">Violations</div><div className="text-2xl font-bold text-red-400">{totalViolations}</div></div>
-      </div>
 
       {loading && reports.length === 0 && <Loader2 className="w-6 h-6 animate-spin text-blue-400 mx-auto my-8" />}
 
