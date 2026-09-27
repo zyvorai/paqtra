@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchIdentities, type CiliumIdentity } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 export default function Identities() {
   const [items, setItems] = useState<CiliumIdentity[]>([]);
@@ -19,8 +21,17 @@ export default function Identities() {
     void load();
   }, [load]);
 
+  const tick = useChanged(items);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `${items.length} security identities in the Cilium identity map.` : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'identities', value: tick ? items.length : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -30,9 +41,6 @@ export default function Identities() {
       <Card span={3}>
         <Eyebrow>IDENTITIES</Eyebrow>
         <h3>Security identities</h3>
-        <Metrics>
-          <Metric value={items.length} label="identities" />
-        </Metrics>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>
             Refresh

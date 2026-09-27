@@ -64,8 +64,8 @@ describe('FlowHistory: loading and results', () => {
   it('shows the KPIs, the chart and each flow with both endpoints', async () => {
     renderPage();
     expect(await screen.findByText('flows found')).toBeInTheDocument();
-    expect(screen.getByText('dropped').previousSibling).toHaveTextContent('1');
-    expect(screen.getByText('per bar').previousSibling).toHaveTextContent('1 min');
+    await waitFor(() => expect(screen.getByText('dropped').nextSibling).toHaveTextContent('1'));
+    expect(screen.getByText('per bar').nextSibling).toHaveTextContent('1 min');
     expect(screen.getByRole('list', { name: 'Legend' })).toBeInTheDocument();
     const rows = within(screen.getByRole('columnheader', { name: 'Verdict' }).closest('table')!).getAllByRole('row');
     expect(rows).toHaveLength(3);

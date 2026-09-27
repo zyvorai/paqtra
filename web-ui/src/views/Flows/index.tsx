@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import api, { fetchFlows, fetchFlowStats, type Flow, type FlowEndpoint } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
 import TerminalFrame from '../../components/TerminalFrame';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 function endpointLabel(ep: FlowEndpoint | string | undefined): string {
   if (!ep) return '—';
@@ -88,15 +91,28 @@ export default function Flows() {
   const dropped = stats?.dropped ?? 0;
   const total = stats?.total ?? stats?.total_flows ?? flows.length;
 
+  const tick = useChanged(stats);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (dropped ? `${dropped.toLocaleString()} of ${total.toLocaleString()} sampled flows dropped.` : `${total.toLocaleString()} flows sampled, none dropped.`) : undefined}
+        tone={tick ? (dropped ? 'warn' : undefined) : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'flows sampled', value: tick ? total : undefined },
+          { label: 'forwarded', value: tick ? forwarded : undefined },
+          { label: 'dropped', value: tick ? dropped : undefined, tone: tick ? countTone(Number(dropped)) : undefined },
+          { label: 'rows shown', value: tick ? flows.length : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
         </Card>
       ) : null}
 
-      <Card span={2}>
+      <Card span={3}>
         <Eyebrow>LIVE STREAM</Eyebrow>
         <h3>Filters</h3>
         <p>
@@ -118,16 +134,6 @@ export default function Flows() {
         </Toolbar>
       </Card>
 
-      <Card>
-        <Eyebrow>FLOW SUMMARY</Eyebrow>
-        <h3>Window aggregate</h3>
-        <Metrics>
-          <Metric value={total} label="flows sampled" />
-          <Metric value={forwarded} label="forwarded" />
-          <Metric value={dropped} label="dropped" />
-          <Metric value={flows.length} label="rows shown" />
-        </Metrics>
-      </Card>
 
       <div className="span3">
         <TerminalFrame title="hubble.GetFlows / filtered">

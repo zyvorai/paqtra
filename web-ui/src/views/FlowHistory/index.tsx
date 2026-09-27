@@ -4,9 +4,12 @@ import {
   FlowHistoryResponse, FlowTimelineResponse, FlowHistoryParams,
 } from '../../services/api';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
 import TimelineChart from './TimelineChart';
 import { PRESETS, RangePreset, formatCount, rangeFor } from './timeline';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 const PAGE_SIZE = 50;
 const VERDICTS = ['', 'FORWARDED', 'DROPPED', 'AUDIT', 'ERROR'];
@@ -99,8 +102,21 @@ export default function FlowHistory() {
   const first = page ? page.offset + 1 : 0;
   const last = page ? page.offset + page.flows.length : 0;
 
+  const tick = useChanged(timeline);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (timeline ? (droppedTotal ? `${droppedTotal.toLocaleString()} of ${timeline.total.toLocaleString()} stored flows dropped.` : `${timeline.total.toLocaleString()} stored flows, none dropped.`) : undefined) : undefined}
+        tone={tick ? (droppedTotal ? 'warn' : undefined) : undefined}
+        tick={tick}
+        live={false}
+        error={err || undefined}
+        figures={[
+          { label: 'flows found', value: tick ? timeline?.total ?? 0 : undefined },
+          { label: 'dropped', value: tick ? droppedTotal : undefined, tone: tick ? (countTone(droppedTotal)) : undefined },
+          { label: 'per bar', value: tick && timeline ? (timeline.bucket_secs >= 3600 ? `${timeline.bucket_secs / 3600} h` : `${timeline.bucket_secs / 60} min`) : undefined },
+        ]}
+      />
       <Card span={3}>
         <Eyebrow>FLOWS</Eyebrow>
         <h3>Flow history</h3>
@@ -182,11 +198,6 @@ export default function FlowHistory() {
         <>
           <Card span={3}>
             <Eyebrow>OVER TIME</Eyebrow>
-            <Metrics>
-              <Metric value={formatCount(timeline.total)} label="flows found" />
-              <Metric value={formatCount(droppedTotal)} label="dropped" />
-              <Metric value={timeline.bucket_secs >= 3600 ? `${timeline.bucket_secs / 3600} h` : `${timeline.bucket_secs / 60} min`} label="per bar" />
-            </Metrics>
             {timeline.total === 0 ? (
               <Empty>No stored flows match this range and these filters. Try a wider range, or check when history begins above.</Empty>
             ) : (

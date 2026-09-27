@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchDnsQueries, fetchDnsStats } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 type Query = {
   query_name?: string;
@@ -49,8 +52,21 @@ export default function DnsMonitor() {
     return () => clearInterval(t);
   }, [load]);
 
+  const tick = useChanged(queries);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? ((stats?.failures ?? 0) ? `${stats?.failures} DNS failures observed.` : 'DNS answers are clean.') : undefined}
+        tone={tick ? ((stats?.failures ?? 0) ? 'warn' : undefined) : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'queries', value: tick ? stats?.total ?? stats?.total_queries ?? queries.length : undefined },
+          { label: 'DNS failures', value: tick ? stats?.failures ?? 0 : undefined, tone: tick ? countTone(Number(stats?.failures ?? 0)) : undefined },
+          { label: 'L7 observed', value: tick ? stats?.l7_observed ?? 0 : undefined },
+          { label: 'avg latency ms', value: tick ? stats?.avg_latency_ms ?? '—' : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -58,12 +74,6 @@ export default function DnsMonitor() {
       ) : null}
       <Card span={3}>
         <Eyebrow>DNS PULSE</Eyebrow>
-        <Metrics>
-          <Metric value={stats?.total ?? stats?.total_queries ?? queries.length} label="queries" />
-          <Metric value={stats?.failures ?? 0} label="DNS failures" />
-          <Metric value={stats?.l7_observed ?? 0} label="L7 observed" />
-          <Metric value={stats?.avg_latency_ms ?? '—'} label="avg latency ms" />
-        </Metrics>
         {stats?.source ? <p style={{ opacity: 0.7, fontSize: 13 }}>{stats.source}</p> : null}
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>

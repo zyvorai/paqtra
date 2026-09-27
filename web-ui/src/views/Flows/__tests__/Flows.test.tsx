@@ -88,9 +88,9 @@ describe('Flows: loading and rows', () => {
   it('shows summary metrics from flow stats', async () => {
     renderPage();
     expect(await screen.findByText('flows sampled')).toBeInTheDocument();
-    expect(screen.getByText('forwarded').previousSibling).toHaveTextContent('1');
-    expect(screen.getByText('dropped').previousSibling).toHaveTextContent('1');
-    expect(screen.getByText('rows shown').previousSibling).toHaveTextContent('2');
+    await waitFor(() => expect(screen.getByText('forwarded').nextSibling).toHaveTextContent('1'));
+    expect(screen.getByText('dropped').nextSibling).toHaveTextContent('1');
+    await waitFor(() => expect(screen.getByText('rows shown').nextSibling).toHaveTextContent('2'));
   });
 
   it('surfaces load errors in the warning card', async () => {
