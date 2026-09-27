@@ -161,12 +161,30 @@
 
 <div class="container">
 
+<!-- v2.2.2 -->
+<div class="version-block">
+  <div class="version-header">
+    <span class="version-tag">v2.2.2</span>
+    <span class="version-date">September 2026</span>
+    <span class="version-badge badge-current">Current Release</span>
+  </div>
+
+  <div class="category">
+    <div class="category-title"><span class="cat-icon cat-fix"></span> Fixes</div>
+    <ul>
+      <li><strong>Recent-window flow queries read the time index</strong> &mdash; a query naming a source and destination namespace ignored the time bound and scanned the namespace index instead, so the connectivity monitor's two-minute lookups hit the 5&nbsp;s read deadline every cycle on a 12M-flow store; queries whose window is at most a day now read through the time index</li>
+      <li><strong>Overview's large flow counts no longer wrap mid-number</strong> &mdash; an 8-digit flow count wrapped across two lines inside its tile; it now renders compacted (<code>20.6M</code>), matching every other large figure on the page</li>
+    </ul>
+  </div>
+</div>
+
+<hr class="divider">
+
 <!-- v2.2.1 -->
 <div class="version-block">
   <div class="version-header">
     <span class="version-tag">v2.2.1</span>
     <span class="version-date">September 2026</span>
-    <span class="version-badge badge-current">Current Release</span>
   </div>
 
   <div class="category">
@@ -370,7 +388,7 @@
 </div>
 
 <div class="footer">
-  Paqtra Release Notes &mdash; v2.2.1 &mdash; September 2026
+  Paqtra Release Notes &mdash; v2.2.2 &mdash; September 2026
 </div>
 
 </body>

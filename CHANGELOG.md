@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-09-27
+
 ### Fixed
 
 - **A recent-window flow query no longer scans the namespace index.** With no
@@ -17,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `paqtra connectivity test` failing with a 500. Queries (and their counts and
   timelines) whose window is at most a day now read through the time index, so cost
   follows the window, not the filters.
+- **The Overview dashboard's large flow counts no longer wrap mid-number.** A local
+  `Metric` component formatted big values with `toLocaleString()` instead of the
+  already-imported `compact()` helper, so an 8-digit flow count (e.g. `20,635,325`)
+  wrapped across two lines inside its fixed-width tile. It now renders compacted
+  (`20.6M`), matching every other large figure on the page.
 
 ## [2.2.1] - 2026-09-26
 
