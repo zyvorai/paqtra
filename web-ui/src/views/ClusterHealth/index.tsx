@@ -6,6 +6,9 @@ import {
   type ClusterHealthSummary,
 } from '../../services/api';
 import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { scoreTone } from '../../components/kit/tone';
 
 type FlowStoreInfo = {
   retention_days?: number;
@@ -72,8 +75,22 @@ export default function ClusterHealth() {
   const status = health?.overall ?? health?.status ?? '—';
   const gaps = store?.ingest?.recent_gaps ?? [];
 
+  const tick = useChanged(health);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `Cluster ${status} · score ${score}/100.` : undefined}
+        tone={tick ? scoreTone(score) : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'health score /100', value: tick ? score : undefined, tone: tick ? (scoreTone(Number(score))) : undefined },
+          { label: 'status', value: tick ? status : undefined },
+          { label: 'nodes', value: tick ? health?.node_count ?? health?.kubernetes?.nodes ?? 0 : undefined },
+          { label: 'pods', value: tick ? health?.pod_count ?? health?.kubernetes?.pods ?? 0 : undefined },
+          { label: 'endpoints', value: tick ? health?.endpoint_count ?? health?.kubernetes?.endpoints ?? 0 : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -87,13 +104,6 @@ export default function ClusterHealth() {
 
       <Card span={3}>
         <Eyebrow>HEALTH PULSE</Eyebrow>
-        <Metrics>
-          <Metric value={score} label="health score /100" />
-          <Metric value={status} label="status" />
-          <Metric value={health?.node_count ?? health?.kubernetes?.nodes ?? 0} label="nodes" />
-          <Metric value={health?.pod_count ?? health?.kubernetes?.pods ?? 0} label="pods" />
-          <Metric value={health?.endpoint_count ?? health?.kubernetes?.endpoints ?? 0} label="endpoints" />
-        </Metrics>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>
             Refresh
@@ -111,7 +121,7 @@ export default function ClusterHealth() {
             <Metrics>
               <Metric value={store.retention_days ?? '—'} label="retention days" />
               <Metric value={store.ingest?.gaps ?? 0} label="gap count" />
-              <Metric value={store.ingest?.events_per_sec ?? 0} label="events/s" />
+              <Metric value={Math.round((store.ingest?.events_per_sec ?? 0) * 10) / 10} label="events/s" />
               <Metric value={store.ingest?.connected ? 'yes' : 'no'} label="stream connected" />
             </Metrics>
             <p className="empty-state" style={{ marginTop: 8 }}>

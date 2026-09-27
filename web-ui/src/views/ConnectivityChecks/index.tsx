@@ -8,7 +8,10 @@ import {
   fetchConnectivityPathStatus,
   silenceConnectivityAlert,
 } from '../../services/api';
-import { Board, Card, Eyebrow, Empty, Warning, Toolbar, Metric, Metrics } from '../../components/Board';
+import { Board, Card, Eyebrow, Empty, Warning, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 type PathRow = {
   path: {
@@ -135,8 +138,21 @@ export default function ConnectivityChecks() {
   const flowsHref = (ids?: string[]) =>
     ids && ids.length > 0 ? `/flows?ids=${encodeURIComponent(ids.slice(0, 8).join(','))}` : '/flows';
 
+  const tick = useChanged(rows);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (regressions ? `${regressions} path${regressions === 1 ? '' : 's'} regressed.` : rows.length ? `All ${rows.length} declared paths look healthy.` : 'No critical paths declared yet.') : undefined}
+        tone={tick ? (regressions ? 'warn' : undefined) : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'paths', value: tick ? rows.length : undefined },
+          { label: 'regressions', value: tick ? regressions : undefined, tone: tick ? countTone(Number(regressions)) : undefined },
+          { label: 'unknown', value: tick ? unknown : undefined, tone: tick ? countTone(Number(unknown)) : undefined },
+          { label: 'alerts', value: tick ? alerts.length : undefined },
+        ]}
+      />
       <Card span={3}>
         <Eyebrow>CONNECTIVITY</Eyebrow>
         <h3>Declared service paths</h3>
@@ -144,12 +160,6 @@ export default function ConnectivityChecks() {
           Observe-only checks. Quiet traffic is unknown — never assumed healthy. Sustained regressions alert with
           evidence. No policy apply or BPF changes.
         </p>
-        <Metrics>
-          <Metric value={rows.length} label="paths" />
-          <Metric value={regressions} label="regressions" />
-          <Metric value={unknown} label="unknown" />
-          <Metric value={alerts.length} label="alerts" />
-        </Metrics>
       </Card>
 
       {err ? (

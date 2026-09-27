@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchEbpfDrops } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 type DropEntry = {
   reason?: string;
@@ -34,8 +37,21 @@ export default function DropDashboard() {
 
   const top = [...drops].sort((a, b) => (b.count ?? 0) - (a.count ?? 0)).slice(0, 12);
 
+  const tick = useChanged(drops);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (total ? `${total.toLocaleString()} drop events; top reason ${top[0]?.reason ?? '—'}.` : 'No drops recorded.') : undefined}
+        tone={tick ? (total ? 'warn' : undefined) : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'total drop events', value: tick ? total : undefined, tone: tick ? countTone(Number(total)) : undefined },
+          { label: 'reasons seen', value: tick ? drops.length : undefined, tone: tick ? (countTone(drops.length)) : undefined },
+          { label: 'top reason', value: tick ? top[0]?.reason ?? '—' : undefined },
+          { label: 'top count', value: tick ? top[0]?.count ?? 0 : undefined, tone: tick ? (countTone(Number(top[0]?.count ?? 0))) : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -44,12 +60,6 @@ export default function DropDashboard() {
 
       <Card span={3}>
         <Eyebrow>DROP PULSE</Eyebrow>
-        <Metrics>
-          <Metric value={total} label="total drop events" />
-          <Metric value={drops.length} label="reasons seen" />
-          <Metric value={top[0]?.reason ?? '—'} label="top reason" />
-          <Metric value={top[0]?.count ?? 0} label="top count" />
-        </Metrics>
         <p>
           Full correlation lives on <Link to="/rootcause">Root Cause</Link>. Paqtra reads Cilium drop maps —
           it never attaches a competing drop path.

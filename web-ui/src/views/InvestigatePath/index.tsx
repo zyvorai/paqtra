@@ -3,6 +3,9 @@ import { Link, useLocation } from 'react-router-dom';
 import api, { shareInvestigateBundle } from '../../services/api';
 import { Board, Card, Eyebrow, Empty, Warning, Toolbar } from '../../components/Board';
 import TerminalFrame from '../../components/TerminalFrame';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 type Step = {
   id: string;
@@ -147,8 +150,21 @@ export default function InvestigatePath() {
 
   const card = share?.incident_card;
 
+  const tick = useChanged(result);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (result ? `Likely owner: ${result.likely_owner || 'unknown'}.` : 'Run an investigation to see the path.') : undefined}
+        tick={tick}
+        live={false}
+        error={err || undefined}
+        figures={[
+          { label: 'steps', value: tick ? result?.steps.length ?? 0 : undefined },
+          { label: 'observed', value: tick ? result?.steps.filter((x) => x.confidence === "observed").length ?? 0 : undefined },
+          { label: 'unavailable', value: tick ? result?.steps.filter((x) => x.confidence === "unavailable").length ?? 0 : undefined, tone: tick ? (countTone(result?.steps.filter((x) => x.confidence === "unavailable").length ?? 0)) : undefined },
+          { label: 'next actions', value: tick ? result?.next_actions.length ?? 0 : undefined },
+        ]}
+      />
       <Card span={3}>
         <Eyebrow>INVESTIGATE</Eyebrow>
         <h3>Why can&apos;t A reach B?</h3>

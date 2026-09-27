@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchServiceDeps } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 type Dep = { source?: string; destination?: string; namespace?: string; protocol?: string; bytes?: number };
 
@@ -23,8 +25,18 @@ export default function Topology() {
 
   const nodes = new Set(deps.flatMap((d) => [d.source, d.destination].filter(Boolean))).size;
 
+  const tick = useChanged(deps);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `${nodes} services, ${deps.length} observed dependencies.` : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'edges', value: tick ? deps.length : undefined },
+          { label: 'nodes', value: tick ? nodes : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -33,10 +45,6 @@ export default function Topology() {
       <Card span={3}>
         <Eyebrow>TOPOLOGY</Eyebrow>
         <h3>Observed dependency graph</h3>
-        <Metrics>
-          <Metric value={deps.length} label="edges" />
-          <Metric value={nodes} label="nodes" />
-        </Metrics>
         <p>Edges from observed traffic — not a synthetic mesh diagram.</p>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>

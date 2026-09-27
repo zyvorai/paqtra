@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchServiceMap } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 type Node = { id?: string; name?: string; namespace?: string };
 type Edge = { source?: string; target?: string; protocol?: string };
@@ -25,8 +27,18 @@ export default function ServiceMap() {
     void load();
   }, [load]);
 
+  const tick = useChanged(edges);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `${nodes.length} services, ${edges.length} edges.` : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'services', value: tick ? nodes.length : undefined },
+          { label: 'edges', value: tick ? edges.length : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -35,10 +47,6 @@ export default function ServiceMap() {
       <Card span={3}>
         <Eyebrow>SERVICE MAP</Eyebrow>
         <h3>Service dependencies</h3>
-        <Metrics>
-          <Metric value={nodes.length} label="services" />
-          <Metric value={edges.length} label="edges" />
-        </Metrics>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>
             Refresh

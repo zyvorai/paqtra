@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+const DEV_API = process.env.PAQTRA_DEV_API || 'http://localhost:9191';
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -18,12 +20,14 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:9191',
+        target: DEV_API,
         changeOrigin: true,
+        secure: false,
       },
       '/ws': {
-        target: 'ws://localhost:9191',
+        target: DEV_API.replace(/^http/, 'ws'),
         ws: true,
+        secure: false,
       },
     },
   },

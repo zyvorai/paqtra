@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchCaptureSessions } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 type Session = {
   id?: string;
@@ -29,8 +31,18 @@ export default function PacketCapture() {
 
   const active = sessions.filter((s) => (s.status || '').toLowerCase() === 'running' || (s.status || '').toLowerCase() === 'active').length;
 
+  const tick = useChanged(sessions);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (active ? `${active} capture${active === 1 ? '' : 's'} running.` : 'No capture running.') : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'sessions', value: tick ? sessions.length : undefined },
+          { label: 'active', value: tick ? active : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -39,10 +51,6 @@ export default function PacketCapture() {
       <Card span={3}>
         <Eyebrow>CAPTURE</Eyebrow>
         <h3>Watch the wire, live</h3>
-        <Metrics>
-          <Metric value={sessions.length} label="sessions" />
-          <Metric value={active} label="active" />
-        </Metrics>
         <p>Filtered, time-bounded captures — observe-only; never affects the datapath verdict.</p>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>

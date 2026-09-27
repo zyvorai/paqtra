@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchCiliumStatus } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 type Agent = {
   name?: string;
@@ -31,8 +34,20 @@ export default function CiliumStatus() {
 
   const ok = agents.filter((a) => (a.status || '').toLowerCase().includes('ok') || (a.status || '').toLowerCase() === 'ready').length;
 
+  const tick = useChanged(agents);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (agents.length - ok ? `${agents.length - ok} of ${agents.length} Cilium agents not healthy.` : `All ${agents.length} Cilium agents healthy.`) : undefined}
+        tone={tick ? (agents.length - ok ? 'warn' : undefined) : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'agents', value: tick ? agents.length : undefined },
+          { label: 'healthy', value: tick ? ok : undefined },
+          { label: 'other', value: tick ? agents.length - ok : undefined, tone: tick ? (countTone(agents.length - ok)) : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -42,11 +57,6 @@ export default function CiliumStatus() {
       <Card span={3}>
         <Eyebrow>CILIUM</Eyebrow>
         <h3>Agent status</h3>
-        <Metrics>
-          <Metric value={agents.length} label="agents" />
-          <Metric value={ok} label="healthy" />
-          <Metric value={agents.length - ok} label="other" />
-        </Metrics>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>
             Refresh

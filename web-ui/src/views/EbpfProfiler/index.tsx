@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchRealEbpfPrograms, fetchRealEbpfMaps, fetchEbpfSummary } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 type Prog = { id?: string | number; name?: string; type?: string };
 type MapInfo = { id?: number | string; name?: string; type?: string; entries?: number };
@@ -32,8 +34,18 @@ export default function EbpfProfiler() {
     void load();
   }, [load]);
 
+  const tick = useChanged(programs);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `${programs.length} programs and ${maps.length} maps, read-only.` : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'programs', value: tick ? programs.length || Number(summary?.total_programs ?? summary?.programs_total ?? 0) || '—' : undefined },
+          { label: 'maps', value: tick ? maps.length || Number(summary?.total_maps ?? summary?.maps_total ?? 0) || '—' : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -42,10 +54,6 @@ export default function EbpfProfiler() {
       <Card span={3}>
         <Eyebrow>eBPF</Eyebrow>
         <h3>Observe everywhere</h3>
-        <Metrics>
-          <Metric value={programs.length || Number(summary?.total_programs ?? summary?.programs_total ?? 0) || '—'} label="programs" />
-          <Metric value={maps.length || Number(summary?.total_maps ?? summary?.maps_total ?? 0) || '—'} label="maps" />
-        </Metrics>
         <p>Read-only Cilium program and map inventory — never mutates pins.</p>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>

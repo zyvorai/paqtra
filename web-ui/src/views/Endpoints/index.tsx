@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchEndpoints, type CiliumEndpoint } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 export default function Endpoints() {
   const [endpoints, setEndpoints] = useState<CiliumEndpoint[]>([]);
@@ -31,8 +34,21 @@ export default function Endpoints() {
     : endpoints;
   const ready = endpoints.filter((e) => (e.status || '').toLowerCase() === 'ready').length;
 
+  const tick = useChanged(endpoints);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (endpoints.length - ready ? `${endpoints.length - ready} of ${endpoints.length} endpoints not ready.` : `All ${endpoints.length} endpoints ready.`) : undefined}
+        tone={tick ? (endpoints.length - ready ? 'warn' : undefined) : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'endpoints', value: tick ? endpoints.length : undefined },
+          { label: 'ready', value: tick ? ready : undefined },
+          { label: 'namespaces', value: tick ? new Set(endpoints.map((e) => e.namespace)).size : undefined },
+          { label: 'not ready', value: tick ? endpoints.length - ready : undefined, tone: tick ? (countTone(endpoints.length - ready)) : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -42,11 +58,6 @@ export default function Endpoints() {
       <Card span={3}>
         <Eyebrow>ENDPOINTS</Eyebrow>
         <h3>Cilium-managed workloads</h3>
-        <Metrics>
-          <Metric value={endpoints.length} label="endpoints" />
-          <Metric value={ready} label="ready" />
-          <Metric value={new Set(endpoints.map((e) => e.namespace)).size} label="namespaces" />
-        </Metrics>
         <Toolbar>
           <label>
             Search

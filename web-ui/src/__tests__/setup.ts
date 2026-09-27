@@ -29,3 +29,21 @@ Object.defineProperty(globalThis, 'localStorage', {
   configurable: true,
   writable: true,
 });
+
+// jsdom has no matchMedia. Report reduced motion so count-up figures render
+// their final value immediately instead of animating across assertions.
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string) => ({
+      matches: query.includes('prefers-reduced-motion'),
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
+}
