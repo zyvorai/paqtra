@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchAnomalies } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 type Anomaly = {
   id?: string;
@@ -29,8 +32,19 @@ export default function Anomalies() {
     void load();
   }, [load]);
 
+  const tick = useChanged(items);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (items.length ? `${items.length} anomal${items.length === 1 ? 'y' : 'ies'} to review; nothing auto-enforces.` : 'No anomalies detected.') : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'findings', value: tick ? items.length : undefined, tone: tick ? (countTone(items.length)) : undefined },
+          { label: 'high or critical', value: tick ? items.filter((x) => /crit|high/i.test(x.severity || "")).length : undefined, tone: tick ? (countTone(items.filter((x) => /crit|high/i.test(x.severity || "")).length)) : undefined },
+          { label: 'types', value: tick ? new Set(items.map((x) => x.kind)).size : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -39,9 +53,6 @@ export default function Anomalies() {
       <Card span={3}>
         <Eyebrow>ANOMALIES</Eyebrow>
         <h3>Behavior that stands out</h3>
-        <Metrics>
-          <Metric value={items.length} label="findings" />
-        </Metrics>
         <p>Review-only remediations — Paqtra does not auto-enforce.</p>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>

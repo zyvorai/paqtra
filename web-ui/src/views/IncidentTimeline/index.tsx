@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchIncidents } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
+import { countTone } from '../../components/kit/tone';
 
 type Incident = {
   id?: string;
@@ -31,8 +34,19 @@ export default function IncidentTimeline() {
     void load();
   }, [load]);
 
+  const tick = useChanged(items);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? (items.length ? `${items.length} incident${items.length === 1 ? '' : 's'} on the timeline.` : 'No incidents recorded.') : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'incidents', value: tick ? items.length : undefined, tone: tick ? (countTone(items.length)) : undefined },
+          { label: 'high or critical', value: tick ? items.filter((x) => /crit|high/i.test(x.severity || "")).length : undefined, tone: tick ? (countTone(items.filter((x) => /crit|high/i.test(x.severity || "")).length)) : undefined },
+          { label: 'open', value: tick ? items.filter((x) => !/resolv|clos/i.test(x.status || "")).length : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -41,9 +55,6 @@ export default function IncidentTimeline() {
       <Card span={3}>
         <Eyebrow>INCIDENTS</Eyebrow>
         <h3>When signals agree</h3>
-        <Metrics>
-          <Metric value={items.length} label="incidents" />
-        </Metrics>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>
             Refresh

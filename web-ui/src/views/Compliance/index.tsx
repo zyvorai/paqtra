@@ -6,7 +6,9 @@ import {
 import { openBlobInNewTab, downloadBlob, blobErrorMessage } from '../../services/reportFiles';
 import { useAuthStore } from '../../stores/authStore';
 import { useAutoRefresh } from '../../hooks/useAutoRefresh';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 const STATUS_LABEL: Record<string, string> = { passed: 'PASSED', failed: 'FAILED', skipped: 'NOT EVALUATED' };
 
@@ -69,17 +71,23 @@ export default function Compliance() {
     }
   };
 
+  const tick = useChanged(frameworks);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `${frameworks.length} frameworks, ${audits.length} stored runs — network-layer checks, not an assessment.` : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'frameworks', value: tick ? frameworks.length : undefined },
+          { label: 'stored runs', value: tick ? audits.length : undefined },
+        ]}
+      />
       {err ? <Card span={3}><Warning>{err}</Warning></Card> : null}
 
       <Card span={3}>
         <Eyebrow>COMPLIANCE</Eyebrow>
         <h3>Network security checks</h3>
-        <Metrics>
-          <Metric value={frameworks.length} label="frameworks" />
-          <Metric value={audits.length} label="stored runs" />
-        </Metrics>
         <p>
           These are Paqtra&apos;s own automated network-layer checks: policy coverage, flow monitoring, transparent encryption and
           dropped flows. <b>They are not a compliance assessment.</b> They are not mapped to individual controls of the framework

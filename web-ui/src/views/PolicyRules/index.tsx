@@ -8,6 +8,8 @@ import {
   Policy, PolicyDetail, PolicyRule, RuleChangeResult, RuleDirection,
 } from '../../services/api';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 import { useAutoDismiss } from '../../hooks/useAutoDismiss';
 
 const DIRECTION_LABEL: Record<RuleDirection, string> = {
@@ -151,6 +153,9 @@ const PolicyRules: React.FC = () => {
     return Array.isArray(v) ? (v as PolicyRule[]) : [];
   };
 
+  const tick = useChanged(policies);
+  const ruleTotal = RULE_DIRECTIONS.reduce((n, d) => n + rulesOf(d).length, 0);
+
   return (
     <div className="netra-page">
       <div className="page-chrome mb-6">
@@ -160,6 +165,15 @@ const PolicyRules: React.FC = () => {
         </div>
         <p className="text-sm text-slate-400 mt-1">Add, edit and delete individual rules of a CiliumNetworkPolicy. Changes are applied through the Cilium CRD.</p>
       </div>
+      <PagePulse
+        tick={tick}
+        live={false}
+        headline={tick ? (detail ? `${label(detail)} has ${ruleTotal} rule${ruleTotal === 1 ? '' : 's'}.` : `${policies.length} policies — pick one to edit its rules.`) : undefined}
+        figures={[
+          { label: 'policies', value: tick ? policies.length : undefined },
+          ...RULE_DIRECTIONS.map((d) => ({ label: `${d} rules`, value: detail ? rulesOf(d).length : undefined })),
+        ]}
+      />
       {error && <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>}
       {success && <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/30 text-green-400 text-sm">{success}</div>}
 

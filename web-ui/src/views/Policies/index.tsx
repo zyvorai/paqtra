@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchPolicies, type Policy } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 export default function Policies() {
   const [policies, setPolicies] = useState<Policy[]>([]);
@@ -24,8 +26,19 @@ export default function Policies() {
   const filtered = ns ? policies.filter((p) => p.namespace === ns) : policies;
   const active = policies.filter((p) => (p.status || '').toLowerCase().includes('active') || (p.status || '').toLowerCase().includes('enforc')).length;
 
+  const tick = useChanged(policies);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `${policies.length} Cilium policies across ${new Set(policies.map((p) => p.namespace)).size} namespaces.` : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'policies', value: tick ? policies.length : undefined },
+          { label: 'active/enforcing', value: tick ? active : undefined },
+          { label: 'namespaces', value: tick ? new Set(policies.map((p) => p.namespace)).size : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -34,11 +47,6 @@ export default function Policies() {
       <Card span={3}>
         <Eyebrow>POLICIES</Eyebrow>
         <h3>Cilium workbench</h3>
-        <Metrics>
-          <Metric value={policies.length} label="policies" />
-          <Metric value={active} label="active/enforcing" />
-          <Metric value={new Set(policies.map((p) => p.namespace)).size} label="namespaces" />
-        </Metrics>
         <p>Plan and apply CiliumNetworkPolicy when CRDs are present. Paqtra does not write Cilium BPF maps.</p>
         <Toolbar>
           <label>

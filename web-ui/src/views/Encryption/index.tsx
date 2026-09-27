@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchEncryptionStatus, fetchWireGuardPeers } from '../../services/api';
-import { Board, Card, Eyebrow, Metric, Metrics, Warning, Empty, Toolbar } from '../../components/Board';
+import { Board, Card, Eyebrow, Warning, Empty, Toolbar } from '../../components/Board';
+import PagePulse from '../../components/kit/PagePulse';
+import { useChanged } from '../../components/kit/useSeries';
 
 export default function Encryption() {
   const [status, setStatus] = useState<Record<string, unknown> | null>(null);
@@ -23,8 +25,18 @@ export default function Encryption() {
     void load();
   }, [load]);
 
+  const tick = useChanged(status);
   return (
     <Board>
+      <PagePulse
+        headline={tick ? `Transparent encryption: ${String(status?.mode ?? status?.status ?? 'unknown')}.` : undefined}
+        tick={tick}
+        error={err || undefined}
+        figures={[
+          { label: 'mode', value: tick ? String(status?.mode ?? status?.status ?? '—') : undefined },
+          { label: 'WireGuard peers', value: tick ? peers.length : undefined },
+        ]}
+      />
       {err ? (
         <Card span={3}>
           <Warning>{err}</Warning>
@@ -33,10 +45,6 @@ export default function Encryption() {
       <Card span={3}>
         <Eyebrow>ENCRYPTION</Eyebrow>
         <h3>Encryption on the wire</h3>
-        <Metrics>
-          <Metric value={String(status?.mode ?? status?.status ?? '—')} label="mode" />
-          <Metric value={peers.length} label="WireGuard peers" />
-        </Metrics>
         <Toolbar>
           <button type="button" className="btn-refresh" onClick={() => void load()}>
             Refresh

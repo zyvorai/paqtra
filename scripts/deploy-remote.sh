@@ -374,6 +374,11 @@ helm upgrade --install paqtra ${REMOTE_DIR}/chart \
     --set ui.service.type=NodePort \
     --wait --timeout 300s
 
+# The tags stay :latest with pullPolicy Never, so the upgrade alone leaves the
+# old pods on the previous image; restart them onto the freshly imported one.
+kubectl -n "\$NS" rollout restart deployment,daemonset
+kubectl -n "\$NS" rollout status deployment --timeout=300s
+
 echo ""
 echo "  === Paqtra pods ==="
 kubectl -n "\$NS" get pods,svc
