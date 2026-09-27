@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { flowDuration, workloadLabel } from './datapath';
 
-export type DatapathNode = { label: string; sub?: string; active: boolean };
+/** `targets` lists the indexes this node feeds in the next column (default: every active node there). */
+export type DatapathNode = { label: string; sub?: string; active: boolean; targets?: number[] };
 export type DatapathColumn = { title: string; nodes: DatapathNode[] };
 
 type DatapathHeroProps = {
@@ -71,7 +72,10 @@ export default function DatapathHero({ columns, flowsPerSecond, dropsPerSecond, 
   for (let ci = 0; ci + 1 < placed.length; ci++) {
     const next = placed[ci + 1];
     const targets = next.filter((x) => x.active).length ? next.filter((x) => x.active) : next.slice(0, 1);
-    for (const a of placed[ci]) for (const b of targets) links.push({ key: a.id + b.id, d: link(a, b, vertical), live: a.active && b.active });
+    for (const a of placed[ci]) {
+      const to = a.targets ? a.targets.map((i) => next[i]).filter(Boolean) : targets;
+      for (const b of to) links.push({ key: a.id + b.id, d: link(a, b, vertical), live: a.active && b.active });
+    }
   }
 
   const dur = flowDuration(flowsPerSecond);
