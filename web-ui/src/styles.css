@@ -80,6 +80,26 @@
      browser easing. Purely cosmetic; never affects layout or timing enough
      to change when something becomes interactive. */
   --ease-apple: cubic-bezier(0.28, 0.11, 0.32, 1);
+  --fs-body: 15px;
+  --fs-lede: 16px;
+  --fs-link: 15px;
+  --fs-h1: clamp(24px, 2.6vw, 34px);
+  --fs-h2: clamp(20px, 1.8vw, 24px);
+  --fs-h3: 17px;
+  --fs-figure: clamp(18px, 1.6vw, 24px);
+  --hairline-1: var(--border);
+  --surface-1: var(--bg-elevated);
+  --surface-hover: var(--hover-fill);
+  --fill-tertiary: var(--hover-fill);
+  --text-faint: var(--text-tertiary);
+  --shadow-1: var(--card-shadow);
+  --shadow-2: var(--card-shadow);
+  --hit-min: 44px;
+  --font-display: inherit;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --focus-ring: 0 0 0 3px var(--hero-glow-a);
+  --accent-green-text: #1b7f3a;
+  --accent-amber-text: var(--warning-text);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", sans-serif;
   color: var(--text-primary);
   background: var(--bg-page);
@@ -103,6 +123,8 @@
   --nav-link: rgba(255, 255, 255, 0.8);
   --nav-link-active: #f5f5f7;
   --apple-link: #2997ff;
+  --accent-green-text: #30d158;
+  --accent-amber-text: #ffb340;
   --danger: #ff453a;
   --danger-bg: rgba(255, 69, 58, 0.14);
   --accent-cyan: #64d2ff;
@@ -150,6 +172,8 @@ body {
   background: var(--bg-page);
   min-height: 100vh;
   color: var(--text-primary);
+  font-size: var(--fs-body);
+  line-height: 1.5;
 }
 
 /* —— Apple.com button system —— */
@@ -588,8 +612,8 @@ main {
   justify-content: space-between;
   gap: 36px;
   align-items: end;
-  margin: 28px 0 48px;
-  padding: 48px 0 36px;
+  margin: 8px 0 20px;
+  padding: 12px 0 4px;
   position: relative;
 }
 .hero::before,
@@ -597,7 +621,7 @@ main {
   content: "";
   position: absolute;
   inset: -20px -8% auto;
-  height: 280px;
+  height: 140px;
   background:
     radial-gradient(ellipse at 30% 40%, var(--hero-glow-a), transparent 60%),
     radial-gradient(ellipse at 80% 20%, var(--hero-glow-b), transparent 55%);
@@ -606,19 +630,19 @@ main {
   animation: heroDrift 22s ease-in-out infinite alternate;
 }
 .hero h1 {
-  font-size: clamp(38px, 4.6vw, 64px);
-  line-height: 1.05;
-  letter-spacing: -0.03em;
+  font-size: var(--fs-h1);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
   max-width: 920px;
-  margin: 10px 0 18px;
+  margin: 6px 0 8px;
   color: var(--text-primary);
   font-weight: 600;
 }
 .hero p {
   color: var(--text-secondary);
-  max-width: 720px;
-  font-size: 20px;
-  line-height: 1.381;
+  max-width: 70ch;
+  font-size: var(--fs-lede);
+  line-height: 1.45;
   font-weight: 400;
   letter-spacing: 0.011em;
 }
@@ -628,6 +652,19 @@ main {
    runs continuously behind data-dense pages, so it must never be
    distracting. Silenced under prefers-reduced-motion (see media query
    near the bottom of this file). */
+/* The glow layer is clipped to its hero's box; fade the trailing edge instead
+   of ending on a hard vertical line. Light theme has no ambient glow: color is
+   deviation, not decoration. */
+.hero::before,
+.page-hero::before {
+  -webkit-mask-image: linear-gradient(to right, #000 45%, transparent 100%);
+  mask-image: linear-gradient(to right, #000 45%, transparent 100%);
+}
+:root:not([data-theme="dark"]) .hero::before,
+:root:not([data-theme="dark"]) .page-hero::before {
+  display: none;
+}
+
 @keyframes heroDrift {
   from { background-position: 0% 0%, 0% 0%; }
   to { background-position: 6% 4%, -5% -3%; }
@@ -642,25 +679,25 @@ main {
    request. */
 .page-hero {
   position: relative;
-  margin: 20px 0 36px;
-  padding: 28px 0 12px;
+  margin: 8px 0 20px;
+  padding: 12px 0 4px;
   max-width: 900px;
   animation: fadeRise 0.45s var(--ease-apple) both;
 }
 .page-hero h1 {
-  font-size: clamp(32px, 4vw, 52px);
+  font-size: var(--fs-h1);
   line-height: 1.15;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   font-weight: 600;
-  margin: 10px 0 12px;
+  margin: 6px 0 8px;
   color: var(--text-primary);
 }
 .page-hero p {
   color: var(--text-secondary);
-  font-size: 19px;
-  line-height: 1.42;
+  font-size: var(--fs-lede);
+  line-height: 1.45;
   margin: 0;
-  max-width: 640px;
+  max-width: 70ch;
 }
 
 /* Per-page tinted ambient glow — the app's stand-in for the imagery/photo
@@ -717,7 +754,7 @@ main {
   display: block;
 }
 .login-info h1 {
-  font-size: clamp(38px, 4.6vw, 56px);
+  font-size: clamp(30px, 3.4vw, 42px);
   line-height: 1.04;
   letter-spacing: -0.04em;
   font-weight: 600;
@@ -726,7 +763,7 @@ main {
 }
 .login-info p {
   color: var(--text-secondary);
-  font-size: 19px;
+  font-size: var(--fs-lede);
   line-height: 1.5;
   max-width: 420px;
 }
@@ -747,7 +784,7 @@ main {
   gap: 16px;
 }
 .login-card h1 {
-  font-size: clamp(32px, 3.5vw, 46px);
+  font-size: clamp(24px, 2.6vw, 32px);
   letter-spacing: -0.03em;
   margin: 6px 0 4px;
   font-weight: 600;
@@ -873,37 +910,37 @@ main {
   pointer-events: none;
 }
 .card h2 {
-  font-size: clamp(32px, 3.5vw, 46px);
-  letter-spacing: -0.03em;
+  font-size: var(--fs-h2);
+  letter-spacing: -0.01em;
   margin: 6px 0 12px;
   font-weight: 600;
   color: var(--text-primary);
 }
 .card h3 {
   margin-top: 0;
-  font-size: 24px;
-  letter-spacing: -0.02em;
+  font-size: var(--fs-h3);
+  letter-spacing: -0.01em;
   font-weight: 600;
   color: var(--text-primary);
 }
 .card p {
   color: var(--text-secondary);
-  line-height: 1.55;
-  font-size: 18px;
+  line-height: 1.5;
+  font-size: var(--fs-body);
 }
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 4px 12px;
   margin-top: 24px;
+  border-top: 1px solid var(--hairline-1);
+  border-bottom: 1px solid var(--hairline-1);
 }
 .metrics div {
-  background: var(--bg-elevated-2);
-  padding: 18px;
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--border);
-  border-top: 2px solid rgba(0, 113, 227, 0.45);
+  background: transparent;
+  padding: 18px 8px 18px 0;
+  border: 0;
   min-width: 0;
 }
 .metrics b {
@@ -913,12 +950,12 @@ main {
      tile width: several pages embed a unit suffix directly in this text
      (e.g. "12.4 ms"), and a too-large clamp wraps those mid-value inside a
      ~150px tile. clamp() also keeps it from overrunning at narrow widths. */
-  font-size: clamp(22px, 2.6vw, 40px);
+  font-size: var(--fs-figure);
   font-weight: 600;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
   color: var(--text-primary);
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 .metrics span {
   display: block;
@@ -1904,15 +1941,13 @@ code {
   .mega-panel.open { transform: translateY(0); }
   .mega-grid { grid-template-columns: 1fr; }
   .brand small { display: none; }
-  .hero { display: block; padding-top: 24px; }
+  .hero { display: block; padding-top: 8px; }
   .tokenbox { display: block; margin-top: 20px; }
   .grid { grid-template-columns: 1fr; }
   .span2,
   .span3 { grid-column: auto; }
   .metrics { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
   .filters { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
-  .hero p { font-size: 19px; }
-  .page-hero p { font-size: 19px; }
   /* Keep all columns readable: scroll horizontally instead of hiding. */
   .terminalbody {
     overflow-x: auto;
@@ -1968,7 +2003,7 @@ code {
 .investigation-filters input, .investigation-filters select { width: 100%; min-width: 0; }
 .investigation-filters .toolbar { flex-basis: 100%; }
 .operations-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
-.operations-grid h2 { font-size: 36px; text-transform: capitalize; }
+.operations-grid h2 { font-size: var(--fs-h2); text-transform: capitalize; }
 .operations-grid h2 small { font-size: 14px; font-weight: 400; }
 .investigation-table { overflow-x: auto; }
 .investigation-table table { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -2072,8 +2107,6 @@ code {
 /* Legacy route bodies — pull Tailwind dashboards into the Netra board */
 .view-board {
   padding: 0 0 4rem;
-  max-width: 1200px;
-  margin: 0 auto;
 }
 
 /* PageHero already owns the title — hide duplicate lucide+h1 chrome */
