@@ -5,6 +5,15 @@
 [![Cilium](https://img.shields.io/badge/cilium-1.14%2B-purple.svg)](https://cilium.io/)
 [![Changelog](https://img.shields.io/badge/changelog-Keep%20a%20Changelog-informational.svg)](CHANGELOG.md)
 
+[![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=paqtra&utm_campaign=readme_hero)
+[![30-day PoC](https://img.shields.io/badge/30--day_PoC-1d1d1f?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=paqtra&utm_campaign=readme_hero)
+
+[![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=paqtra&utm_campaign=readme_hero)
+[![30-day PoC](https://img.shields.io/badge/30--day_PoC-1d1d1f?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=paqtra&utm_campaign=readme_hero)
+
+[![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=paqtra&utm_campaign=readme_hero)
+[![30-day PoC](https://img.shields.io/badge/30--day_PoC-1d1d1f?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=paqtra&utm_campaign=readme_hero)
+
 ![Paqtra — Cilium-native network observability and operations for Kubernetes](docs/social/paqtra-share-card.png)
 
 **Cilium-native network observability and operations for Kubernetes — trace every flow.**
@@ -112,7 +121,7 @@ Paqtra is the free community edition. **PacketWolf** is the commercial platform 
 | KubeVirt VM console and VNC, in-browser shell, podman/docker visibility | — | ✅ |
 | Support | Community | ZyvorAI Labs |
 
-The full breakdown is in [docs/paqtra-vs-packetwolf.md](docs/paqtra-vs-packetwolf.md). For a demo, a trial or pricing, contact [sales@zyvor.dev](mailto:sales@zyvor.dev) or visit [zyvor.dev](https://zyvor.dev).
+The full breakdown is in [docs/paqtra-vs-packetwolf.md](docs/paqtra-vs-packetwolf.md). For a demo, a trial or pricing, book a [demo](https://zyvor.dev/schedule?utm_source=github&utm_medium=paqtra&utm_campaign=readme_footer), start a [30-day PoC](https://zyvor.dev/poc?utm_source=github&utm_medium=paqtra&utm_campaign=readme_footer) or contact [sales@zyvor.dev](mailto:sales@zyvor.dev) or visit [zyvor.dev](https://zyvor.dev/?utm_source=github&utm_medium=paqtra&utm_campaign=readme_footer).
 
 ## Suite placement (Cilium, Paqtra, Netra)
 
