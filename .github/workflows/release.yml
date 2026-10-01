@@ -171,7 +171,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: cli-*
           merge-multiple: true
@@ -267,7 +267,7 @@ jobs:
           if [ -n "$TOKEN" ]; then echo "present=true" >> "$GITHUB_OUTPUT"
           else echo "::notice::HOMEBREW_TAP_TOKEN is not set; skipping the tap update"; fi
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: steps.gate.outputs.present == 'true'
         with:
           name: release-dist
@@ -354,7 +354,7 @@ jobs:
       matrix:
         image: [api, ui]
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: digest-${{ matrix.image }}-*
           merge-multiple: true
@@ -400,7 +400,7 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: bin-linux-*
           merge-multiple: true
