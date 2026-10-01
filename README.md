@@ -163,6 +163,8 @@ Report vulnerabilities through [SECURITY.md](SECURITY.md). Deeper reading: [docs
 
 ## License
 
+Commercial subscriptions and support: see [docs/SUBSCRIPTION-MODEL.md](docs/SUBSCRIPTION-MODEL.md).
+
 Licensed under the **[Apache License 2.0](LICENSE)**. Contributions are accepted under the same license. See [NOTICE](NOTICE).
 
 Built on [Cilium](https://cilium.io/), [Hubble](https://docs.cilium.io/en/stable/observability/hubble/), [Ratatui](https://ratatui.rs/), [Axum](https://github.com/tokio-rs/axum), [React](https://react.dev/) and [Tailwind CSS](https://tailwindcss.com/).
