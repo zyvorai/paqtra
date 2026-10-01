@@ -146,13 +146,13 @@ jobs:
             cp "$BIN" "release-bin/paqtra-linux-${{ matrix.docker }}"
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cli-${{ matrix.name }}
           path: out/*.tar.gz
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: matrix.docker
         with:
           name: bin-${{ matrix.name }}
@@ -246,7 +246,7 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ needs.meta.outputs.latest != 'true' }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-dist
           path: dist/
@@ -335,7 +335,7 @@ jobs:
         run: |
           mkdir -p /tmp/digests
           touch "/tmp/digests/${DIGEST#sha256:}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: needs.meta.outputs.publish == 'true'
         with:
           name: digest-${{ matrix.image }}-${{ matrix.arch }}
