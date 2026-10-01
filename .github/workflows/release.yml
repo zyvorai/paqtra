@@ -406,7 +406,7 @@ jobs:
           merge-multiple: true
           path: release-bin
       - run: ls -l release-bin
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v3
       - name: Log in to the registry
         if: needs.meta.outputs.publish == 'true'
